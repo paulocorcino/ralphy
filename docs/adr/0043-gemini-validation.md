@@ -25,7 +25,7 @@ credential store (`LegacyGeneric:target=gemini-cli-api-key/default-api-key`).
 **No live model call completed on this host.** Every invocation that reaches the
 provider fails, reproducibly:
 
-```
+```text
 Attempt 1 failed. Retrying with backoff... Error: exception TypeError: fetch failed sending request
     at async Models.generateContentStream (…/@google/gemini-cli/bundle/chunk-DHQ53XVO.js:259310)
 ```
@@ -62,7 +62,7 @@ requiring a model **response** are recorded as not executed, not as passed.
 `probe_gemini_login()` run through the real production path (a throwaway
 `examples/probe.rs`, deleted afterwards):
 
-```
+```text
 locate_gemini = Some("C:\\Users\\PICHAU\\AppData\\Roaming\\npm\\gemini.CMD")
 probe_gemini_login = true
 ```
@@ -128,7 +128,7 @@ operator's root is byte-identical.
 Meanwhile Ralphy's own root came into existence and took every write the vendor
 made:
 
-```
+```text
 ~/.ralphy/gemini-home/.gemini/
   settings.json    # written by root::ensure
   projects.json    # written by the vendor
@@ -202,7 +202,7 @@ continuing, so they must never outrank a limit or an exit-class diagnosis:
 **Live confirmation (2026-07-21, this host).** `gemini -p hello` from a repository
 root, without `--skip-trust`, exits **55** and prints on stderr:
 
-```
+```text
 Gemini CLI is not running in a trusted directory. To proceed, either use
 `--skip-trust`, set the `GEMINI_CLI_TRUST_WORKSPACE=true` environment variable,
 or trust this directory in interactive mode. For more details, see
@@ -278,7 +278,7 @@ flag, matching the plan's original design.
 `skills::materialize_gemini_skills` (all three embedded skills copied
 verbatim into `<root>/.gemini/skills/`):
 
-```
+```text
 Discovered Agent Skills:
 
 reviewer [Enabled]
@@ -403,7 +403,7 @@ to call the `read_file` tool on that same literal path — the SAME
 `validatePathAccess` check denied it a second time, this time through a
 call site that DOES surface its error:
 
-```
+```text
 "Path not in workspace: Attempted path \"C:\Users\PICHAU\...\swatch.png\"
 resolves outside the allowed workspace directories: C:\Dev\ralphy or the
 project temp directory: C:\Users\PICHAU\.gemini\tmp\ralphy"
@@ -418,7 +418,7 @@ a 64×64 solid-red PNG at `swatch.png` (a colour-neutral filename, to rule out
 the model guessing from `red.png`'s name) under `--include-directories <its
 parent>`:
 
-```
+```json
 {"role":"user","content":"...@\"C:\\...\\swatch.png\"\nWhat single colour fills this image? Answer with one word.\nThanks @octocat, see @nonexistent-file.md, mail foo@bar.com."}
 {"role":"assistant","content":"Red"}
 {"type":"result","status":"success","stats":{"tool_calls":0,...}}

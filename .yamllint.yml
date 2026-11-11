@@ -1,0 +1,24 @@
+---
+# The yamllint config. A rule that is noise for this repo is changed here with
+# its reason; a rule with sites left is off under a `debt:` line.
+extends: default
+
+ignore: |
+  target/
+  worktrees/
+  node_modules/
+
+rules:
+  # No file of the repo is a stream of documents, and GitHub reads none of it.
+  document-start: disable
+  # .gitattributes checks every text file out with LF.
+  new-lines:
+    type: unix
+  # `on:` is the trigger key of a workflow, not a boolean.
+  truthy:
+    check-keys: false
+  # Dependabot writes the `# vX.Y.Z` after a pinned action SHA with one space.
+  comments:
+    min-spaces-from-content: 1
+  # debt: 19 sites over 100 characters (most are `run:` commands)
+  line-length: disable

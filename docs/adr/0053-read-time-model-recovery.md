@@ -18,7 +18,7 @@ Measured against the operator's own ledger (`~/.ralphy/usage/*.jsonl`, 626 lines
 3.78 B tokens, 2026-06-15 → 2026-07-27) while designing the workbench spend
 surface:
 
-```
+```text
 tokens with model == "unknown"      1663.2M   44.0% of all tokens
 ├─ carrying a session_id             737.3M   44.3% of those  → recoverable
 └─ no session_id at all              925.8M   55.7% of those  → unrecoverable

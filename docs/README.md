@@ -29,7 +29,6 @@ particular time.
 | Understand architectural decisions | [ADRs](adr/README.md) |
 | Change the workbench shell | [Workbench build guide](WORKBENCH-BUILD-GUIDE.md) |
 | Exercise the initial daemon workflows manually | [Daemon bench](daemon-bench.md) (Phase 1 scope) |
-| Find execution plans and unresolved follow-up work | [Plans](plans/README.md) |
 | Find measurements and acceptance records | [Evidence](spike/evidence/README.md) |
 | Find design investigations and source material | [Research](research/README.md) |
 

@@ -1,0 +1,8 @@
+# lychee checks the local links of the repo's own files. Offline: a remote
+# outage must not fail the gate.
+offline = true
+no_progress = true
+
+# CHANGELOG.md belongs to the changelog xtask. The setup-pocock templates link
+# to files of the project they are copied into, not to files of this repo.
+exclude_path = ['CHANGELOG[.]md', 'assets.plugin.skills.setup-pocock']

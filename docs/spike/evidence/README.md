@@ -8,14 +8,14 @@ not current instructions or proof that the current tree passes verification.
 
 - [Event audit, 2026-07-19](audits/audit-events-2026-07-19.md)
 - [Workbench audit, 2026-07-13](audits/audit-workbench-2026-07-13.md)
-- [Test audit, 2026-09-27](../audit-tests-2026-09-27.md)
+- [Test audit, 2026-09-27](../../audit-tests-2026-09-27.md)
 - [#209 acceptance walkthrough](209-acceptance-walkthrough.md)
 - [#306 acceptance walkthrough](306-acceptance-walkthrough.md)
 
 ## Evidence with stable paths
 
-The [adapter-support consolidation proposal](../adapter-support-consolidation.md)
-and [file-size triage](../borderline-500-triage.md) remain at their original
+The [adapter-support consolidation proposal](../../adapter-support-consolidation.md)
+and [file-size triage](../../borderline-500-triage.md) remain at their original
 paths because local research exports still cite them. They record historical
 design work, not current implementation instructions. The test audit also
 keeps its path for a local ledger script and its unresolved follow-up.

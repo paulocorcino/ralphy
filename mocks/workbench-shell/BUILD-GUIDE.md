@@ -54,7 +54,7 @@ document.addEventListener("workbench:action", (e) => {
 **Discover the live event catalogue by grepping** — it grows with the mock, so a
 static list here would rot:
 
-```
+```text
 grep -rn "WB.emit(" mocks/workbench-shell/*.js
 ```
 
@@ -328,6 +328,7 @@ API is absent the control is **hidden entirely** (not disabled).
 | Console shortcuts | `consoleItems()` + Alt+Shift+`1/2/3/0` | New-console accelerators, matched by physical key (`e.code`), guarded off inputs/modals | `console-open {agent,plain}` |
 
 Faithful sources: run/issue vocabulary and glyphs mirror `ralphy-cli/src/runstate/`
+
 - the Telegram/presenter tables; the verbs' argv is `dispatch.rs`; run flags
 (`--agent` default claude, `--plan-agent`, `--branch-mode`) are `ralphy-cli/src/cli.rs`.
 

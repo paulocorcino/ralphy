@@ -29,7 +29,7 @@ this note.
 
 ### Phase 1 — plan-only dry-run (`--only-issue 29 --agent kimi --dry-run`)
 
-```
+```text
 ralphy.exe run --repo C:/Dev/FinCal --only-issue 29 --agent kimi \
   --base-branch feat/kimi --dry-run --verbose
 ```
@@ -61,7 +61,7 @@ without the clean-exit sentinel.
 
 The exit 1 came from **inside kimi**, not the work:
 
-```
+```text
 'charmap' codec can't encode character '✔' in position 574: character maps to <undefined>
 ```
 
@@ -83,7 +83,7 @@ already-UTF-8 Linux locale. Regression-tested.
 
 **Attempt B (post-fix) — green.**
 
-```
+```text
 ralphy.exe run --repo C:/Dev/FinCal --only-issue 29 --agent kimi \
   --base-branch feat/kimi --max-minutes-per-issue 120 --verbose
 ```
@@ -137,7 +137,7 @@ residue in the target repo, no symlink dance.
 
 The green run's verify gate **hung ≈43 min** on one plan-authored verify command:
 
-```
+```text
 sh -c "npx prisma migrate deploy && npm run dev -- --port 3002 & PID=$! && sleep 15 && curl ... && kill $PID"
 ```
 

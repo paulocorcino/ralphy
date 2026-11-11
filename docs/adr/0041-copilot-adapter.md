@@ -32,8 +32,7 @@ the first time.
 Implementation status: D5/D5a shipped in #233 (`ralphy-agent-copilot`'s
 `effort.rs`, the persisted `copilot.plan_effort`/`copilot.exec_effort` keys, and
 the post-hoc check against the vendor's `assistant_usage_events.reasoning_effort`).
-D7's in-band receipt guard and D11's `continueOnAutoMode` preflight shipped in
-# 234 (`guards.rs`, plus the `copilot.allow_builtin_mcp_servers_i_understand_the_risk`
+D7's in-band receipt guard and D11's `continueOnAutoMode` preflight shipped in #234 (`guards.rs`, plus the `copilot.allow_builtin_mcp_servers_i_understand_the_risk`
 escape hatch) — see the `**Enforced**` notes on those two decisions.
 
 ## D1 — Selection is per run, via `--agent copilot`; the core is untouched
@@ -51,7 +50,7 @@ separately rather than silently fixed here.
 
 ## D2 — The prompt goes in on stdin, and this is not negotiable
 
-```
+```text
 copilot --allow-all-tools --output-format json --session-id <uuid> \
         --no-remote --no-remote-export --disable-builtin-mcps --no-ask-user \
         [--model <id>] [--effort <level>]   < <charter on stdin>
@@ -135,7 +134,7 @@ flags are introduced.**
 `DEFAULT_CODEX_EFFORT` shape — is **rejected**, because effort is not a
 universal axis:
 
-```
+```sh
 $ copilot … --model kimi-k2.7-code --effort medium
 Error: Model "kimi-k2.7-code" does not support reasoning effort configuration.
 exit = 1

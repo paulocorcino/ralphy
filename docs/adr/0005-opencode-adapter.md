@@ -195,7 +195,7 @@ skill content** into **`.ralphy/skills/`** (clearing and re-extracting each call
 a retargeted near-clone of `materialize_codex_skills`) and points OpenCode at it
 by injecting per-run
 
-```
+```text
 OPENCODE_CONFIG_CONTENT={"skills":{"paths":["<abs>/.ralphy/skills"]}}
 ```
 

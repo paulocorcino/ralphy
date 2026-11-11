@@ -30,7 +30,7 @@ shares only the half that was never vendor-essential.
 
 ## D2 — The precedence ladder is fixed and shared
 
-```
+```text
 1. limit.is_some()               → Limit(reset)
 2. done && exited_ok && !errored → Done
 3. timed_out                     → Timeout

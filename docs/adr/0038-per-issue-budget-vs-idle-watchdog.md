@@ -31,9 +31,7 @@ requirements:
 The collision was already visible in the code: `run.rs` needed a
 `match { 0 => VERIFY_GATE_FALLBACK_MINUTES, n => n }` because `0` would otherwise
 collapse the verify gate to a 0-second timeout. When a value needs an exception
-to avoid meaning opposite things, it is more than one concept.
-
-# 150 asked for a progress clock and received a wall clock. It worked for its
+to avoid meaning opposite things, it is more than one concept. #150 asked for a progress clock and received a wall clock. It worked for its
 symptom and charged case 1 for it. The `0` in `74881b2` was the right value
 arriving without the reasoning, leaving the constant contradicting its own
 docstring, the `--max-minutes-per-issue` help text, and the test #150 had added.

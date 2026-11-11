@@ -354,7 +354,7 @@
               <thead>
                 <tr>
                   <template x-for="c in ledgerModel.columns" :key="c.key">
-                    <th :class="'ledger-col-' + c.key" x-text="c.label"></th>
+                    <th scope="col" :class="'ledger-col-' + c.key" x-text="c.label"></th>
                   </template>
                 </tr>
               </thead>

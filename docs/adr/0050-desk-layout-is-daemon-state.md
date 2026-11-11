@@ -350,7 +350,7 @@ daemon owns, not a field each page guesses and writes back.
   the session is not there. This protects the consoles on every peer
   version, the older ones included.
 
-### Rejected alternatives
+### Rejected alternatives of the window record
 
 - **A version check (ETag) on the desk.** It refuses a write, but the second
   shell is already running when the write happens. It would also refuse every
@@ -441,7 +441,7 @@ the operator can restore, download as a file, and upload again.
   reloads: there is no way to clear a page's windows and run the restore
   again in place.
 
-### Rejected alternatives
+### Rejected alternatives of the desk history
 
 - **One backup copy of `desk.toml` per write.** The desk is rewritten on
   every load and reconnect, so the copy would hold the bad desk minutes
@@ -574,7 +574,7 @@ Known limits:
   Convergence makes that window a few seconds long.
 - A console opened on another device appears at the next load, not live.
 
-### Rejected alternatives
+### Rejected alternatives of the desk upload
 
 - **A CRDT library (Yjs, Automerge, Loro).** Yjs is about 18 kB of
   JavaScript; Loro (about 180 kB) and Automerge (about 320 kB) are WASM, and

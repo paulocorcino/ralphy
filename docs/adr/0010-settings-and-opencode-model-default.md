@@ -14,7 +14,7 @@ deterministic resolution order.
 
 The OpenCode execution model resolves in this precedence:
 
-```
+```text
 --exec-model X            (per-run flag)            → strongest
 settings.json opencode.model (persistent default)   → middle
 omit -m                   (OpenCode's own resolution)→ weakest
@@ -28,7 +28,7 @@ stays a first-class, selectable state and remains the out-of-the-box default.
 
 Operator surface (a config subcommand, consistent with `ralphy telegram`):
 
-```
+```sh
 ralphy models --agent opencode               # passthrough to `opencode models`
 ralphy config set opencode.model kimi-for-coding/k2p7
 ralphy config unset opencode.model           # back to OpenCode's default

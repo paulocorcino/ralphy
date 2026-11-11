@@ -4,7 +4,7 @@ Host: Windows 11 (10.0.26200), `GitHub Copilot CLI 1.0.71`, 2026-07-20.
 
 ## The probe
 
-```
+```text
 env -u GH_TOKEN -u GITHUB_TOKEN -u COPILOT_GITHUB_TOKEN \
   copilot -p "hi" --model "zzz-not-real" --allow-all-tools \
   --no-remote --no-remote-export --disable-builtin-mcps \
@@ -37,7 +37,7 @@ log (local paths, MCP URLs, session ids) was discarded.
 
 `cargo test -p ralphy-agent-copilot -- --ignored --exact catalog::tests::live_probe_fetches_the_catalog_for_free`
 
-```
+```text
 running 1 test
 test catalog::tests::live_probe_fetches_the_catalog_for_free ... ok
 
@@ -50,7 +50,7 @@ session id the probe itself minted wrote **no** `assistant_usage_events` row.
 Vacuity check (temporary edit, reverted): pointing the same assertion at a session
 id known to have rows REDS —
 
-```
+```text
 left: Usage { input: 5519473, output: 42503, cache_read: 5355709, cache_creation: 146563, model: Some("claude-sonnet-5") }
 right: Usage { input: 0, output: 0, cache_read: 0, cache_creation: 0, model: None }
 ```
