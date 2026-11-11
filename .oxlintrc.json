@@ -188,6 +188,17 @@
   },
   "overrides": [
     // Test code is not measured for complexity (ADR-0081 D3).
-    { "files": ["**/ui-tests/**"], "env": { "node": true }, "rules": { "complexity": "off" } }
+    { "files": ["**/ui-tests/**"], "env": { "node": true }, "rules": { "complexity": "off" } },
+    // Phase 10 (promises and void): the module groups at 0 sites. The entry
+    // goes when the last group is at 0.
+    {
+      "files": ["**/ui-tests/**"],
+      "rules": {
+        "require-await": "error",
+        "no-promise-executor-return": "error",
+        "promise/always-return": "error",
+        "promise/no-callback-in-promise": "error"
+      }
+    }
   ]
 }

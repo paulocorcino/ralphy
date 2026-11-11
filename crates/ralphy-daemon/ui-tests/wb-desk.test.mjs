@@ -8,10 +8,10 @@ import assert from "node:assert/strict";
 import { createDesk } from "../assets/ui/wb-desk.ts";
 import { createPopupRegistry } from "../assets/ui/wb-desk-popups.ts";
 
-const settle = () => new Promise((resolve) => setImmediate(resolve));
+const settle = () => new Promise((resolve) => { setImmediate(resolve); });
 
 // The desk read the daemon answers: a desk this page takes.
-const readOk = () => Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
+const readOk = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
 
 // A desk over fakes that record each call. `over` replaces any dep; `read`
 // answers the desk read, which `createDesk` starts while it is built.
@@ -249,7 +249,7 @@ test("a relaunch into a worktree is waited for before the stage is sized", async
     loadDesk: () => [record],
     spawnOrMissing: (...args) => {
       launched.push(args);
-      return new Promise((resolve) => (land = resolve));
+      return new Promise((resolve) => { land = resolve; });
     },
     applyExtent: () => order.push("extent"),
     document: { dispatchEvent: (e) => order.push(e.type) },

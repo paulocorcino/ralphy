@@ -123,7 +123,7 @@ test("a changed profile names what changed in plain words", () => {
 test("the Devices section says why it could not read the devices", async () => {
   const { scope } = loadComponent("wbDevices");
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({ ok: false, status: 503, json: async () => ({ error: "the audit log is closed" }) });
+  globalThis.fetch = () => Promise.resolve({ ok: false, status: 503, json: () => Promise.resolve({ error: "the audit log is closed" }) });
   try {
     await scope.load();
   } finally {

@@ -157,10 +157,10 @@ test("a period change drops the Ledger rows and reads the pane that is shown", (
 async function withUsage(reply, run) {
   const real = globalThis.fetch;
   const urls = [];
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = (url) => {
     urls.push(String(url));
     if (reply instanceof Error) throw reply;
-    return reply;
+    return Promise.resolve(reply);
   };
   try {
     return await run(urls);
@@ -169,7 +169,7 @@ async function withUsage(reply, run) {
   }
 }
 
-const usageReply = (ok, body) => ({ ok, status: ok ? 200 : 500, json: async () => body });
+const usageReply = (ok, body) => ({ ok, status: ok ? 200 : 500, json: () => Promise.resolve(body) });
 
 test("a Ledger read keeps the rows of the open project and the period", async () => {
   const { shell, spend } = page();

@@ -41,10 +41,10 @@ function dialog(answers = {}) {
   const { scope: state, shell, window } = loadComponent("wbPropertiesDialog", { window: { dispatchEvent: () => true } });
   const calls = [];
   window.WBDaemon = {
-    observe: async (verb, payload) => {
+    observe: (verb, payload) => {
       calls.push({ verb, payload });
       const answer = answers[verb];
-      return typeof answer === "function" ? answer(payload) : (answer ?? { status: "error", reason: "not found" });
+      return Promise.resolve(typeof answer === "function" ? answer(payload) : (answer ?? { status: "error", reason: "not found" }));
     },
     withCheckout: (payload, checkout) => (checkout ? { ...payload, checkout: String(checkout) } : { ...payload }),
   };
@@ -53,7 +53,7 @@ function dialog(answers = {}) {
   return { state, shell, calls };
 }
 
-const tick = () => new Promise((r) => setImmediate(r));
+const tick = () => new Promise((r) => { setImmediate(r); });
 const valueOf = (state, label) => state.propsRows().find((r) => r.label === label)?.value;
 const labels = (state) => state.propsRows().map((r) => r.label);
 
@@ -155,7 +155,7 @@ test("a folder asks for its facts and its size, and the slow rows spin until the
   let release;
   const { state, calls } = dialog({
     "file.stat": STAT_FOLDER,
-    "tree.size": () => new Promise((r) => (release = r)),
+    "tree.size": () => new Promise((r) => { release = r; }),
   });
 
   state.openProperties({ path: "src", isFolder: true });
@@ -246,7 +246,7 @@ test("the project root is a folder, named for the project", async () => {
 test("a reply for a row that is no longer the open one is dropped", async () => {
   const releases = {};
   const { state } = dialog({
-    "file.stat": (payload) => new Promise((r) => (releases[payload.path] = r)),
+    "file.stat": (payload) => new Promise((r) => { releases[payload.path] = r; }),
   });
 
   state.openProperties({ path: "a.txt", isFolder: false });
@@ -261,7 +261,7 @@ test("a reply for a row that is no longer the open one is dropped", async () => 
 
 test("a reply that arrives after the dialog was closed is dropped", async () => {
   let release;
-  const { state } = dialog({ "file.stat": () => new Promise((r) => (release = r)) });
+  const { state } = dialog({ "file.stat": () => new Promise((r) => { release = r; }) });
 
   state.openProperties({ path: "a.txt", isFolder: false });
   state.propsClose();
@@ -277,7 +277,7 @@ test("Copy writes the visible lines, one per line, and leaves out a row that is 
   const written = [];
   const real = Object.getOwnPropertyDescriptor(globalThis, "navigator");
   Object.defineProperty(globalThis, "navigator", {
-    value: { clipboard: { writeText: async (text) => written.push(text) } },
+    value: { clipboard: { writeText: (text) => Promise.resolve(written.push(text)) } },
     configurable: true,
   });
   try {

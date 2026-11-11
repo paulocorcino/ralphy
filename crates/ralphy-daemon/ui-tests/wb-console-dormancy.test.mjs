@@ -146,7 +146,7 @@ test("a page resume routes the placeholder revival and the desk flush by trigger
       windowShown: () => true,
       attachTerminal: () => null,
       scheduleDeskFlush: (ms) => flushes.push(ms),
-      revivePlaceholders: async () => {
+      revivePlaceholders: () => {
         revives += 1;
       },
     }).followPageResume();

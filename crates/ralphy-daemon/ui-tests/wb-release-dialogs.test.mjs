@@ -65,7 +65,7 @@ test("opening What's new counts the consoles again", () => {
 // after a gap has rolled back — the page must say so, not wait or reload.
 test("the question names the WSL peers the update takes after this daemon", async () => {
   const { state, shell, window } = dialogs();
-  window.fetch = async () => ({ ok: false });
+  window.fetch = () => Promise.resolve({ ok: false });
   shell.$store.projects.refreshLive = async () => {};
   shell.$store.projects.fleetPeers = [
     { daemon_id: "wsl-id", name: "Ubuntu", environment: "wsl", nudgeable: true },
@@ -97,13 +97,13 @@ test("the console warning counts only the consoles this daemon hosts", () => {
 test("a refused update keeps the question open and says why", async () => {
   const { state } = dialogs();
   state.relUpdate = { phase: "confirm", code: "123456", needCode: true, consoles: [], error: "" };
-  WBRelease.update = async () => ({ ok: false, status: 401, message: "invalid credentials" });
+  WBRelease.update = () => Promise.resolve({ ok: false, status: 401, message: "invalid credentials" });
   await state.confirmUpdate();
   assert.equal(state.relUpdate.phase, "confirm");
   assert.match(state.relUpdate.error, /Code rejected/);
   assert.equal(state.relUpdate.code, "", "a rejected code is not offered again");
 
-  WBRelease.update = async () => ({ ok: false, status: 500, message: "Error: checksum mismatch" });
+  WBRelease.update = () => Promise.resolve({ ok: false, status: 500, message: "Error: checksum mismatch" });
   state.relUpdate.code = "654321";
   await state.confirmUpdate();
   assert.equal(state.relUpdate.error, "Error: checksum mismatch", "the update's own words reach the page");
@@ -113,7 +113,7 @@ test("the same build after a gap is a rollback, and a new build reloads the page
   const { state, window } = dialogs();
   const view = (current) => ({ ...WBRelease.EMPTY, current });
   let reads = [null, view("v0.1.0-rc.30")];
-  WBRelease.read = async () => reads.shift();
+  WBRelease.read = () => Promise.resolve(reads.shift());
   let reloaded = false;
   Object.defineProperty(window, "location", { value: { reload: () => (reloaded = true) }, configurable: true });
   await state.awaitNewBuild("v0.1.0-rc.30", 0);
@@ -151,7 +151,7 @@ test("the dialogs change the release fact only through markReleaseSeen and relea
   assert.equal(release.releaseSeen, true, "opening the panel dismisses the release it shows");
 
   const watched = [];
-  WBRelease.setWatch = async (enable) => watched.push(enable);
+  WBRelease.setWatch = (enable) => Promise.resolve(watched.push(enable));
   await state.setReleaseWatch(false);
   assert.deepEqual(watched, [false]);
   assert.equal(release.release.disabled, true);
@@ -159,7 +159,7 @@ test("the dialogs change the release fact only through markReleaseSeen and relea
   assert.equal(release.release.disabled, false);
 
   // A refused preference leaves the fact as it was: the next read says what took.
-  WBRelease.setWatch = async () => {
+  WBRelease.setWatch = () => {
     throw new Error("offline");
   };
   await state.setReleaseWatch(false);
@@ -215,7 +215,7 @@ test("the account menu closes itself and asks the dialogs to open with their eve
 
     // The dialogs' element hears it and opens the one asked for.
     const real = globalThis.fetch;
-    globalThis.fetch = async () => ({ ok: false });
+    globalThis.fetch = () => Promise.resolve({ ok: false });
     try {
       await valueIn(state, handlerOf(event));
     } finally {

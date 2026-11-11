@@ -31,9 +31,9 @@ async function withDialog(run) {
   const { scope: state, shell, window } = loadComponent("wbSettingsDialog");
   const calls = [];
   window.WBDaemon = {
-    observe: async (verb, payload) => {
+    observe: (verb, payload) => {
       calls.push({ verb, payload });
-      return { status: "ok" };
+      return Promise.resolve({ status: "ok" });
     },
   };
   // A repo must be open or the fold skips the daemon entirely.
@@ -96,8 +96,8 @@ test("the notification switch is saved in this browser, and a refusal turns it o
   let answer = "granted";
   globalThis.Notification = class {
     static permission = "default";
-    static async requestPermission() {
-      return answer;
+    static requestPermission() {
+      return Promise.resolve(answer);
     }
   };
   const flashed = [];
@@ -105,7 +105,7 @@ test("the notification switch is saved in this browser, and a refusal turns it o
     magics: { $store: { modals: { flash: (m) => flashed.push(m) }, projects: { openSlug: null } } },
   });
   const calls = [];
-  window.WBDaemon = { observe: async (verb) => calls.push(verb) };
+  window.WBDaemon = { observe: (verb) => Promise.resolve(calls.push(verb)) };
   const notify = () => JSON.parse(map.get("wb.view.v1") || "{}").notify;
 
   await s.saveSetting("notifications.browser", true);
@@ -138,8 +138,8 @@ test("the test notification is shown with the switch off, and a block says why",
   let answer = "granted";
   globalThis.Notification = class {
     static permission = "default";
-    static async requestPermission() {
-      return answer;
+    static requestPermission() {
+      return Promise.resolve(answer);
     }
     constructor(title, options) {
       shown.push({ title, ...options });
@@ -225,15 +225,15 @@ test("every schema key is seeded, so config.get can merge over it", () => {
 test("a failed settings read says so, and a project setting is not written", async () => {
   const { scope: state, shell, window } = loadComponent("wbSettingsDialog");
   const verbs = [];
-  window.WBDaemon.observe = async (verb) => {
+  window.WBDaemon.observe = (verb) => {
     verbs.push(verb);
-    return verb === "config.get" ? { status: "error", message: "settings.json is not JSON" } : { status: "ok" };
+    return Promise.resolve(verb === "config.get" ? { status: "error", message: "settings.json is not JSON" } : { status: "ok" });
   };
   window.WBView.read = () => ({});
   shell.$store.projects.setOpen("o/r");
   shell.$store.modals.flash = () => {};
   state.openSettings();
-  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  for (let i = 0; i < 5; i++) await new Promise((r) => { setImmediate(r); });
   assert.equal(state.settingsError, "Could not read the settings: settings.json is not JSON.");
   await state.saveSetting("queue.label", "ready");
   assert.deepEqual(verbs, ["config.get"], "no config.set over values never read");
@@ -241,7 +241,7 @@ test("a failed settings read says so, and a project setting is not written", asy
 
 test("a settings read copies the project's values, but not the masked token, a null, or a key the panel lacks", async () => {
   const { scope: state, shell, window } = loadComponent("wbSettingsDialog");
-  window.WBDaemon.observe = async () => ({
+  window.WBDaemon.observe = () => Promise.resolve({
     status: "ok",
     config: { "events.url": "https://e.example", "claude.plan_model": null, "events.token": "****", "no.such.key": 1 },
   });
@@ -249,7 +249,7 @@ test("a settings read copies the project's values, but not the masked token, a n
   const planModel = state.settings["claude.plan_model"];
   const token = state.settings["events.token"];
   state.readSettings();
-  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  for (let i = 0; i < 5; i++) await new Promise((r) => { setImmediate(r); });
   assert.equal(state.settings["events.url"], "https://e.example");
   assert.equal(state.settings["claude.plan_model"], planModel, "a null keeps the field");
   assert.equal(state.settings["events.token"], token, "the mask is never copied");

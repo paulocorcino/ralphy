@@ -65,11 +65,11 @@ function openPrompt({ branchList, adds }) {
   const calls = [];
   const answers = { "branch.list": [branchList], "worktree.add": [...adds], "worktree.list": [{ status: "ok", checkouts: null }] };
   const daemon = {
-    observe: async (verb, args) => {
+    observe: (verb, args) => {
       calls.push([verb, args]);
       const next = answers[verb].shift();
-      if (next instanceof Error) throw next;
-      return next;
+      if (next instanceof Error) return Promise.reject(next);
+      return Promise.resolve(next);
     },
   };
   const emitted = [];
@@ -97,7 +97,7 @@ function openPrompt({ branchList, adds }) {
     wins: new Set(),
     lastSessions: () => [],
     agentStateTitle: (state) => state,
-    askConfirm: async () => true,
+    askConfirm: () => Promise.resolve(true),
     setWin: (win, fields) => writes.push(fields),
     renderTitle() {},
   });
@@ -115,7 +115,7 @@ function openPrompt({ branchList, adds }) {
 }
 
 // Every task the prompt needs to build itself has run.
-const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
+const settle = () => new Promise((resolve) => { setTimeout(resolve, 5); });
 
 // The fields of the latest prompt the document made.
 function promptFields(all) {

@@ -27,11 +27,11 @@ function dialog(opts = {}) {
 async function withFetch(routes, fn) {
   const real = globalThis.fetch;
   const asked = [];
-  globalThis.fetch = async (url, init = {}) => {
+  globalThis.fetch = (url, init = {}) => {
     asked.push([url, init.body ?? null]);
     const reply = routes[url];
     if (!reply) throw new Error(`no route for ${url}`);
-    return { ok: reply.ok ?? true, status: reply.status ?? 200, headers: { get: () => null }, json: async () => reply.body };
+    return Promise.resolve({ ok: reply.ok ?? true, status: reply.status ?? 200, headers: { get: () => null }, json: () => Promise.resolve(reply.body) });
   };
   try {
     await fn(asked);
@@ -225,7 +225,7 @@ test("the account menu closes itself and asks the dialog to open with workbench:
 
   // The dialog's element hears it and opens.
   const handler = wrapperTag().match(/@workbench:security-open\.window="([^"]*)"/)[1];
-  await withFetch({ "/api/security/state": { ok: false, status: 401 } }, async () => {
+  await withFetch({ "/api/security/state": { ok: false, status: 401 } }, () => {
     evalIn(state, handler);
   });
   assert.equal(state.securityOpen, true);

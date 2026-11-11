@@ -29,7 +29,7 @@ function load() {
   return createDaemon(window, document, location, { messages: { flash() {} } });
 }
 
-test("a handshake that never opens is closed at the deadline, and nothing else is", async () => {
+test("a handshake that never opens is closed at the deadline, and nothing else is", () => {
   const realSetTimeout = globalThis.setTimeout;
   const timers = [];
   globalThis.setTimeout = (fn, ms) => timers.push({ fn, ms });
@@ -151,7 +151,7 @@ test("withCheckout adds the key only for a real name", () => {
 // --- observe: a command with one reply goes over `POST /api/command` ----------
 
 // Let every pending promise callback run; setImmediate is not under mock timers.
-const flush = () => new Promise((r) => setImmediate(r));
+const flush = () => new Promise((r) => { setImmediate(r); });
 
 function newDaemon() {
   const window = { addEventListener() {} };
@@ -216,7 +216,7 @@ test("observe fans out an unknown checkout to the registered listeners, after th
     const reply = await d.observe("tree.list", { repo: "o/r", path: "", checkout: "gone" });
     assert.equal(reply.message, "unknown checkout", "the reply still resolves");
     assert.deepEqual(seen, [], "the fan-out lands AFTER the resolve, not before it");
-    await new Promise((r) => setTimeout(r, 5));
+    await new Promise((r) => { setTimeout(r, 5); });
     assert.deepEqual(seen, [["o/r", "gone"]]);
 
     // NEGATIVE CONTROLS: another error, an ok reply, and a payload with no
@@ -224,7 +224,7 @@ test("observe fans out an unknown checkout to the registered listeners, after th
     await d.observe("file.read", { repo: "o/r", path: "x", checkout: "missing-file" });
     await d.observe("tree.list", { repo: "o/r", path: "", checkout: "wt-a" });
     await d.observe("tree.list", { repo: "o/r", path: "" });
-    await new Promise((r) => setTimeout(r, 5));
+    await new Promise((r) => { setTimeout(r, 5); });
     assert.deepEqual(seen, [["o/r", "gone"]]);
   } finally {
     restore();
@@ -269,7 +269,7 @@ function silentFetch({ checkout }) {
   const pending = [];
   globalThis.fetch = (url) =>
     url === "/api/command"
-      ? new Promise((resolve) => pending.push(resolve))
+      ? new Promise((resolve) => { pending.push(resolve); })
       : Promise.resolve(new Response(null, { status: 204 }));
   mock.timers.enable({ apis: ["setTimeout"] });
   const d = newDaemon();
@@ -538,7 +538,7 @@ test("one socket carries presence, tree, runs and changes", () => {
 test("the first page socket waits for the session read", async () => {
   const { d, sockets, withFakes, withFakesAsync } = pageSockets();
   let settle = null;
-  const read = new Promise((resolve) => (settle = resolve));
+  const read = new Promise((resolve) => { settle = resolve; });
   withFakes(() => {
     d.afterSessionRead(read);
     d.subscribePresence(() => {});

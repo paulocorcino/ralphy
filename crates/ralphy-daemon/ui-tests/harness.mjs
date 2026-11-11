@@ -179,7 +179,7 @@ function stubWindow() {
     setInterval: () => 0,
     clearInterval() {},
     requestAnimationFrame: () => 0,
-    fetch: async () => {
+    fetch: () => {
       throw new Error(
         "the harness serves no network: a fold that fetches is not a read-only fold",
       );

@@ -430,7 +430,7 @@ test("the fence cap is a number the shell can state, and the plane is at it from
       ts: i,
     }));
     const realFetch = globalThis.fetch;
-    globalThis.fetch = async () => ({ ok: true, json: async () => ({ windows: [], fences }) });
+    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({ windows: [], fences }) });
     try {
       const wb = load({}, {}, { deskSink: { put: () => Promise.resolve({ kind: "held" }), putSync() {} } });
       await wb.whenDeskLoaded();
@@ -556,9 +556,9 @@ test("restoreRect on a column reads the inline rect, not the painted column box"
 async function deskPage(served = {}, extras = {}, docExtras = {}) {
   const realFetch = globalThis.fetch;
   const gets = [];
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = (url) => {
     gets.push(String(url));
-    return { ok: true, status: 200, json: async () => ({ windows: [], fences: [], notes: [], ...served }) };
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ windows: [], fences: [], notes: [], ...served }) });
   };
   const sent = [];
   const answers = extras.answers || [];
@@ -576,7 +576,7 @@ async function deskPage(served = {}, extras = {}, docExtras = {}) {
   await wb.whenDeskLoaded();
   return { wb, sent, gets, restore: () => (globalThis.fetch = realFetch) };
 }
-const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
+const settle = (ms = 400) => new Promise((r) => { setTimeout(r, ms); });
 const changesOf = (sent) => sent.flatMap((b) => b.changes);
 
 // The selected checkout per project (ADR-0063 §4) is the fourth record type.
@@ -1017,20 +1017,20 @@ test("the pure folds mutate none of their arguments", () => {
 test("an unreadable desk is a failure, and no flush PUTs over it", async () => {
   const calls = [];
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init = {}) => {
+  globalThis.fetch = (url, init = {}) => {
     calls.push({ url: String(url), method: init.method || "GET" });
-    return {
+    return Promise.resolve({
       ok: false,
       status: 409,
-      json: async () => ({ state: "unreadable", error: "parsing desk layout C:/x/desk.toml" }),
-    };
+      json: () => Promise.resolve({ state: "unreadable", error: "parsing desk layout C:/x/desk.toml" }),
+    });
   };
   try {
     const c = load();
     await c.whenDeskLoaded();
     assert.equal(c.deskFailure(), "the file is damaged");
     c.setCheckout("o/r", "wt-a");
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => { setTimeout(r, 400); });
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -1047,12 +1047,12 @@ test("a PUT the daemon refuses as unreadable shows the failure and stops the sen
   const calls = [];
   let unreadable = false;
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init = {}) => {
+  globalThis.fetch = (url, init = {}) => {
     calls.push({ url: String(url), method: init.method || "GET" });
     if (unreadable) {
-      return { ok: false, status: 409, json: async () => ({ state: "unreadable", error: "parsing desk layout" }) };
+      return Promise.resolve({ ok: false, status: 409, json: () => Promise.resolve({ state: "unreadable", error: "parsing desk layout" }) });
     }
-    return { ok: true, status: 200, json: async () => ({ windows: [], fences: [], notes: [] }) };
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ windows: [], fences: [], notes: [] }) });
   };
   try {
     const c = load();
@@ -1061,10 +1061,10 @@ test("a PUT the daemon refuses as unreadable shows the failure and stops the sen
     unreadable = true;
     calls.length = 0;
     c.setCheckout("o/r", "wt-a");
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => { setTimeout(r, 400); });
     assert.equal(c.deskFailure(), "the file is damaged");
     c.setCheckout("o/r", "wt-b");
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => { setTimeout(r, 400); });
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -1080,15 +1080,15 @@ test("a PUT the daemon refuses as unreadable shows the failure and stops the sen
 test("start a new desk treats a desk another tab already started as done", async () => {
   let started = false;
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init = {}) => {
+  globalThis.fetch = (url, init = {}) => {
     if (init.method === "POST") {
       started = true;
-      return { ok: false, status: 409, json: async () => ({ state: "readable" }) };
+      return Promise.resolve({ ok: false, status: 409, json: () => Promise.resolve({ state: "readable" }) });
     }
     if (!started) {
-      return { ok: false, status: 409, json: async () => ({ state: "unreadable", error: "parsing desk layout" }) };
+      return Promise.resolve({ ok: false, status: 409, json: () => Promise.resolve({ state: "unreadable", error: "parsing desk layout" }) });
     }
-    return { ok: true, status: 200, json: async () => ({ windows: [], fences: [], notes: [] }) };
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ windows: [], fences: [], notes: [] }) });
   };
   try {
     // The empty new desk is restored, which looks for the stage.
@@ -1105,10 +1105,12 @@ test("start a new desk treats a desk another tab already started as done", async
 // NEGATIVE CONTROL: any other refusal is a failure that names the status.
 test("start a new desk fails with the status on any other refusal", async () => {
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init = {}) =>
-    init.method === "POST"
-      ? { ok: false, status: 500, json: async () => ({}) }
-      : { ok: false, status: 409, json: async () => ({ state: "unreadable", error: "x" }) };
+  globalThis.fetch = (url, init = {}) =>
+    Promise.resolve(
+      init.method === "POST"
+        ? { ok: false, status: 500, json: () => Promise.resolve({}) }
+        : { ok: false, status: 409, json: () => Promise.resolve({ state: "unreadable", error: "x" }) },
+    );
   try {
     const c = load();
     await c.whenDeskLoaded();
@@ -1122,9 +1124,7 @@ test("start a new desk fails with the status on any other refusal", async () => 
 // new desk.
 test("a desk read that fails in transport sets no desk failure", async () => {
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => {
-    throw new Error("offline");
-  };
+  globalThis.fetch = () => Promise.reject(new Error("offline"));
   try {
     const c = load();
     await c.whenDeskLoaded();
@@ -1149,12 +1149,12 @@ test("atDeskCap is true once the desk holds the cap", async () => {
     fences: [],
   });
   try {
-    globalThis.fetch = async () => ({ ok: true, json: async () => desk(29) });
+    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(desk(29)) });
     const wb = load({}, {}, { deskSink: { put: () => Promise.resolve({ kind: "held" }), putSync() {} } });
     await wb.whenDeskLoaded();
     assert.equal(wb.DESK_MAX, 30);
     assert.equal(wb.atDeskCap(), false, "29 records leave room for one more");
-    globalThis.fetch = async () => ({ ok: true, json: async () => desk(30) });
+    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(desk(30)) });
     await wb.reloadDesk();
     assert.equal(wb.atDeskCap(), true, "30 records are a full desk");
   } finally {

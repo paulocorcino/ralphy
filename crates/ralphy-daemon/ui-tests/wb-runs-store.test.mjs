@@ -9,7 +9,7 @@ import { projectsStore } from "../assets/ui/wb-projects-store.ts";
 import { runsStore } from "../assets/ui/wb-runs-store.ts";
 
 // `observe` answers `runs.list`. The open project is `o/r`.
-function page(observe = async () => null) {
+function page(observe = () => Promise.resolve(null)) {
   const projects = projectsStore();
   projects.setOpen("o/r");
   const listeners = {};
@@ -37,7 +37,7 @@ function page(observe = async () => null) {
 }
 
 // Answers each call with the next reply in `replies`.
-const scripted = (replies) => async () => replies.shift() ?? null;
+const scripted = (replies) => () => Promise.resolve(replies.shift() ?? null);
 
 test("a failed runs read after a good one keeps the runs, marked not current", async () => {
   const { store } = page(scripted([{ status: "ok", runs: [] }, { status: "error", reason: "the run store is locked" }]));
@@ -65,7 +65,7 @@ test("an unreadable run is counted, and its id is never shown", async () => {
 // Two reads can be in flight; the daemon may answer the older one last.
 test("a runs reply that arrives after a newer read is dropped", async () => {
   const answers = [];
-  const { store } = page(() => new Promise((resolve) => answers.push(resolve)));
+  const { store } = page(() => new Promise((resolve) => { answers.push(resolve); }));
   const older = store.hydrateRuns();
   const newer = store.hydrateRuns();
   answers[1]({ status: "ok", runs: [{ runid: "new" }] });
@@ -106,7 +106,7 @@ test("a kept runs read is told on the window, and a failed one is not", async ()
 
 test("the selected run stays while it is listed, and setCurrentRun is its writer", async () => {
   const runs = [{ runid: "a" }, { runid: "b" }];
-  const { store } = page(async () => ({ status: "ok", runs }));
+  const { store } = page(() => Promise.resolve({ status: "ok", runs }));
   await store.hydrateRuns();
   assert.equal(store.currentRun().runid, "a");
   store.setCurrentRun("b");
@@ -119,10 +119,10 @@ test("the selected run stays while it is listed, and setCurrentRun is its writer
 });
 
 test("the runs follow the open project: the socket, the selection and a read", () => {
-  const { store, projects, subs, window } = page(async () => ({ status: "ok", runs: [] }));
+  const { store, projects, subs, window } = page(() => Promise.resolve({ status: "ok", runs: [] }));
   store.init();
   let reads = 0;
-  store.hydrateRuns = async () => reads++;
+  store.hydrateRuns = () => Promise.resolve(reads++);
   store.runsByProject["o/b"] = [{ runid: "run-2" }];
   store.setCurrentRun("run-1");
   projects.setOpen("o/b");

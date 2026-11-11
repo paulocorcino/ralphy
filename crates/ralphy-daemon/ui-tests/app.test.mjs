@@ -236,8 +236,8 @@ test("the tree, the board and git each react to the project toggle opens", () =>
 
 test("removing the open project closes it and sends workbench:project-changed", async () => {
   const { state, events, window } = toggleShell();
-  window.WBDaemon.observe = async () => ({ status: "ok" });
-  state.$store.modals.askConfirm = async () => true;
+  window.WBDaemon.observe = () => Promise.resolve({ status: "ok" });
+  state.$store.modals.askConfirm = () => Promise.resolve(true);
   const a = { slug: "owner/a" };
   const b = { slug: "owner/b" };
   state.$store.projects.setProjects([a, b]);
@@ -263,9 +263,9 @@ test("the create action asks for the name through the prompt dialog", async () =
   const written = [];
   window.WBDaemon = { write: (verb, payload) => written.push({ verb, payload }) };
   const asked = [];
-  window.Alpine.store("modals").askPrompt = async (opts) => {
+  window.Alpine.store("modals").askPrompt = (opts) => {
     asked.push(opts);
-    return null;
+    return Promise.resolve(null);
   };
   window.getShell = () => ({});
   const prompted = [];
@@ -313,7 +313,7 @@ test("a login the daemon accepted reads the desk again and restores the view", a
     globalThis.setInterval = realSetInterval;
   }
   window.dispatchEvent(new CustomEvent("workbench:logged-in"));
-  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => { setImmediate(r); });
   assert.deepEqual(calls, ["afterLogin", "restoreView", "adoptDeskCheckouts"]);
 });
 
@@ -322,7 +322,7 @@ test("a login the daemon accepted reads the desk again and restores the view", a
 // A shell whose `WBDaemon.observe` answers each call with the next reply.
 function observedShell(replies) {
   const { state, window } = loadShell();
-  window.WBDaemon.observe = async () => replies.shift() ?? null;
+  window.WBDaemon.observe = () => Promise.resolve(replies.shift() ?? null);
   state.$store.projects.setOpen("o/r");
   state.$store.modals.flash = () => {};
   return state;
@@ -343,16 +343,16 @@ test("a create through the write seam asks the files to re-list the folder and r
   const { window, sent } = eventShell({
     document: { addEventListener: (type, fn) => type === "workbench:action" && listeners.push(fn) },
   });
-  window.WBDaemon = { write: async () => ({ status: "ok" }), withCheckout: (p) => p };
+  window.WBDaemon = { write: () => Promise.resolve({ status: "ok" }), withCheckout: (p) => p };
   const realDaemon = globalThis.WBDaemon;
   globalThis.WBDaemon = window.WBDaemon;
   window.getShell = () => ({});
   window.Alpine.store("tabs").openTab = () => {};
-  window.Alpine.store("modals").askPrompt = async () => "x.txt";
+  window.Alpine.store("modals").askPrompt = () => Promise.resolve("x.txt");
   window.Alpine.store("modals").flash = () => {};
   try {
     for (const fn of listeners) await fn({ detail: { action: "create", project: "o/r", path: "src", kind: "file" } });
-    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => { setImmediate(r); });
   } finally {
     globalThis.WBDaemon = realDaemon;
   }
@@ -406,9 +406,9 @@ test("a reopened socket refreshes an open board, as the tab becoming visible doe
 test("Remove project names a remoteless repo by its folder, not its path- slug", async () => {
   const { state } = loadShell();
   const asked = [];
-  state.$store.modals.askConfirm = async (o) => {
+  state.$store.modals.askConfirm = (o) => {
     asked.push(o.message);
-    return false;
+    return Promise.resolve(false);
   };
   await state.removeProject({ slug: "path-8ee0b8b587ea7891", name: "widget", path: "/home/me/widget/" });
   await state.removeProject({ slug: "owner/repo", path: "/home/me/elsewhere" });
@@ -460,19 +460,19 @@ function writeSeam(reply) {
   });
   const written = [];
   window.WBDaemon = {
-    write: async (verb, payload) => (written.push({ verb, payload }), reply),
+    write: (verb, payload) => Promise.resolve((written.push({ verb, payload }), reply)),
     withCheckout: (p) => p,
   };
   const flashed = [];
   window.Alpine.store("modals").flash = (m) => flashed.push(m);
   const answer = { yes: true };
-  window.Alpine.store("modals").askConfirm = async () => answer.yes;
+  window.Alpine.store("modals").askConfirm = () => Promise.resolve(answer.yes);
   const act = async (detail) => {
     const realDaemon = globalThis.WBDaemon;
     globalThis.WBDaemon = window.WBDaemon;
     try {
       for (const fn of listeners) await fn({ detail });
-      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => { setImmediate(r); });
     } finally {
       globalThis.WBDaemon = realDaemon;
     }
@@ -513,12 +513,12 @@ test("a rename writes the full paths and flashes only a refusal", async () => {
   let seam = writeSeam({ status: "ok" });
   await seam.act({ action: "rename", project: "o/r", from: "src/a.txt", to: "src/b.txt" });
   assert.deepEqual(seam.written.map((w) => [w.verb, w.payload.path, w.payload.to]), [["file.rename", "src/a.txt", "src/b.txt"]]);
-  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => { setImmediate(r); });
   assert.deepEqual(seam.flashed, []);
 
   seam = writeSeam({ status: "error", message: "already exists" });
   await seam.act({ action: "rename", project: "o/r", from: "src/a.txt", to: "src/b.txt" });
-  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => { setImmediate(r); });
   assert.equal(seam.flashed.length, 1);
   assert.match(seam.flashed[0], /Could not rename/);
 });

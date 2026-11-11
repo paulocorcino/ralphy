@@ -357,10 +357,10 @@ test("holdMoveReport holds only button-less moves over a selection under a TUI",
 test("clipboardContent prefers an image, then text, then nothing", async () => {
   const item = (parts) => ({
     types: Object.keys(parts),
-    getType: async (t) => parts[t],
+    getType: (t) => Promise.resolve(parts[t]),
   });
   const png = { type: "image/png", size: 3 };
-  const text = { text: async () => "hello" };
+  const text = { text: () => Promise.resolve("hello") };
   // An iOS screenshot: image only — `readText()` would have resolved "".
   assert.deepEqual(await clipboardContent([item({ "image/png": png })]), { image: png });
   // Both on one item: the image wins, as in the keyboard paste event.

@@ -147,7 +147,7 @@ test("popup-here adopts the members of a detached fence into the same entry", as
   assert.deepEqual(calls.filter(([name]) => name === "forgetRecord"), [["forgetRecord", "w2"]]);
   assert.deepEqual(calls.filter(([name]) => name === "showDetachGlyph"), [["showDetachGlyph", "f", true]]);
   // The name the popup gave its note is recorded once the desk has loaded.
-  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => { setImmediate(r); });
   assert.deepEqual(calls.filter(([name]) => name === "saveNotes"), [
     ["saveNotes", [{ id: "n1", rect: {}, path: "notes/a.note" }]],
   ]);

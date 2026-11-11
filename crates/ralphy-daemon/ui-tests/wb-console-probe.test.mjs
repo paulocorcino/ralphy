@@ -35,7 +35,7 @@ function fakePage(status) {
 const term = { rows: 40, cols: 90, buffer: { active: { baseY: 1200 } } };
 const place = () => ({ view: "maximized", renderer: "dom", dpr: 3 });
 // The microtasks of the fake daemon's replies.
-const settle = () => new Promise((done) => setTimeout(done, 0));
+const settle = () => new Promise((done) => { setTimeout(done, 0); });
 
 test("frameFigures counts the slow frames, and those with output in them", () => {
   const figures = frameFigures([16, 17, 40, 16, 90], [false, true, true, false, false]);
