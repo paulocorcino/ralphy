@@ -54,7 +54,7 @@ document.addEventListener("workbench:action", (e) => {
 **Discover the live event catalogue by grepping** — it grows with the mock, so a
 static list here would rot:
 
-```
+```text
 grep -rn "WB.emit(" mocks/workbench-shell/*.js
 ```
 

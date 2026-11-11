@@ -55,16 +55,17 @@ through `git::resolve_toplevel` and — because a worktree's own toplevel is
 the worktree — normalising to the **primary** tree via
 `git rev-parse --git-common-dir` before anything else:
 
-```
+```sh
 ralphy worktree add <name> [--base <ref>] [--repo <path>]
 ralphy worktree list --format json [--repo <path>]
 ralphy worktree remove <name> [--repo <path>]
 ```
 
-- **`add`**: `git worktree add --no-track -b <name> .ralphy/worktrees/<name>
-  <base>` (ADR-0058 §2 verbatim; `--no-track` so a name that matches a
-  remote branch does not silently track it), then `git config --local
-  branch.<name>.base <base>` so the base survives for a later diff. `<base>`
+- **`add`**:
+  `git worktree add --no-track -b <name> .ralphy/worktrees/<name> <base>`
+  (ADR-0058 §2 verbatim; `--no-track` so a name that matches a
+  remote branch does not silently track it), then
+  `git config --local branch.<name>.base <base>` so the base survives for a later diff. `<base>`
   defaults to the primary tree's current branch. `<name>` is a branch name
   and a directory name at once: it must pass `git check-ref-format
   --branch` and contain no path separator. Refused when the branch already

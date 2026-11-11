@@ -1045,7 +1045,7 @@ same defects exist there today:
   the path is a mutable attribute of it. So adding `C:\Dev\ralphy-copy` would
   move the entry for `owner/ralphy` away from `C:\Dev\ralphy`. `daemon add`
   refuses when the slug is already registered at another path that still
-  exists: "owner/repo is already added from <path>". A registered path that no
+  exists: "owner/repo is already added from \<path>". A registered path that no
   longer exists is still updated. That is the moved-repo case the registry
   already handles.
 - **A path that does not exist, with `--init`.** `--init` never creates a

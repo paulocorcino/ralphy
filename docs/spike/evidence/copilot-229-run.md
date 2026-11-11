@@ -6,7 +6,7 @@ Windows 11 Pro 26200.
 
 ## The command
 
-```
+```text
 ./target/debug/ralphy.exe run --repo C:/Dev/FinCal --agent copilot \
     --only-issue 108 --base-branch origin/master \
     --max-minutes-per-issue 12 --verbose
@@ -49,7 +49,7 @@ sentinel and `classify_copilot_outcome` let `timed_out` win.
 
 ## The final status lines
 
-```
+```text
 2026-07-20 08:55:57  INFO ralphy_agent_copilot: copilot execution ended outcome=Timeout exited_cleanly=false timed_out=true exit_code=None committed=true
 2026-07-20 08:55:57  INFO ralphy_core::emit: non-green — stopping run number=108 outcome=Timeout
 2026-07-20 08:55:57  WARN ralphy::run::report: knowledge consolidation failed — notes kept loose for retry error=the copilot adapter does not support one-shot consolidate yet (tasks.rs is a later slice, ADR-0040 Tier 1)

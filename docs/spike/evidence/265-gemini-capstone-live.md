@@ -82,7 +82,7 @@ mirroring the Cursor capstone's #117.
 
 Execute-turn terminal envelope (`result.stats`), pinned `gemini-3.5-flash`:
 
-```
+```text
 total_tokens 569377 · input_tokens 565088 · output_tokens 1342 · cached 448012 · input 117076
 models: {"gemini-3.5-flash": {…}}   # single key — pinning removed the router
 ```

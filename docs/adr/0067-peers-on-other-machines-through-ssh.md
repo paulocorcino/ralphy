@@ -849,7 +849,7 @@ no longer in the field after the first sign-in, and is not needed: the peer
 key is on the host.
 
 **F3. The sign-in note says what changed.** When the password adds the peer
-key, the note is "Ralphy installed its SSH key on <destination>. The next
+key, the note is "Ralphy installed its SSH key on \<destination>. The next
 connections do not need the password."
 
 **F4. Install on request.** The connection step has a check box, unchecked

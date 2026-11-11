@@ -60,7 +60,7 @@ settings struct import, `KEYS`, a `with_gemini` helper, and arms in `set`,
 
 ## D2 — The prompt goes in on stdin, and the ordering is a discovered contract
 
-```
+```text
 gemini --approval-mode yolo --skip-trust --session-id <id> \
        --output-format stream-json --policy <ralphy-owned.toml> \
        [--model <id>]   < <charter on stdin>

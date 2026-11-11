@@ -114,7 +114,7 @@ Severidade: **C**rítico / **A**lto / **M**édio / **B**aixo. "Evidência" = arq
 ### C2 — Kanban vazio: erro do verbo engolido, indistinguível de "sem issues" (sintoma relatado pelo operador)
 
 - **Evidência:** `app.js:606–625` — `loadBoard()` faz `if (!reply || reply.status !== "ok") return;` e `catch { /* leave it empty */ }`.
-- **Causa-raiz:** `board.list` não lê nada in-daemon — spawna `ralphy issues --format json --board` no cwd do repo (lib.rs:911–948). Se esse CLI falha (`gh` não autenticado no ambiente do daemon, tracker não configurado, exit ≠ 0, repo sem issues.md/GitHub), a reply é `{status:"error", message}` — e a UI silencia, mostrando o empty-state "No issues in <slug>".
+- **Causa-raiz:** `board.list` não lê nada in-daemon — spawna `ralphy issues --format json --board` no cwd do repo (lib.rs:911–948). Se esse CLI falha (`gh` não autenticado no ambiente do daemon, tracker não configurado, exit ≠ 0, repo sem issues.md/GitHub), a reply é `{status:"error", message}` — e a UI silencia, mostrando o empty-state "No issues in \<slug>".
 - **Correção esperada:** estado de erro visual distinto do vazio, exibindo a `message` verbatim do verbo (mesmo padrão do flash de recusa do `label.set`). Isso também é pré-requisito de diagnóstico: sem ele não dá para saber a causa concreta no ambiente do operador.
 
 ### C3 — Login/TOTP inoperante em localhost e modal Security enganoso (sintoma relatado)

@@ -12,7 +12,7 @@ Phases are filled as they run; `⏳` marks not-yet-run.
 Command (issue #111, a leaf issue — #112 is `blocked_by [108,109,110,111]` and was
 correctly skipped with no plan):
 
-```
+```text
 ralphy.exe run --repo C:/Dev/FinCal --issues 111 --agent kimi --base-branch master --dry-run --verbose
 ```
 
@@ -39,7 +39,7 @@ Log: `docs/live/kimi-274-plan.log`.
 The **run path** prices `kimi-code/k3`, but the **usage scan** does not. The
 project aggregate line logged `unknown model — add \`k3\` to pricing.toml`:
 
-```
+```text
 run: in 57.0k … · $0.30 · project: paulocorcino/FinCal in 23.0M … out 3.0M · $32.36+?
 WARN ralphy::pricing: unknown model — add `k3` to pricing.toml to price it  model="k3"
 ```
@@ -84,7 +84,7 @@ no-model-attribution sentinel (79 rows), honest-unpriced by design, unrelated.
 Non-dry-run on #111, base `feat/opencode-v2` (the app lives there; `master` is
 docs-only). Log: `docs/live/kimi-274-execute.log`.
 
-```
+```text
 kimi execution ended outcome=Stuck exited_cleanly=false timed_out=false exit_code=Some(1) committed=true
 non-green — stopping run number=111 outcome=Stuck
 run finished outcome="non_green" … up=84205 cr=4164864 cw=0 out=26275 duration_s=991
@@ -209,14 +209,14 @@ Operator ran a real `kimi logout` (credentials dir emptied). A clean plan-only r
 on #111 (base `feat/opencode-v2`, no stale `.ralphy/plan.md`) **did not stop on the
 auth message** — it fell through to the generic error:
 
-```
+```text
 planning cmd=kimi model=kimi-code/k3
 Error: kimi produced no plan at C:/Dev/FinCal\.ralphy\plan.md
 ```
 
 Log: `docs/live/kimi-274-loggedout.log`, kimi.log:
 
-```
+```text
 error: failed to run prompt: config.invalid: Model "kimi-code/k3" is not configured in config.toml…
 ```
 
@@ -253,7 +253,7 @@ arrive as ADR-0028 D9 predicts.
 
 Raw `kimi -p … -m kimi-code/k3` on the exhausted quota → **exit code `1`** (not `75`):
 
-```
+```text
 error: failed to run prompt: provider.api_error: 403 You've reached your usage limit for this billing cycle. Your quota will be refreshed in the next cycle. …
 ```
 

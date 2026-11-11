@@ -16,9 +16,8 @@
     "default": true,
     // MD013 (line length) is off by D9: it wraps prose and the repo does not wrap
     "MD013": false,
-    // debt: 219 sites
-    "MD033": false,
-    // debt: 147 sites
-    "MD040": false
+    // br breaks lines in the table cells of the converted papers in docs/research;
+    // p and img set the phone screenshots of the README side by side
+    "MD033": { "allowed_elements": ["br", "p", "img"] }
   }
 }

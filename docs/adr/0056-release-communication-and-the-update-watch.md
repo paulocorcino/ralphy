@@ -419,7 +419,7 @@ binary, the `PATH` line, the autostart and the store together.
 `install.sh` for Linux and macOS, `install.ps1` for Windows. The README
 gives one line for each:
 
-```
+```sh
 curl -fsSL https://raw.githubusercontent.com/paulocorcino/ralphy/main/assets/install/install.sh | sh
 irm https://raw.githubusercontent.com/paulocorcino/ralphy/main/assets/install/install.ps1 | iex
 ```

@@ -84,7 +84,7 @@ Kimi is a Typer app. A **multi-word prompt passed positionally through
 `Start-Process -ArgumentList`** got re-split and the second word was interpreted
 as a subcommand:
 
-```
+```text
 kimi ... --prompt 'Say hello and nothing else.'   # via Start-Process ArgumentList
 => Error: No such command 'hello'.   (exit 2)
 ```
@@ -107,7 +107,7 @@ codes — useful signal.
 
 Ran headless in `C:\Dev\FinCal` **while logged out**:
 
-```
+```text
 kimi --work-dir C:\Dev\FinCal --print --output-format stream-json --prompt hello
 ```
 
@@ -138,7 +138,7 @@ First headless run also **materialized `~/.kimi/`** from nothing (see §6).
 
 Every run writes a session tree:
 
-```
+```text
 ~/.kimi/sessions/<workdir-hash>/<session-id>/
     ├── context.jsonl   # full message log (system prompt, turns)
     └── wire.jsonl      # wire-protocol event stream
@@ -299,7 +299,7 @@ Ran the full battery authenticated (OAuth → Kimi Code) in `C:\Dev\FinCal`.
 **The invocation the adapter should use** (works everywhere; avoids the Typer
 arg-split and the Windows encoding trap):
 
-```
+```text
 kimi --work-dir <ws> --print --input-format text --output-format stream-json -y -m kimi-code/kimi-for-coding
      < <prompt on stdin>
 ```

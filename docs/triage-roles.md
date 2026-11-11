@@ -25,7 +25,7 @@ control separate) is recorded in [adr/0001-triage-vocabulary-and-stop-before.md]
 
 ## State machine
 
-```
+```text
             ┌───────────────┐
 new issue → │ needs-triage  │
             └───────┬───────┘

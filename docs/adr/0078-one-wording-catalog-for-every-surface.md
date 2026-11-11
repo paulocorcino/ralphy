@@ -159,7 +159,7 @@ ADR-0065, outside the `CAUSE` table.
 **D13. In the terminal, a failure prints its cause first, then its remedy,
 then the anyhow chain as today.**
 
-```
+```text
 error: nothing is staged
 Stage a file first.
   cause: <the git message, unchanged>

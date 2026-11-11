@@ -17,7 +17,7 @@ repositions every window from a `ResizeObserver` on the workspace.
 That assumption costs the operator their layout. Measured on the shipped build,
 1400×900 → 800×600 → 1400×900 with nothing touched by hand:
 
-```
+```text
 before:  [40,40,600,380]  [700,300,600,380]   workspace 1052×854
 shrunk:  [ 0,40,452,380]  [  0,134,452,380]   workspace  452×554
 back:    [ 0,40,452,380]  [  0,134,452,380]   workspace 1052×854   ← does not return

@@ -222,7 +222,7 @@ Accumulation needs a home that **survives** the thing being measured. Ralphy's
 ledger there is wiped. So the ledger lives **outside the repo**, central and
 durable:
 
-```
+```text
 ~/.ralphy/usage/<project-id>.jsonl     # one file per project, append-only
 ```
 

@@ -19,7 +19,7 @@ CONTEXT.md. Do not invent synonyms.
 
 Status: proposed
 Kind: structural
-Protects: <one or two characteristics>
+Protects: \<one or two characteristics>
 
 <!--
 Status — exactly one of:
@@ -60,7 +60,7 @@ code ("The daemon never runs git"). Include the explicit "no"s: what this
 decision forbids is often worth more than what it allows.
 -->
 
-**D1.** <rule>
+**D1.** \<rule>
 
 ## Consequences
 

@@ -62,7 +62,7 @@ ADR's translation strategy:
 
 ## 2. Claude — live
 
-```
+```sh
 $ claude -p "reply OK" --effort zzinvalid
 Warning: Unknown --effort value 'zzinvalid' — ignoring it and using the default
 effort. Valid values: low, medium, high, xhigh, max.
@@ -86,7 +86,7 @@ an open question: Claude stays *Direct map* by necessity, not by choice.
 
 ## 3. Codex — live
 
-```
+```sh
 $ codex exec -c model_reasoning_effort=zzinvalid "reply OK and nothing else"
 model: gpt-5.6-sol
 reasoning effort: zzinvalid

@@ -50,7 +50,7 @@ separately rather than silently fixed here.
 
 ## D2 — The prompt goes in on stdin, and this is not negotiable
 
-```
+```text
 copilot --allow-all-tools --output-format json --session-id <uuid> \
         --no-remote --no-remote-export --disable-builtin-mcps --no-ask-user \
         [--model <id>] [--effort <level>]   < <charter on stdin>
@@ -134,7 +134,7 @@ flags are introduced.**
 `DEFAULT_CODEX_EFFORT` shape — is **rejected**, because effort is not a
 universal axis:
 
-```
+```sh
 $ copilot … --model kimi-k2.7-code --effort medium
 Error: Model "kimi-k2.7-code" does not support reasoning effort configuration.
 exit = 1

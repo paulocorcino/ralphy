@@ -34,14 +34,14 @@ browser and the daemon itself.
 
 ## Build
 
-```
+```sh
 cargo build --release
 ```
 
 Use `target/release/ralphy` below (or `cargo run --` while iterating). For a
 disposable bench that never touches your real `~/.ralphy`:
 
-```
+```text
 RALPHY_DAEMON_DIR=/tmp/ralphy-bench ralphy daemon setup
 RALPHY_DAEMON_DIR=/tmp/ralphy-bench ralphy daemon
 ```

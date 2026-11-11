@@ -50,7 +50,7 @@ in `docs/adr/0052-local-fleet-validation.md` at the wrap-up.
 
 ### Distro listeners before bring-up
 
-```
+```text
 LISTEN 127.0.0.53%lo:53 · 10.255.255.254:53 · *:80 · *:8222 · *:1433 · *:4222 · *:8080
 ```
 
@@ -67,7 +67,7 @@ the documented one-time edit appending
 
 **The daemon refused to announce, legibly**, on first start:
 
-```
+```text
 WARN ralphy_daemon: --peer-store was given but this daemon is un-baptized —
 run `ralphy daemon setup` to mint its identity, then restart; announcing nothing
 ```
@@ -165,7 +165,7 @@ why `install` must be run from the operator's own shell.
 
 With the WSL peer up, the Windows daemon **would not start**:
 
-```
+```text
 Error: binding the daemon listener on 127.0.0.1:7257
 Caused by: os error 10048  (address already in use)
 ```
@@ -184,7 +184,7 @@ Reversing the start order is worse, because it fails **silently**:
 
 In that second case the fleet view reported:
 
-```
+```text
 "state": "unauthorized",
 "diagnosis": "peer WSL: Ubuntu-22.04 refused the credential — its token was
 rotated; restart that daemon with --peer-store to re-announce"
@@ -211,7 +211,7 @@ port makes the two federate.
 Re-verified live by recreating the collision with the guard in place — Windows
 daemon first on 7257, peer second on 7257:
 
-```
+```text
 "state": "refused",
 "diagnosis": "peer WSL: Ubuntu-22.04 was not dialled: it announces
 127.0.0.1:7257, the port this daemon is bound to — a connection there arrives
@@ -223,7 +223,7 @@ repo rows, with no restart of the Windows daemon.
 
 With distinct ports, the handshake succeeds:
 
-```
+```text
 "state": "reachable", "diagnosis": "peer WSL: Ubuntu-22.04 answered the handshake",
 "nudgeable": true
 ```
@@ -233,7 +233,7 @@ With distinct ports, the handshake succeeds:
 `ralphy init` run in `~/FinCal-353`, inside the distro. **The gate reported the
 environment truthfully and blocked:**
 
-```
+```text
 Error: `gh label list --json name,color` failed: unknown command "label" for "gh"
 ```
 
@@ -425,7 +425,7 @@ it through the same proxy (`config.unset`, `{"status":"ok"}`, and the peer's
 
 Confirmed native, from the distro's own process table:
 
-```
+```text
 57447 56840  ralphy run --if-idle --agent claude --branch-mode new
 57985 57447  /home/corcino/.local/bin/claude --model opus -p --dangerously-skip-permissions …
               --settings /home/corcino/FinCal-353/.ralphy/runs/20260731-051652/ralphy.settings.json
@@ -486,7 +486,7 @@ terminate was still `reachable` because the shutdown had not finished.
 With `wsl --list --running` showing only `docker-desktop`, and nothing holding
 port 7357:
 
-```
+```text
 descriptor still on disk: True
 ```
 
@@ -516,13 +516,13 @@ path at all.
 
 ### The nudge revives it, and systemd owns what comes back
 
-```
+```text
 POST /api/fleet/nudge?daemon_id=01KYVG62RH1SBHXQX23J1DTHB4  →  {"nudged":true}
 ```
 
 The peer returned to `reachable` with both repos listed. Inside the distro:
 
-```
+```text
 daemon pid=270 ppid=260
 /lib/systemd/systemd --user
 ```
@@ -541,7 +541,7 @@ The first reading looked like the lingering story: with `disable-linger` and a
 nudge, the peer was `reachable` at t+5 s and gone by t+10 s. But the same poll
 **with lingering enabled** died just as fast:
 
-```
+```text
 t+8s  linger=yes: reachable
 t+16s linger=yes: reachable
 t+24s linger=yes: reachable
@@ -553,7 +553,7 @@ Fourteen samples at 8 s, with lingering **on** throughout, and the two tracking
 each other perfectly — the recovery at t+40 s is a later command of this
 capstone restarting the distro, not the daemon recovering on its own:
 
-```
+```text
 t+8s    distro=up    peer=reachable
 t+16s   distro=down  peer=unreachable
 t+24s   distro=down  peer=unreachable
@@ -589,7 +589,7 @@ A third attempt held the distro up with a long-running `wsl.exe -e sleep`, so
 `vmIdleTimeout` could not fire, then disabled lingering and nudged. The daemon
 **stayed up** throughout:
 
-```
+```text
 t+6s   distro=up  peer=reachable
 t+12s  distro=up  peer=reachable
 t+18s  distro=up  peer=reachable
@@ -723,7 +723,7 @@ symlink into `node_modules` whose shebang is `#!/usr/bin/env node`, and `node`
 is off `PATH` too — so from the daemon's environment they die before doing
 anything:
 
-```
+```text
 /usr/bin/env: ‘node’: No such file or directory
 ```
 
