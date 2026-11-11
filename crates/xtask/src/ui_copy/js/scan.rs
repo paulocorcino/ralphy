@@ -1,6 +1,8 @@
 //! The expression reader for `js::scan`: bracket matching, argument and
 //! expression bounds, and how an expression becomes the text of one row.
 
+use std::fmt::Write as _;
+
 use super::super::lex::{Piece, Tok, Token};
 use super::super::{decode_entities, html, squeeze, CopyFns, Found, Kind};
 
@@ -244,7 +246,7 @@ impl Scan<'_> {
                 }
                 Part::Hole(e) => {
                     concatenated = true;
-                    text.push_str(&format!("{{{}}}", squeeze(&e)));
+                    write!(text, "{{{}}}", squeeze(&e)).expect(crate::WRITE_TO_STRING);
                 }
             }
         }
@@ -316,24 +318,15 @@ impl Scan<'_> {
                     continue;
                 }
             }
-            out.extend(self.text_found(x, y, kind, strip_html, needs_space));
+            let found = self.text_found(x, y, kind, strip_html);
+            out.extend(found.filter(|f| !needs_space || f.text.contains(' ')));
         }
     }
 
     /// The row of the alternative `x..y` read as text. `None` when it says
-    /// nothing, or has no space when `needs_space` asks for one.
-    fn text_found(
-        &self,
-        x: usize,
-        y: usize,
-        kind: Kind,
-        strip_html: bool,
-        needs_space: bool,
-    ) -> Option<Found> {
+    /// nothing.
+    fn text_found(&self, x: usize, y: usize, kind: Kind, strip_html: bool) -> Option<Found> {
         let (text, concatenated, fragments) = self.render(x, y, strip_html)?;
-        if needs_space && !text.contains(' ') {
-            return None;
-        }
         Some(Found {
             text,
             line: self.toks[x].line,

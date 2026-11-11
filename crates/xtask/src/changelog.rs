@@ -12,6 +12,7 @@
 //! without risking the history.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -257,7 +258,7 @@ pub(crate) fn render_changelog(history: &History) -> String {
          [Releases page](https://github.com/paulocorcino/ralphy/releases).\n",
     );
     for record in &history.releases {
-        out.push_str(&format!("\n## {} — {}\n", record.version, record.date));
+        write!(out, "\n## {} — {}\n", record.version, record.date).expect(crate::WRITE_TO_STRING);
         out.push_str(&render_entries(&record.entries));
     }
     out
@@ -280,7 +281,7 @@ pub(crate) fn render_notes(record: &ReleaseRecord) -> String {
         }
         let source = topic_source(&record.entries[i..], entry);
         if current != Some(entry.kind) {
-            out.push_str(&format!("\n### {}\n\n", entry.kind.page_heading()));
+            write!(out, "\n### {}\n\n", entry.kind.page_heading()).expect(crate::WRITE_TO_STRING);
             current = Some(entry.kind);
         }
         out.push_str(&bullet(&notes_line(source), &source.id));
@@ -340,7 +341,7 @@ fn render_entries(entries: &[Entry]) -> String {
     let mut current: Option<Kind> = None;
     for entry in entries {
         if current != Some(entry.kind) {
-            out.push_str(&format!("\n### {}\n\n", entry.kind.heading()));
+            write!(out, "\n### {}\n\n", entry.kind.heading()).expect(crate::WRITE_TO_STRING);
             current = Some(entry.kind);
         }
         out.push_str(&bullet(&entry.text, &entry.id));

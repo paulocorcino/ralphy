@@ -213,7 +213,6 @@ fn fetch_body(url: &str) -> Result<String, String> {
             }
             Err(e) => {
                 last_err = format!("releases transport error: {e}");
-                continue;
             }
         }
     }

@@ -176,7 +176,7 @@ pub fn consolidate_knowledge(
         is_codex_auth_error,
     )?;
     let after = snapshot();
-    Ok(fold_rollout_usage(&before, &after, model))
+    Ok(fold_rollout_usage(&before, &after, model.as_deref()))
 }
 
 /// Run a one-shot headless `codex exec` agent-triage session (ADR-0017). Mirrors

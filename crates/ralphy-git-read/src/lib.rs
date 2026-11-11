@@ -338,7 +338,7 @@ mod tests {
                 assert!(sha.len() >= 7, "short sha too short: {sha}");
                 assert!(sha.chars().all(|c| c.is_ascii_hexdigit()), "not hex: {sha}");
             }
-            other => panic!("expected a detached head, got {other:?}"),
+            other @ Head::Branch { .. } => panic!("expected a detached head, got {other:?}"),
         }
     }
 

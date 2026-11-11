@@ -141,15 +141,28 @@ impl PtySession {
     /// line would not reach it as text: an argument holds a character that
     /// cmd.exe reads as a command character, or the quotes around the program
     /// path would be removed.
+    #[expect(
+        clippy::unnecessary_debug_formatting,
+        reason = "the errors quote the program as they did before the fields were taken apart"
+    )]
     pub fn spawn(cmd: PtyCommand) -> Result<Self> {
-        if cfg!(windows) && may_run_through_cmd(&cmd.program) {
-            if let Some(reason) = batch_refusal(&cmd.program, &cmd.args) {
-                anyhow::bail!("refusing to start {:?}: {reason}", cmd.program);
+        let PtyCommand {
+            program,
+            args,
+            cwd,
+            env,
+            env_remove,
+            rows,
+            cols,
+        } = cmd;
+        if cfg!(windows) && may_run_through_cmd(&program) {
+            if let Some(reason) = batch_refusal(&program, &args) {
+                anyhow::bail!("refusing to start {program:?}: {reason}");
             }
         }
         let size = PtySize {
-            rows: cmd.rows,
-            cols: cmd.cols,
+            rows,
+            cols,
             pixel_width: 0,
             pixel_height: 0,
         };
@@ -157,22 +170,22 @@ impl PtySession {
             .openpty(size)
             .context("opening a pseudo-terminal")?;
 
-        let mut builder = CommandBuilder::new(&cmd.program);
-        builder.args(&cmd.args);
-        if let Some(dir) = &cmd.cwd {
+        let mut builder = CommandBuilder::new(&program);
+        builder.args(&args);
+        if let Some(dir) = cwd {
             builder.cwd(dir);
         }
-        for k in &cmd.env_remove {
+        for k in env_remove {
             builder.env_remove(k);
         }
-        for (k, v) in &cmd.env {
+        for (k, v) in env {
             builder.env(k, v);
         }
 
         let child = pair
             .slave
             .spawn_command(builder)
-            .with_context(|| format!("spawning {:?} in the PTY", cmd.program))?;
+            .with_context(|| format!("spawning {program:?} in the PTY"))?;
         // Drop the slave handle: with the child as the only holder, the master
         // reader gets a clean EOF when the process tree finishes.
         drop(pair.slave);

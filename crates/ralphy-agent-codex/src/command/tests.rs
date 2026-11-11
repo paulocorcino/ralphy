@@ -15,8 +15,10 @@ fn codex_command_gives_the_status_hooks_on_one_side_of_exec() {
         "high",
         Path::new("/repo"),
         Path::new("/repo/out.txt"),
-        Path::new(HOOK_EXE),
-        Path::new(STATUS),
+        StatusHooks {
+            exe: Path::new(HOOK_EXE),
+            file: Path::new(STATUS),
+        },
     );
     let args: Vec<String> = cmd
         .get_args()
@@ -72,8 +74,10 @@ fn a_run_in_a_project_with_its_own_hooks_gets_no_trust_flag() {
         "high",
         repo.path(),
         &repo.path().join("out.txt"),
-        Path::new(HOOK_EXE),
-        Path::new(STATUS),
+        StatusHooks {
+            exe: Path::new(HOOK_EXE),
+            file: Path::new(STATUS),
+        },
     )
     .get_args()
     .map(|a| a.to_string_lossy().into_owned())
@@ -92,8 +96,10 @@ fn build_command_argv_and_env() {
         "high",
         Path::new("/repo"),
         Path::new("/repo/.ralphy/codex-last.txt"),
-        Path::new(HOOK_EXE),
-        Path::new(STATUS),
+        StatusHooks {
+            exe: Path::new(HOOK_EXE),
+            file: Path::new(STATUS),
+        },
     );
     assert_eq!(cmd.get_program().to_string_lossy(), "codex");
 
@@ -112,8 +118,10 @@ fn build_command_argv_and_env() {
             effort,
             Path::new("/repo"),
             Path::new("/repo/out.txt"),
-            Path::new(HOOK_EXE),
-            Path::new(STATUS),
+            StatusHooks {
+                exe: Path::new(HOOK_EXE),
+                file: Path::new(STATUS),
+            },
         )
         .get_args()
         .map(|a| a.to_string_lossy().into_owned())
@@ -155,8 +163,10 @@ fn neutral_top_rungs_saturate_to_codex_high() {
             word,
             Path::new("/repo"),
             Path::new("/repo/out.txt"),
-            Path::new(HOOK_EXE),
-            Path::new(STATUS),
+            StatusHooks {
+                exe: Path::new(HOOK_EXE),
+                file: Path::new(STATUS),
+            },
         );
         let args: Vec<String> = cmd
             .get_args()

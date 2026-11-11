@@ -82,7 +82,9 @@ fn parse_limit_apierror_429_with_reset_hint() {
     );
     assert_eq!(
         parse_opencode_limit(stream),
-        Some(Some("2026-06-10T18:00:00Z".into()))
+        Some(OpencodeLimit {
+            reset: Some("2026-06-10T18:00:00Z".into())
+        })
     );
 }
 
@@ -93,7 +95,12 @@ fn parse_limit_reads_a_numeric_retry_after() {
         r#""retryAfter":120}"#,
         "\n",
     );
-    assert_eq!(parse_opencode_limit(stream), Some(Some("120".into())));
+    assert_eq!(
+        parse_opencode_limit(stream),
+        Some(OpencodeLimit {
+            reset: Some("120".into())
+        })
+    );
 }
 
 #[test]
@@ -103,7 +110,12 @@ fn parse_limit_reads_a_retry_after_header_in_the_message() {
         r#"Retry-After: 45, slow down"}"#,
         "\n",
     );
-    assert_eq!(parse_opencode_limit(stream), Some(Some("45".into())));
+    assert_eq!(
+        parse_opencode_limit(stream),
+        Some(OpencodeLimit {
+            reset: Some("45".into())
+        })
+    );
 }
 
 #[test]
@@ -115,7 +127,9 @@ fn parse_limit_reads_try_again_in_from_the_message() {
     );
     assert_eq!(
         parse_opencode_limit(stream),
-        Some(Some("20 minutes".into()))
+        Some(OpencodeLimit {
+            reset: Some("20 minutes".into())
+        })
     );
 }
 
@@ -126,7 +140,10 @@ fn parse_limit_apierror_429_without_reset_hint() {
         r#"{"type":"error","name":"APIError","statusCode":429,"message":"too many requests"}"#,
         "\n",
     );
-    assert_eq!(parse_opencode_limit(stream), Some(None));
+    assert_eq!(
+        parse_opencode_limit(stream),
+        Some(OpencodeLimit { reset: None })
+    );
 }
 
 #[test]
@@ -141,7 +158,12 @@ fn parse_limit_retryable_literal_string() {
     let result = parse_opencode_limit(stream);
     assert!(result.is_some(), "must detect as limit: {result:?}");
     // The reset hint is extracted from "try again at <value>".
-    assert_eq!(result, Some(Some("2026-06-10T19:00:00Z".into())));
+    assert_eq!(
+        result,
+        Some(OpencodeLimit {
+            reset: Some("2026-06-10T19:00:00Z".into())
+        })
+    );
 }
 
 #[test]
@@ -151,7 +173,7 @@ fn parse_limit_zen_usage_limit_error() {
 "#;
     assert_eq!(
         parse_opencode_limit(stream),
-        Some(None),
+        Some(OpencodeLimit { reset: None }),
         "must detect Zen *UsageLimitError, with no reset hint"
     );
 }
@@ -185,7 +207,9 @@ fn parse_limit_detects_429_in_real_error_data_envelope() {
     );
     assert_eq!(
         parse_opencode_limit(stream),
-        Some(Some("2026-06-10T20:00:00Z".into())),
+        Some(OpencodeLimit {
+            reset: Some("2026-06-10T20:00:00Z".into())
+        }),
         "must read name/statusCode/retryAfter from error.data"
     );
 }
@@ -202,7 +226,7 @@ fn parse_limit_detects_kimi_403_billing_cycle_block() {
     );
     assert_eq!(
         parse_opencode_limit(stream),
-        Some(None),
+        Some(OpencodeLimit { reset: None }),
         "Kimi's 403 billing-cycle block is a usage limit with no reset hint"
     );
 }
@@ -256,7 +280,9 @@ fn log_limit_detects_zai_5h_cap_with_reset() {
     );
     assert_eq!(
         parse_opencode_log_limit(log),
-        Some(Some("2026-07-11 22:14:08".into())),
+        Some(OpencodeLimit {
+            reset: Some("2026-07-11 22:14:08".into())
+        }),
     );
 }
 
@@ -275,7 +301,9 @@ fn log_limit_detects_zai_weekly_limit_exhausted_wording() {
     );
     assert_eq!(
         parse_opencode_log_limit(log),
-        Some(Some("2026-07-18 11:26:07".into())),
+        Some(OpencodeLimit {
+            reset: Some("2026-07-18 11:26:07".into())
+        }),
     );
 }
 
@@ -289,7 +317,10 @@ fn log_limit_detects_kimi_billing_cycle_without_reset() {
         "your usage limit for this billing cycle. Your quota will be refreshed in ",
         "the next cycle.\"",
     );
-    assert_eq!(parse_opencode_log_limit(log), Some(None));
+    assert_eq!(
+        parse_opencode_log_limit(log),
+        Some(OpencodeLimit { reset: None })
+    );
 }
 
 #[test]
@@ -304,7 +335,9 @@ fn log_limit_is_model_agnostic_and_extracts_iso_reset() {
     );
     assert_eq!(
         parse_opencode_log_limit(log),
-        Some(Some("2026-08-01T10:30:00Z".into())),
+        Some(OpencodeLimit {
+            reset: Some("2026-08-01T10:30:00Z".into())
+        }),
     );
 }
 
@@ -315,7 +348,10 @@ fn log_limit_seen_without_usable_datetime_is_some_none() {
     // `Some(None)` — the caller then retries on the synthetic cadence rather than
     // parking on an unparseable string.
     let log = "level=ERROR error.error=\"Usage limit reached. Try again in 30 minutes.\"";
-    assert_eq!(parse_opencode_log_limit(log), Some(None));
+    assert_eq!(
+        parse_opencode_log_limit(log),
+        Some(OpencodeLimit { reset: None })
+    );
 }
 
 #[test]
@@ -408,7 +444,9 @@ fn parse_limit_detects_429_in_nested_part() {
     );
     assert_eq!(
         parse_opencode_limit(stream),
-        Some(Some("2026-06-10T18:00:00Z".into())),
+        Some(OpencodeLimit {
+            reset: Some("2026-06-10T18:00:00Z".into())
+        }),
         "must detect a 429 nested under part and extract the reset"
     );
 }

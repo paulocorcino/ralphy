@@ -40,7 +40,9 @@ pub(crate) fn ralphy_policy(imported: &[String]) -> String {
          decision = \"deny\"\n\
          priority = 100\n",
     );
-    out.push_str(&format!("denyMessage = \"{DENY_MARKER}\"\n"));
+    out.push_str("denyMessage = \"");
+    out.push_str(DENY_MARKER);
+    out.push_str("\"\n");
     for rule in imported {
         out.push('\n');
         out.push_str(rule.trim_end());

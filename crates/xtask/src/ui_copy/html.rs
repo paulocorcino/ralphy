@@ -82,9 +82,11 @@ fn text_run(
     i
 }
 
-/// Open the element whose start tag is at `i`: read the tag and, for a
-/// `<script>` or `<style>`, its body. Returns the index after them and whether
-/// text after the tag goes on with the sentence (see `start_tag`).
+/// Open the element whose start tag is at `i`: read the tag, book its
+/// attributes and, for a `<script>` or `<style>`, read its body: it is not
+/// markup. `carry` is whether text was shown in the sentence the tag may
+/// continue. Returns the index after them and whether text after the tag goes
+/// on with the sentence.
 #[expect(
     clippy::too_many_arguments,
     reason = "the scan position and state of one tag, passed on to the tag readers"
@@ -98,14 +100,19 @@ fn open_element(
     carry: bool,
     fns: CopyFns,
 ) -> (usize, bool) {
-    let (end, continues, raw_text) = start_tag(cs, i, line, stack, out, carry);
-    let Some((name, attrs)) = raw_text else {
-        return (end, continues);
-    };
-    (
-        raw_text_body(cs, end, &name, &attrs, line, fns, out),
-        continues,
-    )
+    let (name, attrs, self_closing, end) = read_tag(cs, i + 1, line);
+    let continues = continues_sentence(&name, &attrs, carry, false);
+    let own = book_attributes(&name, &attrs, stack, out);
+    if name == "script" || name == "style" {
+        return (
+            raw_text_body(cs, end, &name, &attrs, line, fns, out),
+            continues,
+        );
+    }
+    if !self_closing && !VOID.contains(&name.as_str()) {
+        stack.push((name, own));
+    }
+    (end, continues)
 }
 
 /// Skip the comment or the declaration (`<!DOCTYPE …>`) at `i`. Returns the
@@ -118,31 +125,6 @@ fn skip_declaration(cs: &[char], i: usize, line: &mut usize) -> Option<usize> {
     } else {
         None
     }
-}
-
-/// Read the start tag at `i`, book its attributes and open the element.
-/// `carry` is whether text was shown in the sentence the tag may continue.
-/// Returns the index after the tag, whether text after it goes on with the
-/// sentence, and, for a `<script>` or `<style>`, its name and attributes: its
-/// body follows and is not markup.
-fn start_tag(
-    cs: &[char],
-    i: usize,
-    line: &mut usize,
-    stack: &mut Vec<(String, Option<String>)>,
-    out: &mut Vec<Found>,
-    carry: bool,
-) -> (usize, bool, Option<(String, Vec<Attr>)>) {
-    let (name, attrs, self_closing, end) = read_tag(cs, i + 1, line);
-    let continues = continues_sentence(&name, &attrs, carry, false);
-    let own = book_attributes(&name, &attrs, stack, out);
-    if name == "script" || name == "style" {
-        return (end, continues, Some((name, attrs)));
-    }
-    if !self_closing && !VOID.contains(&name.as_str()) {
-        stack.push((name, own));
-    }
-    (end, continues, None)
 }
 
 fn starts_at(cs: &[char], i: usize, s: &str) -> bool {

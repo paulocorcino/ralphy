@@ -128,9 +128,12 @@ pub(crate) fn build_codex_command(
     effort: &str,
     root: &Path,
     out_path: &Path,
-    hook_exe: &Path,
-    status_file: &Path,
+    hooks: StatusHooks<'_>,
 ) -> Command {
+    let StatusHooks {
+        exe: hook_exe,
+        file: status_file,
+    } = hooks;
     let mut cmd = Command::new("codex");
     cmd.arg("exec")
         .arg("-C")
@@ -154,6 +157,13 @@ pub(crate) fn build_codex_command(
         .stderr(Stdio::piped())
         .env_remove("OPENAI_API_KEY");
     cmd
+}
+
+/// The program each status hook runs and the file the hooks append to.
+#[derive(Clone, Copy)]
+pub(crate) struct StatusHooks<'a> {
+    pub(crate) exe: &'a Path,
+    pub(crate) file: &'a Path,
 }
 
 /// The status hook arguments of a run in `root`, or none when the project

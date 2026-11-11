@@ -26,7 +26,9 @@ use ralphy_core::{
 };
 
 use crate::auth::{is_copilot_auth_error, COPILOT_AUTH_ERROR_MSG};
-use crate::command::{build_copilot_command, build_copilot_init_command, mint_session_id};
+use crate::command::{
+    build_copilot_command, build_copilot_init_command, mint_session_id, ModelChoice,
+};
 use crate::guards::{builtin_mcp_violation, copilot_config_path};
 use crate::outcome::preflight;
 use crate::usage::copilot_usage;
@@ -183,7 +185,16 @@ pub fn consolidate_knowledge(
     // leaving no key for the session-store read. Same argv as `build_copilot_init_command`
     // (effort `None`, escape hatch off, no images).
     let session_id = mint_session_id();
-    let cmd = build_copilot_command(&session_id, model, None, ws.repo_root(), false, &[]);
+    let cmd = build_copilot_command(
+        &session_id,
+        ModelChoice {
+            model,
+            effort: None,
+        },
+        ws.repo_root(),
+        false,
+        &[],
+    );
     run_text_session(
         TextSession {
             cmd,

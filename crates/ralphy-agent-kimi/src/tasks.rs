@@ -166,7 +166,7 @@ pub fn consolidate_knowledge(
         is_kimi_auth_error,
     )?;
     let after = snapshot();
-    Ok(fold_wire_usage(&before, &after, Some(model)))
+    Ok(fold_wire_usage(&before, &after, Some(&model)))
 }
 
 /// Write the triage thread block to `triage-threads.md` beside `out_path`, and

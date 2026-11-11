@@ -8,6 +8,8 @@
 //! and `claude-4.6-sonnet-medium-thinking` are both in its catalogue), so the
 //! decorations are stripped in a fixpoint loop rather than a fixed sequence.
 
+use std::fmt::Write as _;
+
 /// Decorations stripped off the tail of an id, longest-first so `-extra-high` is
 /// not read as a bare `-high`. Sourced from the catalogue the vendor prints when
 /// it rejects an id (`fixtures/model-invalid-2026-07-21.err`).
@@ -87,9 +89,11 @@ pub(crate) fn model_refusal_stop(log: &str, requested: Option<&str>) -> Option<a
              ids may genuinely need a paid plan.",
         );
         if is_first_party(&family) {
-            msg.push_str(&format!(
+            write!(
+                msg,
                 " `{family}` is first-party, so this refusal is unexpected."
-            ));
+            )
+            .expect(crate::WRITE_TO_STRING);
         }
     }
     Some(anyhow::anyhow!(msg))

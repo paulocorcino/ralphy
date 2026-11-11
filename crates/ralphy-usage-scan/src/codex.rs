@@ -57,7 +57,7 @@ pub(crate) fn scan_codex_with_stems(input: &CodexScan) -> Vec<(String, Interacti
             };
             let (project, actor_email) =
                 attribute(session.cwd.as_deref(), input.repos, &mut email_cache);
-            records.extend(session.into_records(project, actor_email));
+            records.extend(session.into_records(project.as_deref(), actor_email.as_deref()));
         }
     }
 
@@ -126,8 +126,8 @@ impl Session {
     /// One record per model, each paired with the rollout stem.
     fn into_records(
         self,
-        project: Option<String>,
-        actor_email: Option<String>,
+        project: Option<&str>,
+        actor_email: Option<&str>,
     ) -> Vec<(String, InteractiveRecord)> {
         let Session {
             stem,
@@ -142,8 +142,8 @@ impl Session {
                     agent: "codex".to_owned(),
                     model,
                     session_id: session_id.clone(),
-                    project: project.clone(),
-                    actor_email: actor_email.clone(),
+                    project: project.map(str::to_owned),
+                    actor_email: actor_email.map(str::to_owned),
                     // Codex `input_tokens` INCLUDES the cached subset, so subtract
                     // it out; `cache_creation` is always 0 (no write split).
                     tokens: Some(Tokens {

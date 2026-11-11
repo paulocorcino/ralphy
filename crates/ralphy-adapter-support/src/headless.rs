@@ -180,10 +180,17 @@ fn drive_headless(
         },
     );
 
+    let readers = StreamReaders {
+        rx_out,
+        out_handle,
+        rx_err,
+        err_handle,
+    };
+
     if let Err(e) = release_prompt(gate, stdin, prompt, &mut child) {
         // The kill came first, so the readers reach EOF; collect them so no
         // thread outlives the call.
-        collect_both(&rx_out, out_handle, &rx_err, err_handle);
+        readers.collect();
         return Err(e);
     }
 
@@ -198,9 +205,7 @@ fn drive_headless(
             Ok(None) => {}
             Err(e) => {
                 let e = anyhow::Error::new(e).context("polling the headless child");
-                return Err(teardown_after_error(
-                    &mut child, &rx_out, out_handle, &rx_err, err_handle, e,
-                ));
+                return Err(teardown_after_error(&mut child, readers, e));
             }
         }
         if let Some(reap) = reap_reason(switch.as_deref(), deadline, beat.as_deref(), &idle) {
@@ -220,7 +225,7 @@ fn drive_headless(
     // dies; on a natural exit it reaps whatever the CLI leaked.
     ralphy_proc_util::kill_tree(&mut child);
 
-    let (stdout_bytes, stderr_bytes) = collect_both(&rx_out, out_handle, &rx_err, err_handle);
+    let (stdout_bytes, stderr_bytes) = readers.collect();
     Ok(HeadlessOutput {
         stdout: String::from_utf8_lossy(&stdout_bytes).into_owned(),
         stderr: String::from_utf8_lossy(&stderr_bytes).into_owned(),
@@ -235,14 +240,11 @@ fn drive_headless(
 /// early leaves no process and no thread behind. Returns `error` for the caller.
 fn teardown_after_error(
     child: &mut Child,
-    rx_out: &mpsc::Receiver<Vec<u8>>,
-    out_handle: thread::JoinHandle<()>,
-    rx_err: &mpsc::Receiver<Vec<u8>>,
-    err_handle: thread::JoinHandle<()>,
+    readers: StreamReaders,
     error: anyhow::Error,
 ) -> anyhow::Error {
     ralphy_proc_util::kill_tree(child);
-    collect_both(rx_out, out_handle, rx_err, err_handle);
+    readers.collect();
     error
 }
 
@@ -370,16 +372,20 @@ fn poll_degraded(degraded: Option<&DegradedSwitch>, watch: Option<&mut DegradedW
 /// backstop against a kill that failed to close a handle — then that stream's
 /// capture is dropped and the stuck reader leaked rather than blocking the whole
 /// run.
-fn collect_both(
-    rx_out: &mpsc::Receiver<Vec<u8>>,
+struct StreamReaders {
+    rx_out: mpsc::Receiver<Vec<u8>>,
     out_handle: thread::JoinHandle<()>,
-    rx_err: &mpsc::Receiver<Vec<u8>>,
+    rx_err: mpsc::Receiver<Vec<u8>>,
     err_handle: thread::JoinHandle<()>,
-) -> (Vec<u8>, Vec<u8>) {
-    let grace = Duration::from_secs(5);
-    let stdout = recv_and_join(rx_out, out_handle, grace, "stdout");
-    let stderr = recv_and_join(rx_err, err_handle, grace, "stderr");
-    (stdout, stderr)
+}
+
+impl StreamReaders {
+    fn collect(self) -> (Vec<u8>, Vec<u8>) {
+        let grace = Duration::from_secs(5);
+        let stdout = recv_and_join(&self.rx_out, self.out_handle, grace, "stdout");
+        let stderr = recv_and_join(&self.rx_err, self.err_handle, grace, "stderr");
+        (stdout, stderr)
+    }
 }
 
 /// Run the gate, then write the prompt and close stdin. A gate error kills the

@@ -56,9 +56,9 @@ pub const ACCEPTS_IMAGES: bool = false;
 use command::{build_watched_opencode_command, StatePlugin};
 use events::{
     is_opencode_auth_error, parse_opencode_events, parse_opencode_limit, parse_opencode_log_limit,
-    usage_limit_regex, OPENCODE_AUTH_ERROR_MSG,
+    usage_limit_regex, OpencodeLimit, OPENCODE_AUTH_ERROR_MSG,
 };
-use outcome::{classify_opencode_outcome, unschedulable_opencode_limit};
+use outcome::{classify_opencode_outcome, Reported};
 use skills::materialize_opencode_skills;
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, list_models, triage_issues};
 use usage::{opencode_usage, resolved_model_label, session_id_from_stream};
@@ -145,9 +145,11 @@ impl OpenCodeAgent {
         skills_dir: &std::path::Path,
         root: &std::path::Path,
         prompt: &str,
-        timeout: std::time::Duration,
         kill_on_stderr_line: impl Fn(&str) -> bool + Send + Sync + 'static,
     ) -> Result<ralphy_adapter_support::HeadlessRun> {
+        // Clock the budget at the spawn, not method entry, so the run_deadline
+        // clamp isn't eroded by the preceding dir/skills setup.
+        let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
         let status = status::Watcher::start(&self.run_dir)?;
         let cmd = build_watched_opencode_command(
             self.model.as_deref(),
@@ -241,9 +243,6 @@ impl Agent for OpenCodeAgent {
                 "",
                 self.variant.as_deref().unwrap_or(""),
             );
-            // Clock the budget at the spawn, not method entry, so the run_deadline
-            // clamp isn't eroded by the preceding dir/skills setup.
-            let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             // No early-kill on plan: plan surfaces no usage limit today (the detector
             // below is `|_log| None`), so there is nothing for a kill to hand off to.
             // The call still streams the log live, like execute.
@@ -251,7 +250,6 @@ impl Agent for OpenCodeAgent {
                 &skills_dir,
                 ws.repo_root(),
                 ralphy_adapter_support::PLAN_CHARTER,
-                timeout,
                 |_| false,
             )?;
             let stdout = r.stdout.clone();
@@ -321,9 +319,6 @@ impl Agent for OpenCodeAgent {
                 "",
                 self.variant.as_deref().unwrap_or(""),
             );
-            // Clock the budget at the spawn, not method entry, so the run_deadline
-            // clamp isn't eroded by the preceding dir/skills setup.
-            let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             // Early-kill: a provider quota block only ever prints to `--print-logs`
             // stderr (never the JSON stream), then the child idles in silent backoff
             // until the wall timeout (FinCal #71/#73, glm-5.2). Match the same
@@ -335,7 +330,6 @@ impl Agent for OpenCodeAgent {
                 &skills_dir,
                 ws.repo_root(),
                 ralphy_adapter_support::PROMPT_EXECUTE,
-                timeout,
                 move |line| limit_re.is_match(line),
             )?;
             let stdout = r.stdout.clone();
@@ -370,22 +364,23 @@ impl Agent for OpenCodeAgent {
         // the hint so the runner falls to the ~30-min synthetic cadence (ADR-0030 D1)
         // instead of honouring it. Trustworthiness is a per-vendor extraction decision
         // (the `classify` seam, ADR-0023); Claude/Codex are stable and keep their hints.
-        if let Some(Some(reset)) = &detected {
+        if let Some(OpencodeLimit { reset: Some(reset) }) = &detected {
             info!(
                 %reset,
                 "opencode reported a usage-limit reset — discarding \
                  (OpenCode resets are unschedulable by policy)"
             );
         }
-        let limit = unschedulable_opencode_limit(detected);
 
         let outcome = classify_opencode_outcome(
             r.exited_cleanly,
             r.timed_out,
             committed,
-            &text,
-            saw_error,
-            limit,
+            Reported {
+                text: &text,
+                saw_error,
+                limit: detected.as_ref(),
+            },
         );
         let usage = opencode_usage(&stdout_text);
         info!(

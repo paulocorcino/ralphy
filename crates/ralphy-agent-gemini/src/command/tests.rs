@@ -6,10 +6,11 @@ fn argv(cmd: &Command) -> Vec<String> {
         .collect()
 }
 
-fn env_of(cmd: &Command, key: &str) -> Option<Option<String>> {
+/// The value `cmd` sets `key` to; `None` when it leaves or removes it.
+fn env_of(cmd: &Command, key: &str) -> Option<String> {
     cmd.get_envs()
         .find(|(k, _)| *k == key)
-        .map(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()))
+        .and_then(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()))
 }
 
 /// D2: the charter rides stdin. Every flag that would put a prompt on argv —
@@ -20,9 +21,11 @@ fn argv_never_carries_a_prompt_flag() {
         "s1",
         None,
         Path::new("/repo"),
-        Path::new("/ws/.ralphy/gemini-home"),
-        Path::new("/ws/.ralphy/gemini-home/ralphy-policy.toml"),
-        Some("gemini-api-key"),
+        RootArgs {
+            home: Path::new("/ws/.ralphy/gemini-home"),
+            policy: Path::new("/ws/.ralphy/gemini-home/ralphy-policy.toml"),
+            auth_type: Some("gemini-api-key"),
+        },
     );
     let args = argv(&cmd);
     for flag in [
@@ -58,9 +61,11 @@ fn argv_never_carries_plan_mode() {
         "s1",
         None,
         Path::new("/repo"),
-        Path::new("/home"),
-        Path::new("/home/ralphy-policy.toml"),
-        Some("gemini-api-key"),
+        RootArgs {
+            home: Path::new("/home"),
+            policy: Path::new("/home/ralphy-policy.toml"),
+            auth_type: Some("gemini-api-key"),
+        },
     );
     let args = argv(&cmd);
     let i = args
@@ -87,9 +92,11 @@ fn argv_never_carries_plan_mode() {
         "s1",
         Some("gemini-3.1-pro"),
         Path::new("/repo"),
-        Path::new("/home"),
-        Path::new("/home/ralphy-policy.toml"),
-        Some("gemini-api-key"),
+        RootArgs {
+            home: Path::new("/home"),
+            policy: Path::new("/home/ralphy-policy.toml"),
+            auth_type: Some("gemini-api-key"),
+        },
     );
     let args = argv(&pinned);
     let i = args.iter().position(|a| a == "-m").unwrap();
@@ -110,9 +117,11 @@ fn autonomy_argv_is_never_downgraded() {
         "s1",
         None,
         Path::new("/repo"),
-        Path::new("/home"),
-        Path::new("/home/ralphy-policy.toml"),
-        None,
+        RootArgs {
+            home: Path::new("/home"),
+            policy: Path::new("/home/ralphy-policy.toml"),
+            auth_type: None,
+        },
     );
     let args = argv(&cmd);
     let i = args
@@ -174,9 +183,11 @@ fn the_child_runs_from_the_workspace_root() {
         "s1",
         None,
         Path::new("/repo"),
-        Path::new("/home"),
-        Path::new("/home/ralphy-policy.toml"),
-        Some("gemini-api-key"),
+        RootArgs {
+            home: Path::new("/home"),
+            policy: Path::new("/home/ralphy-policy.toml"),
+            auth_type: Some("gemini-api-key"),
+        },
     );
     assert_eq!(cmd.get_current_dir(), Some(Path::new("/repo")));
 }
@@ -190,13 +201,15 @@ fn the_child_is_pointed_at_the_owned_root_and_never_the_operators() {
         "s1",
         None,
         Path::new("/ws"),
-        owned,
-        Path::new("/ws/.ralphy/gemini-home/ralphy-policy.toml"),
-        Some("gemini-api-key"),
+        RootArgs {
+            home: owned,
+            policy: Path::new("/ws/.ralphy/gemini-home/ralphy-policy.toml"),
+            auth_type: Some("gemini-api-key"),
+        },
     );
     assert_eq!(
         env_of(&cmd, "GEMINI_CLI_HOME"),
-        Some(Some(owned.display().to_string())),
+        Some(owned.display().to_string()),
         "GEMINI_CLI_HOME must name the owned root"
     );
 
@@ -307,10 +320,7 @@ fn an_inherited_vertexai_flag_is_scrubbed() {
     // Never `env_clear`: the child is Node.
     assert!(!removed.contains(&"PATH"), "{removed:?}");
     assert!(!removed.contains(&"SystemRoot"), "{removed:?}");
-    assert_eq!(
-        env_of(&cmd, "GEMINI_CLI_HOME"),
-        Some(Some("/owned".to_owned()))
-    );
+    assert_eq!(env_of(&cmd, "GEMINI_CLI_HOME"), Some("/owned".to_owned()));
 }
 
 /// Windows resolves `process.env` case-insensitively, so a variable stored as

@@ -9,6 +9,7 @@
 //! and the model reads the justification.
 
 use std::ffi::OsString;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
@@ -25,20 +26,21 @@ const JUSTIFICATION: &str = "Ralphy: the operator pushes and writes pull request
 /// One `prefix_rule` per denied command. A prefix rule matches the start of the
 /// argv, so every argument after the listed words is covered.
 fn forge_rules() -> String {
-    DENIED_FORGE_WRITES
-        .iter()
-        .map(|words| {
-            let pattern = words
-                .iter()
-                .map(|w| format!("\"{w}\""))
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!(
-                "prefix_rule(pattern=[{pattern}], decision=\"forbidden\", \
-                 justification=\"{JUSTIFICATION}\")\n"
-            )
-        })
-        .collect()
+    let mut rules = String::new();
+    for words in DENIED_FORGE_WRITES {
+        let pattern = words
+            .iter()
+            .map(|w| format!("\"{w}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        writeln!(
+            rules,
+            "prefix_rule(pattern=[{pattern}], decision=\"forbidden\", \
+             justification=\"{JUSTIFICATION}\")"
+        )
+        .expect("a write to a String does not fail");
+    }
+    rules
 }
 
 /// Write the rule file into `<dir>/.codex/rules/` and list it in that folder's

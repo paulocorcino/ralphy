@@ -77,21 +77,21 @@ pub(crate) fn codex_sessions_dir() -> Option<PathBuf> {
 pub(crate) fn fold_rollout_usage(
     before: &[PathBuf],
     after: &[PathBuf],
-    model: Option<String>,
+    model: Option<&str>,
 ) -> Usage {
     let parsed: Vec<Usage> = session_files_appeared(before, after)
         .iter()
         .filter_map(|p| std::fs::read_to_string(p).ok())
-        .map(|t| parse_codex_rollout_usage(&t, model.clone()))
+        .map(|t| parse_codex_rollout_usage(&t, model.map(str::to_owned)))
         .collect();
     // Every parsed record carries the same invocation `model`, so heaviest-with-
     // model and the fallback both resolve to it — including the zero-appeared case
     // (empty items → fallback model, zero tokens), matching the old seed result.
-    Usage::fold_usage(&parsed, model.as_deref())
+    Usage::fold_usage(&parsed, model)
 }
 
 pub(crate) fn fold_plan_rollout_usage(before: &[PathBuf], after: &[PathBuf], model: &str) -> Usage {
-    fold_rollout_usage(before, after, Some(model.to_owned()))
+    fold_rollout_usage(before, after, Some(model))
 }
 
 pub(crate) fn fold_execute_rollout_usage(
@@ -99,7 +99,7 @@ pub(crate) fn fold_execute_rollout_usage(
     after: &[PathBuf],
     model: &str,
 ) -> Usage {
-    fold_rollout_usage(before, after, Some(model.to_owned()))
+    fold_rollout_usage(before, after, Some(model))
 }
 
 /// The vendor session identity of a Codex run (ADR-0033 §5): the first appeared

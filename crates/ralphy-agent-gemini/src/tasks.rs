@@ -33,7 +33,7 @@ use ralphy_core::{
 };
 
 use crate::auth::{is_gemini_auth_error, GEMINI_AUTH_ERROR_MSG};
-use crate::command::{self, build_gemini_command, check_stdin_ceiling, mint_session_id};
+use crate::command::{self, build_gemini_command, check_stdin_ceiling, mint_session_id, RootArgs};
 use crate::{outcome, revocation, PreparedRoot};
 
 /// The spawn-failure sentence every verb shares, matching the run path's.
@@ -84,9 +84,11 @@ pub(crate) fn one_shot_command(
         &mint_session_id(),
         model,
         work_dir,
-        &root.home,
-        &policy_path,
-        auth_type.as_deref(),
+        RootArgs {
+            home: &root.home,
+            policy: &policy_path,
+            auth_type: auth_type.as_deref(),
+        },
     ))
 }
 

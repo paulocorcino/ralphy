@@ -139,6 +139,11 @@ mod tests {
     /// exists to catch. The exit code is passed here only to show it is ignored.
     #[test]
     fn status_json_verdict_ignores_the_exit_code() {
+        const LOGGED_IN: &str = concat!(
+            r#"{"status":"authenticated","isAuthenticated":true,"hasAccessToken":true,"#,
+            r#""hasRefreshToken":true,"message":"Logged in"}"#
+        );
+
         const LOGGED_OUT: &str = concat!(
             r#"{"status":"unauthenticated","isAuthenticated":false,"hasAccessToken":false,"#,
             r#""hasRefreshToken":false,"message":"Not logged in"}"#
@@ -148,10 +153,6 @@ mod tests {
             "exit 0 + isAuthenticated:false is NOT logged in"
         );
 
-        const LOGGED_IN: &str = concat!(
-            r#"{"status":"authenticated","isAuthenticated":true,"hasAccessToken":true,"#,
-            r#""hasRefreshToken":true,"message":"Logged in"}"#
-        );
         assert!(cursor_status_verdict(LOGGED_IN));
 
         // Junk, an empty answer and a missing key all fail toward "log in".

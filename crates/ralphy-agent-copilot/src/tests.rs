@@ -1,5 +1,5 @@
 use super::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The production half of a source file: the text before its first
 /// `#[cfg(test)]` line whose next non-empty line starts with `mod `. An
@@ -261,8 +261,10 @@ fn the_builder_puts_the_given_model_in_argv() {
         .with_plan_model(Some("plan-pin".into()));
     let cmd = build_copilot_command(
         "s1",
-        agent.phase_model(Phase::Plan),
-        None,
+        ModelChoice {
+            model: agent.phase_model(Phase::Plan),
+            effort: None,
+        },
         Path::new("/repo"),
         false,
         &[],
@@ -278,8 +280,10 @@ fn phase_model_gives_the_exec_pin_to_the_builder() {
         .with_plan_model(Some("plan-pin".into()));
     let cmd = build_copilot_command(
         "s1",
-        agent.phase_model(Phase::Execute),
-        None,
+        ModelChoice {
+            model: agent.phase_model(Phase::Execute),
+            effort: None,
+        },
         Path::new("/repo"),
         false,
         &[],
@@ -295,8 +299,10 @@ fn the_builder_omits_model_when_unpinned() {
     for phase in [Phase::Plan, Phase::Execute] {
         let cmd = build_copilot_command(
             "s1",
-            agent.phase_model(phase),
-            None,
+            ModelChoice {
+                model: agent.phase_model(phase),
+                effort: None,
+            },
             Path::new("/repo"),
             false,
             &[],
@@ -328,8 +334,10 @@ fn the_builder_carries_the_clamped_effort_in_argv() {
         .and_then(|e| effort::resolve_effort(Some(e), model, Some(&cat)));
     let cmd = build_copilot_command(
         "s1",
-        model,
-        effort.as_deref(),
+        ModelChoice {
+            model,
+            effort: effort.as_deref(),
+        },
         Path::new("/repo"),
         false,
         &[],
@@ -354,8 +362,10 @@ fn the_builder_omits_effort_when_unset() {
         assert_eq!(effort, None);
         let cmd = build_copilot_command(
             "s1",
-            agent.phase_model(phase),
-            effort.as_deref(),
+            ModelChoice {
+                model: agent.phase_model(phase),
+                effort: effort.as_deref(),
+            },
             Path::new("/repo"),
             false,
             &[],

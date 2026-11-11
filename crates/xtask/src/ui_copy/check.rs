@@ -6,6 +6,7 @@
 //! check (#431), so CI keeps the workbench text at zero.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -416,10 +417,12 @@ pub(crate) fn to_text(report: &Report) -> String {
     let mut out = String::new();
     out.push_str("ui-copy --check: the ADR-0065 rules over the inventory\n\n");
     for v in &report.violations {
-        out.push_str(&format!(
-            "{}:{}: {}: {}  ({})\n",
+        writeln!(
+            out,
+            "{}:{}: {}: {}  ({})",
             v.file, v.line, v.rule, v.text, v.hint
-        ));
+        )
+        .expect(crate::WRITE_TO_STRING);
     }
     let mut totals: BTreeMap<&str, usize> = BTreeMap::new();
     for v in &report.violations {
@@ -427,7 +430,7 @@ pub(crate) fn to_text(report: &Report) -> String {
     }
     out.push_str("\nViolations by rule:\n");
     for (rule, n) in &totals {
-        out.push_str(&format!("  {rule:<16} {n}\n"));
+        writeln!(out, "  {rule:<16} {n}").expect(crate::WRITE_TO_STRING);
     }
     let texts = {
         let mut seen: Vec<(&str, usize, &str)> = report
@@ -438,22 +441,26 @@ pub(crate) fn to_text(report: &Report) -> String {
         seen.dedup();
         seen.len()
     };
-    out.push_str(&format!(
-        "  {:<16} {} in {} texts\n",
+    writeln!(
+        out,
+        "  {:<16} {} in {} texts",
         "total",
         report.violations.len(),
         texts
-    ));
-    out.push_str(&format!(
+    )
+    .expect(crate::WRITE_TO_STRING);
+    write!(
+        out,
         "\nConcatenated texts (informational, ADR-0065 §9): {}\n",
         report.concatenated
-    ));
+    )
+    .expect(crate::WRITE_TO_STRING);
     if report.stale.is_empty() {
         out.push_str("Stale exemptions: none\n");
     } else {
         out.push_str("Stale exemptions (they match no text; remove them):\n");
         for e in &report.stale {
-            out.push_str(&format!("  {}: {}: {}\n", e.file, e.rule, e.text));
+            writeln!(out, "  {}: {}: {}", e.file, e.rule, e.text).expect(crate::WRITE_TO_STRING);
         }
     }
     out.push_str(if report.fails() {

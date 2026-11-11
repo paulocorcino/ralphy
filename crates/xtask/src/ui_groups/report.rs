@@ -107,8 +107,8 @@ pub(super) fn render(shell: &Shell, bindings: &[Binding], verbose: bool) -> Stri
     o
 }
 
-fn line(o: &mut String, text: String) {
-    o.push_str(&text);
+fn line(o: &mut String, text: &str) {
+    o.push_str(text);
     o.push('\n');
 }
 
@@ -142,13 +142,13 @@ fn render_summary(
     let (mixed, mixed_features) = mixed_bindings(shell, bindings);
     line(
         o,
-        format!(
+        &format!(
             "ui-groups — the members of shell() in {APP}, by the section heading they sit under\n"
         ),
     );
     line(
         o,
-        format!(
+        &format!(
             "{} members in {} sections; {HTML}: \
              {} bindings in shell() scope, {named} name a member\n",
             shell.members.len(),
@@ -158,7 +158,7 @@ fn render_summary(
     );
     line(
         o,
-        format!(
+        &format!(
             "{:<26}{:>8}{:>7}{:>16}{:>19}{:>10}{:>11}",
             "group", "members", "lines", "read outside", "written outside", "bindings", "only this"
         ),
@@ -166,7 +166,7 @@ fn render_summary(
     for (g, s) in by {
         line(
             o,
-            format!(
+            &format!(
                 "{:<26}{:>8}{:>7}{:>16}{:>19}{:>10}{:>11}",
                 g.label(),
                 s.members.len(),
@@ -180,25 +180,28 @@ fn render_summary(
     }
     line(
         o,
-        format!(
+        &format!(
             "\nbindings that mix groups: {mixed}; that mix two feature groups: {}",
             mixed_features.len()
         ),
     );
     for b in &mixed_features {
         let names: Vec<&str> = b.names.iter().map(String::as_str).collect();
-        line(o, format!("  index.html:{} [{}]", b.line, names.join(", ")));
+        line(
+            o,
+            &format!("  index.html:{} [{}]", b.line, names.join(", ")),
+        );
     }
 }
 
 /// Each section heading with its group and its number of members.
 fn render_sections(o: &mut String, shell: &Shell) {
-    line(o, "\nsections:".to_owned());
+    line(o, "\nsections:");
     for (k, s) in shell.sections.iter().enumerate() {
         let count = shell.members.iter().filter(|m| m.section == k).count();
         line(
             o,
-            format!(
+            &format!(
                 "  {:>5}  {:<9} {:>4} members  {}",
                 s.line,
                 s.group.short(),
@@ -225,7 +228,7 @@ fn named_list(list: &BTreeMap<String, BTreeSet<Group>>) -> String {
 fn render_group(o: &mut String, shell: &Shell, g: Group, s: &Stats, verbose: bool) {
     line(
         o,
-        format!(
+        &format!(
             "\n## {} ({} members, {} lines)",
             g.label(),
             s.members.len(),
@@ -237,10 +240,10 @@ fn render_group(o: &mut String, shell: &Shell, g: Group, s: &Stats, verbose: boo
         .iter()
         .map(|&n| shell.members[n].name.as_str())
         .collect();
-    line(o, format!("members: {}", names.join(", ")));
+    line(o, &format!("members: {}", names.join(", ")));
     line(
         o,
-        format!(
+        &format!(
             "read from outside ({}): {}",
             s.read_outside.len(),
             named_list(&s.read_outside)
@@ -248,7 +251,7 @@ fn render_group(o: &mut String, shell: &Shell, g: Group, s: &Stats, verbose: boo
     );
     line(
         o,
-        format!(
+        &format!(
             "written from outside ({}): {}",
             s.written_outside.len(),
             named_list(&s.written_outside)
@@ -265,7 +268,7 @@ fn render_member_lines(o: &mut String, shell: &Shell, s: &Stats) {
         let m = &shell.members[n];
         line(
             o,
-            format!(
+            &format!(
                 "  {:>5}-{:<5} {:<7} {:<32} {}",
                 m.first,
                 m.last,

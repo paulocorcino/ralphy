@@ -7,7 +7,9 @@
 //! The link/copy/ignore loop lives in [`ralphy_adapter_support::expose_skills`];
 //! only the discovery folder and the receipt guard are Copilot's own.
 
-use anyhow::Result;
+use std::path::Path;
+
+use anyhow::{Context, Result};
 use include_dir::{include_dir, Dir};
 
 use ralphy_core::Workspace;
@@ -110,6 +112,51 @@ pub(crate) fn skills_load_violation(stdout: &str, required: &[String]) -> Option
     None
 }
 
+impl crate::CopilotAgent {
+    /// D9's in-band load receipt, the single seam both phases call. `Err` aborts
+    /// the run: a charter whose skill invocations silently do nothing is a run that
+    /// only looks like it worked. No escape hatch — unlike D7's builtin MCPs, a
+    /// missing skill grants the operator no capability worth opting into.
+    // A test calls it on an agent with the builtin-MCP opt-in: the opt-in cannot reach it.
+    #[expect(
+        clippy::unused_self,
+        reason = "the D9 seam is an agent method on purpose"
+    )]
+    pub(crate) fn check_skills_loaded(&self, stdout: &str, required: &[String]) -> Result<()> {
+        match skills_load_violation(stdout, required) {
+            Some(msg) => Err(anyhow::anyhow!("{msg}")),
+            None => Ok(()),
+        }
+    }
+
+    /// D9's check before the session: `copilot skill list --json` in the repo
+    /// must list every Ralphy skill as enabled. It runs before any billed turn,
+    /// so a run with missing skills costs nothing.
+    #[expect(
+        clippy::unused_self,
+        reason = "the D9 seam is an agent method on purpose"
+    )]
+    pub(crate) fn check_skills_listed(&self, repo: &Path, required: &[String]) -> Result<()> {
+        let out = ralphy_adapter_support::run_headless(
+            crate::command::build_copilot_skill_list_command(repo),
+            "",
+            crate::SKILL_LIST_TIMEOUT,
+        )
+        .context("running `copilot skill list`")?;
+        if out.timed_out || !out.exit.is_some_and(|e| e.success()) {
+            anyhow::bail!(
+                "`copilot skill list` failed, so Ralphy cannot confirm that its skills \
+                 are there; stopping to be safe: {}",
+                out.stderr.trim()
+            );
+        }
+        match skill_list_violation(&out.stdout, required) {
+            Some(msg) => Err(anyhow::anyhow!("{msg}")),
+            None => Ok(()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,7 +247,7 @@ mod tests {
     /// aborts.
     #[test]
     fn materialize_copilot_skills_leaves_a_clean_git_tree() {
-        let git = |args: &[&str], cwd: &std::path::Path| {
+        let git = |args: &[&str], cwd: &Path| {
             std::process::Command::new("git")
                 .args(args)
                 .current_dir(cwd)

@@ -30,7 +30,7 @@ pub(crate) fn copilot_store_db() -> Option<PathBuf> {
 /// [`Usage`] (ADR-0041 D10): `input→input`, `output→output`,
 /// `cache_read→cache_read`, `cache_creation→cache_creation`, `model→model`.
 /// `reasoning_tokens` never reaches here — the reader does not select it.
-fn usage_from(tokens: Tokens, model: Option<String>) -> Usage {
+fn usage_from(tokens: &Tokens, model: Option<String>) -> Usage {
     Usage {
         input: tokens.input,
         output: tokens.output,
@@ -48,7 +48,7 @@ pub(crate) fn copilot_usage(session_id: &str) -> Usage {
         return Usage::default();
     };
     let (tokens, model) = ralphy_usage_scan::session_tokens(&db, session_id);
-    usage_from(tokens, model)
+    usage_from(&tokens, model)
 }
 
 /// The reasoning effort Copilot RECORDED for `session_id`, or `None` when no home
@@ -80,7 +80,7 @@ mod tests {
             cache_creation: 4,
         };
         assert_eq!(
-            usage_from(tokens, Some("gpt-5".into())),
+            usage_from(&tokens, Some("gpt-5".into())),
             Usage {
                 input: 1,
                 output: 2,

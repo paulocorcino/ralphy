@@ -1,4 +1,5 @@
 use super::*;
+use std::fmt::Write as _;
 
 fn score(path: &str, name: &str, value: u32) -> Score {
     Score {
@@ -11,7 +12,10 @@ fn score(path: &str, name: &str, value: u32) -> Score {
 
 /// A function named `name` that scores `ifs`: one `if` after another, each 1.
 fn function_of(name: &str, ifs: u32) -> String {
-    let body: String = (0..ifs).map(|i| format!("if x == {i} {{}} ")).collect();
+    let body = (0..ifs).fold(String::new(), |mut body, i| {
+        write!(body, "if x == {i} {{}} ").expect("a write to a String does not fail");
+        body
+    });
     format!("fn {name}(x: u32) {{ {body}}}\n")
 }
 
