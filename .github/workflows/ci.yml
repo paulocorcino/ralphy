@@ -65,6 +65,9 @@ env:
   # The html-validate of the `checks` job. The html-validate step of
   # `xtask gate` runs the same version through npx.
   HTMLVALIDATE_VERSION: "11.21.0"
+  # The stylelint of the `checks` job. The stylelint step of `xtask gate`
+  # runs the same version through npx.
+  STYLELINT_VERSION: "18.0.0"
 
 jobs:
   lint:
@@ -163,6 +166,11 @@ jobs:
       # are at the html-validate step of crates/xtask/src/gate/steps.rs.
       - name: HTML (html-validate)
         run: npx -y "html-validate@${HTMLVALIDATE_VERSION}" crates/ralphy-daemon/assets/ui
+
+      # The rules are in .stylelintrc.json; their reasons and debt counts
+      # are at the stylelint step of crates/xtask/src/gate/steps.rs.
+      - name: CSS (stylelint)
+        run: npx -y "stylelint@${STYLELINT_VERSION}" "crates/ralphy-daemon/assets/ui/styles/*.css"
 
       # A dependency in a Cargo.toml that no source file names. The binary
       # sits in the working directory, so `cargo machete` finds it on PATH.

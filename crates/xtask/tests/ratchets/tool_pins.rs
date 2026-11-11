@@ -158,6 +158,7 @@ const PIN_NAMES: &[(&str, &str)] = &[
     ("MARKDOWNLINT", "markdownlint-cli2"),
     ("YAMLLINT", "yamllint"),
     ("HTMLVALIDATE", "html-validate"),
+    ("STYLELINT", "stylelint"),
 ];
 
 /// The name of the tool of `<key>_VERSION`. A key that `PIN_NAMES` lacks

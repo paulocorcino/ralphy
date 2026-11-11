@@ -165,6 +165,21 @@ pub const STEPS: &[Step] = &[
             "crates/ralphy-daemon/assets/ui",
         ],
     ),
+    // .stylelintrc.json lists the core rules of stylelint-config-recommended
+    // 19.0.0, with no `extends`, so npx needs no second package. Rules off
+    // (JSON has no comments). Debt: no-descending-specificity 64 sites,
+    // no-duplicate-selectors 4, declaration-property-value-keyword-no-deprecated
+    // 2, property-no-deprecated 1.
+    step(
+        "stylelint",
+        &["CSS (stylelint)"],
+        "npx",
+        &[
+            "-y",
+            "stylelint@18.0.0",
+            "crates/ralphy-daemon/assets/ui/styles/*.css",
+        ],
+    ),
     // CI runs gitleaks in `security.yml`, with its own action.
     step(
         "gitleaks",
