@@ -137,12 +137,12 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     carry: SpawnCarry,
   ) {
     try {
-      if (req.checkout && !(await checkoutStillThere(window, repo, req.checkout))) {
+      if ((req.checkout ?? "") !== "" && !(await checkoutStillThere(window, repo, req.checkout))) {
         return spawnPlaceholder({ ...carry, checkout: req.checkout }, req.checkout);
       }
       return spawnWindow(req, label, repo, carry);
     } finally {
-      relaunching.delete(carry?.id);
+      relaunching.delete(carry.id);
     }
   }
 
@@ -174,10 +174,11 @@ export function createPlaceholders(deps: PlaceholderDeps) {
   // peer, so whether it runs is not known; it asks again on each fleet read.
   function spawnPlaceholder(
     record: SpawnCarry,
-    missing?: string | null,
+    missingAt?: string | null,
     refused?: { message: string | null } | null,
     held?: { unheard?: boolean },
   ) {
+    let missing = missingAt ?? "";
     const { win, body, restartBtn, closeBtn } = buildChrome(
       record.agent,
       record.repo,
@@ -207,7 +208,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
 
     // The peer's words. `peerAction` is the button's action ("wake", "retry",
     // "relaunch"); the box starts as "not running" until the fleet says more.
-    const daemon = WBFleet?.refDaemon(record.repo) || "";
+    const daemon = WBFleet.refDaemon(record.repo);
     const canLaunch = OPTS.canLaunch !== false;
     type BoxAction = WBConsoleSession.PeerAction | "relaunch";
     let peerAction: BoxAction = "relaunch";
@@ -283,7 +284,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
         ),
       );
     }
-    let unheard = !!(daemon && held?.unheard);
+    let unheard = daemon !== "" && held?.unheard === true;
     // The box says why it waits: the list did not hear from the peer. "Try
     // again" asks the list again, and launches only when the list heard from
     // the peer and the console does not run there.
@@ -325,7 +326,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     win._peerRefresh = showPeer;
 
     const markMissing = (name: string | null | undefined) => {
-      missing = name;
+      missing = name ?? "";
       win.classList.add("missing-checkout");
       text.textContent = `Worktree ${name} no longer exists.`;
       btn.textContent = "Relaunch in primary";
@@ -333,7 +334,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     if (missing) markMissing(missing);
     // A placeholder restored for a recorded worktree asks whether that tree is
     // still there (no spawn), so the box says "gone" on load, not on the click.
-    else if (record.checkout) {
+    else if ((record.checkout ?? "") !== "") {
       void checkoutStillThere(window, record.repo, record.checkout).then((there) => {
         if (!there && win.isConnected) markMissing(record.checkout);
       });
@@ -347,7 +348,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
       budget.untrackDormancy(win);
       wins.delete(win);
       applyExtent();
-      if (!respawn) changed();
+      if (respawn !== true) changed();
     };
     // The attach `restoreDesk` makes, into this record's id and rect. A session
     // another window drives parks this one as a watcher (`reconnectDecision`).
@@ -364,13 +365,11 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     // One check at a time: a click and a resume can arrive together.
     let checking: Promise<HostedSession | null | undefined> | null = null;
     const check = () => {
-      if (!checking) {
-        checking = liveSessionFor(deps, win, record)
-          .catch(() => null)
-          .finally(() => {
-            checking = null;
-          });
-      }
+      checking ??= liveSessionFor(deps, win, record)
+        .catch(() => null)
+        .finally(() => {
+          checking = null;
+        });
       return checking;
     };
     win._revive = async () => {
@@ -443,10 +442,13 @@ export function createPlaceholders(deps: PlaceholderDeps) {
         confirmLabel: "Close",
         danger: true,
       });
-      if (!ok) return;
+      if (ok !== true) return;
       forgetRecord(win._deskId);
       drop();
-      WB.emit("console-close", { repo: record.repo || null, agent: record.agent });
+      WB.emit("console-close", {
+        repo: record.repo === undefined || record.repo === "" ? null : record.repo,
+        agent: record.agent,
+      });
     };
 
     wins.add(win);

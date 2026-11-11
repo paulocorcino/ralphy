@@ -84,7 +84,7 @@ export function releaseDialogs() {
       let needCode = false;
       try {
         const r = await apiFetch("GET /api/security/state");
-        if (r.ok) needCode = (await r.json()).totp_enrolled === true;
+        if (r.ok) needCode = (await r.json()).totp_enrolled;
       } catch (e) {
         // The daemon asks for the code anyway; the page then shows its refusal.
         console.warn("security state:", e);
@@ -95,13 +95,13 @@ export function releaseDialogs() {
         .localSessions()
         .map(
           (s) =>
-            s.name ||
-            (s.repo && s.repo !== "~" ? this.$store.projects.projectLabel(s.repo) : "home"),
+            (s.name ?? "") ||
+            (s.repo !== "" && s.repo !== "~" ? this.$store.projects.projectLabel(s.repo) : "home"),
         );
       // A peer that can be woken through `wsl.exe` is the one the update takes
       // after this daemon (ADR-0056 §11). Its consoles close only if it takes a
       // new version, so they are counted apart.
-      const wsl = (this.$store.projects.fleetPeers || []).filter((p) => p.nudgeable);
+      const wsl = this.$store.projects.fleetPeers.filter((p) => p.nudgeable);
       const peers = wsl.map((p) => p.name || p.environment);
       const peerConsoles = wsl.reduce(
         (n, p) => n + this.$store.projects.peerSessions(p.daemon_id).length,
@@ -120,7 +120,7 @@ export function releaseDialogs() {
     // The line about the WSL peers in the update question.
     get updatePeerText(): string {
       const u = this.relUpdate;
-      if (!u.peers || !u.peers.length) return "";
+      if (u.peers.length === 0) return "";
       const names = u.peers.join(", ");
       const n = u.peerConsoles || 0;
       if (!n) return `Then Ralphy updates the WSL copy too: ${names}.`;
@@ -170,10 +170,11 @@ export function releaseDialogs() {
         return "Code rejected. Enter the current code from your authenticator app.";
       }
       if (result.status === 429) {
-        return `Too many attempts. Wait ${result.retryAfter || "a few"} seconds and try again.`;
+        const wait = (result.retryAfter ?? "") || "a few";
+        return `Too many attempts. Wait ${wait} seconds and try again.`;
       }
       if (result.status === 0) return "Could not reach Ralphy. Try again.";
-      return result.message || `The update did not start (${result.status}).`;
+      return (result.message ?? "") || `The update did not start (${result.status}).`;
     },
     // Read the release view until a different build answers, then load the
     // page again: the new build brings its own workbench. The same build
@@ -212,7 +213,6 @@ export function releaseDialogs() {
       };
     },
     async setReleaseWatch(enable: boolean) {
-      if (!WBRelease) return;
       try {
         await WBRelease.setWatch(enable);
         this.$store.release.releaseWatchChanged(enable);

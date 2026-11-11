@@ -33,7 +33,7 @@ export async function duplicateNode(files: DuplicateFiles, node: WunderbaumNode)
   ).catch(() => null);
   // A refused listing must NOT degrade to an empty `taken` set.
   if (!listing || WBFail.isError(listing) || !Array.isArray(listing.entries)) {
-    files.$store.modals.flash?.("couldn't list the folder");
+    files.$store.modals.flash("couldn't list the folder");
     return;
   }
   const to = duplicateRel(rel, new Set(listing.entries.map((e) => e.name)));
@@ -43,7 +43,7 @@ export async function duplicateNode(files: DuplicateFiles, node: WunderbaumNode)
     WBDaemon.withCheckout({ repo: files.$store.projects.openSlug, path: rel, to }, checkout),
   ).catch(() => null);
   if (!reply || WBFail.isError(reply)) {
-    files.$store.modals.flash?.(
+    files.$store.modals.flash(
       reply
         ? WBFail.failed(reply, "Could not duplicate the file: the daemon gave no reason.")
         : "Could not duplicate the file: the daemon did not answer.",

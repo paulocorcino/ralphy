@@ -60,11 +60,11 @@ export function snapshotLevel(files: ReconcileFiles, node: WunderbaumNode): Leve
   node.visit((n: WunderbaumNode) => {
     if (files.isFolder(n) && n.expanded) expandedRels.push(files.relPath(n));
   });
-  const activeRel = files.relPath(files.rawTree()?.getActiveNode?.() || null) || null;
+  const activeRel = files.relPath(files.rawTree()?.getActiveNode() ?? null) || null;
   // The teardown shrinks the list under the viewport, the browser clamps
   // `scrollTop` to the shorter list, and the re-activation in `restoreView`
   // scrolls to the selected row. Nothing else puts the offset back.
-  const scrollTop = files.rawTree()?.element?.scrollTop ?? 0;
+  const scrollTop = files.rawTree()?.element.scrollTop ?? 0;
   return { expandedRels, activeRel, scrollTop };
 }
 
@@ -82,7 +82,7 @@ export async function reexpand(files: ReconcileFiles, expandedRels: string[]) {
 // keeps its row selected, and the snapshot is dropped.
 async function restoreSelection(files: ReconcileFiles, seq: number, activeRel: string | null) {
   const target = (files._revealSeq || 0) > seq ? files._revealedRel : activeRel;
-  if (target) await files.revealRel(target, { restore: true });
+  if (target !== null && target !== "") await files.revealRel(target, { restore: true });
 }
 
 // The selection, the search marks and the scroll offset after a re-list.
@@ -90,11 +90,11 @@ export async function restoreView(files: ReconcileFiles, seq: number, view: Leve
   await restoreSelection(files, seq, view.activeRel);
   // A search is on: the reloaded level has no match marks yet.
   const raw = files.rawTree();
-  if (raw?.isFilterActive?.()) raw.updateFilter();
+  if (raw?.isFilterActive() === true) raw.updateFilter();
   // A reveal that landed mid-pass owns the scroll position.
   if (raw?.element && (files._revealSeq || 0) === seq) {
     // The list must have its full height first, or the offset is clamped.
-    raw.updatePendingModifications?.();
+    raw.updatePendingModifications();
     raw.element.scrollTop = view.scrollTop;
   }
 }
@@ -112,7 +112,7 @@ function waitForLevel(waiters: Map<string, (() => void)[]>, rel: string) {
 // during a nested re-run land on THIS list and are drained here once.
 function releaseWaiters(waiters: Map<string, (() => void)[]>, rel: string) {
   const list = waiters.get(rel);
-  if (list?.length) for (const r of list.splice(0)) r();
+  if (list !== undefined && list.length > 0) for (const r of list.splice(0)) r();
 }
 
 // The reentrancy guard of a level's reconcile (`reconcileLevel` of wb-files.ts).
@@ -123,9 +123,9 @@ export async function reconcileLevel(
 ): Promise<void> {
   // Reentrancy guard: overlapping removeChildren()+load() passes double
   // the children. A pass in flight for `rel` re-runs once when it finishes.
-  files._reconciling ||= new Set();
-  files._reconcilePending ||= new Set();
-  files._reconcileWaiters ||= new Map();
+  files._reconciling ??= new Set();
+  files._reconcilePending ??= new Set();
+  files._reconcileWaiters ??= new Map();
   // A COALESCED caller still gets a promise that settles when the level
   // does; otherwise a reveal awaiting it runs against children the pending
   // pass is about to tear down.
@@ -165,7 +165,7 @@ export async function reconcileOnce(files: PassFiles, nodeAtCall: WunderbaumNode
   const source = await files.fetchTreeLevel(rel);
   const node = liveNode(files, nodeAtCall, rel);
   if (!node) return;
-  const hasGitignore = source.some((n) => !n.folder && n.title === ".gitignore");
+  const hasGitignore = source.some((n) => n.folder !== true && n.title === ".gitignore");
   // A write to a file already listed nudges its directory too. When the
   // rows on screen already match the fresh listing, the teardown would
   // change nothing but the operator's scroll position.

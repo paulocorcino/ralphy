@@ -30,7 +30,9 @@ export function runHostVerb(verb: string, payload: Record<string, string>): Prom
         for (const event of fed.events) s = WBHosts.next(s, { type: "event", event });
       } else if (st.status === "exited") {
         resolve(
-          st.code === 0 ? null : s.failure?.message || `The command ended with code ${st.code}.`,
+          st.code === 0
+            ? null
+            : (s.failure?.message ?? "") || `The command ended with code ${st.code}.`,
         );
       } else {
         resolve(WBFail.failed(st, "The daemon did not start the command."));
@@ -43,16 +45,16 @@ export function runHostVerb(verb: string, payload: Record<string, string>): Prom
 // stays until `refreshLive` answers, and an offline row that answers is idle.
 export function carriedState(reachable: boolean, prev: Project | undefined) {
   if (!reachable) return "offline";
-  return prev?.state === "offline" ? "idle" : prev?.state || "idle";
+  return prev?.state === "offline" ? "idle" : (prev?.state ?? "") || "idle";
 }
 
 // The environment label and the daemon name stay until `loadFleet` answers.
 export function carriedEnv(prev: Project | undefined) {
-  return prev?.env || "";
+  return prev?.env ?? "";
 }
 
 export function carriedDaemonName(prev: Project | undefined) {
-  return prev?.daemonName || "";
+  return prev?.daemonName ?? "";
 }
 
 // `/api/fleet` is the ONLY source of this daemon's own environment label and
@@ -62,9 +64,9 @@ export function stampLocalRows(
   mine: { environment?: string; os?: string; daemon_name?: string },
 ) {
   for (const p of projects) {
-    p.env = mine.environment || "";
-    p.os = mine.os || "";
-    p.daemonName = mine.daemon_name || "";
+    p.env = mine.environment ?? "";
+    p.os = mine.os ?? "";
+    p.daemonName = mine.daemon_name ?? "";
   }
 }
 
@@ -84,13 +86,13 @@ function peerRow(x: FleetRepoRow) {
     name: x.name || x.slug,
     path: x.path || "",
     root: WBFleet.peerRoot(x),
-    branch: x.branch || "",
+    branch: x.branch ?? "",
     branches: [],
     // The peer's OWN working-tree facts, same classification as `loadRepos`.
-    dirty: !!x.dirty,
+    dirty: x.dirty === true,
     state: x.reachable ? "idle" : "offline",
     remote: WBProject.isGitHubRemote(x.remote) ? "github" : "local",
-    remoteUrl: x.remote || "",
+    remoteUrl: x.remote ?? "",
     tree: [],
     ...peerFacts(x),
   };
@@ -115,7 +117,7 @@ export async function wakeRefusal(
 ) {
   const refusal = r.ok ? null : await r.json().catch(() => null);
   return WBFail.failed(
-    { message: woke?.diagnosis || refusal?.error },
+    { message: (woke?.diagnosis ?? "") || (refusal?.error ?? "") },
     "Could not wake the peer: the peer did not answer.",
   );
 }
@@ -123,9 +125,8 @@ export async function wakeRefusal(
 // Why a failed `/api/fleet` read failed: the daemon's own words when it
 // answered, else that it did not.
 export function fleetFailReason(e: unknown) {
-  return String((e as Error)?.message || "").startsWith("the daemon")
-    ? (e as Error).message
-    : "the daemon did not answer";
+  const message = e instanceof Error ? e.message : "";
+  return message.startsWith("the daemon") ? message : "the daemon did not answer";
 }
 
 /** What an update reads, writes or calls on the store `projects`. */
@@ -140,11 +141,15 @@ type UpdateStore = {
 // install on the host (ADR-0067).
 export async function updatePeer(store: UpdateStore, messages: Messages, daemonId: string) {
   const peer = store.fleetPeers.find((p) => p.daemon_id === daemonId);
-  if (!peer?.destination || store.updating[daemonId]) return false;
+  const destination = peer?.destination ?? "";
+  if (peer === undefined || destination === "" || store.updating[daemonId] === true) return false;
   store.updating[daemonId] = true;
   try {
-    const payload: Record<string, string> = { destination: peer.destination, name: peer.name };
-    if (peer.identity_file) payload.identity = peer.identity_file;
+    const identity = peer.identity_file ?? "";
+    const payload: Record<string, string> =
+      identity === ""
+        ? { destination, name: peer.name }
+        : { destination, name: peer.name, identity };
     for (const verb of ["host.install", "host.add"]) {
       const failure = await runHostVerb(verb, payload);
       if (failure !== null) {
@@ -183,7 +188,7 @@ export async function readFleet(store: FleetStore) {
   // socket reopen) must not both append the peers: the newest read owns
   // the peer rows, and they replace, never add to, what is there.
   const seq = ++store._fleetSeq;
-  const localRows = () => store.projects.filter((p) => !p.daemon);
+  const localRows = () => store.projects.filter((p) => (p.daemon ?? "") === "");
   try {
     const r = await apiFetch("GET /api/fleet");
     if (seq !== store._fleetSeq) return;

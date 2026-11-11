@@ -59,7 +59,7 @@ export function wbFiles() {
     // alone made EVERY collapsed folder answer "file".
     isFolder(node: WunderbaumNode | null | undefined) {
       if (!node) return false;
-      return !!(node.data?.folder || node.lazy || Array.isArray(node.children));
+      return node.data.folder === true || node.lazy || Array.isArray(node.children);
     },
 
     // The Devicon class of a file; folders use Wunderbaum defaults.
@@ -72,7 +72,7 @@ export function wbFiles() {
     filesFollowProject() {
       void this.$nextTick(() => {
         this.destroyTree();
-        if (this.$store.projects.openSlug) this.mountTree();
+        if ((this.$store.projects.openSlug ?? "") !== "") this.mountTree();
       });
     },
     // The tree, its `tree` channel and its context menu (wb-files-mount.ts).
@@ -82,7 +82,7 @@ export function wbFiles() {
 
     // False only when the daemon client script is not loaded (a unit test).
     useDaemonTree() {
-      return !!window.WBDaemon?.observe;
+      return Boolean(window.WBDaemon.observe);
     },
 
     // One directory level, cache-first (wb-files-levels.ts).
@@ -115,7 +115,7 @@ export function wbFiles() {
     // Cache key, scoped by REPO and by CHECKOUT (#406).
     treeKey(rel: string) {
       const slug = this.$store.projects.openSlug;
-      return `${slug}\n${this.$store.checkouts.checkoutOf(slug) || ""}\n${rel}`;
+      return `${slug}\n${this.$store.checkouts.checkoutOf(slug) ?? ""}\n${rel}`;
     },
 
     // Re-read a level painted from cache (wb-files-levels.ts).
@@ -164,9 +164,11 @@ export function wbFiles() {
     // The daemon says it could not watch a dir of this tree (`reason`), or
     // `null` when a new socket holds every dir again.
     treeWatchFailed(reason: string | null) {
-      this.treeNotLive = reason
-        ? `The file list no longer updates by itself: ${reason}. Reopen the project to try again.`
-        : "";
+      this.treeNotLive =
+        (reason ?? "") === ""
+          ? ""
+          : `The file list no longer updates by itself: ${reason}. ` +
+            "Reopen the project to try again.";
     },
 
     _treeSub: null as TreeSub | null, // the `tree` channel of the open project, if any
@@ -207,9 +209,9 @@ export function wbFiles() {
     },
 
     openFileSearch() {
-      if (!this.$store.projects.openSlug) return;
+      if ((this.$store.projects.openSlug ?? "") === "") return;
       this.fileSearch.open = true;
-      void this.$nextTick(() => this.$refs.fileSearch?.focus?.());
+      void this.$nextTick(() => this.$refs["fileSearch"]?.focus());
     },
 
     // Escape, or the lupe again: field, query and filter all go.
@@ -224,14 +226,14 @@ export function wbFiles() {
     clearFileSearchQuery() {
       this.fileSearch.query = "";
       this.fileSearch.seq++;
-      this.$refs.fileSearch?.focus?.();
+      this.$refs["fileSearch"]?.focus();
       return this.clearFileSearch();
     },
 
     setFileSearchMode(mode: string) {
       if (this.fileSearch.mode === mode) return Promise.resolve();
       this.fileSearch.mode = mode;
-      this.$refs.fileSearch?.focus?.();
+      this.$refs["fileSearch"]?.focus();
       return this.fileSearchNow();
     },
 
@@ -254,13 +256,13 @@ export function wbFiles() {
     // assigned, null-checked and destroyed.
     rawTree() {
       const t = this._tree;
-      return t && window.Alpine?.raw ? window.Alpine.raw(t) : t;
+      return t && typeof window.Alpine.raw === "function" ? window.Alpine.raw(t) : t;
     },
 
     // The rels of every expanded folder — the tree's current shape.
     expandedRels() {
       const rels: string[] = [];
-      this.rawTree()?.root?.visit((n: WunderbaumNode) => {
+      this.rawTree()?.root.visit((n: WunderbaumNode) => {
         if (this.isFolder(n) && n.expanded) rels.push(this.relPath(n));
       });
       return rels;
@@ -338,7 +340,7 @@ export function wbFiles() {
       return (
         this.rawTree()?.findFirst(
           (n: WunderbaumNode) => this.isFolder(n) && this.relPath(n) === rel,
-        ) || null
+        ) ?? null
       );
     },
 
@@ -375,8 +377,8 @@ export function wbFiles() {
     // On `workbench:checkout-changed`: a tree built for another checkout is
     // remounted (cache key, watch and rows are per checkout).
     filesFollowCheckout() {
-      const ref = this.$store.projects.openSlug;
-      if (ref && this._treeCheckout !== this.$store.checkouts.checkoutOf(ref)) {
+      const ref = this.$store.projects.openSlug ?? "";
+      if (ref !== "" && this._treeCheckout !== this.$store.checkouts.checkoutOf(ref)) {
         this.destroyTree();
         this.mountTree();
       }
@@ -448,12 +450,12 @@ export function wbFiles() {
 
     // The Files-header buttons create relative to the tree's active node.
     createHere(kind: "file" | "folder") {
-      this.emitCreate(this.rawTree()?.getActiveNode() || null, kind);
+      this.emitCreate(this.rawTree()?.getActiveNode() ?? null, kind);
     },
 
     // The header buttons' tooltip: the directory a create lands in.
     createTitle(kind: string) {
-      return newEntryTitle(kind, this.createDir(this.rawTree()?.getActiveNode() || null));
+      return newEntryTitle(kind, this.createDir(this.rawTree()?.getActiveNode() ?? null));
     },
 
     // The fields every gesture on one node sends.
@@ -473,7 +475,7 @@ export function wbFiles() {
       window.addEventListener("workbench:peer-woken", (e) => this.filesFollowWake(e.detail.daemon));
       window.addEventListener("workbench:checkout-changed", () => this.filesFollowCheckout());
       // The tab became visible, or a login: the socket sends what it missed.
-      window.addEventListener("workbench:panels-reread", () => this._treeSub?.replay?.());
+      window.addEventListener("workbench:panels-reread", () => this._treeSub?.replay());
       // `/` and Ctrl/Cmd+Shift+F (`wire()` in app.ts).
       window.addEventListener("workbench:file-search-open", () => this.openFileSearch());
       window.addEventListener(
@@ -486,7 +488,10 @@ export function wbFiles() {
       // nudge alone would leave a new entry invisible.
       window.addEventListener("workbench:tree-dirty", (e) => {
         Promise.resolve(this.onTreeDirty(e.detail.rel))
-          .then(() => (e.detail.reveal ? this.revealRel(e.detail.reveal) : null))
+          .then(() => {
+            const rel = e.detail.reveal ?? "";
+            return rel === "" ? null : this.revealRel(rel);
+          })
           .catch(logFailure("the tree did not refresh"));
       });
     },

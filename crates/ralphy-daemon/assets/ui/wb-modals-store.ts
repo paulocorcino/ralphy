@@ -35,13 +35,25 @@ export type ModalsStoreDeps = {
 // Whether the focus is on an element that takes the keys: a field, an editable
 // element or the code editor.
 function focusTakesKeys(el: HTMLElement | null) {
-  return !!(
+  return Boolean(
     el &&
     (el.tagName === "INPUT" ||
       el.tagName === "TEXTAREA" ||
       el.isContentEditable ||
-      el.closest(".monaco-editor"))
+      el.closest(".monaco-editor")),
   );
+}
+
+// The confirm dialog's state for `opts`, open.
+function confirmModalOf(opts: ConfirmAsk) {
+  return {
+    open: true,
+    title: (opts.title ?? "") || "Confirm",
+    message: opts.message ?? "",
+    confirmLabel: (opts.confirmLabel ?? "") || "Confirm",
+    cancelLabel: (opts.cancelLabel ?? "") || "Cancel",
+    danger: opts.danger ?? false,
+  };
 }
 
 // Whether the Settings, Security, Run or Branch dialog is on the modal stack.
@@ -130,7 +142,7 @@ export function modalsStore(_deps: ModalsStoreDeps) {
         // and the modal under it would read as the top.
         "@keydown.escape.window"(this: object, e: Event) {
           if (self._escapeEvent === e) return;
-          if (isOpen(this) && self.isTopModal(path)) {
+          if (Boolean(isOpen(this)) && self.isTopModal(path)) {
             self._escapeEvent = e;
             close();
           }
@@ -138,7 +150,7 @@ export function modalsStore(_deps: ModalsStoreDeps) {
         // Watches the flag, not the close methods: `logOff()` clears flags
         // directly, and that close must still pop the stack.
         "x-effect"(this: { $el: Element }) {
-          const open = !!isOpen(this);
+          const open = Boolean(isOpen(this));
           if (open === was) return;
           was = open;
           if (open) self.modalOpened(path, this.$el);
@@ -159,23 +171,23 @@ export function modalsStore(_deps: ModalsStoreDeps) {
       // One frame later: `x-show` has flipped by then, and a modal that focuses
       // its own field on open (Branch, Prompt) has already done so.
       window.requestAnimationFrame(() => {
-        const dialog = scrimEl.querySelector('[role="dialog"], [role="alertdialog"]') || scrimEl;
+        const dialog = scrimEl.querySelector('[role="dialog"], [role="alertdialog"]') ?? scrimEl;
         if (dialog.contains(document.activeElement)) return;
         const controls = Array.from(
           dialog.querySelectorAll<HTMLElement & { disabled?: boolean }>(
             'button, input, select, textarea, [href], [tabindex]:not([tabindex="-1"])',
           ),
-        ).filter((el) => !el.disabled && el.getClientRects().length > 0);
+        ).filter((el) => el.disabled !== true && el.getClientRects().length > 0);
         // The header ✕ is the last resort: it leads every modal, and the
         // operator came for the content.
-        (controls.find((el) => !el.classList.contains("modal-x")) || controls[0])?.focus();
+        (controls.find((el) => !el.classList.contains("modal-x")) ?? controls[0])?.focus();
       });
     },
     modalClosed(path: string) {
       const i = this._modalStack.findLastIndex((m) => m.path === path);
       if (i < 0) return;
       const opener = this._modalStack.splice(i, 1)[0]?.opener;
-      if (opener?.isConnected) opener.focus();
+      if (opener?.isConnected === true) opener.focus();
     },
     // Accelerators are ignored while typing or while a modal is up.
     // `allowTerminal`: a key that must also work from inside a terminal (the
@@ -185,6 +197,7 @@ export function modalsStore(_deps: ModalsStoreDeps) {
       if (blockingDialogOpen(this)) return true;
       if (this.modalOpen(WBReleaseDialogs.whatsNewFlag)) return true;
       const el = document.activeElement as HTMLElement | null;
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test's element has none
       if (allowTerminal && el?.closest?.(".xterm")) return false;
       return focusTakesKeys(el);
     },
@@ -192,15 +205,8 @@ export function modalsStore(_deps: ModalsStoreDeps) {
     // settled `false` first so a second call never strands its promise.
     askConfirm(opts: ConfirmAsk = {}) {
       if (this._confirmResolve) this.confirmRespond(false);
-      this.confirmModal = {
-        open: true,
-        title: opts.title || "Confirm",
-        message: opts.message || "",
-        confirmLabel: opts.confirmLabel || "Confirm",
-        cancelLabel: opts.cancelLabel || "Cancel",
-        danger: opts.danger || false,
-      };
-      return new Promise((resolve) => {
+      this.confirmModal = confirmModalOf(opts);
+      return new Promise<boolean>((resolve) => {
         this._confirmResolve = resolve;
       });
     },
@@ -216,11 +222,11 @@ export function modalsStore(_deps: ModalsStoreDeps) {
       if (this._promptResolve) this.promptRespond(null);
       this.promptModal = {
         open: true,
-        title: opts.title || "Name",
-        message: opts.message || "",
-        value: opts.value || "",
-        placeholder: opts.placeholder || "",
-        confirmLabel: opts.confirmLabel || "Create",
+        title: (opts.title ?? "") || "Name",
+        message: opts.message ?? "",
+        value: opts.value ?? "",
+        placeholder: opts.placeholder ?? "",
+        confirmLabel: (opts.confirmLabel ?? "") || "Create",
         error: "",
       };
       // Focus after Alpine has painted; caret at the end, not selected.

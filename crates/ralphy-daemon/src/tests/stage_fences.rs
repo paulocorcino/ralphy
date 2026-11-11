@@ -242,20 +242,20 @@ fn shell_locks_consoles_and_fences() {
         "tiling a locked fence must be a no-op"
     );
     assert!(
-        body("function recordOf(").contains("locked: !!win._deskLocked"),
+        body("function recordOf(").contains("locked: win._deskLocked,"),
         "recordOf must write the lock as a bool"
     );
     assert!(
-        body("function deskOf(").contains("locked: !!win._deskLocked"),
+        body("function deskOf(").contains("locked: win._deskLocked,"),
         "deskOf must carry the lock into rebuilds and the popup"
     );
     assert!(
-        body("function renderFences(").contains("paintFenceLock(el, !!f.locked)"),
+        body("function renderFences(").contains("paintFenceLock(el, Boolean(f.locked))"),
         "renderFences is the one place a fence's lock reaches the DOM"
     );
     assert!(
         body("function ingestDesk(").contains("converge()")
-            && body("function converge(").contains("applyLock(w, !!r.locked)"),
+            && body("function converge(").contains("applyLock(w, r.locked === true)"),
         "a lock set on another device must reach this page's windows on its next GET"
     );
     let css = served_css();

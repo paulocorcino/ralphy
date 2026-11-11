@@ -75,8 +75,8 @@ export function addProjectDialog() {
     // A touch does not focus the field: on a phone that opens the keyboard,
     // and iOS Safari zooms into an input with text under 16px.
     addProjectPick(entry: ReturnType<typeof WBAddProject.entries>[number], ev?: MouseEvent) {
-      if (entry.error || (ev && ev.detail > 1)) return;
-      this.addProjectStep({ type: "pick", name: entry.name, up: !!entry.up });
+      if ((entry.error ?? "") !== "" || (ev && ev.detail > 1)) return;
+      this.addProjectStep({ type: "pick", name: entry.name, up: entry.up === true });
       this.addProjectList(0);
       if (!this._addProjectTouch) this.$refs.addProjectFolder?.focus();
     },
@@ -134,7 +134,7 @@ export function addProjectDialog() {
       } catch (e) {
         reply = { status: "error", message: String((e as Error).message || e) };
       }
-      if (reply?.status !== "ok") {
+      if (reply.status !== "ok") {
         this.addProjectStep({
           type: "addFailed",
           message: WBFail.failed(reply, "Could not add the project: the daemon gave no reason."),

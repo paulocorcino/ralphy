@@ -106,7 +106,7 @@ export const WBSessionRoute = (function () {
   function holder(storage: Storage | null | undefined, mint: () => string) {
     try {
       const kept = storage?.getItem(HOLDER_KEY);
-      if (kept && HOLDER_RE.test(kept)) return kept;
+      if (kept !== null && kept !== undefined && HOLDER_RE.test(kept)) return kept;
     } catch {}
     const fresh = mint();
     try {
@@ -124,6 +124,7 @@ export const WBSessionRoute = (function () {
     if (tabHolderMemo == null) {
       let storage = null;
       try {
+        // oxlint-disable-next-line typescript/no-unnecessary-condition -- absent in node
         storage = globalThis.sessionStorage ?? null;
       } catch {}
       tabHolderMemo = holder(storage, () =>
@@ -160,6 +161,7 @@ export const WBSessionRoute = (function () {
   function tabAttempt() {
     let storage = null;
     try {
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- absent in node
       storage = globalThis.sessionStorage ?? null;
     } catch {}
     return nextAttempt(storage);
@@ -168,33 +170,34 @@ export const WBSessionRoute = (function () {
   // The open payload of one console channel (ADR-0082 D3). A field the daemon
   // would not read is left out.
   function openPayload(opts: SessionOpenOpts): SessionPayload {
-    return { ...(opts.gzip ? { gzip: 1 } : {}), ...kindFields(opts), ...linkFields(opts.link) };
+    const gzip: SessionPayload = opts.gzip === true ? { gzip: 1 } : {};
+    return { ...gzip, ...kindFields(opts), ...linkFields(opts.link) };
   }
 
   // The fields that each kind of connect reads.
   function kindFields(opts: SessionOpenOpts) {
     if (opts.id != null) return reattachFields(opts);
-    if (opts.console) return consoleFields(opts);
+    if (opts.console === true) return consoleFields(opts);
     return launchFields(opts);
   }
 
   function reattachFields(opts: ReattachOpts): SessionPayload {
     const out: SessionPayload = { id: opts.id };
-    if (opts.repo) out.repo = opts.repo;
+    if (opts.repo !== undefined && opts.repo !== "") out["repo"] = opts.repo;
     if (Number.isSafeInteger(opts.since) && opts.since != null && opts.since >= 0) {
       out.since = opts.since;
     }
-    if (opts.takeover) out.takeover = 1;
+    if (opts.takeover === true) out["takeover"] = 1;
     // A watcher claims nothing, so it names no holder.
-    if (opts.watch) return { ...out, watch: 1 };
+    if (opts.watch === true) return { ...out, watch: 1 };
     return { ...out, ...holderFields(opts.holder, opts.attempt) };
   }
 
   function consoleFields(opts: ConsoleOpts): SessionPayload {
     const out: SessionPayload = { console: 1 };
-    if (opts.repo) out.repo = opts.repo;
+    if (opts.repo !== undefined && opts.repo !== "") out["repo"] = opts.repo;
     // The startup command (the shell runs it and the session ends with it).
-    if (opts.command) out.command = opts.command;
+    if (opts.command !== undefined && opts.command !== "") out["command"] = opts.command;
     return { ...out, ...recordFields(opts.record), ...holderFields(opts.holder, opts.attempt) };
   }
 
@@ -202,7 +205,9 @@ export const WBSessionRoute = (function () {
     const out: SessionPayload = { repo: opts.repo, agent: opts.agent };
     // A worktree NAME, sent only on a new agent launch — a reattach's record
     // owns it (ADR-0063 §3).
-    if (opts.checkout) out.checkout = opts.checkout;
+    if (opts.checkout !== undefined && opts.checkout !== null && opts.checkout !== "") {
+      out["checkout"] = opts.checkout;
+    }
     // The console name: the daemon folds it into Claude's session name.
     if (typeof opts.name === "string" && opts.name) out.name = opts.name;
     return { ...out, ...recordFields(opts.record), ...holderFields(opts.holder, opts.attempt) };
@@ -323,7 +328,7 @@ export const WBSessionRoute = (function () {
 
   function announcedSessionId(current: SessionOwner, payload: SessionOpen | null | undefined) {
     const announcedId = payload?.session_id ?? payload?.session;
-    return announcedId == null ? current.sessionId : Number(announcedId);
+    return announcedId ?? current.sessionId;
   }
 
   function announcedPlace(current: SessionOwner, payload: SessionOpen | null | undefined) {
@@ -347,7 +352,7 @@ export const WBSessionRoute = (function () {
   const UNANSWERED_HEADER = "x-ralphy-unanswered";
   function unanswered(value: string | null | undefined) {
     return new Set(
-      String(value ?? "")
+      (value ?? "")
         .split(",")
         .map((id) => id.trim())
         .filter(Boolean),

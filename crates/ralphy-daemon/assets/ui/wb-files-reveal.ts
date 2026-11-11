@@ -34,7 +34,7 @@ async function expandAncestors(
 export async function reveal(files: RevealFiles, rel: string, opts: { restore?: boolean }) {
   const tree = files.rawTree();
   if (!tree || typeof rel !== "string" || rel === "") return null;
-  if (!opts.restore) {
+  if (opts.restore !== true) {
     files._revealSeq = (files._revealSeq || 0) + 1;
     files._revealedRel = rel;
   }

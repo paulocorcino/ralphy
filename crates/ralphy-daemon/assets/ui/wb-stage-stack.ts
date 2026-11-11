@@ -68,7 +68,10 @@ export function createStack(document: Document) {
         ...required(workspace(), "the workspace").querySelectorAll<Stacked>(
           ".session-window, .note-card",
         ),
-      ].sort((a, b) => (parseInt(a.style.zIndex, 10) || 0) - (parseInt(b.style.zIndex, 10) || 0));
+      ].toSorted(
+        (a, b) =>
+          (Math.trunc(Number(a.style.zIndex)) || 0) - (Math.trunc(Number(b.style.zIndex)) || 0),
+      );
       z = Z_BASE;
       for (const w of ordered) {
         if (w === win) continue;

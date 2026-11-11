@@ -108,7 +108,7 @@ export const WBDeskSync = (function () {
 
   // `max` is always written, like the daemon's `bool` without a skip.
   function setMaxFlag(rec: LooseRecord, max: boolean) {
-    if (!!rec.max === max) return false;
+    if ((rec.max === true) === max) return false;
     rec.max = max;
     return true;
   }
@@ -159,7 +159,7 @@ export const WBDeskSync = (function () {
   function setTypeFields(type: DeskRecordType, rec: LooseRecord, fields: LooseFields) {
     if (type === "window") return setWindowFields(rec, fields);
     if (type === "fence") return setFenceFields(rec, fields);
-    return !!fields.file && setNoteFile(rec, fields.file);
+    return fields.file != null && setNoteFile(rec, fields.file);
   }
 
   // The fields of one `set`: the box and the lock of any record, then the
@@ -174,12 +174,12 @@ export const WBDeskSync = (function () {
   // One change onto a desk: `{ desk, changed }`, never mutating `desk`.
   function applyChange(desk: DeskView, change: DeskChange): { desk: DeskView; changed: boolean } {
     const unchanged = { desk, changed: false };
-    const op = change?.op;
+    const op = change.op;
     if (op === "checkout" || op === "checkout-clear") return applyCheckout(desk, change);
-    if (!TYPES.has(change?.type)) return unchanged;
+    if (!TYPES.has(change.type)) return unchanged;
     const key: `${DeskRecordType}s` = `${change.type}s`;
     const list: AnyRecord[] = desk[key];
-    const id = op === "create" ? change.record?.id : change.id;
+    const id = op === "create" ? change.record.id : change.id;
     const at = list.findIndex((r) => r.id === id);
     const next = changedList(list, at, id, change);
     if (!next) return unchanged;
@@ -239,7 +239,7 @@ export const WBDeskSync = (function () {
     const base = list[at];
     if (!base) return null;
     const rec = { ...base };
-    if (!setFields(change.type, rec, change.fields || {})) return null;
+    if (!setFields(change.type, rec, change.fields)) return null;
     const next = list.slice();
     next[at] = rec;
     return next;
@@ -305,12 +305,12 @@ export const WBDeskSync = (function () {
       // every pending change as a new batch. Null with nothing to send.
       nextBatch() {
         if (!inflight) {
-          if (!pending.length) return null;
+          if (pending.length === 0) return null;
           inflight = { seq: ++seq, count: pending.length };
         }
         return {
           seq: inflight.seq,
-          generation: generation || 0,
+          generation: generation ?? 0,
           changes: pending.slice(0, inflight.count),
         };
       },
@@ -329,8 +329,8 @@ export const WBDeskSync = (function () {
       // higher `seq`, so a batch still on the wire that lands after it is
       // ignored and nothing is applied twice.
       closingBatch() {
-        if (!pending.length) return null;
-        return { seq: ++seq, generation: generation || 0, changes: pending.slice() };
+        if (pending.length === 0) return null;
+        return { seq: ++seq, generation: generation ?? 0, changes: pending.slice() };
       },
     };
   }

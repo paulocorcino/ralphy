@@ -43,7 +43,7 @@ export function boardStore(_deps: BoardStoreDeps) {
 
     // The open project's issues. Empty until a read of it resolves.
     openIssues() {
-      return this.boardIssues[window.Alpine.store("projects").openKey()] || [];
+      return this.boardIssues[window.Alpine.store("projects").openKey()] ?? [];
     },
 
     // A good `board.list` of `slug`.
@@ -81,7 +81,7 @@ export function boardStore(_deps: BoardStoreDeps) {
     // An `issue.show` reply: the fold rows carry no body or comments. Only a
     // field of the right type is taken. `false` when the row is not held.
     issueDetailRead(slug: string, number: number, detail: IssueDetail) {
-      const iss = (this.boardIssues[slug] || []).find((i) => i.number === number);
+      const iss = (this.boardIssues[slug] ?? []).find((i) => i.number === number);
       if (!iss) return false;
       if (typeof detail.body === "string") iss.body = detail.body;
       if (Array.isArray(detail.comments)) iss.comments = detail.comments;
@@ -91,7 +91,7 @@ export function boardStore(_deps: BoardStoreDeps) {
 
     // The labels of one issue: the board's edit, or its revert.
     issueLabelsSet(slug: string, number: number, labels: string[]) {
-      const iss = (this.boardIssues[slug] || []).find((i) => i.number === number);
+      const iss = (this.boardIssues[slug] ?? []).find((i) => i.number === number);
       if (iss) iss.labels = labels;
     },
   };

@@ -75,7 +75,9 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
 
   function watchDetached(win: Window, desc: FileDescriptor) {
     detachedWindows.set(win, desc);
-    if (!detachedPoll) detachedPoll = window.setInterval(pollDetached, 500);
+    if (detachedPoll === null || detachedPoll === 0) {
+      detachedPoll = window.setInterval(pollDetached, 500);
+    }
   }
 
   function pollDetached() {
@@ -90,6 +92,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
   // are same-origin windows this shell opened, so it asks their viewer directly.
   function detachedDirty() {
     for (const win of detachedWindows.keys()) {
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- a loading popup has none
       if (!win.closed && win.WBViewer?.anyDirty?.()) return true;
     }
     return false;
@@ -119,7 +122,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     });
     detachedWindows.delete(win);
     detachedClosedSeen.delete(win);
-    if (!detachedWindows.size) {
+    if (detachedWindows.size === 0) {
       window.clearInterval(detachedPoll);
       detachedPoll = null;
     }
@@ -169,7 +172,8 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
   // daemon's confined `file.*` verbs; a refusal is flashed. The browser composes
   // the full rel path.
   (function wireWriteVerbs() {
-    const daemonBacked = () => !!window.WBDaemon?.write;
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a page with no daemon door
+    const daemonBacked = () => window.WBDaemon?.write !== undefined;
     const flash = (msg: string) => messages.flash(msg);
     const call = (verb: string, payload: CommandPayload, okMsg?: string) => {
       WBDaemon.write(verb, payload)
@@ -196,8 +200,9 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     function actionTarget(d: WorkbenchAction | undefined): Aim | null {
       if (!d || !("project" in d)) return null;
       const repo = d.project;
-      if (!repo) return null;
+      if (repo === null || repo === "") return null;
       const checkout =
+        // oxlint-disable-next-line typescript/no-unnecessary-condition -- a caller passes undefined
         "checkout" in d && d.checkout !== undefined
           ? d.checkout
           : window.Alpine.store("checkouts").checkoutOf(repo);
@@ -210,10 +215,12 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     // A detached window's pane is `detached` in its own viewer; a tab's is
     // its tab id in this one.
     function actSave(d: ActionOf<"save">, { repo, checkout, aimed }: Aim) {
-      const viewer = () => (d.fromWindow ? d.fromWindow.WBViewer : window.WBViewer);
+      // A popup that closed has no viewer.
+      const viewer = (): Partial<Window["WBViewer"]> | undefined =>
+        d.fromWindow ? d.fromWindow.WBViewer : window.WBViewer;
       const id = d.fromWindow ? "detached" : fileTabId(repo, d.path, checkout);
       const payload: SavePayload = { repo, path: d.path, content: d.content || "" };
-      if (d.encoding) payload.encoding = d.encoding;
+      if (d.encoding !== undefined && d.encoding !== "") payload.encoding = d.encoding;
       if (d.bom) payload.bom = true;
       const send = (p: SavePayload): Promise<void> =>
         WBDaemon.write("file.write", aimed(p))
@@ -223,7 +230,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
             viewer()?.saveFailed?.(id, reason, reply);
             // UTF-8 represents everything; a refusal under it is not a
             // conversion question, and asking again would loop.
-            if (reason === "unencodable" && !/^utf-?8$/i.test(p.encoding || "utf-8")) {
+            if (reason === "unencodable" && !/^utf-?8$/iu.test((p.encoding ?? "") || "utf-8")) {
               return offerUtf8(p, reply);
             }
             flash(WBFail.failed(reply, "Could not save: the daemon gave no reason."));
@@ -236,7 +243,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
       // the one repair the browser can offer is a DELIBERATE conversion,
       // named to the operator and made only on their yes.
       const offerUtf8 = (p: SavePayload, reply: WriteReply) => {
-        const at = Number(reply?.char_index ?? 0) + 1;
+        const at = (reply.char_index ?? 0) + 1;
         const ask = messages.askInShell({
           title: `Could not save as ${p.encoding}`,
           message:
@@ -247,7 +254,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
         // No shell, no dialog: the pane already says "Could not save" and why.
         if (!ask) return;
         return ask.then((ok) => {
-          if (!ok) return;
+          if (ok !== true) return;
           viewer()?.setEncoding?.(id, "UTF-8", false);
           const { bom: _bom, ...rest } = p;
           return send({ ...rest, encoding: "utf-8" });
@@ -281,8 +288,8 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     async function actCreate(d: ActionOf<"create">, { repo, aimed }: Aim) {
       const folder = d.kind === "folder";
       const c = window.getShell();
-      const name = await askEntryName(!!c, folder, d.path);
-      if (!name) return;
+      const name = await askEntryName(c !== null, folder, d.path);
+      if (name === null || name === "") return;
       const path = d.path ? `${d.path}/${name}` : name;
       const reply = await WBDaemon.write("file.create", aimed({ repo, path, dir: folder })).catch(
         () => null,
@@ -306,7 +313,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
 
     // Irreversible (a folder removes recursively): confirm first.
     async function actDelete(d: ActionOf<"delete">, { repo, aimed }: Aim) {
-      const name = d.title || d.path.split("/").pop() || d.path;
+      const name = d.title || (d.path.split("/").pop() ?? "") || d.path;
       const message = d.isFolder
         ? `Delete folder “${name}” and its contents? This cannot be undone.`
         : `Delete “${name}”? This cannot be undone.`;
@@ -317,7 +324,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
         danger: true,
       });
       const ok = ask ? await ask : window.confirm(message);
-      if (!ok) return;
+      if (ok !== true) return;
       const reply = await WBDaemon.write("file.delete", aimed({ repo, path: d.path })).catch(
         () => null,
       );
@@ -406,8 +413,8 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     const c = window.getShell();
     if (!c || window.Alpine.store("modals").consoleShortcutsBlocked()) return;
     e.preventDefault();
-    if (window.Alpine.store("projects").openSlug) sendWindow(window, "workbench:file-search-open");
-    else c.focusProjectSearch();
+    if ((window.Alpine.store("projects").openSlug ?? "") === "") c.focusProjectSearch();
+    else sendWindow(window, "workbench:file-search-open");
   });
 
   // Ctrl/Cmd+Shift+F → the FILES search. NOT `consoleShortcutsBlocked`: the
@@ -423,9 +430,9 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
   // The FILES search needs the shell, a login and an open project.
   function filesSearchOffered() {
     return (
-      !!window.getShell() &&
+      window.getShell() !== null &&
       window.Alpine.store("connection").authed &&
-      !!window.Alpine.store("projects").openSlug
+      (window.Alpine.store("projects").openSlug ?? "") !== ""
     );
   }
 

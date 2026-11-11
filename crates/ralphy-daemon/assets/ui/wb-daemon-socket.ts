@@ -112,7 +112,7 @@ export function createPageSocket({
     const go = () => {
       if (!waitingForSession) return;
       waitingForSession = false;
-      if (users.size && !ws) connect();
+      if (users.size > 0 && !ws) connect();
     };
     void read.then(go, go);
     setTimeout(go, CONNECT_TIMEOUT_MS);
@@ -145,7 +145,7 @@ export function createPageSocket({
     };
   };
   const leave = (user: SocketUser) => {
-    if (!users.delete(user) || users.size) return;
+    if (!users.delete(user) || users.size > 0) return;
     clearTimeout(timer);
     timer = null;
     lose();

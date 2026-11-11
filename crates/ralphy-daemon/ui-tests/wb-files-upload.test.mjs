@@ -158,7 +158,7 @@ test("a dropped folder, a worktree and a protected folder are refused with a mes
 test("Upload… is a row of a folder and of the root, not of a file or a protected folder", () => {
   const { t } = tree();
   const rows = (node) => {
-    const menu = { ...t, isFolder: (n) => !!n?.folder, relPath: (n) => n?.rel ?? "" };
+    const menu = { ...t, isFolder: (n) => Boolean(n?.folder), relPath: (n) => n?.rel ?? "" };
     return treeMenu(menu, node).map((r) => r.label).filter((l) => l === "Upload…");
   };
   assert.deepEqual(rows(null), ["Upload…"]);

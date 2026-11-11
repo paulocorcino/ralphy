@@ -61,7 +61,7 @@ export function wbBoard() {
     planModal: { open: false, issue: null as number | null },
 
     async loadPlan(slug: string | null) {
-      if (!slug) return;
+      if (slug === null || slug === "") return;
       try {
         const reply = await window.WBDaemon.observe("file.read", {
           repo: slug,
@@ -69,7 +69,7 @@ export function wbBoard() {
         });
         // A refusal is the ORDINARY case (no plan sitting around): it clears
         // the entry rather than raising an error.
-        const md = reply?.status === "ok" ? reply.content || "" : "";
+        const md = reply.status === "ok" ? reply.content || "" : "";
         this.planByProject[slug] = md ? { md, summary: WBRun.planSummary(md) } : null;
       } catch {
         this.planByProject[slug] = null;
@@ -100,7 +100,7 @@ export function wbBoard() {
     },
     planPillWarns(number: number) {
       const held = this.planFor(number);
-      return !!held && WBRun.planPillWarns(held.summary, this.planIssueIsOpen());
+      return held !== null && WBRun.planPillWarns(held.summary, this.planIssueIsOpen());
     },
     // The head chip: for a plan whose issue is filtered out of the board or
     // absent from the fold, which would otherwise be invisible AND
@@ -182,8 +182,8 @@ export function wbBoard() {
     // The whole-tracker board fold via `board.list`, cached under the slug. No
     // daemon or a transport error leaves the board empty.
     async loadBoard() {
-      const slug = this.$store.projects.openSlug;
-      if (!slug) return;
+      const slug = this.$store.projects.openSlug ?? "";
+      if (slug === "") return;
       // A fold in flight: remember the trigger. Dropping it loses a project
       // switch and a label write (an older fold reverts the optimistic edit).
       if (this.boardRefreshing) {
@@ -217,9 +217,10 @@ export function wbBoard() {
         // Exactly ONE follow-up for whatever was coalesced away, or for a
         // project that changed underneath this fold. `_boardPending` is cleared
         // by the recursive call before it awaits, so this settles.
+        // oxlint-disable-next-line typescript/no-unnecessary-condition -- another call sets it
         if (this._boardPending || this.$store.projects.openSlug !== slug) {
           this._boardPending = false;
-          if (this.$store.projects.openSlug && this.kanbanOpen) void this.loadBoard();
+          if (this.kanbanOpen) void this.loadBoard(); // it reads the open project
         }
       }
     },
@@ -284,7 +285,7 @@ export function wbBoard() {
     // The label set present in the project, for the filter dropdown.
     kanbanLabelOptions() {
       const seen = new Set<string>();
-      for (const i of this.projectIssues()) for (const l of i.labels || []) seen.add(l);
+      for (const i of this.projectIssues()) for (const l of i.labels) seen.add(l);
       // Distinct members, so no tie; `<` compares UTF-16 code units, as the
       // sort without a compare function does.
       return [...seen].sort((a, b) => (a < b ? -1 : 1));
@@ -296,11 +297,12 @@ export function wbBoard() {
     },
     // The issue drawer's run line: `Running · executing (claude)`.
     issueRunningLabel(run: RunPill) {
-      return `Running · ${this.runStateWord(run?.state)} (${run?.agent || ""})`;
+      return `Running · ${this.runStateWord(run?.state)} (${run?.agent ?? ""})`;
     },
     // A run state as the Runs panel words it (`sleep` → "usage limit — sleeping").
     runStateWord(state: string | undefined) {
-      return (state && WBRun?.LABEL?.[state]) || state || "";
+      if (state === undefined || state === "") return "";
+      return WBRun.LABEL[state] ?? state;
     },
 
     // Thin delegations to the faithful helpers (used in the template).
@@ -310,7 +312,7 @@ export function wbBoard() {
     labelColor(l: string) {
       // The repo's real label hex, else the seed vocabulary.
       return (
-        this.$store.board.boardLabels[this.$store.projects.openKey()]?.get(l) ||
+        this.$store.board.boardLabels[this.$store.projects.openKey()]?.get(l) ??
         window.WBKanban.labelColor(l)
       );
     },
@@ -325,7 +327,7 @@ export function wbBoard() {
     },
     kanbanColumnTitle(i: BoardIssue) {
       const id = window.WBKanban.columnOf(i);
-      return (window.WBKanban.COLUMNS.find((c) => c.id === id) || {}).title || id;
+      return window.WBKanban.COLUMNS.find((c) => c.id === id)?.title ?? id;
     },
     kfmtDate(iso: string | null | undefined) {
       return window.WBKanban.fmtDate(iso);
@@ -340,7 +342,7 @@ export function wbBoard() {
     // column) keeps the drawer pointed at the same issue.
     selectedIssue() {
       if (this.kanbanSel == null) return null;
-      return this.projectIssues().find((i) => i.number === this.kanbanSel) || null;
+      return this.projectIssues().find((i) => i.number === this.kanbanSel) ?? null;
     },
     openIssue(number: number) {
       this.kanbanSel = number;
@@ -366,23 +368,24 @@ export function wbBoard() {
     },
 
     // The selected issue's blockers, each with its live open/closed state.
-    issueBlockers(iss: BoardIssue | null) {
-      if (!iss || !iss.blockedBy?.length) return [];
+    issueBlockers(iss: { blockedBy?: number[] } | null) {
+      const blockers = iss?.blockedBy ?? [];
+      if (blockers.length === 0) return [];
       const all = this.projectIssues();
-      return iss.blockedBy.map((n) => {
+      return blockers.map((n) => {
         const b = all.find((x) => x.number === n);
         return {
           number: n,
           open: b ? b.state === "open" : false,
-          known: !!b,
-          title: b?.title || "",
+          known: b !== undefined,
+          title: b?.title ?? "",
         };
       });
     },
 
     // An issue body / comment as sanitized markdown.
     renderIssueMd(src: string | null | undefined) {
-      return DOMPurify.sanitize(marked.parse(src || "_(empty)_"));
+      return DOMPurify.sanitize(marked.parse((src ?? "") || "_(empty)_"));
     },
 
     // --- the one allowed mutation: labels ---------------------------------
@@ -402,7 +405,7 @@ export function wbBoard() {
       );
     },
     hasLabel(iss: BoardIssue | null, label: string) {
-      return !!iss && (iss.labels || []).includes(label);
+      return iss !== null && iss.labels.includes(label);
     },
     toggleLabel(iss: BoardIssue | null, label: string) {
       if (!iss) return;
@@ -411,9 +414,9 @@ export function wbBoard() {
       if (this.labelsLocked()) return;
       const has = this.hasLabel(iss, label);
       const op = has ? "remove" : "add";
-      const prev = [...(iss.labels || [])];
+      const prev = [...iss.labels];
       const slug = this.$store.projects.openSlug;
-      if (!slug) return;
+      if (slug === null || slug === "") return;
       this.$store.board.issueLabelsSet(
         slug,
         iss.number,
@@ -448,7 +451,7 @@ export function wbBoard() {
     // The board's label editor, under the SAME lock: `label set` is a
     // run-lock-aware Mutate (mutate.rs).
     labelsLocked() {
-      return !!this.labelLockReason();
+      return this.labelLockReason() !== "";
     },
     labelLockReason() {
       if (this.$store.connection.buildSkew) return this.$store.connection.BUILD_SKEW_LOCK;
@@ -468,7 +471,7 @@ export function wbBoard() {
       this.kanbanSel = null;
       void this.$nextTick(() => {
         // Only when the board is OPEN (#301): the fold spawns a tracker CLI.
-        if (this.$store.projects.openSlug && this.kanbanOpen) void this.loadBoard();
+        if (this.kanbanOpen) void this.loadBoard(); // it reads the open project
       });
     },
 

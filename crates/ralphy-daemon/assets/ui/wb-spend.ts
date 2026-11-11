@@ -11,17 +11,18 @@
 
 import type { SpendDoc, TitledIssue, Tokens, Unpriced } from "./wb-spend-types.d.ts";
 import { CAUSE_COPY, EMPTY, ERROR, LOADING, READY } from "./wb-spend-copy.ts";
+import { textOr } from "./wb-fleet.ts";
 import { LEDGER_CAP, LEDGER_COLUMNS, boundMark, ledger } from "./wb-spend-ledger.ts";
 
 // A daemon cause row plus its copy. An unknown key (a future fourth cause)
 // renders under its own name rather than vanishing — the gap must never get
 // quieter than it is.
 function causes(unpriced: Unpriced) {
-  const rows = (unpriced && unpriced.causes) || [];
+  const rows = unpriced.causes ?? [];
   return rows.map((c) => ({
     key: c.key,
-    title: CAUSE_COPY[c.key]?.title || c.key,
-    hint: CAUSE_COPY[c.key]?.hint || "",
+    title: textOr(CAUSE_COPY[c.key]?.title, c.key),
+    hint: CAUSE_COPY[c.key]?.hint ?? "",
     value: c.label,
     share: c.share_label,
     // The daemon's `0.0..=1.0`, as the CSS width it is drawn at. This is a
@@ -32,7 +33,7 @@ function causes(unpriced: Unpriced) {
 }
 
 function pct(share: number | null | undefined): string {
-  return Math.max(0, Math.min(100, (share || 0) * 100)) + "%";
+  return Math.max(0, Math.min(100, (share ?? 0) * 100)) + "%";
 }
 
 // The token split as bar rows, in the daemon's canonical order. Each row's bar
@@ -49,12 +50,12 @@ const PART_NAME: Record<string, string> = {
 };
 
 function meterRows(tokens: Tokens) {
-  const parts = (tokens && tokens.parts) || [];
+  const parts = tokens.parts ?? [];
   const peak = parts.reduce((m: number, p) => Math.max(m, p.tokens || 0), 0);
   return parts.map((p) => ({
     key: p.key,
     glyph: p.glyph,
-    name: PART_NAME[p.key] || p.name,
+    name: PART_NAME[p.key] ?? p.name,
     value: p.label,
     share: p.share_label,
     width: peak > 0 ? pct((p.tokens || 0) / peak) : "0%",
@@ -68,45 +69,45 @@ function meterRows(tokens: Tokens) {
 // the daemon rendered; the only thing decided here is which label sits above
 // it and which note sits below.
 function tiles(doc: SpendDoc) {
-  const k = doc.kpis || {};
+  const k = doc.kpis ?? {};
   return [
     {
       key: "total",
       label: "Total cost",
-      value: doc.total || "~$?",
+      value: textOr(doc.total, "~$?"),
       note: "",
       primary: true,
-      floor: !!doc.floor,
+      floor: doc.floor === true,
     },
     {
       key: "deliveries",
       label: "Deliveries",
       // The ONE figure on this page that is a count rather than money, so it
       // is the one place a client-side `String()` is not an arithmetic.
-      value: String(k.deliveries || 0),
+      value: String(k.deliveries ?? 0),
       note: "Issues worked on in this period",
       floor: false,
     },
     {
       key: "cost_per_delivery",
       label: "Cost per delivery",
-      value: k.cost_per_delivery_median_label || "~$?",
+      value: textOr(k.cost_per_delivery_median_label, "~$?"),
       // The mean rides in the note, not in a sixth tile: the pair is one
       // reading — the typical issue, and how far the tail pulls the average.
-      note: "Median · mean " + (k.cost_per_delivery_mean_label || "~$?"),
-      floor: !!k.cost_per_delivery_floor,
+      note: "Median · mean " + textOr(k.cost_per_delivery_mean_label, "~$?"),
+      floor: k.cost_per_delivery_floor === true,
     },
     {
       key: "retry_burn",
       label: "Retry burn",
-      value: k.retry_burn_label || "—",
+      value: textOr(k.retry_burn_label, "—"),
       note: "Share of spend on issues not delivered",
-      floor: !!k.retry_burn_floor,
+      floor: k.retry_burn_floor === true,
     },
     {
       key: "cache_hit",
       label: "Cache hit",
-      value: k.cache_hit_label || "—",
+      value: textOr(k.cache_hit_label, "—"),
       note: "Share of prompt tokens read from cache",
       floor: false,
     },
@@ -117,41 +118,41 @@ function tiles(doc: SpendDoc) {
 // title is an ADORNMENT, so a cold board renders `#251` with no title and
 // NOTHING here reaches for one: the board fold spawns a CLI that makes tracker
 // calls, and a cost page must never pay it.
-function deliveryRows(doc: SpendDoc, issues: TitledIssue[] | null | undefined) {
+function deliveryRows(doc: SpendDoc, issues: (TitledIssue | null)[] | null | undefined) {
   const titles = new Map<number, string>();
-  for (const i of issues || []) {
-    if (i && i.number != null) titles.set(i.number, i.title || "");
+  for (const i of issues ?? []) {
+    if (i?.number != null) titles.set(i.number, i.title ?? "");
   }
-  const peak = (doc.deliveries || []).reduce((m: number, d) => Math.max(m, d.share || 0), 0);
-  return (doc.deliveries || []).map((d) => ({
+  const peak = (doc.deliveries ?? []).reduce((m: number, d) => Math.max(m, d.share ?? 0), 0);
+  return (doc.deliveries ?? []).map((d) => ({
     issue: d.issue,
     label: "#" + d.issue,
-    title: titles.get(d.issue) || "",
+    title: titles.get(d.issue) ?? "",
     value: d.total,
-    floor: !!d.floor,
-    attempts: d.attempts || 0,
-    tokens: d.tokens_label || "",
-    share: d.share_label || "",
+    floor: d.floor === true,
+    attempts: d.attempts ?? 0,
+    tokens: d.tokens_label ?? "",
+    share: d.share_label ?? "",
     // Against the costliest row, so the smaller rows stay comparable instead
     // of collapsing into slivers — the same rule the meter rows use.
-    width: peak > 0 ? pct((d.share || 0) / peak) : "0%",
+    width: peak > 0 ? pct((d.share ?? 0) / peak) : "0%",
   }));
 }
 
 // The models grid. A row that priced to nothing is styled as a GAP, not as a
 // cheap engine — the daemon already says which by carrying `priced`.
 function modelRows(doc: SpendDoc) {
-  const rows = doc.models || [];
-  const peak = rows.reduce((m: number, r) => Math.max(m, r.share || 0), 0);
+  const rows = doc.models ?? [];
+  const peak = rows.reduce((m: number, r) => Math.max(m, r.share ?? 0), 0);
   return rows.map((r) => ({
     key: r.model,
     model: r.model,
     value: r.total,
-    floor: !!r.floor,
-    share: r.share_label || "",
-    tokens: r.tokens_label || "",
-    priced: !!r.priced,
-    width: peak > 0 ? pct((r.share || 0) / peak) : "0%",
+    floor: r.floor === true,
+    share: r.share_label ?? "",
+    tokens: r.tokens_label ?? "",
+    priced: r.priced === true,
+    width: peak > 0 ? pct((r.share ?? 0) / peak) : "0%",
   }));
 }
 
@@ -159,28 +160,28 @@ function modelRows(doc: SpendDoc) {
 // what it is. They render BESIDE the delivery rows, never among them: an
 // overhead line inside the grid would read as an issue that cost that much.
 function overheadLines(doc: SpendDoc) {
-  const o = doc.overhead || {};
-  const sessions = o.interactive_sessions || 0;
+  const o = doc.overhead ?? {};
+  const sessions = o.interactive_sessions ?? 0;
   return [
     {
       key: "deliveries",
       label: "Deliveries",
-      value: o.deliveries_total || "~$?",
-      floor: !!o.deliveries_floor,
+      value: textOr(o.deliveries_total, "~$?"),
+      floor: o.deliveries_floor === true,
       note: "",
     },
     {
       key: "interactive",
       label: "Interactive",
-      value: o.interactive_total || "~$?",
-      floor: !!o.interactive_floor,
+      value: textOr(o.interactive_total, "~$?"),
+      floor: o.interactive_floor === true,
       note: sessions === 1 ? "1 session" : sessions + " sessions",
     },
     {
       key: "consolidation",
       label: "Consolidation",
-      value: o.consolidation_total || "~$?",
-      floor: !!o.consolidation_floor,
+      value: textOr(o.consolidation_total, "~$?"),
+      floor: o.consolidation_floor === true,
       note: "Cost of the run itself, not of one issue",
     },
   ];
@@ -190,7 +191,7 @@ function overheadLines(doc: SpendDoc) {
 // daemon's own share of its peak day — the two series have no common unit, so
 // each gets its own baseline rather than a shared axis that would lie.
 function band(doc: SpendDoc) {
-  const days = doc.activity || [];
+  const days = doc.activity ?? [];
   return {
     show: days.length > 0,
     days: days.map((d) => ({
@@ -199,11 +200,11 @@ function band(doc: SpendDoc) {
       // `2026-07-30` → `07-30`: the year is the same on every column of a
       // 90-day window and costs a third of the label's width to repeat.
       short: d.date.length >= 10 ? d.date.slice(5) : d.date,
-      value: d.usd_label || "~$?",
+      value: textOr(d.usd_label, "~$?"),
       usdHeight: pct(d.usd_share),
       deliveries: d.deliveries || 0,
       title:
-        `${d.date} · ${d.usd_label || "~$?"} · ` +
+        `${d.date} · ${textOr(d.usd_label, "~$?")} · ` +
         (d.deliveries === 1 ? "1 delivery" : (d.deliveries || 0) + " deliveries"),
       deliveriesHeight: pct(d.deliveries_share),
       quiet: !(d.usd > 0) && !(d.deliveries > 0),
@@ -242,8 +243,8 @@ function state({
   issues?: TitledIssue[] | null;
   period?: string;
 } = {}) {
-  const periods = { list: PERIODS, key: period || "all" };
-  if (!project) {
+  const periods = { list: PERIODS, key: textOr(period, "all") };
+  if (project == null || project === "") {
     return {
       kind: EMPTY,
       periods,
@@ -251,34 +252,34 @@ function state({
       hint: "Open a project in the sidebar to see what it cost.",
     };
   }
-  if (error) return { kind: ERROR, project, periods, message: error };
-  if (loading || !doc) return { kind: LOADING, project, periods };
+  if (error !== undefined && error !== "") return { kind: ERROR, project, periods, message: error };
+  if (loading === true || doc == null) return { kind: LOADING, project, periods };
   return readyState(project, doc, issues);
 }
 
 // The pane of a document the daemon returned for the open project.
 function readyState(project: string, doc: SpendDoc, issues: TitledIssue[] | null | undefined) {
-  const unpriced = doc.unpriced || {};
-  const tokens = doc.tokens || {};
+  const unpriced = doc.unpriced ?? {};
+  const tokens = doc.tokens ?? {};
   return {
     kind: READY,
     project,
     // The window the figures ACTUALLY carry, read off the document rather
     // than off the control — a label that led its own data would be the
     // misread the closed vocabulary exists to prevent.
-    periods: { list: PERIODS, key: (doc.period || {}).key || "all" },
+    periods: { list: PERIODS, key: textOr(doc.period?.key, "all") },
     periodLabel: docPeriodLabel(doc),
     tiles: tiles(doc),
     deliveryRows: deliveryRows(doc, issues),
-    deliveriesTruncated: doc.deliveries_truncated || 0,
+    deliveriesTruncated: doc.deliveries_truncated ?? 0,
     modelRows: modelRows(doc),
     overheadLines: overheadLines(doc),
     band: band(doc),
     // Pre-rendered by the daemon — never recomputed here.
-    total: doc.total || "~$?",
+    total: textOr(doc.total, "~$?"),
     // A floor is a claim about the number, so it is stated beside it rather
     // than left to the reader to infer from the trailing `+`.
-    floor: !!doc.floor,
+    floor: doc.floor === true,
     // The caveat names the volume that made it a floor, because "some of it"
     // is not something the operator can act on.
     floorNote: floorNote(doc, unpriced),
@@ -291,19 +292,16 @@ function readyState(project: string, doc: SpendDoc, issues: TitledIssue[] | null
 // The words come from the control's own list, keyed by the document's
 // key, so the note and the select read the same.
 function docPeriodLabel(doc: SpendDoc) {
-  return (
-    (PERIODS.find((p) => p.key === (doc.period || {}).key) || {}).label ||
-    (doc.period || {}).label ||
-    "All time"
-  );
+  const known = PERIODS.find((p) => p.key === doc.period?.key)?.label;
+  return textOr(known, textOr(doc.period?.label, "All time"));
 }
 
 // The token meter of the pane, with its defaults.
 function tokenFields(tokens: Tokens) {
   return {
-    meter: tokens.meter || "",
-    tokensTotal: tokens.label || "0",
-    tokensRaw: tokens.total || 0,
+    meter: tokens.meter ?? "",
+    tokensTotal: textOr(tokens.label, "0"),
+    tokensRaw: tokens.total ?? 0,
     meterRows: meterRows(tokens),
   };
 }
@@ -314,26 +312,26 @@ function coverageOf(unpriced: Unpriced) {
     // Only worth drawing once something is missing: a full-width bar at
     // 100% priced is a decoration that says what the absent floor marker
     // already said.
-    show: (unpriced.tokens || 0) > 0,
+    show: (unpriced.tokens ?? 0) > 0,
     priced: pct(unpriced.priced_share),
-    pricedLabel: unpriced.priced_share_label || "",
-    pricedVolume: unpriced.priced_label || "",
+    pricedLabel: unpriced.priced_share_label ?? "",
+    pricedVolume: unpriced.priced_label ?? "",
     unpriced: pct(unpriced.share),
-    unpricedLabel: unpriced.share_label || "",
+    unpricedLabel: unpriced.share_label ?? "",
   };
 }
 
 // The spend the pane could not price, and why.
 function unpricedOf(unpriced: Unpriced) {
   return {
-    any: (unpriced.tokens || 0) > 0 || (unpriced.unmetered_sessions || 0) > 0,
-    label: unpriced.label || "",
-    share: unpriced.share_label || "",
+    any: (unpriced.tokens ?? 0) > 0 || (unpriced.unmetered_sessions ?? 0) > 0,
+    label: unpriced.label ?? "",
+    share: unpriced.share_label ?? "",
     causes: causes(unpriced),
     // Sessions whose vendor keeps no token count anywhere: real spend of
     // unmeasurable size, so it is reported as a count of sessions rather
     // than folded into a token figure it has no tokens for.
-    unmetered: unpriced.unmetered_sessions || 0,
+    unmetered: unpriced.unmetered_sessions ?? 0,
   };
 }
 
@@ -342,9 +340,9 @@ function unpricedOf(unpriced: Unpriced) {
 // sessions that were never COUNTED (`tokens: null`, ADR-0042 D11) — the second
 // leaves no tokens to name, so a note about "unpriced volume" would be false.
 function floorNote(doc: SpendDoc, unpriced: Unpriced): string {
-  if (!doc.floor) return "";
-  const volume = unpriced.tokens || 0;
-  const sessions = unpriced.unmetered_sessions || 0;
+  if (doc.floor !== true) return "";
+  const volume = unpriced.tokens ?? 0;
+  const sessions = unpriced.unmetered_sessions ?? 0;
   if (volume > 0) {
     return (
       "The real cost can be higher. " +

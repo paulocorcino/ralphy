@@ -61,7 +61,7 @@ export function wbConsoleTabMenu() {
         full: false,
         tabbed: this.$store.tabs.consoleDeskIds(),
       });
-      this.menuAt = { top: Math.round((rect?.bottom || 0) + 4), left: Math.round(rect?.left || 0) };
+      this.menuAt = { top: Math.round((rect?.bottom ?? 0) + 4), left: Math.round(rect?.left ?? 0) };
       this.open = true;
     },
     rowLabel(r: ColumnRow) {

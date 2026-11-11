@@ -75,8 +75,8 @@ export function createNoteOpen(deps: NoteOpenDeps) {
       id: `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       ...fields,
       rect: spawnRect(
-        viewport || { width: 0, height: 0 },
-        offset || { left: 0, top: 0 },
+        viewport ?? { width: 0, height: 0 },
+        offset ?? { left: 0, top: 0 },
         records.length,
         deskFences(),
       ),
@@ -99,7 +99,7 @@ export function createNoteOpen(deps: NoteOpenDeps) {
   // written.
   function create(where: NewNote = {}) {
     const { repo, checkout } = where;
-    if (!repo) return null;
+    if (repo == null || repo === "") return null;
     const record = addCard({ repo, checkout: checkout ?? null, path: "" }, where);
     if (!record) return null;
     const el = cardEl(record.id);
@@ -133,17 +133,17 @@ export function createNoteOpen(deps: NoteOpenDeps) {
       // Read the record AFTER the flush: closing a never-saved note performs
       // its first save, and the path the undo must restore is the one that
       // save just chose — the pre-flush snapshot aims at nothing.
-      const saved = recordOf(id) || record;
-      consoleHost?.saveNotes(removeNote(consoleHost?.notes() || [], record.id));
+      const saved = recordOf(id) ?? record;
+      consoleHost?.saveNotes(removeNote(consoleHost.notes(), record.id));
       render();
       messages?.toast({
         // The path IS the sentence: "note closed · <path> kept" said the same
         // thing twice, and `kept` was reassuring nobody about the file the
         // `✕` never touches (asked 2026-09-22).
-        text: saved.path ? `Note ${saved.path} closed` : "Note closed",
+        text: (saved.path ?? "") === "" ? "Note closed" : `Note ${saved.path} closed`,
         action: "Undo",
         onAction: () => {
-          consoleHost?.saveNotes((consoleHost?.notes() || []).concat([saved]));
+          consoleHost?.saveNotes(consoleHost.notes().concat([saved]));
           render();
         },
       });
@@ -161,9 +161,9 @@ export function createNoteOpen(deps: NoteOpenDeps) {
     viewport,
     offset,
   }: NewNote & { path?: string | null }) {
-    if (!repo || !path) return null;
+    if (repo == null || repo === "" || path == null || path === "") return null;
     const tree = checkout ?? null;
-    const already = (consoleHost?.notes?.() || []).find(
+    const already = (consoleHost?.notes() ?? []).find(
       (n) => n.repo === repo && (n.checkout ?? null) === tree && n.path === path,
     );
     if (already) return window.WBNotes.jump(already.id);

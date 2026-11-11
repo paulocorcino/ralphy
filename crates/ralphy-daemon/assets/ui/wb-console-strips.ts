@@ -56,7 +56,7 @@ export function showPeerDown(
   need(detail, "p").textContent = view.detail || "";
   detail.hidden = !view.detail;
   const btn = need(strip, ".session-reconnect");
-  btn.dataset.act = view.action || "";
+  btn.dataset["act"] = view.action ?? "";
   const actionLabel = peerActionLabel(view.action);
   btn.hidden = !actionLabel;
   if (actionLabel) btn.textContent = actionLabel;

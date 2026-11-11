@@ -134,7 +134,7 @@ fn the_explorer_opens_a_note_as_a_card() {
          (ADR-0064 amendment)"
     );
     assert!(
-        build.contains("locked: () => !!el._noteLocked"),
+        build.contains("locked: () => el._noteLocked === true"),
         "the lock must reach the drag and the resize, which are what it IS"
     );
 }
@@ -225,7 +225,7 @@ fn a_notes_hand_and_size_are_a_closed_set_on_both_sides() {
     // The colours are inline fills in the SVG, so the cascade cannot reach
     // them: a restyle has to redraw or the diagram keeps the old tone.
     assert!(
-        palette.contains("el._noteEditor?.redrawDiagrams?.()") && crepe.contains("redrawDiagrams:"),
+        palette.contains("el._noteEditor?.redrawDiagrams()") && crepe.contains("redrawDiagrams:"),
         "restyling a card must repaint the diagrams in it (ADR-0064 §15 amendment)"
     );
     // Written to the FILE, so a note keeps its face when the card is

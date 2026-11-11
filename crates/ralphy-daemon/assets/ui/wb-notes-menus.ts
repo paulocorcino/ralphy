@@ -40,11 +40,11 @@ export function createNoteMenus(deps: NoteMenusDeps) {
   ) {
     const pop = el.querySelector<HTMLElement>(popSelector);
     if (!pop) return;
-    const wasOpen = !pop.hidden;
+    const wasOpen = pop.hidden === false;
     closeMenu();
     closePalette();
     if (wasOpen) return;
-    if (fill && fill(pop) === false) return;
+    if (fill(pop) === false) return;
     pop.hidden = false;
     openMenu = pop;
     openMenuTrigger = triggerSelector;
@@ -56,7 +56,7 @@ export function createNoteMenus(deps: NoteMenusDeps) {
       // Only a saved note in the PRIMARY tree has file actions: a worktree note
       // cannot be renamed or deleted yet (ADR-0064, amendment: `note.write` is
       // the only Write verb that crosses the worktree gate).
-      const writable = !!record?.path && !record?.checkout;
+      const writable = (record?.path ?? "") !== "" && (record?.checkout ?? "") === "";
       const missing = el.classList.contains("missing");
       // Renaming and deleting need a file that is there.
       for (const item of menu.querySelectorAll<HTMLButtonElement>(".note-menu-file")) {
@@ -85,7 +85,7 @@ export function createNoteMenus(deps: NoteMenusDeps) {
       syncFromEditor(el);
       const found = anchorsOf(el._noteMarkdown);
       pop.textContent = "";
-      if (!found.length) return false;
+      if (found.length === 0) return false;
       for (const a of found) {
         const row = document.createElement("button");
         row.className = "note-menu-item";
@@ -120,7 +120,7 @@ export function createNoteMenus(deps: NoteMenusDeps) {
   // against the body's own box, which is the one box that must move.
   function scrollToAnchor(el: NoteCard, index: number) {
     const body = el.querySelector<HTMLElement>(".note-body");
-    const heading = body?.querySelectorAll?.("h2")?.[index];
+    const heading = body?.querySelectorAll("h2")[index];
     if (!body || !heading) return;
     const top =
       heading.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop;
@@ -138,7 +138,8 @@ export function createNoteMenus(deps: NoteMenusDeps) {
     if (
       openMenu &&
       !openMenu.contains(ev.target as Node | null) &&
-      !(ev.target as Element | null)?.closest?.(openMenuTrigger)
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a click hits an element
+      !(ev.target as Element | null)?.closest(openMenuTrigger)
     ) {
       closeMenu();
     }
@@ -249,7 +250,7 @@ export function createNoteMenus(deps: NoteMenusDeps) {
 
   function reducedMotion() {
     try {
-      return !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+      return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     } catch {
       return false;
     }

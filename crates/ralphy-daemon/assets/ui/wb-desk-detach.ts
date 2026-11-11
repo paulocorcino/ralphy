@@ -143,12 +143,12 @@ export function createDetach(deps: DetachDeps) {
   function adoptMembers(id: string, members: DetachMessage["members"]) {
     const entry = popups.entry(id);
     if (!entry || !Array.isArray(members)) return;
-    const alive = new Set(members.map((m) => m?.id).filter(Boolean));
-    const dropped = [...(entry.members || []).map((m) => m?.id), ...(entry.memberIds || [])].filter(
-      (wid) => wid && !alive.has(wid),
+    const alive = new Set(members.map((m) => m.id).filter(Boolean));
+    const dropped = [...entry.members.map((m) => m.id), ...entry.memberIds].filter(
+      (wid) => wid !== "" && !alive.has(wid),
     );
     entry.members = members;
-    entry.memberIds = members.map((m) => m?.id).filter(Boolean);
+    entry.memberIds = members.map((m) => m.id).filter(Boolean);
     entry.adopted = true;
     // A remove is a change the daemon applies to its own desk, so a record
     // this page has not read yet goes too.
@@ -169,7 +169,7 @@ export function createDetach(deps: DetachDeps) {
       entry.probed = false;
       return true;
     }
-    if (entry.probed) return false;
+    if (entry.probed === true) return false;
     entry.probed = true;
     entry.peer = { seen: Date.now(), lost: false };
     link.post({ type: "origin-ping", tab: link.tab, fenceId: id });
@@ -180,25 +180,24 @@ export function createDetach(deps: DetachDeps) {
   // scale with the cap. It both announces this tab and ages every peer.
   let beat: ReturnType<typeof setInterval> | null = null;
   function startBeat() {
-    if (beat) return;
+    if (beat !== null) return;
     beat = setInterval(() => {
       link.post({ type: "origin-beat", tab: link.tab });
       const at = Date.now();
       // A copy: `reattachFence` removes an entry inside this loop.
       for (const [id, entry] of popups.entries()) {
-        if (!entry.peer) continue;
         const out = peerFold(entry.peer, { type: "tick", at }, PEER_WINDOW);
         entry.peer = out.state;
         // Consoles must never be nowhere: a popup that stopped answering brings
         // its members home. But SILENCE IS NOT DEATH (`stillThere`).
-        if (out.effects.some((e) => e.type === "peer-lost") && !stillThere(id, entry)) {
+        if (out.effects.length > 0 && !stillThere(id, entry)) {
           reattachFence(id);
         }
       }
     }, HEARTBEAT);
   }
   function stopBeat() {
-    if (beat) clearInterval(beat);
+    if (beat !== null) clearInterval(beat);
     beat = null;
   }
 
@@ -206,7 +205,6 @@ export function createDetach(deps: DetachDeps) {
   // keeps a SECOND tab's popups out, the `origin-` prefix drop keeps this tab
   // from consuming its own broadcasts.
   function fromThisTab(m: DetachMessage) {
-    if (!m || typeof m.type !== "string") return false;
     if (link.tab == null || m.tab !== link.tab) return false;
     return !m.type.startsWith("origin-");
   }
@@ -225,7 +223,7 @@ export function createDetach(deps: DetachDeps) {
   function fenceFor(id: string) {
     const st = stage();
     return (
-      (st ? readFenceRects(st).find((f) => f.id === id) : null) || { id, name: "", rect: null }
+      (st ? readFenceRects(st).find((f) => f.id === id) : null) ?? { id, name: "", rect: null }
     );
   }
 
@@ -236,7 +234,7 @@ export function createDetach(deps: DetachDeps) {
     if (!isDetached(id)) return;
     if (popups.has(id) && !popupMatches(popups.entry(id), m)) return;
     // MUTATED IN PLACE, never replaced: `glyphClick`'s ping compares entries.
-    const entry = popups.entry(id) || newPopupEntry();
+    const entry = popups.entry(id) ?? newPopupEntry();
     // A restored entry learns which popup it holds from its first answer.
     if (entry.pid == null && typeof m.pid === "string") entry.pid = m.pid;
     entry.greeted = true;
@@ -247,7 +245,7 @@ export function createDetach(deps: DetachDeps) {
       adoptMembers(id, m.members);
       replayNoteNames(id, m.members);
     }
-    if (!entry.fence) entry.fence = fenceFor(id);
+    entry.fence ??= fenceFor(id);
     entry.peer = { seen: Date.now(), lost: false };
     entry.probed = false;
     popups.put(id, entry);
@@ -321,7 +319,7 @@ export function createDetach(deps: DetachDeps) {
     // its shadow stays in the fence (ADR-0037 §3d).
     const all = [...st.querySelectorAll<ConsoleWin>(".session-window")];
     const byId = new Map(all.map((w): [string, ConsoleWin] => [w._deskId, w]));
-    const ids = fenceMembership(readFenceRects(st), readWindowRects(st))[id] || [];
+    const ids = fenceMembership(readFenceRects(st), readWindowRects(st))[id] ?? [];
     const windows: PopupMember[] = ids
       .map((wid) => byId.get(wid))
       .filter(Boolean)
@@ -331,8 +329,8 @@ export function createDetach(deps: DetachDeps) {
     // not their DOM. A note with no file yet carries its unsaved text
     // (`draft`), in this snapshot only, never in the desk (#475).
     const cards = notes()
-      .filter((n) => fenceOf(fences(), n.rect || {})?.id === id)
-      .map((n): PopupMember => ({ ...n, ...window.WBNotes?.draftOf?.(n.id), kind: "note" }));
+      .filter((n) => fenceOf(fences(), n.rect)?.id === id)
+      .map((n): PopupMember => ({ ...n, ...window.WBNotes.draftOf(n.id), kind: "note" }));
     return windows.concat(cards);
   }
 
@@ -349,8 +347,8 @@ export function createDetach(deps: DetachDeps) {
   }
 
   function stopPoll(entry: PopupEntry | undefined) {
-    if (entry?.poll) clearInterval(entry.poll);
-    if (entry?.rescue) clearTimeout(entry.rescue);
+    if (entry?.poll != null) clearInterval(entry.poll);
+    if (entry?.rescue != null) clearTimeout(entry.rescue);
   }
 
   // Closes the popup of fence `id`, by its handle when this document has one.
@@ -366,8 +364,8 @@ export function createDetach(deps: DetachDeps) {
   // whose popup closed before its first save comes home with it.
   function homeNote(m: PopupMember) {
     const record = notes().find((n) => n.id === m.id);
-    if (typeof m.draft === "string" && record && !record.path) {
-      window.WBNotes?.adoptDraft?.(m.id, m.draft, m.claim);
+    if (typeof m.draft === "string" && record && (record.path ?? "") === "") {
+      window.WBNotes.adoptDraft(m.id, m.draft, m.claim);
     }
   }
 
@@ -380,11 +378,12 @@ export function createDetach(deps: DetachDeps) {
     // The name comes from the desk, not the snapshot: a rename on another page
     // while the fence was away must not be undone (ADR-0066 §3).
     const rec = loadDesk().find((r) => r.id === m.id);
-    const member = rec?.consoleName ? { ...m, consoleName: rec.consoleName } : m;
+    const name = rec?.consoleName ?? "";
+    const member = name ? { ...m, consoleName: name } : m;
     if (member.session != null) {
       spawnWindow(
         { id: member.session, repo: member.repo },
-        member.agent || "console",
+        (member.agent ?? "") || "console",
         member.repo,
         member,
       );
@@ -403,14 +402,14 @@ export function createDetach(deps: DetachDeps) {
   function reattachFence(id: string, opts: { force?: boolean } = {}) {
     const out = detachFold(popups.detachedIds(), { type: "reattach", fenceId: id });
     const held = out.effects.some((e) => e.type === "close");
-    if (!held && !opts.force) return;
+    if (!held && opts.force !== true) return;
     const entry = popups.entry(id);
     stopPoll(entry);
     popups.remove(id);
     commitDetached(out.registry);
     closePopup(id, entry);
     // The ORIGINAL records: the popup's own layout is never read.
-    for (const m of entry?.members || []) {
+    for (const m of entry?.members ?? []) {
       if (m.kind === "note") homeNote(m);
       else homeConsole(m);
     }
@@ -444,7 +443,8 @@ export function createDetach(deps: DetachDeps) {
       recordNoteName(owner, m);
     } else if (m.type === "wb-note-claimed") {
       recordNoteClaim(owner, m);
-    } else if (m.type === "wb-fence-reattach") {
+    } else {
+      // "wb-fence-reattach", the last type of the message.
       // `owner`, never the message's own field: the source lookup PROVED which
       // fence this window holds; the payload could name any.
       reattachFence(owner);
@@ -465,7 +465,7 @@ export function createDetach(deps: DetachDeps) {
     const entry = popups.entry(owner);
     if (!entry) return;
     entry.greeted = true;
-    if (entry.rescue) {
+    if (entry.rescue !== null) {
       clearTimeout(entry.rescue);
       entry.rescue = null;
     }

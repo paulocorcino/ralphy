@@ -32,17 +32,25 @@ fn the_destructive_console_clicks_confirm_first() {
         (
             r#"title: "Tile this fence?""#,
             1,
-            "if (ok) arrangeFence(f.id);",
+            "if (ok === true) arrangeFence(f.id);",
         ),
         (
             r#"title: "Remove this fence?""#,
             1,
-            "if (ok) removeFence(f.id);",
+            "if (ok === true) removeFence(f.id);",
         ),
-        ("title: `Restart in ${", 1, "if (!ok) return;"),
-        (r#"title: "Restart session?""#, 1, "if (!ok) return;"),
+        ("title: `Restart in ${", 1, "if (ok !== true) return;"),
+        (
+            r#"title: "Restart session?""#,
+            1,
+            "if (ok !== true) return;",
+        ),
         // The live console's ×, and the dormant one's.
-        (r#"title: "Close this console?""#, 2, "if (!ok) return;"),
+        (
+            r#"title: "Close this console?""#,
+            2,
+            "if (ok !== true) return;",
+        ),
     ] {
         let found: Vec<&str> = js
             .match_indices(title)
@@ -131,7 +139,7 @@ fn relaunching_agent_consoles_on_load_is_opt_in() {
     // The popup holds a fragment of the plane and authors no session; its
     // injected `viewStore` reads nothing, and `canLaunch` refuses besides.
     assert!(
-        js.contains("OPTS.canLaunch!==false&&viewStore?.read()?.relaunch===true"),
+        js.contains("OPTS.canLaunch!==false&&viewStore.read()?.relaunch===true"),
         "the opt-in must be read through the injected view store, and never in the popup"
     );
 

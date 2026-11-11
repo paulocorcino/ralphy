@@ -105,8 +105,8 @@ type IssueGraph = {
 // project list lacks.
 function blockedIndex(queue: Issue[], all: Issue[]) {
   const blockedOf = new Map<number, number[]>();
-  for (const i of all) blockedOf.set(i.number, i.blockedBy || []);
-  for (const i of queue) if (!blockedOf.has(i.number)) blockedOf.set(i.number, i.blockedBy || []);
+  for (const i of all) blockedOf.set(i.number, i.blockedBy);
+  for (const i of queue) if (!blockedOf.has(i.number)) blockedOf.set(i.number, i.blockedBy);
   return blockedOf;
 }
 
@@ -132,11 +132,11 @@ function walkDeps(self: number, g: IssueGraph) {
   const acc = new Set<number>();
   const seen = new Set<number>();
   const stack = [self];
-  while (stack.length) {
+  while (stack.length > 0) {
     const node = stack.pop();
     if (node === undefined || seen.has(node)) continue; // already expanded — also breaks cycles
     seen.add(node);
-    for (const n of g.blockedOf.get(node) || []) addNeighbour(n, self, g, acc, stack);
+    for (const n of g.blockedOf.get(node) ?? []) addNeighbour(n, self, g, acc, stack);
   }
   return acc;
 }
@@ -163,9 +163,9 @@ function kahnOrder(queue: Issue[], deps: Map<number, Set<number>>) {
   const byNum = new Map(queue.map((i) => [i.number, i]));
   const placed = new Set<number>();
   const out = [];
-  while (byNum.size) {
+  while (byNum.size > 0) {
     const keys = [...byNum.keys()].sort((a, b) => a - b);
-    const ready = keys.find((n) => [...(deps.get(n) || [])].every((d) => placed.has(d)));
+    const ready = keys.find((n) => [...(deps.get(n) ?? [])].every((d) => placed.has(d)));
     if (ready == null) {
       for (const n of keys) out.push(byNum.get(n));
       break;
@@ -216,7 +216,7 @@ export const WBKanban = {
   ],
 
   labelMeta(name: string) {
-    return this.LABELS[name] || { color: "#6b5f52", short: name };
+    return this.LABELS[name] ?? { color: "#6b5f52", short: name };
   },
   labelColor(name: string) {
     return this.labelMeta(name).color;
@@ -236,7 +236,7 @@ export const WBKanban = {
   // closed first, then the human gate, then agent-eligibility, else backlog.
   columnOf(iss: Issue) {
     if (iss.state === "closed") return "closed";
-    const L = iss.labels || [];
+    const L = iss.labels;
     if (L.includes("ready-for-human")) return "human";
     if (L.includes("ready-for-agent") || L.includes("AFK")) return "agent";
     return "backlog";
@@ -252,7 +252,7 @@ export const WBKanban = {
   // project? (Mirrors the runtime gate — a closed blocker is satisfied.)
   openBlockers(iss: Issue, all: Issue[]) {
     const openSet = new Set(all.filter((i) => i.state === "open").map((i) => i.number));
-    return (iss.blockedBy || []).filter((n: number) => openSet.has(n));
+    return iss.blockedBy.filter((n: number) => openSet.has(n));
   },
 
   // --- graph order (port of sort_queue_in_graph / Kahn) -----------------
@@ -280,8 +280,8 @@ export const WBKanban = {
   // issue (planning / executing / sleeping) is flagged — a run's pending or
   // already-terminal members don't clutter the board.
   runningFor(number: number, projectRuns: Run[] | null | undefined) {
-    for (const r of projectRuns || []) {
-      const iss = (r.issues || []).find((x) => x.number === number);
+    for (const r of projectRuns ?? []) {
+      const iss = r.issues.find((x) => x.number === number);
       if (!iss) continue;
       const st = WBRun.issueState(r, iss);
       if (st === "planning" || st === "executing" || st === "sleep") {
@@ -338,7 +338,7 @@ export const WBKanban = {
       case "runs":
         return sinceMs >= this.REFRESH_MIN_GAP_MS;
       case "backstop":
-        return !!focused && sinceMs >= this.REFRESH_BACKSTOP_MS;
+        return focused && sinceMs >= this.REFRESH_BACKSTOP_MS;
       default:
         return false;
     }
@@ -353,13 +353,13 @@ export const WBKanban = {
       String(iss.number).includes(s) ||
       (iss.title || "").toLowerCase().includes(s) ||
       (iss.body || "").toLowerCase().includes(s) ||
-      (iss.labels || []).some((l: string) => l.toLowerCase().includes(s))
+      iss.labels.some((l: string) => l.toLowerCase().includes(s))
     );
   },
   hasLabelFilter(iss: Issue, label: string) {
     if (label === "__all") return true;
-    if (label === "__none") return (iss.labels || []).length === 0;
-    return (iss.labels || []).includes(label);
+    if (label === "__none") return iss.labels.length === 0;
+    return iss.labels.includes(label);
   },
   SORTS: [
     { id: "num-desc", label: "Newest" },
@@ -382,7 +382,7 @@ export const WBKanban = {
   },
 
   fmtDate(iso: string | null | undefined) {
-    if (!iso) return "";
+    if (iso === null || iso === undefined || iso === "") return "";
     const d = new Date(iso);
     if (isNaN(d.getTime())) return iso;
     return d.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });

@@ -17,7 +17,9 @@ import type { Project } from "./wb-project.ts";
 // local rows never do, which is what makes "local" a property of the data
 // rather than a flag someone has to remember to set.
 /** What the fold reads of a project row (`Project` in `wb-project.ts`). */
-type Row = Pick<Project, "daemon" | "key" | "slug" | "env" | "os" | "daemonName" | "peerState">;
+// A row from a test or an older daemon may lack its environment and daemon name.
+type Row = Pick<Project, "daemon" | "key" | "slug" | "os" | "peerState"> &
+  Partial<Pick<Project, "env" | "daemonName">>;
 /** A peer of `/api/fleet` (`PeerView` in `routes/api_fleet.rs`). */
 export type FleetPeer = {
   daemon_id: string;
@@ -54,21 +56,29 @@ export type Group = GroupSeed & {
   showName?: boolean;
 };
 
+/** A peer as the fold reads it: a test or an older daemon may omit the two flags. */
+type PeerIn = Omit<FleetPeer, "nudgeable" | "tunnel"> & { nudgeable?: boolean; tunnel?: boolean };
+
+// The text, or `fallback` when there is none or it is empty.
+export function textOr(text: string | null | undefined, fallback: string): string {
+  return text == null || text === "" ? fallback : text;
+}
+
 function isLocal(row: Row) {
-  return !row.daemon;
+  return row.daemon === undefined || row.daemon === "";
 }
 
 function groupKey(row: Row) {
   // A row that is not local has `daemon` set: it names the peer.
-  return row.daemon || "local";
+  return textOr(row.daemon, "local");
 }
 
 function repoRef(row: Row) {
-  return row.key || row.slug;
+  return textOr(row.key, row.slug);
 }
 
 function isPeerRef(ref: string | null | undefined) {
-  const value = String(ref || "");
+  const value = ref ?? "";
   const slash = value.indexOf("/");
   if (slash < 0) return false;
   const head = value.slice(0, slash);
@@ -84,10 +94,10 @@ function isPeerRef(ref: string | null | undefined) {
 // sidebar does not reshuffle between polls.
 function fleetGroups(
   repos: readonly Project[] | null | undefined,
-  peers: readonly FleetPeer[] | null | undefined,
+  peers: readonly PeerIn[] | null | undefined,
 ) {
-  const rows = repos || [];
-  const peerList = peers || [];
+  const rows = repos ?? [];
+  const peerList = peers ?? [];
 
   const groups = new Map<string, Group>();
   const ensure = (key: string, seed: GroupSeed) => {
@@ -105,9 +115,9 @@ function fleetGroups(
   const out = Array.from(groups.values());
   out.sort((a, b) => {
     if (a.local !== b.local) return a.local ? -1 : 1;
-    const byEnv = String(a.environment).localeCompare(String(b.environment));
+    const byEnv = a.environment.localeCompare(b.environment);
     if (byEnv !== 0) return byEnv;
-    return String(a.daemon).localeCompare(String(b.daemon));
+    return a.daemon.localeCompare(b.daemon);
   });
   markHeaders(out);
   return out;
@@ -116,13 +126,13 @@ function fleetGroups(
 // What a group knows of its environment from its first row.
 function rowSeed(row: Row): GroupSeed {
   return {
-    environment: row.env || "",
-    os: row.os || "",
-    daemon: row.daemon || "",
+    environment: row.env ?? "",
+    os: row.os ?? "",
+    daemon: row.daemon ?? "",
     // A local group has no entry in the peer list, so its name has to
     // come off the row — which `loadFleet` stamps from `/api/fleet`.
-    name: isLocal(row) ? row.daemonName || "" : "",
-    state: isLocal(row) ? "local" : row.peerState || "",
+    name: isLocal(row) ? (row.daemonName ?? "") : "",
+    state: isLocal(row) ? "local" : (row.peerState ?? ""),
     diagnosis: "",
     nudgeable: false,
     tunnel: false,
@@ -131,7 +141,7 @@ function rowSeed(row: Row): GroupSeed {
 }
 
 // What a group knows of a peer that gave no rows.
-function peerSeed(p: FleetPeer): GroupSeed {
+function peerSeed(p: PeerIn): GroupSeed {
   return {
     environment: p.environment || "",
     os: "",
@@ -147,14 +157,14 @@ function peerSeed(p: FleetPeer): GroupSeed {
 
 // The peer list is authoritative about the peer; the rows only carry what
 // a row needs. A row-derived state is a fallback, never an override.
-function applyPeer(g: Group, p: FleetPeer) {
+function applyPeer(g: Group, p: PeerIn) {
   g.environment = p.environment || g.environment;
   g.os = p.os || g.os;
   g.name = p.name || "";
   g.state = p.state || g.state;
   g.diagnosis = p.diagnosis || "";
-  g.nudgeable = !!p.nudgeable;
-  g.tunnel = !!p.tunnel;
+  g.nudgeable = p.nudgeable === true;
+  g.tunnel = p.tunnel === true;
 }
 
 // Which group headers show, and which of them name their daemon.
@@ -166,11 +176,11 @@ function markHeaders(out: Group[]) {
   // daemons in ONE environment apart; anywhere else it restates the
   // environment in other words (`WSL: Ubuntu-22.04 wsl-ubuntu`).
   const perEnv = new Map<string, number>();
-  for (const g of out) perEnv.set(g.environment, (perEnv.get(g.environment) || 0) + 1);
+  for (const g of out) perEnv.set(g.environment, (perEnv.get(g.environment) ?? 0) + 1);
   for (const g of out) {
     g.header = header;
     // A tunnel peer's header already carries its name (`groupHost`).
-    g.showName = !g.tunnel && !!g.name && (perEnv.get(g.environment) || 0) > 1;
+    g.showName = !g.tunnel && g.name !== "" && (perEnv.get(g.environment) ?? 0) > 1;
   }
 }
 
@@ -185,7 +195,7 @@ function groupHost(group: Group | null | undefined) {
 // The name a sentence uses for a peer: its machine name when it has one,
 // else its environment. "" for no group.
 function peerName(group: Group | null | undefined) {
-  return groupHost(group) || (group && group.environment) || "";
+  return textOr(groupHost(group), group?.environment ?? "");
 }
 
 // The header's environment: the OS release, or `WSL: <distro>`.
@@ -209,7 +219,7 @@ function stateIcon(group: Group | null | undefined) {
 // drop closes the tunnel, and the daemon is already opening it again.
 function stateFault(group: Group) {
   return (
-    !!stateIcon(group) &&
+    stateIcon(group) !== "" &&
     group.state !== "reachable" &&
     group.state !== "asleep" &&
     group.state !== "tunnel-closed"
@@ -228,16 +238,25 @@ const STATE_WORD: Record<string, string> = {
 
 // A peer state as words; a state with no entry is already a word.
 function stateWord(state: string | null | undefined) {
-  return (state && STATE_WORD[state]) || state || "";
+  const code = state ?? "";
+  return STATE_WORD[code] ?? code;
+}
+
+// The state words a header's tooltip shows; "" for the local group or no state.
+function shownState(group: Partial<Group>): string {
+  const state = group.state ?? "";
+  if (group.local === true || state === "") return "";
+  return STATE_WORD[state] ?? state;
 }
 
 function groupTitle(group: Partial<Group> | null | undefined) {
   if (!group) return "";
   const parts = [];
-  if (group.name) parts.push(group.name);
-  if (!group.local && group.state) parts.push(STATE_WORD[group.state] || group.state);
+  if (group.name !== undefined && group.name !== "") parts.push(group.name);
+  const state = shownState(group);
+  if (state !== "") parts.push(state);
   const head = parts.join(" · ");
-  if (!group.diagnosis) return head;
+  if (group.diagnosis === undefined || group.diagnosis === "") return head;
   return head ? head + " — " + group.diagnosis : group.diagnosis;
 }
 
@@ -255,7 +274,7 @@ function refDaemon(ref: string | null | undefined) {
 // remoteless `path-<hash>` slug and an `owner/repo` alike, because `isPeerRef`
 // only matches a ULID head.
 function refSlug(ref: string | null | undefined) {
-  const value = String(ref || "");
+  const value = ref ?? "";
   return isPeerRef(value) ? value.slice(value.indexOf("/") + 1) : value;
 }
 
@@ -270,7 +289,7 @@ function refSlug(ref: string | null | undefined) {
 // it would say it twice.
 function refLabel(ref: string | null | undefined, environment?: string | null) {
   const slug = refSlug(ref);
-  if (!isPeerRef(ref) || !environment) return slug;
+  if (!isPeerRef(ref) || environment == null || environment === "") return slug;
   return slug + " · " + environment;
 }
 
@@ -311,8 +330,8 @@ function available(group: Group | null | undefined) {
 // raw OS name (peer.rs `environment_label`).
 const SYSTEMS = ["windows", "linux", "macos"];
 function system(os: string | null | undefined, environment: string | null | undefined) {
-  if (os && SYSTEMS.includes(os)) return os;
-  const e = String(environment || "");
+  if (os != null && SYSTEMS.includes(os)) return os;
+  const e = environment ?? "";
   if (e === "Linux" || e.indexOf("WSL") === 0) return "linux";
   if (e === "macOS") return "macos";
   if (e === "Windows") return "windows";
@@ -322,7 +341,7 @@ function system(os: string | null | undefined, environment: string | null | unde
 // The native root of a peer's project. A peer that predates the field serves
 // none, and its `path` is then the best root there is.
 function peerRoot(row: { root?: string | null; path?: string | null }) {
-  return row.root || row.path || "";
+  return textOr(row.root, row.path ?? "");
 }
 
 export const WBFleet = {

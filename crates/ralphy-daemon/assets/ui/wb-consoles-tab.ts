@@ -72,20 +72,20 @@ export function wbColumns() {
     setColumns(next: Grid) {
       if (JSON.stringify(next) === JSON.stringify(this.columns)) return;
       this.columns = next;
-      window.WBView?.patch({ columns: WBColumns.toStored(next) });
+      window.WBView.patch({ columns: WBColumns.toStored(next) });
     },
     // Once, on `workbench:desk-restored`. A list the desk does not confirm is
     // ignored and cleared from the store; a kept one is painted with `persist`.
     restoreColumns() {
       if (this._columnsRestored) return;
       this._columnsRestored = true;
-      const stored = window.WBView?.read();
+      const stored = window.WBView.read();
       this.columnDir = WBColumns.dirOf(stored?.columnDir);
       const raw = stored?.columns ?? null;
       const next = WBColumns.fromStored(raw, WBConsole.deskRecords());
       this.setColumns(next);
       writeBackColumns(raw, next);
-      if (next.length) this.paintColumns({ raise: true });
+      if (next.length > 0) this.paintColumns({ raise: true });
     },
     effectiveColumns(fromId: string): Grid {
       return this.columnIds().includes(fromId) ? this.columns : [[fromId]];
@@ -95,7 +95,7 @@ export function wbColumns() {
     menuGrid(fromId: string): { tab: string | null; grid: Grid } {
       const tab = this.$store.tabs.tabOf(fromId);
       return tab
-        ? { tab: tab.id, grid: tab.grid || [] }
+        ? { tab: tab.id, grid: tab.grid ?? [] }
         : { tab: null, grid: this.effectiveColumns(fromId) };
     },
     // The consoles of the console tabs, but the ones in `grid`: they are rows
@@ -107,14 +107,14 @@ export function wbColumns() {
     // The Right | Down choice at the top of the list, kept in this browser.
     setColumnDir(dir: string | null | undefined) {
       this.columnDir = WBColumns.dirOf(dir);
-      window.WBView?.patch({ columnDir: this.columnDir });
+      window.WBView.patch({ columnDir: this.columnDir });
     },
     // True when the first console asked for a restore or a wait, so the paint
     // stops here. A restore needs the first console's id: with none, there is
     // nothing to restore.
     settleHeadGap(head: string | undefined, headWin: ConsoleWin | null | undefined) {
       const gap = headGap(head, headWin, WBConsole.isRelaunching);
-      if (gap === "restore" && head) this.restoreColumn(head);
+      if (gap === "restore" && head !== undefined && head !== "") this.restoreColumn(head);
       return gap !== null;
     },
     // Re-derive what is painted from the list and the current cap. A console
@@ -127,12 +127,13 @@ export function wbColumns() {
         ]),
       );
       const head = this.columnIds()[0];
-      const headWin = head ? byId.get(head) : null;
+      const named = head !== undefined && head !== "";
+      const headWin = named ? byId.get(head) : null;
       if (this.settleHeadGap(head, headWin)) return;
       const kept = WBColumns.keep(this.columns, new Set(byId.keys()));
       const keptIds = WBColumns.flat(kept);
       // The first console left the stage and one is left: it takes the maximize.
-      if (head && !headWin && keptIds.length === 1) {
+      if (named && !headWin && keptIds.length === 1) {
         const cap = this.columnCap();
         this.setColumns([]);
         WBConsole.applyColumns(WBColumns.painted(kept, cap), { unmax: null, persist: true });
@@ -168,7 +169,7 @@ export function wbColumns() {
     leaveColumns(ids: string[]) {
       const r = WBColumns.external(this.columns, { type: "detached", ids });
       if (!r.changed) return;
-      const cap = r.columns.length ? this.columnCap() : 1;
+      const cap = r.columns.length > 0 ? this.columnCap() : 1;
       this.setColumns(r.ended ? [] : r.columns);
       WBConsole.applyColumns(WBColumns.painted(r.columns, cap), {
         unmax: r.unmax,
@@ -184,7 +185,7 @@ export function wbColumns() {
       const gone = this.columnIds().filter((id) => ids.includes(id));
       const r = WBColumns.external(this.columns, { type: "closed", ids: gone });
       if (r.changed) {
-        const cap = r.columns.length ? this.columnCap() : 1;
+        const cap = r.columns.length > 0 ? this.columnCap() : 1;
         this.setColumns(r.ended ? [] : r.columns);
         // Painted BEFORE the drops, so a lone survivor is maximized first.
         WBConsole.applyColumns(WBColumns.painted(r.columns, cap), {
@@ -210,8 +211,8 @@ export function wbColumns() {
       });
       this.columnSwitch = cap < 2;
       this.columnFrom = id;
-      const top = Math.round((rect?.bottom || 0) + 4);
-      const right = Math.round(rect?.right || 0);
+      const top = Math.round((rect?.bottom ?? 0) + 4);
+      const right = Math.round(rect?.right ?? 0);
       // Right edge on the button's right edge, and no larger than the room
       // left of it and under it: the list grows with its longest row, and a
       // fixed guess at its width pushed it past the edge of the window.
@@ -254,10 +255,10 @@ export function wbColumns() {
       return !r.swappable;
     },
     columnRowTip(r: ColumnRow) {
-      return r.swappable ? "" : r.reason || "";
+      return r.swappable ? "" : (r.reason ?? "");
     },
     columnOpenTip(r: ColumnRow) {
-      if (!r.enabled) return r.reason || "";
+      if (!r.enabled) return r.reason ?? "";
       return this.columnDir === "down" ? "Open in a new row" : "Open in a new column";
     },
     // Enter in the filter does what a click on a row does: it swaps in the
@@ -270,15 +271,15 @@ export function wbColumns() {
     },
     openColumn(id: string) {
       const from = this.columnFrom;
-      if (!from) return;
+      if (from === null || from === "") return;
       const { tab, grid } = this.menuGrid(from);
       const out = WBColumns.open(grid, from, id, this.columnCap(), this.columnDir);
       if (!out.ok) {
-        if (out.reason) this.$store.modals.flash(out.reason);
+        if (out.reason !== null && out.reason !== "") this.$store.modals.flash(out.reason);
         return;
       }
       this.columnMenu = false;
-      if (tab) this.$store.tabs.setTabGrid(tab, out.columns);
+      if (tab !== null && tab !== "") this.$store.tabs.setTabGrid(tab, out.columns);
       else {
         this.setColumns(out.columns);
         this.paintColumns({ raise: true });
@@ -288,13 +289,13 @@ export function wbColumns() {
     // Put `id` in the row that opened the list (ADR-0051 §5, swap).
     swapColumn(id: string) {
       const from = this.columnFrom;
-      if (!from) return;
+      if (from === null || from === "") return;
       const { tab, grid } = this.menuGrid(from);
       const r = WBColumns.swap(grid, from, id);
       if (!r.ok) return;
       this.columnMenu = false;
       // A tab never writes the desk: the console that leaves goes to the stage.
-      if (tab) this.$store.tabs.setTabGrid(tab, r.columns);
+      if (tab !== null && tab !== "") this.$store.tabs.setTabGrid(tab, r.columns);
       else this.swapStage(r);
       WBConsole.focusColumn(id);
     },
@@ -310,7 +311,7 @@ export function wbColumns() {
     },
     restoreColumn(id: string) {
       const r = WBColumns.restore(this.columns, id);
-      const cap = r.columns.length ? this.columnCap() : 1;
+      const cap = r.columns.length > 0 ? this.columnCap() : 1;
       this.setColumns(r.ended ? [] : r.columns);
       // It may promote a lone survivor to the maximize.
       WBConsole.applyColumns(WBColumns.painted(r.columns, cap), {
@@ -333,7 +334,7 @@ export function wbColumns() {
       const cap = ids.length >= 2 ? this.columnCap() : 1;
       this.setColumns(ids.length >= 2 ? grid : []);
       WBConsole.applyColumns(WBColumns.painted(grid, cap), {
-        unmax: old && !ids.includes(old) ? old : null,
+        unmax: old !== undefined && old !== "" && !ids.includes(old) ? old : null,
         raise: true,
         persist: true,
       });
@@ -361,14 +362,14 @@ export function wbColumns() {
       if (WBColumns.flat(grid).length < 2) return false;
       const painted = WBColumns.painted(grid, this.columnCap());
       const to = WBColumns.focusMove(painted, WBConsole.focusedId(), axis, step);
-      if (to) WBConsole.focusColumn(to);
+      if (to !== null && to !== "") WBConsole.focusColumn(to);
       return true;
     },
     // The columns while they are open, the fences otherwise (ADR-0051 §5). The
     // fences have no "y": ↑/↓ with no columns open applies nothing.
     arrowStep(axis: string, step: number) {
       if (WBColumns.flat(this.arrowGrid()).length >= 2) return this.stepColumn(axis, step);
-      return axis === "x" && !!this.stepFence(step);
+      return axis === "x" && (this.stepFence(step) ?? "") !== "";
     },
 
     closeOwnMenus() {
@@ -384,7 +385,9 @@ export function wbColumns() {
       window.addEventListener("workbench:menus-close", () => this.closeOwnMenus());
       // A console whose record another client removed leaves the columns
       // before it leaves the stage.
-      window.WBConsole?.setDeskGoneHook?.((ids: string[]) => this.checkColumnDesk(ids));
+      window.WBConsole.setDeskGoneHook((ids: string[]) => {
+        this.checkColumnDesk(ids);
+      });
 
       // The Alpine mirror of the live console count.
       document.addEventListener("workbench:consoles-changed", (e) => {
@@ -442,7 +445,9 @@ export function wbColumns() {
       } as const;
       document.addEventListener("keydown", (e) => {
         if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
-        const move = ARROW_STEPS[e.code as keyof typeof ARROW_STEPS];
+        const steps: Readonly<Record<string, readonly ["x" | "y", number] | undefined>> =
+          ARROW_STEPS;
+        const move = steps[e.code];
         if (!move) return;
         if (
           this.$store.modals.consoleShortcutsBlocked(WBColumns.flat(this.arrowGrid()).length >= 2)

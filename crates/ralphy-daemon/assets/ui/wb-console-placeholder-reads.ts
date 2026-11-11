@@ -32,7 +32,9 @@ export async function checkoutStillThere(
   checkout: string | null | undefined,
 ) {
   const daemon = window.WBDaemon;
-  if (!checkout || !repo || typeof daemon?.observe !== "function") return true;
+  if (checkout === null || checkout === undefined || checkout === "") return true;
+  if (repo === null || repo === undefined || repo === "") return true;
+  if (typeof daemon.observe !== "function") return true;
   let reply;
   try {
     reply = await daemon.observe("tree.list", { repo, path: "", checkout });

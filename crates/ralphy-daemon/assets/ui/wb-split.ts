@@ -53,7 +53,7 @@ type Tab = {
 };
 
 function findTab(tabs: Tab[] | null | undefined, id: string) {
-  return (tabs || []).find((t) => t.id === id);
+  return (tabs ?? []).find((t) => t.id === id);
 }
 
 // A mirror doubles the active tab, when it is a code pane.
@@ -70,9 +70,9 @@ function pinnedLeft(
   lastLeft: string | null | undefined,
   tabs: Tab[] | null | undefined,
 ) {
-  return lastLeft && lastLeft !== slotId && findTab(tabs, lastLeft)
-    ? lastLeft
-    : ((tabs || []).find((t) => t.closable && t.id !== slotId) || {}).id;
+  const last = lastLeft ?? "";
+  if (last !== "" && last !== slotId && findTab(tabs, last)) return last;
+  return (tabs ?? []).find((t) => t.closable === true && t.id !== slotId)?.id;
 }
 
 function resolve({
@@ -90,15 +90,27 @@ function resolve({
   width: number;
   paneless?: boolean;
 }) {
-  if (paneless || !active) return single(null);
-  if (!slot || !available(width)) return single(active);
-  if (slot.kind === "mirror") return mirrorPanes(active, tabs);
-  if (slot.kind !== "pin" || !findTab(tabs, slot.id)) return single(active);
-  if (active !== slot.id) return { left: active, right: slot.id, mirror: false, focus: "left" };
+  const shown = active ?? "";
+  if (paneless === true || shown === "") return single(null);
+  if (!slot || !available(width)) return single(shown);
+  if (slot.kind === "mirror") return mirrorPanes(shown, tabs);
+  return pinPanes(shown, slot.id, tabs, lastLeft);
+}
+
+// The two panes of a pin of `slotId`.
+function pinPanes(
+  active: string,
+  slotId: string,
+  tabs: Tab[] | null | undefined,
+  lastLeft: string | null | undefined,
+) {
+  if (!findTab(tabs, slotId)) return single(active);
+  if (active !== slotId) return { left: active, right: slotId, mirror: false, focus: "left" };
   // The pinned tab was activated from the strip; with no tab to sit beside
   // there is nothing to split against.
-  const left = pinnedLeft(slot.id, lastLeft, tabs);
-  return left ? { left, right: slot.id, mirror: false, focus: "right" } : single(active);
+  const left = pinnedLeft(slotId, lastLeft, tabs);
+  if (left === undefined || left === "") return single(active);
+  return { left, right: slotId, mirror: false, focus: "right" };
 }
 
 // A closed tab takes its pin with it; a mirror follows the active tab and
@@ -128,18 +140,18 @@ function toStored(slot: Slot, ratio: number | null | undefined, tabs: Tab[] | nu
   const r = Number.isFinite(ratio) ? ratio : null;
   if (slot?.kind === "mirror") return { kind: "mirror", ratio: r };
   if (slot?.kind !== "pin") return null;
-  const t = (tabs || []).find((x) => x.id === slot.id);
+  const t = (tabs ?? []).find((x) => x.id === slot.id);
   if (!t || !t.id.startsWith("file:")) return null;
   return { kind: "pin", project: t.project, path: t.path, checkout: t.checkout ?? null, ratio: r };
 }
 
 function fromStored(raw: unknown, tabs: Tab[] | null | undefined): Slot {
-  if (!raw || typeof raw !== "object") return null;
+  if (raw === null || typeof raw !== "object") return null;
   // The browser's store: any shape may come back, so each field is checked.
   const stored = raw as { kind?: unknown; project?: unknown; path?: unknown; checkout?: unknown };
   if (stored.kind === "mirror") return { kind: "mirror" };
   if (stored.kind !== "pin") return null;
-  const t = (tabs || []).find(
+  const t = (tabs ?? []).find(
     (x) =>
       x.project === stored.project &&
       x.path === stored.path &&

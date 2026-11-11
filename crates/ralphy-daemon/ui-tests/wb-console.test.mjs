@@ -810,7 +810,7 @@ test("markRelaunch marks the id, and a take-down that throws clears the mark", (
 test("a restart and a placeholder's Launch mark the console as relaunching", () => {
   assert.match(SRC, /markRelaunch\(carry\.id, discard\);/);
   assert.match(SRC, /markRelaunch\(carry\.id, \(\) => drop\(true\)\);/);
-  assert.match(SRC, /\} finally \{\s*relaunching\.delete\(carry\?\.id\);/);
+  assert.match(SRC, /\} finally \{\s*relaunching\.delete\(carry\.id\);/u);
 });
 
 // The torn-off fence window's grid is never stored (ADR-0051 §8, amended

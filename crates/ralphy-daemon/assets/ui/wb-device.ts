@@ -16,8 +16,29 @@
    --------------------------------------------------------------------------- */
 import { WBSessionRoute } from "./wb-session-route.ts";
 
+/** The page's own window, which `report` reads. */
+type Page = Window & typeof globalThis;
+
+/** The window members a browser, or a test's window, may lack. */
+type MaybeMissing =
+  | "document"
+  | "matchMedia"
+  | "CSS"
+  | "getComputedStyle"
+  | "speechSynthesis"
+  | "navigator"
+  | "screen";
+
 /** The window `collect` reads: the page's own, or a test's. */
-type Win = Window & typeof globalThis;
+type Win = Omit<Page, MaybeMissing> & {
+  document?: Document;
+  matchMedia?: Page["matchMedia"];
+  CSS?: Partial<Page["CSS"]>;
+  getComputedStyle?: Page["getComputedStyle"];
+  speechSynthesis?: Partial<SpeechSynthesis>;
+  navigator?: NavigatorFacts;
+  screen?: ScreenFacts;
+};
 
 /** The `navigator` members this module reads. A browser may lack any of them. */
 type NavigatorFacts = Partial<Navigator> & {
@@ -47,11 +68,15 @@ type ScreenFacts = Partial<Screen> & { isExtended?: boolean };
 /** What `collect` returns: one field per fact. */
 type Facts = { [fact: string]: JsonValue | undefined };
 
+// `Number("12px")` is NaN: a padding needs `parseFloat`.
+// oxlint-disable-next-line unicorn/prefer-number-coercion -- the value ends in "px"
+const px = (v: string) => parseFloat(v) || 0;
+
 export const WBDevice = (function () {
   async function attempt<T>(fn: () => T | Promise<T>): Promise<T | null> {
     try {
-      const v = await fn();
-      return v === undefined ? null : v;
+      const v: T | undefined = await fn();
+      return v ?? null;
     } catch {
       return null;
     }
@@ -67,14 +92,14 @@ export const WBDevice = (function () {
 
   function firstMatch(win: Win, feature: string, values: string[]) {
     for (const v of values) {
-      if (media(win, `(${feature}: ${v})`)) return v;
+      if (media(win, `(${feature}: ${v})`) === true) return v;
     }
     return null;
   }
 
   function cssSupports(win: Win, prop: string, value: string) {
     try {
-      return win.CSS && win.CSS.supports ? win.CSS.supports(prop, value) : null;
+      return win.CSS?.supports ? win.CSS.supports(prop, value) : null;
     } catch {
       return null;
     }
@@ -89,12 +114,16 @@ export const WBDevice = (function () {
   // One context, read, then lost at once. The consoles hold at most 12
   // WebGL contexts (wb-console.ts GPU_BUDGET) and Chrome drops the oldest
   // past 16, so one more for a moment takes no console's place.
+  function legacyGl(canvas: HTMLCanvasElement) {
+    const old = canvas.getContext("experimental-webgl");
+    return old instanceof WebGLRenderingContext ? old : null;
+  }
+
   function gpu(win: Win) {
     const doc = win.document;
     if (!doc) return null;
     const canvas = doc.createElement("canvas");
-    const gl = (canvas.getContext("webgl") ||
-      canvas.getContext("experimental-webgl")) as WebGLRenderingContext | null;
+    const gl = canvas.getContext("webgl") ?? legacyGl(canvas);
     if (!gl) return null;
     const out: Record<string, string> = {
       vendor: glString(gl, gl.VENDOR),
@@ -112,7 +141,9 @@ export const WBDevice = (function () {
 
   function safeArea(win: Win) {
     const doc = win.document;
-    if (!doc || !doc.body || !win.getComputedStyle) return null;
+    if (!doc || !win.getComputedStyle) return null;
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- null in a page not parsed yet
+    if (doc.body === null) return null;
     const el = doc.createElement("div");
     el.style.cssText =
       "position:fixed;visibility:hidden;" +
@@ -121,10 +152,10 @@ export const WBDevice = (function () {
     doc.body.append(el);
     const cs = win.getComputedStyle(el);
     const out = {
-      top: parseFloat(cs.paddingTop) || 0,
-      right: parseFloat(cs.paddingRight) || 0,
-      bottom: parseFloat(cs.paddingBottom) || 0,
-      left: parseFloat(cs.paddingLeft) || 0,
+      top: px(cs.paddingTop),
+      right: px(cs.paddingRight),
+      bottom: px(cs.paddingBottom),
+      left: px(cs.paddingLeft),
     };
     el.remove();
     return out;
@@ -135,17 +166,19 @@ export const WBDevice = (function () {
   const VOICE_SAMPLE = 5;
   function voices(win: Win) {
     const s = win.speechSynthesis;
-    if (!s || !s.getVoices) return null;
+    const getVoices = s?.getVoices?.bind(s);
+    if (!s || !getVoices) return null;
+    const listen = s.addEventListener?.bind(s);
     const read = () => {
-      const all = s.getVoices().map((v) => `${v.name}|${v.lang}|${v.localService ? 1 : 0}`);
+      const all = getVoices().map((v) => `${v.name}|${v.lang}|${v.localService ? 1 : 0}`);
       return { count: all.length, sample: all.slice(0, VOICE_SAMPLE) };
     };
     const now = read();
-    if (now.count || !s.addEventListener) return Promise.resolve(now);
+    if (now.count || !listen) return Promise.resolve(now);
     // Chromium fills the list a moment after the first call.
     return new Promise<ReturnType<typeof read>>((resolve) => {
       const done = () => resolve(read());
-      s.addEventListener("voiceschanged", done, { once: true });
+      listen("voiceschanged", done, { once: true });
       setTimeout(done, 800);
     });
   }
@@ -166,8 +199,8 @@ export const WBDevice = (function () {
   }
 
   async function collect(win: Win): Promise<Facts> {
-    const nav: NavigatorFacts = win.navigator || {};
-    const scr: ScreenFacts = win.screen || {};
+    const nav: NavigatorFacts = win.navigator ?? {};
+    const scr: ScreenFacts = win.screen ?? {};
     const uad = nav.userAgentData;
     const intl = await attempt(() => win.Intl.DateTimeFormat().resolvedOptions());
     return {
@@ -193,7 +226,7 @@ export const WBDevice = (function () {
       ),
       platform: await attempt(() => nav.platform),
       vendor: await attempt(() => nav.vendor),
-      languages: await attempt(() => Array.from(nav.languages || [])),
+      languages: await attempt(() => Array.from(nav.languages ?? [])),
       intl: intl && {
         time_zone: intl.timeZone,
         locale: intl.locale,
@@ -212,7 +245,7 @@ export const WBDevice = (function () {
         avail_height: scr.availHeight,
         color_depth: scr.colorDepth,
         orientation: scr.orientation ? scr.orientation.type : null,
-        is_extended: scr.isExtended === undefined ? null : scr.isExtended,
+        is_extended: scr.isExtended ?? null,
       })),
       dpr: await attempt(() => win.devicePixelRatio),
       window: await attempt(() => ({
@@ -246,7 +279,7 @@ export const WBDevice = (function () {
         webkit_touch_callout: cssSupports(win, "-webkit-touch-callout", "none"),
         gesture_event: "GestureEvent" in win,
         safari_object: "safari" in win,
-        ios_standalone: nav.standalone === undefined ? null : nav.standalone,
+        ios_standalone: nav.standalone ?? null,
         moz_appearance: cssSupports(win, "-moz-appearance", "none"),
         chrome_object: "chrome" in win,
       },
@@ -260,7 +293,7 @@ export const WBDevice = (function () {
       cookies: await attempt(() => nav.cookieEnabled),
       do_not_track: await attempt(() => nav.doNotTrack),
       storage: await attempt(() =>
-        nav.storage && nav.storage.estimate
+        nav.storage
           ? nav.storage.estimate().then((e) => ({ quota: e.quota, usage: e.usage }))
           : null,
       ),
@@ -288,7 +321,7 @@ export const WBDevice = (function () {
 
   // Send once per page load. A 401 (no login yet) leaves it unsent, and the
   // `login` action sends it again. A 409 sends again a little later.
-  function report(win: Win) {
+  function report(win: Page) {
     let sent = false;
     async function send(left: number) {
       if (sent) return;
@@ -304,7 +337,7 @@ export const WBDevice = (function () {
     }
     const quiet = (left = RETRIES) => send(left).catch(() => {});
     win.document.addEventListener("workbench:action", (e: DocumentEventMap["workbench:action"]) => {
-      if (e.detail && e.detail.action === "login") void quiet();
+      if (e.detail.action === "login") void quiet();
     });
     void quiet();
   }

@@ -49,8 +49,9 @@ function isRaster(el: Picture): el is HTMLImageElement {
 // `width` is `100%`, which says nothing.
 function pictureSize(el: Picture): Size {
   if (isRaster(el)) return { w: el.naturalWidth, h: el.naturalHeight };
-  const box = el.viewBox?.baseVal;
-  if (box && box.width > 0 && box.height > 0) return { w: box.width, h: box.height };
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test's picture has no viewBox
+  const box = el.viewBox?.baseVal ?? { width: 0, height: 0 };
+  if (box.width > 0 && box.height > 0) return { w: box.width, h: box.height };
   const rect = el.getBoundingClientRect();
   return { w: rect.width, h: rect.height };
 }
@@ -137,11 +138,13 @@ function buildBar(doc: Document) {
     button.dataset.zoom = item.act;
     button.title = item.label;
     button.setAttribute("aria-label", item.label);
-    if (item.text) button.textContent = item.text;
-    else {
+    const text = item.text ?? "";
+    if (text === "") {
       const icon = doc.createElement("i");
       icon.className = `bi ${item.icon}`;
       button.append(icon);
+    } else {
+      button.textContent = text;
     }
     bar.append(button);
   }
@@ -242,6 +245,7 @@ function attachGestures(
     tapAt = ev.timeStamp;
   };
   surface.addEventListener("pointerdown", (ev) => {
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test's surface has none
     surface.setPointerCapture?.(ev.pointerId);
     points.set(ev.pointerId, local(ev));
     if (points.size === 1) {
@@ -312,7 +316,7 @@ function attachKeys(overlay: HTMLElement, bar: HTMLElement, actions: Record<stri
   overlay.addEventListener("keydown", (ev) => {
     if (ev.key === "Tab") return trapTab(ev, overlay, bar);
     const act = keys[ev.key];
-    if (!act) return;
+    if (act === undefined) return;
     ev.preventDefault();
     ev.stopPropagation();
     actions[act]?.();
@@ -351,7 +355,7 @@ export function openZoom(win: Window, doc: Document, src: Picture, opener: HTMLE
   };
   bar.addEventListener("click", (ev) => {
     const act = (ev.target as Element).closest("[data-zoom]")?.getAttribute("data-zoom");
-    if (act) actions[act]?.();
+    if (act !== null && act !== undefined && act !== "") actions[act]?.();
   });
   attachGestures(surface, ctl, local, close);
   attachKeys(overlay, bar, actions);
@@ -364,6 +368,7 @@ export function openZoom(win: Window, doc: Document, src: Picture, opener: HTMLE
 /** Open the view when an "Enlarge" button is pressed, on any article of the page. */
 export function wireDiagramZoom(win: Window, doc: Document) {
   doc.addEventListener("click", (ev) => {
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a document target has none
     const button = (ev.target as Element | null)?.closest?.(".zoom-btn");
     const picture = button?.parentElement?.querySelector<Picture>("svg, img");
     if (!button || !picture) return;

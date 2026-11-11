@@ -65,14 +65,15 @@ export function wbConsoleMenus() {
     // environment are the sidebar's to say, and neither changes which agent to
     // pick. The full ref rides the head's title.
     consoleMenuRepoName() {
-      if (!this.$store.projects.openSlug) return "";
+      if ((this.$store.projects.openSlug ?? "") === "") return "";
       const row = this.$store.projects.projects.find(
         (p) => this.$store.projects.repoRef(p) === this.$store.projects.openSlug,
       );
       const name = row
         ? WBProject.projectName(row)
         : WBFleet.refSlug(this.$store.projects.openSlug);
-      return name.split("/").pop() || name;
+      const last = name.split("/").pop() ?? "";
+      return last === "" ? name : last;
     },
     // Every row is a launch (the menu is "New console"); `opts.tryAnyway` is
     // the unavailable row's escape hatch.
@@ -85,7 +86,7 @@ export function wbConsoleMenus() {
 
     newConsole(agent: string) {
       // The accelerator path calls this directly: refuse with no repo here too.
-      if (!this.$store.projects.openSlug) return;
+      if ((this.$store.projects.openSlug ?? "") === "") return;
       if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       // Always the primary: only the console's own title switcher moves it
       // (ADR-0063, amendment 2026-09-16 b).
@@ -99,7 +100,7 @@ export function wbConsoleMenus() {
       WBConsole.open({
         repo: this.$store.projects.openSlug,
         plain: true,
-        command: command || undefined,
+        command: command === null || command === undefined || command === "" ? undefined : command,
       });
     },
     openConsoleRun() {
@@ -114,7 +115,7 @@ export function wbConsoleMenus() {
     // A blank line is not a launch: the field stays open for the typing.
     runConsoleCommand() {
       const command = WBAgents.runCommand(this.consoleRunText);
-      if (!command) return;
+      if (command === null) return;
       this.newPlainConsole(command);
       this.agentMenu = false;
       this.closeConsoleRun();
@@ -213,7 +214,7 @@ export function wbConsoleMenus() {
     // where the file will be written is a field in the card's own footer.
     newNote() {
       const slug = this.$store.projects.openSlug;
-      if (!slug) return;
+      if (slug === null || slug === "") return;
       if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       this.noteMenu = false;
       // AFTER the tab is laid out, as `revealWindow`: a `display:none` tab
@@ -223,8 +224,8 @@ export function wbConsoleMenus() {
         window.WBNotes.create({
           repo: slug,
           checkout: window.WBConsole.checkoutOf(slug),
-          viewport: { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 },
-          offset: { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 },
+          viewport: { width: ws?.clientWidth ?? 0, height: ws?.clientHeight ?? 0 },
+          offset: { left: ws?.scrollLeft ?? 0, top: ws?.scrollTop ?? 0 },
         });
       });
     },
@@ -285,7 +286,7 @@ export function wbConsoleMenus() {
       const f = WBConsole.fenceList()[n - 1];
       if (!f) return false;
       this.fenceMenu = false;
-      return !!WBConsole.jumpToFence(f.id);
+      return WBConsole.jumpToFence(f.id) !== null;
     },
 
     // The listeners, added once when Alpine builds the toolbar.

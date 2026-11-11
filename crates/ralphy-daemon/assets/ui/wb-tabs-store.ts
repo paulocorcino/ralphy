@@ -60,7 +60,7 @@ function movedBy(
   openSlug: string | null,
 ): t is CanvasTab & { path: string; project: string } {
   if (t.kind === "diff" || t.project !== openSlug) return false;
-  return t.path === from || !!t.path?.startsWith(`${from}/`);
+  return t.path === from || t.path?.startsWith(`${from}/`) === true;
 }
 
 // `deps` is the shape every store takes; the tabs tell the operator through
@@ -117,13 +117,13 @@ export function tabsStore(deps: TabsStoreDeps) {
     },
     // The console tab that holds the console `deskId`, if one does.
     tabOf(deskId: string): CanvasTab | undefined {
-      return this.consoleTabs().find((t) => (t.grid || []).some((col) => col.includes(deskId)));
+      return this.consoleTabs().find((t) => (t.grid ?? []).some((col) => col.includes(deskId)));
     },
     holds(deskId: string) {
-      return !!this.tabOf(deskId);
+      return this.tabOf(deskId) !== undefined;
     },
     consoleDeskIds(): string[] {
-      return this.consoleTabs().flatMap((t) => WBColumns.flat(t.grid || []));
+      return this.consoleTabs().flatMap((t) => WBColumns.flat(t.grid ?? []));
     },
     // The grid of the active console tab, or null.
     activeGrid(): string[][] | null {
@@ -142,7 +142,10 @@ export function tabsStore(deps: TabsStoreDeps) {
     setTabGrid(tabId: string, grid: string[][]) {
       const tab = this.consoleTabs().find((t) => t.id === tabId);
       if (!tab) return;
-      if (!WBColumns.flat(grid).length) return this.closeTab(tabId);
+      if (WBColumns.flat(grid).length === 0) {
+        this.closeTab(tabId);
+        return;
+      }
       tab.grid = grid;
       this.nameConsoleTab(tab);
       this.persistView();
@@ -152,12 +155,12 @@ export function tabsStore(deps: TabsStoreDeps) {
     // keeps the others.
     leaveTab(deskId: string) {
       const tab = this.tabOf(deskId);
-      if (tab) this.setTabGrid(tab.id, WBColumns.restore(tab.grid || [], deskId).columns);
+      if (tab) this.setTabGrid(tab.id, WBColumns.restore(tab.grid ?? [], deskId).columns);
     },
     // Each console with a tab goes into the tab's pane, and every other one
     // goes back to the stage. The console module moves the windows.
     placeConsoleTabs() {
-      window.WBConsole?.placeTabs(this.consoleDeskIds(), this.activeGrid());
+      window.WBConsole.placeTabs(this.consoleDeskIds(), this.activeGrid());
     },
     // Read before the desk, so `restoreView` knows a stored active console
     // tab. The windows go into their tabs at `syncConsoleTabs`. A console
@@ -165,9 +168,9 @@ export function tabsStore(deps: TabsStoreDeps) {
     _consoleTabsRestored: false,
     _stageRestored: false,
     restoreConsoleTabs() {
-      if (this._consoleTabsRestored || !window.WBView) return;
+      if (this._consoleTabsRestored) return;
       this._consoleTabsRestored = true;
-      for (const t of window.WBView.read()?.consoleTabs || []) {
+      for (const t of window.WBView.read()?.consoleTabs ?? []) {
         const id = t.id ?? consoleTabId(t.deskId);
         const seen = new Set(this.consoleDeskIds());
         const grid = t.grid
@@ -184,7 +187,7 @@ export function tabsStore(deps: TabsStoreDeps) {
       const rows = new Map(window.WBConsole.list().map((r) => [r.id, r]));
       const here = (id: string) => rows.has(id) || window.WBConsole.isRelaunching(id);
       for (const tab of this.consoleTabs()) {
-        const grid = tab.grid || [];
+        const grid = tab.grid ?? [];
         const kept = WBColumns.keep(grid, new Set(WBColumns.flat(grid).filter(here)));
         if (JSON.stringify(kept) !== JSON.stringify(grid)) this.setTabGrid(tab.id, kept);
         else this.nameConsoleTab(tab);
@@ -194,16 +197,16 @@ export function tabsStore(deps: TabsStoreDeps) {
     // The console `deskId` names the tab while it is in the tab; when it
     // leaves, the first console of the grid takes its place (ADR-0037 §3d).
     nameConsoleTab(tab: CanvasTab) {
-      const ids = WBColumns.flat(tab.grid || []);
-      if (!tab.deskId || !ids.includes(tab.deskId)) tab.deskId = ids[0];
+      const ids = WBColumns.flat(tab.grid ?? []);
+      if (tab.deskId === undefined || !ids.includes(tab.deskId)) tab.deskId = ids[0] ?? "";
       this.renameConsoleTab(
         tab,
-        window.WBConsole?.list().find((r) => r.id === tab.deskId),
+        window.WBConsole.list().find((r) => r.id === tab.deskId),
       );
     },
     renameConsoleTab(tab: CanvasTab, row: { name: string | null; agent: string } | undefined) {
       if (!row) return;
-      const title = window.WBConsoleName.consoleLabel(row.name || "", row.agent);
+      const title = window.WBConsoleName.consoleLabel(row.name ?? "", row.agent);
       if (!title || tab.title === title) return;
       tab.title = title;
       this.persistView();
@@ -235,22 +238,23 @@ export function tabsStore(deps: TabsStoreDeps) {
     // is a jump to a card already on the plane or a new one; this layer only
     // puts the operator on the tab that holds the stage.
     openNote(path: string, project?: string | null, checkout?: string | null) {
-      const repo = project || window.Alpine.store("projects").openSlug;
-      if (!repo) return;
+      const repo = (project ?? "") || window.Alpine.store("projects").openSlug;
+      if (repo === null || repo === "") return;
       if (this.active !== "consoles") this.activate("consoles");
       const tree = checkout === undefined ? window.WBConsole.checkoutOf(repo) : checkout;
+      const ws = document.querySelector("#workspace");
       void window.Alpine.nextTick(() =>
         window.WBNotes.openFromExplorer({
           repo,
           checkout: tree,
           path,
           viewport: {
-            width: document.getElementById("workspace")?.clientWidth || 0,
-            height: document.getElementById("workspace")?.clientHeight || 0,
+            width: ws?.clientWidth ?? 0,
+            height: ws?.clientHeight ?? 0,
           },
           offset: {
-            left: document.getElementById("workspace")?.scrollLeft || 0,
-            top: document.getElementById("workspace")?.scrollTop || 0,
+            left: ws?.scrollLeft ?? 0,
+            top: ws?.scrollTop ?? 0,
           },
         }),
       );
@@ -291,7 +295,7 @@ export function tabsStore(deps: TabsStoreDeps) {
           this.closeTab(t.id);
           continue;
         }
-        window.WBViewer?.repath(t.id, { id: newId, path: newPath });
+        window.WBViewer.repath(t.id, { id: newId, path: newPath });
         this.renameTabId(t.id, newId);
         t.path = newPath;
         t.id = newId;
@@ -351,7 +355,7 @@ export function tabsStore(deps: TabsStoreDeps) {
       void window.Alpine.nextTick(() => {
         this.syncViewer();
         // A console opened while another tab was active measured 0×0.
-        if (id === "consoles") window.WBConsole?.refitAll?.();
+        if (id === "consoles") window.WBConsole.refitAll();
         this.placeConsoleTabs();
       });
       this.persistView();
@@ -372,15 +376,12 @@ export function tabsStore(deps: TabsStoreDeps) {
       });
       // Remembered where the decision is made, not in `activate`: `openTab`
       // and `openDiff` put a tab on the left without going through it.
-      if (r.left && r.left !== this.slot?.id) this.lastLeft = r.left;
+      if (r.left !== null && r.left !== "" && r.left !== this.slot?.id) this.lastLeft = r.left;
       WBViewer.setActive(
         r.left,
-        r.right && {
-          id: r.right,
-          mirror: r.mirror,
-          focus: r.focus === "right",
-          ratio: this.splitRatio,
-        },
+        r.right === null
+          ? null
+          : { id: r.right, mirror: r.mirror, focus: r.focus === "right", ratio: this.splitRatio },
       );
     },
 
@@ -425,7 +426,7 @@ export function tabsStore(deps: TabsStoreDeps) {
       if (tab.kind === "console") this.placeConsoleTabs();
       if (this.active === id) {
         // fall back to the neighbour, else the Consoles tab
-        const next = this.tabs[idx] || this.tabs[idx - 1] || this.tabs[0];
+        const next = this.tabs[idx] ?? this.tabs[idx - 1] ?? this.tabs[0];
         if (next) this.activate(next.id);
       } else {
         // A background close can still be the slot's pane: repaint.
@@ -450,7 +451,7 @@ export function tabsStore(deps: TabsStoreDeps) {
     // entries.
     // Consoles and Spend have no pane to put beside another, so no menu.
     showTabMenu(x: number, y: number, t: CanvasTab) {
-      if (!t?.closable) return;
+      if (!t.closable) return;
       // A console tab shows the stage, which has no pane to put beside another.
       if (t.kind === "console") this.renderMenu(x, y, closeItems(this, t));
       else this.showSlotMenu(x, y, t);
@@ -465,8 +466,8 @@ export function tabsStore(deps: TabsStoreDeps) {
     },
 
     hideMenu() {
-      const menu = document.getElementById("ctxmenu") as HTMLElement;
-      if (menu) menu.style.display = "none";
+      const menu = document.querySelector<HTMLElement>("#ctxmenu");
+      if (menu !== null) menu.style.display = "none";
     },
   };
 }

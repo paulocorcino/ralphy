@@ -166,7 +166,7 @@ export function createMessages(window: MessagesWindow, document: Document) {
     line.className = "wb-toast-text";
     line.textContent = text;
     el.append(line);
-    if (action && onAction) {
+    if (action !== undefined && action !== "" && onAction) {
       const btn = document.createElement("button");
       btn.className = "wb-toast-action";
       btn.type = "button";

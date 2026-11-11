@@ -11,7 +11,7 @@ import { entries, typedFolder, upText } from "./wb-add-project-list.ts";
 export function nextText(state: State, ev: Extract<Step, { type: "text" }>) {
   if (state.adding) return state;
   const wsl = mapWsl(ev.text, ev.peers);
-  if (wsl && wsl.missing) {
+  if (wsl && "missing" in wsl) {
     return Object.assign({}, state, {
       text: ev.text,
       wslMissing: wsl.missing,
@@ -42,18 +42,23 @@ export function nextText(state: State, ev: Extract<Step, { type: "text" }>) {
   });
 }
 
+// Why a folder list failed, in the daemon's words when it gave any.
+function listFailure(reply: { message?: string; reason?: string }) {
+  return (reply.message ?? "") || (reply.reason ?? "") || "the folder list failed";
+}
+
 // The daemon answered a folder list: a newer request keeps the state, a
 // failure keeps the failure, and the start folder fills a field the operator
 // has not touched.
 export function nextReply(state: State, ev: Extract<Step, { type: "reply" }>) {
   if (ev.seq !== state.seq) return state;
-  const reply = ev.reply || {};
+  const reply = ev.reply;
   if (reply.status !== "ok") {
     return Object.assign({}, state, {
       answered: ev.seq,
       listing: null,
       listedText: state.sentText,
-      failure: reply.message || reply.reason || "the folder list failed",
+      failure: listFailure(reply),
       loading: false,
       active: -1,
     });
@@ -66,7 +71,7 @@ export function nextReply(state: State, ev: Extract<Step, { type: "reply" }>) {
     loading: false,
     active: -1,
   };
-  if (state.sentText === null && reply.start) {
+  if (state.sentText === null && reply.start !== undefined && reply.start !== "") {
     const sep = /^[A-Za-z]:/.test(reply.start) || reply.start.includes("\\") ? "\\" : "/";
     patch.text = withSep(reply.start, sep);
     patch.listedText = patch.text;
@@ -88,7 +93,7 @@ export function nextMove(state: State, ev: Extract<Step, { type: "move" }>) {
 export function nextPick(state: State, ev: Extract<Step, { type: "pick" }>) {
   if (state.adding) return state;
   const sep = sepOf(state);
-  if (ev.up) {
+  if (ev.up === true) {
     const up = upText(state);
     if (up === null) return state;
     return Object.assign({}, state, {

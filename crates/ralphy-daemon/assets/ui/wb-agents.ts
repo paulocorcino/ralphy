@@ -20,7 +20,8 @@ const NOT_INSTALLED = "Not installed here.";
 // The roster sends the code `not installed here` (roster.rs); the menu
 // shows the sentence (ADR-0065 §6).
 function shownReason(reason: string | null | undefined): string {
-  return !reason || reason === "not installed here" ? NOT_INSTALLED : reason;
+  if (reason === null || reason === undefined || reason === "") return NOT_INSTALLED;
+  return reason === "not installed here" ? NOT_INSTALLED : reason;
 }
 
 function rowTitle(needsRepo: boolean, unavailable: boolean, reason: string | null | undefined) {
@@ -40,9 +41,9 @@ function rowFor(
 ) {
   // A count drawn from another repo would offer to reach a session with a
   // different working directory — a row that lies about what its click does.
-  const scope = plain ? openSlug || "~" : openSlug;
-  const mine = (sessions || []).filter((s) => s && s.agent === kind && s.repo === scope);
-  const needsRepo = !plain && !openSlug;
+  const scope = plain ? (openSlug ?? "") || "~" : openSlug;
+  const mine = (sessions ?? []).filter((s) => s.agent === kind && s.repo === scope);
+  const needsRepo = !plain && (openSlug ?? "") === "";
   const unavailable = !plain && available === false;
   const disabled = needsRepo || unavailable;
   return {
@@ -70,8 +71,17 @@ function menuRows({
   sessions,
   openSlug,
 }: { roster?: RosterRow[] | null; sessions?: Session[] | null; openSlug?: string | null } = {}) {
-  const rows = (roster || []).map((r) =>
-    rowFor(r.id, r.label || r.id, false, r.accelerator, r.available, r.reason, sessions, openSlug),
+  const rows = (roster ?? []).map((r) =>
+    rowFor(
+      r.id,
+      (r.label ?? "") || r.id,
+      false,
+      r.accelerator,
+      r.available,
+      r.reason,
+      sessions,
+      openSlug,
+    ),
   );
   // The plain shell is not a vendor adapter, so it never enters the daemon's
   // roster; the menu appends it last on digit 0.
@@ -91,7 +101,7 @@ function runCommand(text: unknown): string | null {
 export type MenuRow = ReturnType<typeof rowFor>;
 
 function canLaunch(row: MenuRow | null | undefined, tryAnyway = false): boolean {
-  return !!row && !row.needsRepo && (!row.unavailable || tryAnyway);
+  return row !== null && row !== undefined && !row.needsRepo && (!row.unavailable || tryAnyway);
 }
 
 // Whether a click on `row` launches, or is refused (`null`). The one intent
@@ -104,9 +114,9 @@ function consoleIntent(
 }
 
 function runRows(roster: RosterRow[] | null | undefined) {
-  return (roster || []).map((row) => ({
+  return (roster ?? []).map((row) => ({
     id: row.id,
-    label: row.label || row.id,
+    label: (row.label ?? "") || row.id,
     available: row.available !== false,
     title: row.available === false ? shownReason(row.reason) : "",
   }));
@@ -115,7 +125,7 @@ function runRows(roster: RosterRow[] | null | undefined) {
 // A peer's body reaches here as it came, so a body that is no array is read as empty.
 function rosterState(roster: RosterRow[] | null | undefined, repo: string | null | undefined) {
   const rows: RosterRow[] = Array.isArray(roster) ? roster.slice() : [];
-  return { repo: repo || null, roster: rows, agents: runRows(rows) };
+  return { repo: (repo ?? "") || null, roster: rows, agents: runRows(rows) };
 }
 
 export const WBAgents = {

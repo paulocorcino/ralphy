@@ -53,19 +53,17 @@ export function createFeeds(deps: FeedsDeps) {
   let sessionsRead: Promise<{ sessions: HostedSession[]; unheard: ReadonlySet<string> }> | null =
     null;
   function readSessions() {
-    if (!sessionsRead) {
-      sessionsRead = (async () => {
-        const r = await apiFetch("GET /api/sessions");
-        if (!r.ok) throw new Error("sessions unavailable");
-        const route = WBSessionRoute;
-        return {
-          sessions: await r.json(),
-          unheard: route.unanswered(r.headers?.get?.(route.UNANSWERED_HEADER)),
-        };
-      })().finally(() => {
-        sessionsRead = null;
-      });
-    }
+    sessionsRead ??= (async () => {
+      const r = await apiFetch("GET /api/sessions");
+      if (!r.ok) throw new Error("sessions unavailable");
+      const route = WBSessionRoute;
+      return {
+        sessions: await r.json(),
+        unheard: route.unanswered(r.headers.get(route.UNANSWERED_HEADER)),
+      };
+    })().finally(() => {
+      sessionsRead = null;
+    });
     return sessionsRead;
   }
   // The project name and tooltip text per repo ref, fed by the store
@@ -81,7 +79,8 @@ export function createFeeds(deps: FeedsDeps) {
   }
   function projectTitleOf(ref: string | null | undefined) {
     if (ref === "~") return ref;
-    return projectNames.get(ref)?.title || projectNameOf(ref);
+    const title = projectNames.get(ref)?.title ?? "";
+    return title === "" ? projectNameOf(ref) : title;
   }
   // `rows` is `[{ ref, name, title }]`. Titles and tooltips already drawn are
   // drawn again; a console NAME already given is the operator's and stays.
@@ -89,8 +88,11 @@ export function createFeeds(deps: FeedsDeps) {
     rows: { ref: string; name: string; title?: string }[] | null | undefined,
   ) {
     projectNames.clear();
-    for (const r of rows || []) {
-      if (r && r.ref && r.name) projectNames.set(r.ref, { name: r.name, title: r.title || r.name });
+    for (const r of rows ?? []) {
+      if (r.ref && r.name) {
+        const title = r.title ?? "";
+        projectNames.set(r.ref, { name: r.name, title: title === "" ? r.name : title });
+      }
     }
     for (const win of wins) {
       if (!win._title || !win._presentation) continue;
@@ -115,7 +117,7 @@ export function createFeeds(deps: FeedsDeps) {
   let wakePeer: ((daemon: string) => Promise<boolean>) | null = null;
   let readFleet: (() => void) | null = null;
   function ingestFleet(
-    groups: Group[] | null | undefined,
+    groups: (Group | null)[] | null | undefined,
     hooks: { wake?: (daemon: string) => Promise<boolean>; read?: () => void } | null | undefined,
   ) {
     keepPeerGroups(groups);
@@ -125,9 +127,11 @@ export function createFeeds(deps: FeedsDeps) {
   }
 
   // The fleet groups of the peers, by daemon id; the local group is not kept.
-  function keepPeerGroups(groups: Group[] | null | undefined) {
+  function keepPeerGroups(groups: (Group | null)[] | null | undefined) {
     peerGroups.clear();
-    for (const g of groups || []) if (g && g.daemon && !g.local) peerGroups.set(g.daemon, g);
+    for (const g of groups ?? []) {
+      if (g !== null && g.daemon && !g.local) peerGroups.set(g.daemon, g);
+    }
   }
 
   // The store `projects`' last `/api/sessions` poll, kept for the menus' state dots.
@@ -141,7 +145,7 @@ export function createFeeds(deps: FeedsDeps) {
       agent: w._deskAgent,
       name: w._deskConsoleName ?? null,
       // The title's tooltip, so the Go-to row says what the title says.
-      tooltip: w._title?.title || "",
+      tooltip: w._title?.title ?? "",
       // `"~"` is the desk's "no repo".
       repo: w._deskRepo === "~" ? null : w._deskRepo,
       kind: w._deskKind,
@@ -163,9 +167,10 @@ export function createFeeds(deps: FeedsDeps) {
       const { state, detail } = agentDotOf(row?.agent_state);
       win._agentState = state;
       win._agentDetail = detail;
-      dot.className = "session-state" + (state ? ` ${state}` : "");
+      const shown = state !== null && state !== "";
+      dot.className = "session-state" + (shown ? ` ${state}` : "");
       dot.title = agentStateTitle(state, detail);
-      dot.hidden = !state;
+      dot.hidden = !shown;
     }
   }
 

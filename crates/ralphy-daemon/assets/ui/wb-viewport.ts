@@ -40,7 +40,8 @@ type MediaWin = { matchMedia?: (query: string) => { matches: boolean } };
 
 function matches(win: MediaWin, query: string) {
   try {
-    return !!win.matchMedia?.(query)?.matches;
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test's window has none
+    return win.matchMedia?.(query)?.matches === true;
   } catch {
     return false;
   }

@@ -235,7 +235,7 @@ function readOp(s: string, i: number): { op: string; end: number } | null {
 }
 
 function endpointOf(d: Dotted): DbmlEndpoint | null {
-  if (!d || d === "composite" || d.parts.length < 2) return null;
+  if (d === null || d === "composite" || d.parts.length < 2) return null;
   const column = d.parts.at(-1);
   if (column === undefined) return null;
   return { table: d.parts.slice(0, -1).join("."), column };
@@ -255,7 +255,7 @@ function readRef(text: string, self: DbmlEndpoint | null): DbmlRef | null {
   let a = self;
   if (!a) {
     const first = readDotted(text, 0);
-    if (!first || first === "composite") return null;
+    if (first === null || first === "composite") return null;
     a = endpointOf(first);
     if (!a) return null;
     i = first.end;
@@ -282,7 +282,7 @@ const SKIP: Block = { kind: "skip" };
 function openTable(st: State, header: string): Block {
   const rest = header.replace(/^table\s*/i, "");
   const name = readDotted(rest, 0);
-  if (!name || name === "composite") {
+  if (name === null || name === "composite") {
     st.schema.skipped += 1;
     return SKIP;
   }
@@ -382,7 +382,7 @@ function readGroupLine(st: State, group: DbmlGroup, line: string) {
   let i = 0;
   while (skipSpaces(line, i) < line.length) {
     const name = readDotted(line, i);
-    if (!name || name === "composite") {
+    if (name === null || name === "composite") {
       st.schema.skipped += 1;
       return;
     }

@@ -67,7 +67,7 @@ export function openDiff(store: DiffTabs, messages: Messages, project: string, e
     const refuse = (reason: string) => {
       if (refused) return null;
       refused = true;
-      window.Alpine.store("modals").flash?.(
+      window.Alpine.store("modals").flash(
         WBFail.failed({ message: reason }, "Could not open the diff: the daemon gave no reason."),
       );
       store.closeTab(t.id);
@@ -104,12 +104,12 @@ function openChangedBinary(store: DiffTabs, project: string, entry: ChangeEntry,
   const path = entry.path;
   if (ftype === "binary") {
     window.WB.emit("open-refused", { project, path, reason: "binary" });
-    window.Alpine.store("modals").flash?.("Cannot open binary files.");
+    window.Alpine.store("modals").flash("Cannot open binary files.");
     return;
   }
   if (entry.status === "deleted") {
     window.WB.emit("open-refused", { project, path, reason: "deleted" });
-    window.Alpine.store("modals").flash?.("This image was deleted, so there is nothing to show.");
+    window.Alpine.store("modals").flash("This image was deleted, so there is nothing to show.");
     return;
   }
   const title = path.split("/").pop() ?? path;
@@ -130,10 +130,10 @@ function diffHeadSide(project: string, t: DiffTarget, refuse: (reason: string) =
     WBDaemon.withCheckout({ repo: project, revision: "head", path: t.headPath }, t.checkout),
   ).then((reply) => {
     if (WBFail.isError(reply)) return refuse(WBFail.message(reply, "refused"));
-    const blob = reply.blob || {};
+    const blob = reply.blob ?? {};
     if (blob.status === "present") return blob.content;
     if (blob.status === "absent") return "";
-    return refuse(blob.reason || "refused");
+    return refuse((blob.reason ?? "") || "refused");
   });
 }
 

@@ -72,7 +72,7 @@ export function frameFigures(gaps: number[], output: boolean[]) {
   gaps.forEach((gap, i) => {
     if (gap <= SLOW_FRAME_MS) return;
     slow += 1;
-    if (output[i]) slowWithOutput += 1;
+    if (output[i] === true) slowWithOutput += 1;
   });
   return {
     frames: gaps.length,

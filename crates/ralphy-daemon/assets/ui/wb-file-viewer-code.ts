@@ -46,7 +46,7 @@ export function createViewerCode(deps: ViewerCodeDeps) {
   // not the editor's: `disposeEditor` ends it with the editor it feeds.
   const NARROW_PX = 560;
   const isNarrow = (el: HTMLElement | undefined) =>
-    !!el && el.clientWidth > 0 && el.clientWidth <= NARROW_PX;
+    el !== undefined && el.clientWidth > 0 && el.clientWidth <= NARROW_PX;
   function watchNarrow(
     rec: { el?: HTMLElement; ro?: ResizeObserver },
     ed: MonacoEditor | MonacoDiffEditor,
@@ -83,8 +83,8 @@ export function createViewerCode(deps: ViewerCodeDeps) {
     container: HTMLElement,
     opts: { path?: string; wordWrap?: string },
   ) {
-    const path = (opts && opts.path) || rec.path;
-    if (rec.mounting || rec.mountFailed) return Promise.resolve();
+    const path = (opts.path ?? "") || rec.path;
+    if (rec.mounting === true || rec.mountFailed === true) return Promise.resolve();
     rec.mounting = true;
     return WBMonaco.ready()
       .catch((err: unknown) => {
@@ -111,7 +111,7 @@ export function createViewerCode(deps: ViewerCodeDeps) {
           path,
           uid: rec.uid,
           project: rec.project,
-          wordWrap: opts && opts.wordWrap,
+          wordWrap: opts.wordWrap,
           narrow: isNarrow(rec.el),
         });
         watchNarrow(rec, ed);
@@ -126,8 +126,8 @@ export function createViewerCode(deps: ViewerCodeDeps) {
         if (rec.visible) ed.layout();
         // A content-search open asked for a term before there was an editor
         // to ask; now there is one.
-        if (rec.pendingFind) {
-          const term: string = rec.pendingFind;
+        const term = rec.pendingFind ?? "";
+        if (term !== "") {
           rec.pendingFind = null;
           findInEditor(rec, term);
         }
@@ -183,7 +183,9 @@ export function createViewerCode(deps: ViewerCodeDeps) {
         .catch((err: unknown) => console.error("[workbench] monaco find failed", err));
     };
     const mirrorBtn = el.querySelector<HTMLElement>('[data-act="mirror"]');
-    if (mirrorBtn) mirrorBtn.onclick = () => window.Alpine?.store("tabs")?.toggleMirror();
+    mirrorBtn?.addEventListener("click", () => {
+      window.Alpine.store("tabs").toggleMirror();
+    });
     saveBtn.onclick = () => save(rec);
     need(el, '[data-act="reload"]').onclick = () => reloadFile(rec);
     need(el, '[data-act="disk"]').onclick = () => {

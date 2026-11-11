@@ -88,7 +88,7 @@ export function createDeskConverge(deps: ConvergeDeps) {
       // and takes the place written there.
       w._deskUnrecorded = false;
       convergeRect(w, r);
-      if (!!r.locked !== !!w._deskLocked) applyLock(w, !!r.locked);
+      if ((r.locked === true) !== w._deskLocked) applyLock(w, r.locked === true);
       convergeName(w, r);
     }
     keepUnsavedCards(st);
@@ -99,7 +99,7 @@ export function createDeskConverge(deps: ConvergeDeps) {
 
   // The window takes the rect of its record, unless a gesture moves it now.
   function convergeRect(w: ConsoleWin, r: DeskRecord) {
-    if (r.rect && !inGesture(w)) {
+    if (!inGesture(w)) {
       placeWindow(w, r.rect);
       paintTabShadow(w);
     }
@@ -107,17 +107,15 @@ export function createDeskConverge(deps: ConvergeDeps) {
 
   // A name written on another device, unless the name is being edited here.
   function convergeName(w: ConsoleWin, r: DeskRecord) {
-    if (
-      r.consoleName &&
-      r.consoleName !== w._deskConsoleName &&
-      !w.querySelector(".session-name-input")
-    ) {
-      w._deskConsoleName = r.consoleName;
+    const name = r.consoleName ?? "";
+    if (name !== "" && name !== w._deskConsoleName && !w.querySelector(".session-name-input")) {
+      w._deskConsoleName = name;
       if (w._title && w._presentation) renderTitle(w, w._title, w._presentation);
     }
   }
 
   function placeWindow(win: HTMLElement, r: Rect) {
+    // oxlint-disable-next-line unicorn/prefer-number-coercion -- "12px" is NaN to Number()
     const at = (prop: "left" | "top" | "width" | "height") => parseInt(win.style[prop], 10);
     if (
       at("left") === Math.round(r.left) &&
@@ -174,7 +172,7 @@ export function createDeskConverge(deps: ConvergeDeps) {
         // did not hear from this window's peer does not know either.
         if (!Array.isArray(sessions) || unheardRef(win._deskRepo, read?.unheard)) return;
         const live =
-          sessions.some((s) => s?.record === win._deskId) || !!sessionRowFor(win, sessions);
+          sessions.some((s) => s.record === win._deskId) || sessionRowFor(win, sessions) !== null;
         if (live) createRecord(win);
         else leaveDesk([win._deskId]);
       });

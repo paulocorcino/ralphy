@@ -26,7 +26,7 @@ function stepStatus(mark: string) {
 // came back with `steps: 0`.
 export function parseSteps(md: string | null | undefined) {
   const out: { text: string; status: string }[] = [];
-  (md || "").split(/\r?\n/).forEach((ln) => {
+  (md ?? "").split(/\r?\n/u).forEach((ln) => {
     const [, mark, text] = ln.replace(/^\s+/, "").match(/^- \[([ xX!])\](.*)$/) ?? [];
     if (mark === undefined || text === undefined) return;
     const status = stepStatus(mark);
@@ -40,7 +40,7 @@ export function parseSteps(md: string | null | undefined) {
 // Every `## Heading` in the plan, in order (e.g. "Feasible: yes", "Steps"…).
 export function headings(md: string | null | undefined) {
   const out: string[] = [];
-  (md || "").split("\n").forEach((ln) => {
+  (md ?? "").split("\n").forEach((ln) => {
     const heading = ln.match(/^##\s+(.+?)\s*$/)?.[1];
     if (heading !== undefined) out.push(heading);
   });
@@ -63,7 +63,7 @@ export function headings(md: string | null | undefined) {
 // prose would vanish the moment execution wrote its first note.
 export const PLAN_TRAILER_RE = /<!--\s*ralphy-plan:\s*issue=(\d+)\s*-->/g;
 export function planTrailerIssue(md: string | null | undefined) {
-  if (!md) return null;
+  if (md == null || md === "") return null;
   let issue = null;
   // The LAST trailer wins: an appended section can quote an earlier plan, and
   // the planner's own trailer is written at the end of what it wrote.
@@ -74,14 +74,18 @@ export function planTrailerIssue(md: string | null | undefined) {
 // Is this plan text the plan FOR `issue`? A plan with no trailer is not: it is
 // either mid-write (the planner has not finished) or not a ralphy plan at all,
 // and in both cases claiming it belongs to the active issue is the lie.
-export function planBelongsTo(md: string | null | undefined, issue: number | null | undefined) {
+// `issue` may arrive as a string, so it is compared by value.
+export function planBelongsTo(
+  md: string | null | undefined,
+  issue: number | string | null | undefined,
+) {
   if (issue == null) return false;
   return planTrailerIssue(md) === Number(issue);
 }
 
 // The body under one `## Heading` (heading line excluded), up to the next `##`.
 export function section(md: string | null | undefined, name: string) {
-  if (!md || !name) return "";
+  if (md == null || md === "" || !name) return "";
   const want = name.trim().toLowerCase();
   const out = [];
   let inSec = false;
@@ -119,10 +123,10 @@ export const FEASIBLE_HEAD = /^##\s+Feasible\b.*$/im;
 // The `## Feasible` heading verbatim ("Feasible: no"), for the modal's banner.
 export function feasibleHeading(md: string | null | undefined) {
   return (
-    (md || "")
+    (md ?? "")
       .match(FEASIBLE_HEAD)?.[0]
       .replace(/^##\s+/, "")
-      .trim() || ""
+      .trim() ?? ""
   );
 }
 
@@ -133,7 +137,7 @@ export function feasibleReason(md: string | null | undefined) {
 }
 
 export function isBundleReason(reason: string | null | undefined) {
-  return (reason || "").toLowerCase().includes("bundle");
+  return (reason ?? "").toLowerCase().includes("bundle");
 }
 
 export const FEASIBLE_YES = /^##\s+Feasible\s*:\s*yes\b/im;
@@ -141,7 +145,7 @@ export const FEASIBLE_YES = /^##\s+Feasible\s*:\s*yes\b/im;
 // carrying no trailer, and the caller MUST treat that as "no plan for anyone":
 // an unfinished plan is not yet a plan (see `planBelongsTo`).
 export function planSummary(md: string | null | undefined) {
-  const text = md || "";
+  const text = md ?? "";
   const steps = parseSteps(text);
   const openSteps = steps.filter((s) => s.status === "open").length;
   const checkedSteps = steps.filter((s) => s.status === "checked").length;
@@ -174,5 +178,5 @@ export function planPillLabel(summary: PlanVerdict | null | undefined, open: boo
 // Whether the pill is a warning rather than an invitation — the one thing the
 // operator must not have to open a modal to notice.
 export function planPillWarns(summary: PlanVerdict | null | undefined, open: boolean = true) {
-  return !!summary && (!open || summary.infeasible);
+  return summary != null && (!open || summary.infeasible);
 }

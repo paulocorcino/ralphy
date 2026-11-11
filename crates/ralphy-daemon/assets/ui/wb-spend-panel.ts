@@ -44,7 +44,7 @@ async function readLedger(project: string, period: string): Promise<LedgerRead> 
       records: Array.isArray(data.records) ? data.records : [],
       interactive: Array.isArray(data.interactive) ? data.interactive : [],
       missing: Array.isArray(data.missing) ? data.missing : [],
-      daemonId: data.daemon_id || null,
+      daemonId: data.daemon_id ?? null,
       error: "",
     };
   } catch {
@@ -105,7 +105,7 @@ export function wbSpend() {
     async loadSpend() {
       const slug = this.$store.projects.openSlug;
       // No project open is not a failure: the pane says so itself.
-      if (!slug) {
+      if (slug == null || slug === "") {
         this.spend = { loading: false, error: "", doc: null, slug: null };
         return;
       }
@@ -189,7 +189,7 @@ export function wbSpend() {
       const slug = this.$store.projects.openSlug;
       // With no project open there are still PEERS to report: an empty
       // `project=` scopes the rows to none while the daemon answers `missing`.
-      const want = slug || "";
+      const want = slug ?? "";
       // `loading` stops a second click duplicating the heaviest request on the
       // page; `slug` is written only when the fetch lands.
       if (this.ledger.loading) return;
@@ -200,7 +200,7 @@ export function wbSpend() {
         this.spendPeriod || "all",
       );
       // The operator switched projects while this was in flight.
-      if ((this.$store.projects.openSlug || "") !== want) {
+      if ((this.$store.projects.openSlug ?? "") !== want) {
         this.ledger = { ...this.ledger, loading: false };
         return;
       }
@@ -211,7 +211,7 @@ export function wbSpend() {
         interactive,
         missing,
         daemonId,
-        slug: slug || null,
+        slug: want === "" ? null : want,
       };
     },
 

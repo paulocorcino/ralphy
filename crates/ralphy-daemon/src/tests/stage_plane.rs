@@ -76,7 +76,7 @@ fn shell_drags_only_past_a_threshold() {
     // and whose rect belongs to another collection.
     let notes_js = include_str!("../../assets/ui/wb-notes-build.ts");
     for pin in [
-        "locked: () => !!el._noteLocked",
+        "locked: () => el._noteLocked === true",
         "onDrop: () => persistCards(el)",
     ] {
         assert!(

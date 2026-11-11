@@ -39,11 +39,14 @@ export function createNoteDrafts(deps: NoteDraftsDeps) {
   function draftOf(id: string | null | undefined) {
     const el = cardEl(id);
     const record = recordOf(id);
-    if (!el || !record || record.path) return null;
+    if (!el || !record || (record.path ?? "") !== "") return null;
     syncFromEditor(el);
     if (!el._noteDirty) return null;
     el._noteHandedOff = true;
-    return { draft: el._noteMarkdown, claim: el._noteClaim || null };
+    return {
+      draft: el._noteMarkdown,
+      claim: el._noteClaim === "" ? null : (el._noteClaim ?? null),
+    };
   }
 
   // Drafts that came home with a re-attach, for a popup closed before its
@@ -57,7 +60,9 @@ export function createNoteDrafts(deps: NoteDraftsDeps) {
     draft: string | null | undefined,
     claim: string | null | undefined,
   ) {
-    if (id && typeof draft === "string") drafts.set(id, { draft, claim: claim || null });
+    if (id !== null && id !== undefined && id !== "" && typeof draft === "string") {
+      drafts.set(id, { draft, claim: claim === "" ? null : (claim ?? null) });
+    }
   }
 
   // A card built from a draft that came home. When the popup had chosen a
@@ -66,7 +71,7 @@ export function createNoteDrafts(deps: NoteDraftsDeps) {
   // written under that name, so a re-attach never makes a second file.
   function mountHome(el: NoteCard, record: NoteSource, home: Home) {
     const claim = home.claim;
-    if (!claim) return mountDraft(el, home.draft);
+    if (claim === null || claim === "") return mountDraft(el, home.draft);
     el._noteClaim = claim;
     paintPath(el, claim);
     return window.WBDaemon.observe(
@@ -74,12 +79,12 @@ export function createNoteDrafts(deps: NoteDraftsDeps) {
       window.WBDaemon.withCheckout({ repo: record.repo, path: claim }, record.checkout),
     )
       .then((reply): Promise<NoteEditor | null | void> | null => {
-        if (el._noteGone) return null;
+        if (el._noteGone === true) return null;
         if (!WBFail.isError(reply)) {
           el._noteClaim = null;
           patch(record.id, { path: claim });
           el._noteSavedAt = Number(reply.modified) || null;
-          return mountEditor(el, reply.markdown || "");
+          return mountEditor(el, reply.markdown ?? "");
         }
         // "not a note" is someone else's file under that name: step past it.
         if (WBFail.message(reply, "") !== "not found") {
@@ -100,7 +105,7 @@ export function createNoteDrafts(deps: NoteDraftsDeps) {
   function mountDraft(el: NoteCard, draft: string) {
     el._noteDirty = true;
     return mountEditor(el, draft).then(() => {
-      if (el._noteGone) return;
+      if (el._noteGone === true) return;
       if (!el._noteEditor) el._noteMarkdown = draft;
       markDirty(el);
     });

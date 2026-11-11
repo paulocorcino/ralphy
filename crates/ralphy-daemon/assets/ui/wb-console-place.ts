@@ -33,7 +33,7 @@ export function paintTabShadow(win: ConsoleWin) {
   for (const side of ["left", "top", "width", "height"] as const) sh.style[side] = win.style[side];
   const name = sh.querySelector(".console-shadow-name");
   if (name) {
-    name.textContent = WBConsoleName.consoleLabel(win._deskConsoleName || "", win._deskAgent);
+    name.textContent = WBConsoleName.consoleLabel(win._deskConsoleName ?? "", win._deskAgent);
   }
 }
 
@@ -83,9 +83,9 @@ function paint(win: ConsoleWin, slot: Slot | null, key: string) {
   const p = slot?.p ?? null;
   if (key) win.dataset.tabSlot = key;
   else delete win.dataset.tabSlot;
-  win.classList.toggle("in-tab", !!slot);
-  win.classList.toggle("tab-shown", !!p);
-  win.classList.toggle("tab-grid", !!p && !!slot?.many);
+  win.classList.toggle("in-tab", slot !== null);
+  win.classList.toggle("tab-shown", p !== null);
+  win.classList.toggle("tab-grid", p !== null && slot?.many === true);
   const values = p ? [p.index, p.count, p.row, p.rows] : [];
   VARS.forEach((name, i) => {
     if (p) win.style.setProperty(name, String(values[i]));
@@ -95,14 +95,14 @@ function paint(win: ConsoleWin, slot: Slot | null, key: string) {
 
 // Whether a window that had the place `was` is shown now and was not before.
 function newlyShown(was: string, slot: Slot | null) {
-  return !!slot?.p && (was === "" || was === "held");
+  return (slot?.p ?? null) !== null && (was === "" || was === "held");
 }
 
 // The place of each console: null on the stage, else its slot in a tab.
 // `width` is the pane's, for the phone's cap of one console.
 function slotsOf(held: readonly string[], grid: Grid | null, width: number) {
   const painted = grid ? WBColumns.painted(grid, WBColumns.cap(width, PHONE_MAX_WIDTH)) : [];
-  const many = !!grid && WBColumns.flat(grid).length >= 2;
+  const many = grid !== null && WBColumns.flat(grid).length >= 2;
   const boxes = new Map(painted.map((p) => [p.id, p]));
   const slot = (id: string): Slot | null =>
     held.includes(id) ? { p: boxes.get(id) ?? null, many } : null;
@@ -132,7 +132,7 @@ export function createPlace(deps: PlaceDeps) {
     const first = shown ? pageWindows().find((w) => w._deskId === head) : null;
     if (first) focusWin(first);
     // A column that goes into a tab leaves the grid, as a detached one does.
-    if (entered.length) sendDocument(document, "workbench:columns-leave", { ids: entered });
+    if (entered.length > 0) sendDocument(document, "workbench:columns-leave", { ids: entered });
     keepShadows(st);
   }
 
@@ -148,7 +148,7 @@ export function createPlace(deps: PlaceDeps) {
   }
 
   function shadowOn(st: HTMLElement, win: ConsoleWin) {
-    const sh = win._tabShadow || buildShadow(document, win);
+    const sh = win._tabShadow ?? buildShadow(document, win);
     win._tabShadow = sh;
     if (sh.parentElement !== st) st.append(sh);
     paintTabShadow(win);
@@ -169,7 +169,7 @@ export function createPlace(deps: PlaceDeps) {
     const was = win.dataset.tabSlot ?? "";
     if (key !== was) paint(win, slot, key);
     if (key !== was || moves) moved(win);
-    return { entered: moves && !!slot, shown: key !== was && newlyShown(was, slot) };
+    return { entered: moves && slot !== null, shown: key !== was && newlyShown(was, slot) };
   }
 
   return { placeTabs };

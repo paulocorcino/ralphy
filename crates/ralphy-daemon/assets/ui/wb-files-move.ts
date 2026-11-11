@@ -28,11 +28,11 @@ export async function moveEntry(files: MoveFiles, from: string, to: string) {
     ),
   ).catch(() => null);
   if (!reply) {
-    files.$store.modals.flash?.("Could not move: the daemon did not answer.");
+    files.$store.modals.flash("Could not move: the daemon did not answer.");
     return;
   }
   if (WBFail.isError(reply)) {
-    files.$store.modals.flash?.(WBFail.failed(reply, "Could not move: the daemon gave no reason."));
+    files.$store.modals.flash(WBFail.failed(reply, "Could not move: the daemon gave no reason."));
     return;
   }
   try {

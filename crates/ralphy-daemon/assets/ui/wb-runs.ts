@@ -119,19 +119,24 @@ export type PlanStep = { text: string; status: string };
 
 /** The run agent's state of a snapshot, or null when it has none. */
 function agentOf(doc: RunSnapshot): Run["agentState"] {
-  return doc.phase?.agent || null;
+  return doc.phase?.agent ?? null;
 }
 
 /** Where the run is: the phase, the issue it works on, and the clock's anchor. */
+// The phase a snapshot names, or `starting` before its first phase event.
+function phaseState(state: string | undefined): string {
+  return state === undefined || state === "" ? "starting" : state;
+}
+
 function phaseFields(doc: RunSnapshot): Pick<Run, "phase" | "active" | "since" | "sleep"> {
   return {
-    phase: doc.phase?.state || "starting",
+    phase: phaseState(doc.phase?.state),
     active: doc.phase?.active ?? null,
     // When the current phase began (ADR-0047 amendment): the anchor the panel's
     // clock counts from. Absent in a document written by an older build, and
     // `phaseClock` renders nothing rather than guessing.
-    since: doc.phase?.since || "",
-    sleep: doc.phase?.sleep || null,
+    since: doc.phase?.since ?? "",
+    sleep: doc.phase?.sleep ?? null,
   };
 }
 
@@ -140,11 +145,14 @@ function planFields(
   doc: RunSnapshot,
 ): Pick<Run, "planPath" | "planMd" | "steps" | "planIssue" | "planReadFailed"> {
   return {
-    planPath: doc.plan_path || "",
+    planPath: doc.plan_path ?? "",
     planMd: "",
     // Steps come from the DOCUMENT, not from a plan.md read: they survive a
     // deleted/unreadable plan and are already accumulated when the panel opens.
-    steps: (doc.plan?.steps || []).map((s) => ({ text: s.text || "", status: s.status || "open" })),
+    steps: (doc.plan?.steps ?? []).map((s) => ({
+      text: s.text ?? "",
+      status: s.status === undefined || s.status === "" ? "open" : s.status,
+    })),
     planIssue: doc.plan?.issue ?? null,
     planReadFailed: false,
   };
@@ -230,10 +238,10 @@ export const WBRun = {
   // The visual state of one issue *within its run*: a terminal status as-is; the
   // active issue reflects the live phase (planning/executing, or sleep when the
   // whole run is parked on a usage limit); everything else is pending.
-  issueState(run: Run, iss: Issue) {
+  issueState(run: Run | null | undefined, iss: Issue | null | undefined) {
     // tolerate a null run / iss: the :class binding can re-run mid-transition
     // (project switch) after the run is gone but before the node unmounts.
-    if (!run || !iss) return "pending";
+    if (run == null || iss == null) return "pending";
     if (this.TERMINAL.has(iss.status)) return iss.status;
     if (iss.number === run.active) {
       if (run.phase === "sleeping") return "sleep";
@@ -242,7 +250,7 @@ export const WBRun = {
     return "pending";
   },
   glyph(run: Run, iss: Issue) {
-    return this.GLYPH[this.issueState(run, iss)] || "○";
+    return this.GLYPH[this.issueState(run, iss)] ?? "○";
   },
 
   runPhaseLabel(run: Run) {
@@ -268,8 +276,8 @@ export const WBRun = {
   // same fact on the same run, so it must read the same way. An absent effort is
   // simply omitted; an absent model yields "" and the CALLER degrades.
   modelEffort(model: string | null | undefined, effort: string | null | undefined) {
-    const m = (model || "").trim();
-    const e = (effort || "").trim();
+    const m = (model ?? "").trim();
+    const e = (effort ?? "").trim();
     if (!m) return "";
     return e ? `${m} / ${e}` : m;
   },
@@ -277,15 +285,15 @@ export const WBRun = {
   // (tier routing means #350 and #351 legitimately run different models), so
   // every render fact about "what is running now" is read off this one entry.
   activeIssue(run: Run) {
-    if (!run || run.active == null) return null;
-    return (run.issues || []).find((i: Issue) => i.number === run.active) || null;
+    if (run.active == null) return null;
+    return run.issues.find((i: Issue) => i.number === run.active) ?? null;
   },
   // The picker's headline: WHICH MODEL is running, falling back to the vendor.
   // The fallback is the honesty rule, not a convenience — a queued issue carries
   // `model: null`, and so does a run before its first phase event. Naming the
   // vendor there is a true statement; inventing a model would not be.
-  runTitle(run: Run) {
-    if (!run) return "";
+  runTitle(run: Run | null | undefined) {
+    if (run == null) return "";
     return (
       this.modelEffort(this.activeIssue(run)?.model, this.activeIssue(run)?.effort) ||
       run.agent ||
@@ -294,8 +302,8 @@ export const WBRun = {
   },
   // The line under it: the vendor is not lost when the title takes the model,
   // it MOVES here, in front of the phase it is driving.
-  runIdentity(run: Run) {
-    if (!run) return "";
+  runIdentity(run: Run | null | undefined) {
+    if (run == null) return "";
     return [run.agent, this.runPhaseLabel(run)].filter(Boolean).join(" · ");
   },
   // `M:SS`, minutes unbounded — a verbatim mirror of `ui::render::fmt_clock`
@@ -315,8 +323,8 @@ export const WBRun = {
   // `nowMs` is passed in rather than read here so the whole thing stays pure and
   // the caller owns the tick. A missing anchor renders "" (an older document, or
   // a run already in flight when this build shipped) — never a fabricated 0:00.
-  phaseClock(run: Run, nowMs: number) {
-    if (!run?.since) return "";
+  phaseClock(run: Run | null | undefined, nowMs: number) {
+    if (run == null || run.since === "") return "";
     const since = Date.parse(run.since);
     if (Number.isNaN(since)) return "";
     // Clamped: the anchor is the RUN HOST's clock and this is the browser's, so
@@ -349,16 +357,17 @@ export const WBRun = {
   // in ~2h 3m" (mirrors notifier.rs sleep formatting).
   sleepText(sleep: RunSleep | null | undefined) {
     if (!sleep) return "waiting for reset";
-    const rem = Math.max(0, (sleep.target_epoch || 0) - Math.floor(Date.now() / 1000));
+    const rem = Math.max(0, (sleep.target_epoch ?? 0) - Math.floor(Date.now() / 1000));
     const h = Math.floor(rem / 3600);
     const m = Math.floor((rem % 3600) / 60);
     const eta = h > 0 ? `~${h}h ${m}m` : `~${m}m`;
     const at =
-      sleep.reset ||
-      new Date((sleep.target_epoch || 0) * 1000).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
+      sleep.reset != null && sleep.reset !== ""
+        ? sleep.reset
+        : new Date((sleep.target_epoch ?? 0) * 1000).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
     return `waiting for reset ~${at} · resumes in ${eta}`;
   },
 
@@ -374,7 +383,7 @@ export const WBRun = {
   face(runid: string) {
     let h = 0;
     // oxlint-disable-next-line unicorn/prefer-code-point -- codePointAt changes an emoji run's face
-    for (const ch of String(runid || "")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    for (const ch of runid) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
     return this.FACES[h % this.FACES.length] ?? "";
   },
 
@@ -382,11 +391,11 @@ export const WBRun = {
   // the document carries the plan's PATH, and the panel reads it through the
   // confined `file.read` verb (ADR-0047 §5).
   fromSnapshot(doc: RunSnapshot): Run {
-    const issues = (doc.issues || []).map((i) => ({
+    const issues = (doc.issues ?? []).map((i) => ({
       number: i.number,
-      title: i.title || "",
+      title: i.title ?? "",
       status: i.status,
-      blockedBy: i.blocked_by || [],
+      blockedBy: i.blocked_by ?? [],
       // The render facts, carried per issue. They have been on the wire since the
       // fold's `Planning`/`Executing` arms; this mapper used to drop them, which
       // is why the picker could only ever name the vendor. `?? null`, not `||`:
@@ -398,11 +407,11 @@ export const WBRun = {
     return {
       runid: doc.runid,
       face: this.face(doc.runid),
-      agent: doc.exec_agent || "",
-      branch: doc.branch || "",
+      agent: doc.exec_agent ?? "",
+      branch: doc.branch ?? "",
       base: "",
       ...phaseFields(doc),
-      startedAt: doc.started_at || "",
+      startedAt: doc.started_at ?? "",
       completed: issues.filter((i: Issue) => this.TERMINAL.has(i.status)).length,
       // `??`, not `||`: a real total of 0 must stay 0, not be replaced.
       queueTotal: doc.queue?.total ?? issues.length,
@@ -427,7 +436,7 @@ export const WBRun = {
   // `hasOwn`, not a bare lookup: `verbLockTitle("constructor", "")` would
   // otherwise hand back Object's constructor instead of a string.
   verbLockTitle(verb: string, reason: string | null | undefined) {
-    if (reason) return reason;
+    if (reason != null && reason !== "") return reason;
     return Object.hasOwn(this.VERB_TITLE, verb) ? this.VERB_TITLE[verb] : `${verb} on this project`;
   },
   // The panel's rendering of a terminal verb frame. Empty for a clean exit —
@@ -438,9 +447,9 @@ export const WBRun = {
   EXIT_NOTE_TAIL: 200,
   exitNote(verb: string, code: number | null | undefined, lastLine: string | null | undefined) {
     if (code === 0) return "";
-    const shown = code === null || code === undefined ? "unknown" : code;
+    const shown = code ?? "unknown";
     const note = `Could not ${verb} (exit ${shown})`;
-    if (!lastLine) return note;
+    if (lastLine == null || lastLine === "") return note;
     const tail =
       lastLine.length > this.EXIT_NOTE_TAIL
         ? `${lastLine.slice(0, this.EXIT_NOTE_TAIL)}…`

@@ -77,6 +77,6 @@ export interface ResumeSocket {
 export function resumeDecision({ readyState, stale, connectingMs }: ResumeSocket): ResumeVerdict {
   if (readyState == null) return "reconnect";
   if (readyState === 0) return (connectingMs ?? 0) >= CONNECT_TIMEOUT_MS ? "reconnect" : "none";
-  if (readyState === 1) return stale ? "reconnect" : "none";
+  if (readyState === 1) return stale === true ? "reconnect" : "none";
   return "reconnect";
 }

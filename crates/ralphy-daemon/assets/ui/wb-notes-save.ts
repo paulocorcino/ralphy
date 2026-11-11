@@ -116,8 +116,20 @@ export function createNoteSave(deps: NoteSaveDeps) {
     // looking at. A missing card that is CLEAN holds only a stale copy of a
     // file somebody deleted, and `!dirty` already refuses it.
     if (!el._noteDirty) return Promise.resolve();
-    el._noteWrite = (el._noteWrite || Promise.resolve()).catch(() => {}).then(() => writeNow(el));
+    el._noteWrite = (el._noteWrite ?? Promise.resolve()).catch(() => {}).then(() => writeNow(el));
     return el._noteWrite;
+  }
+
+  // `_noteOrphan` is the record of a card whose record left the desk (see
+  // `render`), or, in a popup, the snapshot record: the file is still named,
+  // so the text can still land. Its path wins over a desk record that has
+  // none, because this document's desk can lag behind the name it chose.
+  function recordToWrite(el: NoteCard) {
+    const found = recordOf(el.dataset["noteId"]);
+    const orphan = el._noteOrphan;
+    return found && (found.path ?? "") === "" && (orphan?.path ?? "") !== ""
+      ? { ...found, path: orphan?.path }
+      : (found ?? orphan);
   }
 
   function writeNow(el: NoteCard): Promise<void> {
@@ -127,25 +139,18 @@ export function createNoteSave(deps: NoteSaveDeps) {
     // Handed to a detach popup (`draftOf`): the popup's card is now the only
     // writer of this unnamed note. A write already sent still lands, at the
     // name the popup reuses (`claim`); nothing queued after it does.
-    if (el._noteHandedOff) return Promise.resolve();
-    // `_noteOrphan` is the record of a card whose record left the desk (see
-    // `render`), or, in a popup, the snapshot record: the file is still named,
-    // so the text can still land. Its path wins over a desk record that has
-    // none, because this document's desk can lag behind the name it chose.
-    const found = recordOf(el.dataset.noteId);
-    const orphan = el._noteOrphan;
-    const record =
-      found && !found.path && orphan?.path ? { ...found, path: orphan.path } : found || orphan;
+    if (el._noteHandedOff === true) return Promise.resolve();
+    const record = recordToWrite(el);
     if (!record) return Promise.resolve();
     const markdown = el._noteMarkdown;
     return namePath(el, record, markdown).then((path) => {
-      if (!path) return;
+      if (path === null || path === "") return;
       // Handed off while the name probe was running: see above.
-      if (el._noteHandedOff) return;
+      if (el._noteHandedOff === true) return;
       // A popup tells the opener the name BEFORE the write. If the popup
       // closes with this write in flight, the file exists but no name report
       // follows, and the opener must write to this same name on re-attach.
-      if (deps.fragment() && !record.path && el._noteClaimSent !== path) {
+      if (deps.fragment() && (record.path ?? "") === "" && el._noteClaimSent !== path) {
         el._noteClaimSent = path;
         sendDocument(document, "workbench:note-claimed", { id: record.id, claim: path });
       }
@@ -169,7 +174,7 @@ export function createNoteSave(deps: NoteSaveDeps) {
           el.classList.remove("danger", "missing");
           // The record may carry its path: this is the moment a claim becomes
           // a name (see `namePath`).
-          if (!record.path) {
+          if ((record.path ?? "") === "") {
             patch(record.id, { path });
             el._noteClaim = null;
             // With no record in this document's desk, the orphan is the one
@@ -213,24 +218,23 @@ export function createNoteSave(deps: NoteSaveDeps) {
   // link, a backup and a desk record at once. An unnamed one is named HERE,
   // from the title at this moment, stepping past a name already taken.
   function namePath(el: NoteCard, record: NoteSource, markdown: string): Promise<string | null> {
-    if (record.path) return Promise.resolve(record.path);
+    if (record.path !== undefined && record.path !== "") return Promise.resolve(record.path);
     // A name this card CLAIMED but has not written yet. The desk record is
     // patched only once bytes have landed (`writeNow`), so without this a
     // second flush would probe again and — the first write having created the
     // file — step to `-2`, orphaning it under a name nobody chose.
-    if (el._noteClaim) return Promise.resolve(el._noteClaim);
+    if (el._noteClaim != null && el._noteClaim !== "") return Promise.resolve(el._noteClaim);
     // ONE naming per card, memoised synchronously: the probe below is a round
     // trip, and a second flush entering it would race the first.
     if (el._noteNaming) return el._noteNaming;
     const dirField = el.querySelector<HTMLInputElement>(".note-dir");
-    const dir = String(dirField?.value || DEFAULT_DIR)
-      .trim()
-      .replaceAll(/^\/+|\/+$/gu, "");
+    const typed = dirField?.value ?? "";
+    const dir = (typed === "" ? DEFAULT_DIR : typed).trim().replaceAll(/^\/+|\/+$/gu, "");
     const base = noteSlug(titleOf(markdown, "")) || stampName();
     el._noteNaming = firstFreeName(record, dir, base)
       .then((path) => {
         el._noteNaming = null;
-        if (!path) {
+        if (path === null || path === "") {
           paintState(el, "Could not name this note.");
           return null;
         }

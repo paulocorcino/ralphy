@@ -119,7 +119,7 @@ export function createView(deps: ViewDeps) {
   // Latch only once the stage HOLDS something (or is known final): latching on
   // the still-empty frame would make the real landing return early.
   function latchLanding(rects: Rect[]) {
-    if (rects.length || isDeskSettled()) landed = true;
+    if (rects.length > 0 || isDeskSettled()) landed = true;
   }
 
   // A parked reveal outranks the stored offset. Answers true when it landed; a
@@ -138,7 +138,7 @@ export function createView(deps: ViewDeps) {
   }
 
   function storedOffset() {
-    return viewStore?.read()?.off || null;
+    return viewStore.read()?.off ?? null;
   }
 
   // The offset half of the store, debounced like the desk flush. SUPPRESSED until
@@ -150,7 +150,7 @@ export function createView(deps: ViewDeps) {
     // The offset CAPTURED at schedule time, never a fresh read: a viewport that
     // measures 0 reads 0 (measured: `off:{0,0}` over a real 1500,850 pan).
     if (!pendingOffset) return;
-    viewStore?.patch({ off: pendingOffset });
+    viewStore.patch({ off: pendingOffset });
     pendingOffset = null;
   }
   function saveOffset() {
@@ -166,7 +166,7 @@ export function createView(deps: ViewDeps) {
 
   // The page is going away: a scheduled offset write runs now (`pagehide`).
   function flushPendingOffset() {
-    if (offsetFlush) {
+    if (offsetFlush !== null) {
       clearTimeout(offsetFlush);
       offsetFlush = null;
       flushOffset();
@@ -188,7 +188,7 @@ export function createView(deps: ViewDeps) {
   }
 
   function findWindow(deskId: string) {
-    return pageWindows().find((w) => w._deskId === deskId) || null;
+    return pageWindows().find((w) => w._deskId === deskId) ?? null;
   }
 
   // The centring half, on a viewport that is known to measure.
@@ -216,7 +216,7 @@ export function createView(deps: ViewDeps) {
       pendingOffset = null;
       clearTimeout(offsetFlush);
       offsetFlush = null;
-      viewStore?.patch({ off: { left: to.left, top: to.top } });
+      viewStore.patch({ off: { left: to.left, top: to.top } });
     }
     return it;
   }
@@ -237,7 +237,7 @@ export function createView(deps: ViewDeps) {
 
   function reducedMotion() {
     try {
-      return !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+      return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     } catch {
       return false;
     }
@@ -284,7 +284,7 @@ export function createView(deps: ViewDeps) {
   // The note card's jump (ADR-0064 §10): a card is a POINT OF INTEREST, so it is
   // CENTRED, unlike a fence.
   function jumpToNote(id: string) {
-    const el = window.WBNotes?.cardEl(id);
+    const el = window.WBNotes.cardEl(id);
     if (!el) return null;
     focusWin(el);
     return jumpToEl(el, bringIntoView);
@@ -309,7 +309,7 @@ export function createView(deps: ViewDeps) {
       pendingOffset = null;
       clearTimeout(offsetFlush);
       offsetFlush = null;
-      viewStore?.patch({ off: { left: to.left, top: to.top } });
+      viewStore.patch({ off: { left: to.left, top: to.top } });
     }
     return el;
   }
@@ -376,8 +376,9 @@ export function createView(deps: ViewDeps) {
     // The operator's hand outranks a jump in flight.
     cancelSlide();
     // A press on the bare floor OUTSIDE the focused fence leaves it (#343).
-    if (focusedFence()) {
-      const el = fenceEl(focusedFence());
+    const focused = focusedFence();
+    if (focused !== null && focused !== "") {
+      const el = fenceEl(focused);
       const box = st.getBoundingClientRect();
       const point = { x: e.clientX - box.left, y: e.clientY - box.top };
       if (!el || !rectHolds(restoreRect(el), point)) clearFenceFocus();
@@ -459,7 +460,7 @@ export function createView(deps: ViewDeps) {
     // measure; give up rather than refit blind.
     const ws0 = workspace();
     if (ws0 && (!ws0.clientWidth || !ws0.clientHeight)) {
-      const n = attempt || 0;
+      const n = attempt ?? 0;
       if (n < 10) requestAnimationFrame(() => refitAll(n + 1));
       return;
     }

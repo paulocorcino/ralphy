@@ -54,7 +54,7 @@ export function createViewerSave(deps: ViewerSaveDeps) {
       content,
       checkout: rec.checkout,
       encoding: rec.encoding,
-      bom: !!rec.bom,
+      bom: rec.bom,
     });
     if (isRendered(rec.kind) && !rec.editing) renderMarkdown(rec); // keep preview fresh
   }
@@ -94,7 +94,7 @@ export function createViewerSave(deps: ViewerSaveDeps) {
       content: contentOf(rec),
       checkout: rec.checkout ?? null,
       encoding: rec.encoding,
-      bom: !!rec.bom,
+      bom: rec.bom,
     };
   }
 
@@ -102,7 +102,8 @@ export function createViewerSave(deps: ViewerSaveDeps) {
   // re-read the REAL file via `file.read` (#197). The apply step is shared via
   // `applyFresh`. With no daemon client loaded (a unit test) it does nothing.
   function reloadFile(rec: ViewerRecord) {
-    const daemonBacked = !!window.WBDaemon?.observe;
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a unit test has no WBDaemon
+    const daemonBacked = Boolean(window.WBDaemon?.observe);
     if (daemonBacked) {
       // Daemon mode: a non-ok reply or a transport drop must NOT regenerate
       // synthetic bytes (C1). The tab stays — the operator's bytes are still
@@ -125,8 +126,11 @@ export function createViewerSave(deps: ViewerSaveDeps) {
       }
       readWith(rec, rec.encoding)
         .then((reply) => {
-          if (!reply || reply.status !== "ok") return fail(reply);
-          rec.bom = !!reply.bom;
+          if (reply.status !== "ok") {
+            fail(reply);
+            return;
+          }
+          rec.bom = reply.bom;
           if (reply.encoding) rec.encoding = reply.encoding;
           refreshEncodingPill(rec);
           if (rec.refused !== null) return reopenRefused(rec, reply);
@@ -138,7 +142,10 @@ export function createViewerSave(deps: ViewerSaveDeps) {
 
   // The fresh bytes of an image: the reload failed when there are none.
   function settleImage(rec: ViewerRecord, url: string | null | undefined, fail: () => void) {
-    if (!url) return fail();
+    if (url == null || url === "") {
+      fail();
+      return;
+    }
     if (rec.refused !== null) return reopenRefused(rec, { content: url });
     return applyFresh(rec, url);
   }
@@ -148,7 +155,7 @@ export function createViewerSave(deps: ViewerSaveDeps) {
   // reload never silently re-detects it.
   function readWith(rec: ViewerRecord, encoding: string | undefined) {
     const payload = WBDaemon.withCheckout({ repo: rec.project, path: rec.path }, rec.checkout);
-    if (encoding) payload.encoding = encoding;
+    if (encoding !== undefined && encoding !== "") payload["encoding"] = encoding;
     return WBDaemon.observe("file.read", payload);
   }
 
