@@ -70,7 +70,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // ---- the card ----------------------------------------------------------------
 
   function stage() {
-    return document.getElementById("stage");
+    return document.querySelector<HTMLElement>("#stage");
   }
 
   function cardEl(id: string | null | undefined) {

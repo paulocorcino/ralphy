@@ -209,7 +209,7 @@ export function fenceRepos(members: readonly ({ repo?: string } | undefined)[]) 
   }
   // The members of a `Set` are distinct, so there is no tie; `<` compares UTF-16
   // code units, as the sort without a compare function does.
-  return [...names].sort((a, b) => (a < b ? -1 : 1)).join(" · ");
+  return [...names].toSorted((a, b) => (a < b ? -1 : 1)).join(" · ");
 }
 
 // One fence readout for BOTH the fence's chrome and the toolbar list (#343):

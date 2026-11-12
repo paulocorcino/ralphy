@@ -232,7 +232,7 @@ export const WBColumns = (function () {
   function fromRects(items: StageItem[] | null | undefined): Grid {
     const list = (items ?? [])
       .map((it) => ({ id: it.id, ...box(it.rect) }))
-      .sort((a, b) => a.left - b.left || a.top - b.top || compareIds(a.id, b.id));
+      .toSorted((a, b) => a.left - b.left || a.top - b.top || compareIds(a.id, b.id));
     const cols = [];
     for (const it of list) {
       let best = null;
@@ -251,7 +251,7 @@ export const WBColumns = (function () {
     }
     // Columns stay in the order of their first console's left edge.
     return cols.map((col) =>
-      [...col].sort((a, b) => a.top - b.top || a.left - b.left).map((it) => it.id),
+      [...col].toSorted((a, b) => a.top - b.top || a.left - b.left).map((it) => it.id),
     );
   }
 

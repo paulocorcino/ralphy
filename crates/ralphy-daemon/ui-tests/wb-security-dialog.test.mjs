@@ -178,7 +178,7 @@ test("the dialog lists at most 12 shell() names, and shell() has each one", () =
   }
   // The form state left the fact: `security` holds only what the boot, the
   // login gate and log off read.
-  assert.deepEqual(Object.keys(shell.$store.connection.security).sort(), [
+  assert.deepEqual(Object.keys(shell.$store.connection.security).toSorted(), [
     "passwordSet",
     "policy",
     "remoteImages",

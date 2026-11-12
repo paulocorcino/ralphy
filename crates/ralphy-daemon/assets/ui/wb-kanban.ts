@@ -171,7 +171,7 @@ function kahnOrder(queue: Issue[], deps: Map<number, Set<number>>) {
   const placed = new Set<number>();
   const out = [];
   while (byNum.size > 0) {
-    const keys = [...byNum.keys()].sort((a, b) => a - b);
+    const keys = [...byNum.keys()].toSorted((a, b) => a - b);
     const ready = keys.find((n) => [...(deps.get(n) ?? [])].every((d) => placed.has(d)));
     if (ready == null) {
       for (const n of keys) out.push(byNum.get(n));
@@ -378,13 +378,13 @@ export const WBKanban = {
     const a = list.slice();
     switch (sort) {
       case "num-asc":
-        return a.sort((x, y) => x.number - y.number);
+        return a.toSorted((x, y) => x.number - y.number);
       case "updated":
-        return a.sort((x, y) => (y.updated || "").localeCompare(x.updated || ""));
+        return a.toSorted((x, y) => (y.updated || "").localeCompare(x.updated || ""));
       case "title":
-        return a.sort((x, y) => (x.title || "").localeCompare(y.title || ""));
+        return a.toSorted((x, y) => (x.title || "").localeCompare(y.title || ""));
       default:
-        return a.sort((x, y) => y.number - x.number);
+        return a.toSorted((x, y) => y.number - x.number);
     }
   },
 

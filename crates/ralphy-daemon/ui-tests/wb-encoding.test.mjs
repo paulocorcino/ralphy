@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { loadComponent, loadShell } from "./harness.mjs";
 import { createViewer } from "../assets/ui/wb-file-viewer.ts";
 import { WBMonaco } from "../assets/ui/wb-monaco.ts";
+import { idLookups } from "./fake-document.mjs";
 
 // app.ts names its siblings bare (`WBDaemon`, `WBViewer`), which the browser
 // resolves through `window` and Node through `globalThis`: mirror the fakes
@@ -196,6 +197,7 @@ const REAL_MONACO = { ...WBMonaco };
 
 function fakeNode() {
   const found = new Map();
+  const clicks = [];
   const node = {
     style: {},
     dataset: {},
@@ -210,7 +212,12 @@ function fakeNode() {
     remove() {},
     querySelector: (sel) => found.get(sel) ?? found.set(sel, fakeNode()).get(sel),
     querySelectorAll: () => [],
-    addEventListener() {},
+    addEventListener(type, fn) {
+      if (type === "click") clicks.push(fn);
+    },
+    click() {
+      for (const fn of clicks) fn();
+    },
     focus() {},
   };
   return node;
@@ -228,7 +235,7 @@ function loadViewer() {
   };
   const mount = fakeNode();
   const document = {
-    getElementById: () => mount,
+    ...idLookups(() => mount),
     createElement: () => fakeNode(),
     addEventListener() {},
   };
@@ -315,7 +322,7 @@ test("Reload of a refused image that is an image now rebuilds it as an image pan
   globalThis.WBDaemon = { withCheckout: (p) => p, readImage: () => Promise.resolve(url) };
   viewer.open({ id: "i1", project: "o/r", label: "r", path: "a.png", ftype: "image", refused: "not an image" });
   assert.equal(viewer.descOf("i1"), null);
-  mount.children[0].querySelector('[data-act="reload"]').onclick();
+  mount.children[0].querySelector('[data-act="reload"]').click();
   await tick();
   assert.deepEqual(viewer.descOf("i1"), {
     project: "o/r", label: "r", path: "a.png", ftype: "image", content: url, checkout: null, encoding: "UTF-8", bom: false,

@@ -110,7 +110,7 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key === "Escape") close();
     };
-    btn.onclick = (ev: MouseEvent) => {
+    btn.addEventListener("click", (ev: MouseEvent) => {
       ev.stopPropagation();
       if (menu.style.display !== "none") {
         close();
@@ -120,8 +120,8 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
       menu.style.display = "";
       document.addEventListener("click", onOutside, true);
       document.addEventListener("keydown", onKey, true);
-    };
-    menu.onclick = (ev: MouseEvent) => {
+    });
+    menu.addEventListener("click", (ev: MouseEvent) => {
       const item = targetClosest(ev, ".enc-item");
       if (!item) return;
       ev.stopPropagation();
@@ -130,7 +130,7 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
       if (!encoding) return;
       if (item.dataset["reopen"] != null) reopenWith(rec, encoding);
       else if (item.dataset["savewith"] != null) saveWith(rec, encoding);
-    };
+    });
   }
 
   // Reopen: the same bytes, decoded as `name`. Unsaved edits would be lost

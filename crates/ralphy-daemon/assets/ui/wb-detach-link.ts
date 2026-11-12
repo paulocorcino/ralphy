@@ -153,6 +153,7 @@ export const WBDetachLink = (function () {
       if (typeof BroadcastChannel !== "undefined") {
         try {
           chan = new BroadcastChannel(CHANNEL);
+          // oxlint-disable-next-line unicorn/prefer-add-event-listener -- a ui-tests fake reads it
           chan.onmessage = (e: MessageEvent<unknown>) => {
             const m = e.data;
             if (!isDetachMessage(m)) return;

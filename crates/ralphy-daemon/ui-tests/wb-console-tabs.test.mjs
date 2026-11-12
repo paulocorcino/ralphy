@@ -10,6 +10,7 @@ import { createStageWindow } from "../assets/ui/wb-stage-window.ts";
 import { createDormancy } from "../assets/ui/wb-console-dormancy.ts";
 import { createStack } from "../assets/ui/wb-stage-stack.ts";
 import { wirePress } from "../assets/ui/wb-console-press.ts";
+import { idLookups } from "./fake-document.mjs";
 
 // The store reaches `WBViewer` as a bare global: each test puts the real one back.
 const realViewer = globalThis.WBViewer;
@@ -540,7 +541,7 @@ const root = (els) => ({ querySelectorAll: (sel) => els.filter((el) => matches(e
 // of the focus mark.
 function stackPage(onStage, inPane) {
   const ids = { workspace: root(onStage), "console-tabs-pane": root(inPane) };
-  return { getElementById: (id) => ids[id] ?? null };
+  return { ...idLookups((id) => ids[id] ?? null) };
 }
 
 function surface() {

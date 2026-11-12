@@ -3,6 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { isFenceOpen, wireDetachedFence } from "../assets/ui/wb-detached-fence.ts";
+import { idLookups } from "./fake-document.mjs";
 
 const ORIGIN = "https://daemon.test";
 
@@ -18,7 +19,7 @@ function page({ opener = true } = {}) {
   const document = {
     title: "",
     addEventListener: (type) => log.push(["document", type]),
-    getElementById: (id) => (id === "stage" ? stage : null),
+    ...idLookups((id) => (id === "stage" ? stage : null)),
   };
   return { window, document, log, stage };
 }
@@ -129,7 +130,7 @@ function openedFence(t, { tab = "t1", pid = "p1", early = null } = {}) {
     body: { append() {} },
     createElement: tool,
     addEventListener() {},
-    getElementById: () => stage,
+    ...idLookups(() => stage),
   };
   wireDetachedFence(window, document);
   handlers.message({

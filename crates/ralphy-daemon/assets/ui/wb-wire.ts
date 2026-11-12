@@ -432,7 +432,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
 
   // Dismiss the context menu on any outside interaction.
   const hideContextMenu = () => {
-    const menu = document.getElementById("ctxmenu");
+    const menu = document.querySelector<HTMLElement>("#ctxmenu");
     if (menu) menu.style.display = "none";
   };
   document.addEventListener("click", hideContextMenu);

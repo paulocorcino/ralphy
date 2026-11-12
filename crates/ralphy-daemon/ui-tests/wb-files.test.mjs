@@ -245,7 +245,7 @@ test("a fresh listing evicts the levels it contradicts — a reused folder name 
   // The key is `<slug>\n<checkout>\n<rel>` (#406 added the middle segment);
   // the rel is its LAST segment.
   const cached = () =>
-    [...own._treeCache.keys()].map((k) => k.split("\n").at(-1)).sort();
+    [...own._treeCache.keys()].map((k) => k.split("\n").at(-1)).toSorted();
 
   // The tree as it stood: `ideias/` holding `dossie/`, itself holding a file.
   seed("", [{ name: "ideias", dir: true }, { name: "README.md", dir: false }]);

@@ -393,7 +393,7 @@ export function createSpawn(deps: SpawnDeps) {
     // THE KEY BAR is `wb-console-keys.ts`.
     ({ ctrlBtn, shiftBtn, selBtn } = buildKeyBar(win));
 
-    closeBtn.onclick = async () => {
+    const closeClicked = async () => {
       // A dormant window has no handle; it carried both answers across the gap.
       const id = sessionIdOf(win);
       const watching = watchingOf(win);
@@ -439,6 +439,9 @@ export function createSpawn(deps: SpawnDeps) {
         finish();
       }
     };
+    closeBtn.addEventListener("click", () => {
+      void closeClicked();
+    });
 
     wins.add(win);
     budget.trackDormancy(win);

@@ -251,7 +251,7 @@ async function restoreExpansion(files: MountFiles) {
   if (rels.length === 0 || !tree) return;
   files._restoringExpansion = true;
   try {
-    for (const rel of [...rels].sort((a, b) => a.split("/").length - b.split("/").length)) {
+    for (const rel of [...rels].toSorted((a, b) => a.split("/").length - b.split("/").length)) {
       // A project switch mid-replay: this list no longer describes the tree.
       if (slug !== files.$store.projects.openSlug || !files._tree) return;
       const node = tree.findFirst((n: WunderbaumNode) => files.relPath(n) === rel);

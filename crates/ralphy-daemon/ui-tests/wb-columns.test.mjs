@@ -227,7 +227,7 @@ test("listFold: a detached fence the fence list does not name adds no group", ()
 test("listFold: a group is its fence and its rows, with no shared repo", () => {
   const C = load();
   for (const g of C.listFold(roster())) {
-    assert.deepEqual(Object.keys(g).sort(), ["fence", "rows"]);
+    assert.deepEqual(Object.keys(g).toSorted(), ["fence", "rows"]);
     assert.ok(!("shared" in g) && !("repo" in g));
   }
 });
@@ -249,7 +249,7 @@ test("filterGroups: console name, agent, repo text and fence name match; empty g
   assert.equal(C.filterGroups(groups, "", label), groups, "no query: the same list");
   assert.equal(C.filterGroups(groups, "   ", label), groups);
   assert.deepEqual(ids(C.filterGroups(groups, "CODEX", label)), ["D1"], "agent, case-insensitive");
-  assert.deepEqual(ids(C.filterGroups(groups, "wsl", label)).sort(), ["F1a", "F2a", "L1", "L2", "W"], "repo text");
+  assert.deepEqual(ids(C.filterGroups(groups, "wsl", label)).toSorted(), ["F1a", "F2a", "L1", "L2", "W"], "repo text");
   const byName = C.filterGroups(groups, "two", label);
   assert.deepEqual(byName.map((g) => g.fence?.id), ["f2"], "a fence name keeps its whole group");
   assert.deepEqual(ids(C.filterGroups(groups, "back", label)), ["L2"], "console name");

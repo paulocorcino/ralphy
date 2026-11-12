@@ -98,11 +98,14 @@ export function groupTables(schema: DbmlSchema): { label: string; tables: DbmlTa
   }
   const rest = schema.tables
     .filter((t) => !taken.has(t.name))
-    .sort((a, b) => byLower(a.name, b.name));
+    .toSorted((a, b) => byLower(a.name, b.name));
   for (const run of runsOf(rest)) {
     addTo(buckets, run.length > 1 ? labelOf(run.map((t) => t.name)) : OTHER_TABLES, run);
   }
   return [...buckets]
-    .map(([label, tables]) => ({ label, tables: tables.sort((a, b) => byLower(a.name, b.name)) }))
-    .sort(byLabel);
+    .map(([label, tables]) => ({
+      label,
+      tables: tables.toSorted((a, b) => byLower(a.name, b.name)),
+    }))
+    .toSorted(byLabel);
 }

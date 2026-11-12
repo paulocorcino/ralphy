@@ -137,7 +137,7 @@ export function wbBranchDialog() {
       const all = this.branchModal.branches;
       const hit = q ? all.filter((b) => b.toLowerCase().includes(q)) : all.slice();
       const cur = this.branchModal.current;
-      return hit.sort(currentFirst(cur));
+      return hit.toSorted(currentFirst(cur));
     },
 
     openCheckoutChip(p: Project, anchor: HTMLElement) {

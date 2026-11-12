@@ -3,6 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { isDetachOpen, wireDetached } from "../assets/ui/wb-detached.ts";
+import { idLookups } from "./fake-document.mjs";
 
 const ORIGIN = "https://daemon.test";
 
@@ -19,8 +20,7 @@ function page({ opener = true } = {}) {
   const document = {
     title: "",
     addEventListener: (type) => log.push(["document", type]),
-    getElementById: (id) => (id === "viewers" ? viewers : null),
-    querySelector: () => null,
+    ...idLookups((id) => (id === "viewers" ? viewers : null)),
   };
   return { window, document, log, viewers };
 }

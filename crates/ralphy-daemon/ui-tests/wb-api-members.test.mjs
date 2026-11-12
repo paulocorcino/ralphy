@@ -16,7 +16,7 @@ const CHANGE = "a member list changes only by a design decision (an ADR or an am
 
 // `name type` of each member, sorted by name.
 function members(api) {
-  return Object.keys(api).sort().map((k) => `${k} ${typeof api[k]}`);
+  return Object.keys(api).toSorted().map((k) => `${k} ${typeof api[k]}`);
 }
 
 // Node 22 ships a real `BroadcastChannel`, and `createConsole` subscribes:

@@ -153,6 +153,7 @@ test("post reaches every other link on the channel", () => {
   class FakeBroadcastChannel {
     constructor(name) {
       this.name = name;
+      // oxlint-disable-next-line unicorn/prefer-add-event-listener -- this fake imitates onmessage
       this.onmessage = null;
       if (!buses.has(name)) buses.set(name, new Set());
       buses.get(name).add(this);
@@ -252,6 +253,7 @@ test("channel() reaches the channel and no store at all", () => {
   class FakeBroadcastChannel {
     constructor(name) {
       this.name = name;
+      // oxlint-disable-next-line unicorn/prefer-add-event-listener -- this fake imitates onmessage
       this.onmessage = null;
       if (!buses.has(name)) buses.set(name, new Set());
       buses.get(name).add(this);

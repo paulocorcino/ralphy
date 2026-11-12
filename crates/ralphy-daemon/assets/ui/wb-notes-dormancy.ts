@@ -34,7 +34,7 @@ export function createNoteDormancy(deps: NoteDormancyDeps) {
   const SWEEP_MS = 5000;
   function trackDormancy(el: NoteCard) {
     if (typeof window.IntersectionObserver !== "function") return;
-    const root = document.getElementById("workspace");
+    const root = document.querySelector<HTMLElement>("#workspace");
     if (!root) return;
     observer ??= new IntersectionObserver(
       (entries) => {

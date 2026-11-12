@@ -8,12 +8,13 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { createViewer, isFileDescriptor, isOpenRequest } from "../assets/ui/wb-file-viewer.ts";
 import { WBMonaco } from "../assets/ui/wb-monaco.ts";
+import { idLookups } from "./fake-document.mjs";
 
 const REAL_MONACO = { ...WBMonaco };
 
 function load() {
   const window = {};
-  const document = { getElementById: () => null };
+  const document = { ...idLookups(() => null) };
   return createViewer(window, document, { messages: { flash() {} } });
 }
 
@@ -178,7 +179,7 @@ function loadWithDom() {
   const mount = fakeEl("viewers");
   mount.clientWidth = 1280;
   const document = {
-    getElementById: (id) => (id === "viewers" ? mount : null),
+    ...idLookups((id) => (id === "viewers" ? mount : null)),
     createElement: (tag) => fakeEl(tag),
     addEventListener() {},
     dispatchEvent() {},

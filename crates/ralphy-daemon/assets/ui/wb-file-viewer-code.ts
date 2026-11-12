@@ -180,7 +180,7 @@ export function createViewerCode(deps: ViewerCodeDeps) {
     wireEncodingMenu(rec, el);
 
     const saveBtn = need(el, '[data-act="save"]');
-    need(el, '[data-act="find"]').onclick = () => {
+    need(el, '[data-act="find"]').addEventListener("click", () => {
       codeEditor(rec.ed)?.focus();
       codeEditor(rec.ed)
         ?.getAction("actions.find")
@@ -189,7 +189,7 @@ export function createViewerCode(deps: ViewerCodeDeps) {
           // oxlint-disable-next-line no-console -- the failure is for a developer
           console.error("[workbench] monaco find failed", err);
         });
-    };
+    });
     const mirrorBtn = el.querySelector<HTMLElement>('[data-act="mirror"]');
     mirrorBtn?.addEventListener("click", () => {
       window.Alpine.store("tabs").toggleMirror();

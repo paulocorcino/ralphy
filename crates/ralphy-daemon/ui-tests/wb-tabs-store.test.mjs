@@ -174,7 +174,7 @@ test("a folder move re-paths every tab under it and the active one, and closes a
     sh.state.$store.tabs.activate("file:o/r:dir/x.js");
     sh.state.$store.tabs.repathTabs("dir", "new");
     const ids = sh.state.$store.tabs.tabs.filter((t) => t.path).map((t) => t.id);
-    assert.deepEqual(ids.sort(), ["file:o/r:dirt.js", "file:o/r:new/x.js", "file:o/r:new/y.js"]);
+    assert.deepEqual(ids.toSorted(), ["file:o/r:dirt.js", "file:o/r:new/x.js", "file:o/r:new/y.js"]);
     assert.equal(sh.state.$store.tabs.active, "file:o/r:new/x.js");
     assert.equal(sh.state.$store.tabs.tabs.find((t) => t.id === "file:o/r:new/x.js").path, "new/x.js");
   } finally {
@@ -368,6 +368,7 @@ test("renderMenu sets a label as text, never as markup", () => {
       append(...kids) {
         this.children.push(...kids);
       },
+      addEventListener() {},
       set innerHTML(v) {
         this.innerHTMLWrites.push(v);
       },

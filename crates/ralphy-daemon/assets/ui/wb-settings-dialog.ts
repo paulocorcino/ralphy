@@ -259,7 +259,7 @@ export function settingsDialog() {
       }
     },
     pickDeskUpload() {
-      document.getElementById("desk-upload-input")?.click();
+      document.querySelector<HTMLElement>("#desk-upload-input")?.click();
     },
     async uploadDeskVersion(event: Event & { target: HTMLInputElement }) {
       const file = event.target.files?.[0];

@@ -88,7 +88,7 @@ export function wireDetachedFence(window: Window, document: Document) {
   // window from an earlier popup of the same fence.
   let PID: string | null = null;
   let MEMBERS: PopupMember[] = [];
-  const stageEl = () => required(document.getElementById("stage"), "the stage");
+  const stageEl = () => required(document.querySelector<HTMLElement>("#stage"), "the stage");
   const empty = (why: string) => {
     stageEl().innerHTML = '<p class="detached-empty">Nothing to show. ' + why + ".</p>";
   };

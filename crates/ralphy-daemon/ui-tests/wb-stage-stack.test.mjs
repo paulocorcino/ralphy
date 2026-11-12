@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createStack, createGestures } from "../assets/ui/wb-stage-stack.ts";
 import { createConsole } from "../assets/ui/wb-console.ts";
+import { idLookups } from "./fake-document.mjs";
 
 // A surface on the plane: a console window or a note card. `style.zIndex`
 // keeps what was written, as the fold reads it back with `parseInt`.
@@ -32,7 +33,7 @@ function page(surfaces) {
   return {
     readyState: "loading",
     addEventListener() {},
-    getElementById: (id) => (id === "workspace" ? workspace : null),
+    ...idLookups((id) => (id === "workspace" ? workspace : null)),
   };
 }
 

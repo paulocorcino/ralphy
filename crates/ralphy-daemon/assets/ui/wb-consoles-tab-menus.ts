@@ -220,7 +220,7 @@ export function wbConsoleMenus() {
       // AFTER the tab is laid out, as `revealWindow`: a `display:none` tab
       // measures a 0×0 viewport and every card would land at the origin.
       void this.$nextTick(() => {
-        const ws = document.getElementById("workspace");
+        const ws = document.querySelector<HTMLElement>("#workspace");
         window.WBNotes.create({
           repo: slug,
           checkout: window.WBConsole.checkoutOf(slug),

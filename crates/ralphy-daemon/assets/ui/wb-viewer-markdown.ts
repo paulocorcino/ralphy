@@ -201,7 +201,9 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     // button is not shown and the nav is the column it always was). A jump or
     // a tap on the article closes it — the index is a way in, not a fixture.
     const split = need(el, ".md-split");
-    need(el, '[data-act="outline"]').onclick = () => split.classList.toggle("toc-open");
+    need(el, '[data-act="outline"]').addEventListener("click", () => {
+      split.classList.toggle("toc-open");
+    });
     need(el, ".md-outline").addEventListener("click", (ev) => {
       if (targetClosest(ev, ".outline-item")) split.classList.remove("toc-open");
     });
@@ -212,11 +214,11 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     // in-page find over the rendered article
     const find = need(el, ".md-find");
     const input = needInput(el, ".md-find-input");
-    need(el, '[data-act="find"]').onclick = () => {
+    need(el, '[data-act="find"]').addEventListener("click", () => {
       find.classList.add("open");
       input.focus();
       input.select();
-    };
+    });
     input.addEventListener("input", () => {
       mdSearch(rec, input.value);
     });

@@ -51,7 +51,7 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
   let onTopId: string | null = null;
 
   function viewportSize() {
-    const ws = document.getElementById("workspace");
+    const ws = document.querySelector<HTMLElement>("#workspace");
     return { width: ws?.clientWidth ?? 0, height: ws?.clientHeight ?? 0 };
   }
 
@@ -63,7 +63,7 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
   // so a scroll of the stage never has to move it and it does not shake
   // during a pan.
   function placeOnTop(el: NoteCard, box: FloatBox) {
-    const ws = document.getElementById("workspace");
+    const ws = document.querySelector<HTMLElement>("#workspace");
     if (ws) {
       const r = ws.getBoundingClientRect();
       el.style.setProperty("--ws-x", r.left + ws.clientLeft + "px");
@@ -174,7 +174,7 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
   let viewportWatch: ResizeObserver | null = null;
   function watchViewport() {
     if (viewportWatch || typeof window.ResizeObserver !== "function") return;
-    const ws = document.getElementById("workspace");
+    const ws = document.querySelector<HTMLElement>("#workspace");
     if (!ws) return;
     viewportWatch = new ResizeObserver(refitOnTop);
     viewportWatch.observe(ws);

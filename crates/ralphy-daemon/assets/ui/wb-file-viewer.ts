@@ -122,7 +122,7 @@ function disposeEditorAndModels(rec: ViewerRecord, ed: NonNullable<ViewerRecord[
 
 export function createViewer(window: MermaidWindow, document: Document, deps: ViewerDeps) {
   const { messages } = deps;
-  const viewers = document.getElementById("viewers");
+  const viewers = document.querySelector<HTMLElement>("#viewers");
   const map = new Map<string, ViewerRecord>(); // tab id → viewer record
 
   // Monaco boots through an AMD loader, so an editor is created

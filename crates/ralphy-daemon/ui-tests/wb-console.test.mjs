@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { WBColumns } from "../assets/ui/wb-columns.ts";
 import { createConsole } from "../assets/ui/wb-console.ts";
 import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
+import { idLookups } from "./fake-document.mjs";
 
 const UI = join(import.meta.dirname, "../assets/ui");
 // The console family's source text, for the few pins on how it is written.
@@ -30,7 +31,7 @@ function compareNames(a, b) {
 }
 const SRC = readdirSync(UI)
   .filter((name) => familyGroup(name) >= 0)
-  .sort((a, b) => familyGroup(a) - familyGroup(b) || compareNames(a, b))
+  .toSorted((a, b) => familyGroup(a) - familyGroup(b) || compareNames(a, b))
   .map((name) => readFileSync(join(UI, name), "utf8"))
   .join("");
 
@@ -300,7 +301,7 @@ function withFrames(body) {
 
 function panHarness() {
   const ws = { scrollLeft: 0, scrollTop: 0, getBoundingClientRect: () => PAN_VIEW };
-  const api = load({}, { getElementById: (id) => (id === "workspace" ? ws : null) });
+  const api = load({}, { ...idLookups((id) => (id === "workspace" ? ws : null)) });
   const node = { isConnected: true };
   const placed = [];
   const pan = api.autoPan(node, (p) => placed.push(p));
@@ -563,7 +564,7 @@ async function deskPage(served = {}, extras = {}, docExtras = {}) {
   };
   const sent = [];
   const answers = extras.answers || [];
-  const wb = load({ ...extras.window }, { getElementById: () => null, ...docExtras }, {
+  const wb = load({ ...extras.window }, { ...idLookups(() => null), ...docExtras }, {
     deskSink: {
       put(body) {
         sent.push(JSON.parse(body));
@@ -626,7 +627,7 @@ test("a flush sends only this page's changes: no read before it, no whole desk",
     await settle();
     assert.equal(page.gets.length, 1, `only the load read the desk: ${page.gets}`);
     assert.equal(page.sent.length, 1);
-    assert.deepEqual(Object.keys(page.sent[0]).sort(), ["changes", "generation", "seq"]);
+    assert.deepEqual(Object.keys(page.sent[0]).toSorted(), ["changes", "generation", "seq"]);
     assert.equal(page.sent[0].generation, 7);
     assert.ok(!JSON.stringify(page.sent).includes("theirs"), JSON.stringify(page.sent));
   } finally {
@@ -739,7 +740,7 @@ function columnWin(id, maximized = false) {
   });
 }
 const colRecord = (id, max) => ({ ...SAVED, id, max, sessionId: null, checkout: null });
-const byId = (changes) => [...changes].sort((x, y) => x.id.localeCompare(y.id));
+const byId = (changes) => [...changes].toSorted((x, y) => x.id.localeCompare(y.id));
 
 // ADR-0051 §5: the console that becomes first in the columns is written to
 // the desk as an ordinary maximize, and the one that stops being first is
@@ -750,7 +751,7 @@ test("applyColumns writes the moved maximize to the desk when asked to persist",
   const page = await deskPage(
     { windows: [colRecord("w-a", true), colRecord("w-b", false)] },
     {},
-    { getElementById: (id) => dom?.[id] ?? null, dispatchEvent() {} },
+    { ...idLookups((id) => dom?.[id] ?? null), dispatchEvent() {} },
   );
   try {
     const C = loadColumns();
@@ -776,7 +777,7 @@ test("applyColumns writes the unmaximize of a console that stays a column, not f
   const page = await deskPage(
     { windows: [colRecord("w-a", true), colRecord("w-b", false)] },
     {},
-    { getElementById: (id) => dom?.[id] ?? null, dispatchEvent() {} },
+    { ...idLookups((id) => dom?.[id] ?? null), dispatchEvent() {} },
   );
   try {
     const C = loadColumns();
@@ -833,7 +834,7 @@ test("applyColumns writes nothing to the desk without persist", async () => {
   const page = await deskPage(
     { windows: [colRecord("w-a", true), colRecord("w-b", false)] },
     {},
-    { getElementById: (id) => dom?.[id] ?? null, dispatchEvent() {} },
+    { ...idLookups((id) => dom?.[id] ?? null), dispatchEvent() {} },
   );
   try {
     const C = loadColumns();
@@ -1094,7 +1095,7 @@ test("start a new desk treats a desk another tab already started as done", async
   };
   try {
     // The empty new desk is restored, which looks for the stage.
-    const c = load({}, { getElementById: () => null });
+    const c = load({}, { ...idLookups(() => null) });
     await c.whenDeskLoaded();
     assert.equal(c.deskFailure(), "the file is damaged");
     await c.startNewDesk();

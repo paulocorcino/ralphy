@@ -245,7 +245,7 @@ export function createStageWindow(deps: StageWindowDeps) {
   function raiseMaximized() {
     const st = stage();
     if (!st) return;
-    const cols = [...st.querySelectorAll<HTMLElement>(".session-window.column")].sort(
+    const cols = [...st.querySelectorAll<HTMLElement>(".session-window.column")].toSorted(
       (a, b) =>
         at(a, "--col-index") - at(b, "--col-index") || at(a, "--row-index") - at(b, "--row-index"),
     );
