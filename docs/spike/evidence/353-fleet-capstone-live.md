@@ -9,7 +9,7 @@ in `docs/adr/0052-local-fleet-validation.md` at the wrap-up.
 ## Resolved environment (captured 2026-07-31)
 
 | Field | Value |
-|-------|-------|
+| ------- | ------- |
 | Host OS | Windows 11 Pro 26200 |
 | WSL distros | `Ubuntu-22.04` (default, WSL2) and `docker-desktop` (WSL2) — the **sibling distro** ADR-0052 names in its rejected alternative is present on this host |
 | WSL networking mode | NAT (`.wslconfig` has no `networkingMode`), `localhostForwarding=true` — the §2 precondition holds |
@@ -117,7 +117,7 @@ both from `wsl_distro`, which
 the process's `WSL_DISTRO_NAME`. Measured on this host:
 
 | Context | `WSL_DISTRO_NAME` |
-|---|---|
+| --- | --- |
 | interactive `bash -lc` | `Ubuntu-22.04` |
 | `systemctl --user show-environment` | **absent** |
 | the running daemon's `/proc/<pid>/environ` | **absent** |
@@ -178,7 +178,7 @@ occupies the local daemon's default port on the very interface it binds.
 Reversing the start order is worse, because it fails **silently**:
 
 | Start order | Result |
-|---|---|
+| --- | --- |
 | WSL first, Windows second | Windows daemon exits with `os error 10048` — loud, though the message names the address and not the cause |
 | Windows first, WSL second | **Both run and both look healthy.** Windows owns `127.0.0.1:7257`; the relay loses; the local daemon dials `127.0.0.1:7257` to reach the peer and **reaches itself** |
 
@@ -287,7 +287,7 @@ The peer serves the truth on `/api/repos`:
 `/api/fleet` folded that to:
 
 | key | branch | reachable |
-|---|---|---|
+| --- | --- | --- |
 | `…/Dev/FinCal` | *(empty)* | **true** |
 | `…/paulocorcino/FinCal` | *(empty)* | true |
 
@@ -304,7 +304,7 @@ stat a peer path". Fixed by carrying the owner's verdict through in a
 says its path is. Re-verified live:
 
 | key | branch | reachable | peer_state |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `…/Dev/FinCal` | | **false** | reachable |
 | `…/paulocorcino/FinCal` | `ralphy/init` | true | reachable |
 
@@ -326,7 +326,7 @@ Peer repo: `~/FinCal-353` on branch `capstone/fleet-353`.
 ### Sync and push (AC1)
 
 | Verb | Result |
-|---|---|
+| --- | --- |
 | `sync.status` | `{"head":{"kind":"branch","name":"capstone/fleet-353"},…}` — the peer's real branch |
 | `sync.fetch` | `{"status":"ok"}` |
 | `sync.push` | `{"status":"ok"}` |
@@ -377,7 +377,7 @@ Tried both ways, plus a neighbouring key each time so the refusal is proven to
 be about the key and not the surface:
 
 | Path | Key | Result |
-|---|---|---|
+| --- | --- | --- |
 | `/ws/command`, composite ref | `verify.command` | `{"status":"error","message":"invalid mutation options"}` |
 | `/ws/command`, composite ref | `queue.assignee` | `{"status":"ok"}` |
 | direct `POST /api/peer/command` | `verify.command` | `{"status":"error","message":"invalid mutation options"}` |
@@ -499,7 +499,7 @@ descriptor still on disk: True
 ```
 
 | key | reachable | peer_state |
-|---|---|---|
+| --- | --- | --- |
 | `…/Dev/FinCal` | false | unreachable |
 | `…/paulocorcino/FinCal` | false | unreachable |
 
@@ -628,7 +628,7 @@ the Windows side.
 `GET /api/usage` on the local daemon:
 
 | | local `01KX5QAG…` | peer `01KYVG62…` | total |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | run records | 645 | **3** | 648 |
 | interactive rows | 1674 | **165** | 1839 |
 
@@ -701,7 +701,7 @@ the Windows daemon's — which reports all seven available. So §6's
 Vendor CLI resolution inside `Ubuntu-22.04`, as the daemon resolves it:
 
 | CLI | Resolves to | `available` | Correct? |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `claude` | `~/.local/bin/claude` | true | yes — runs in a bare env (`2.1.154`) |
 | `cursor-agent` | `~/.local/bin/cursor-agent` | true | yes — runs in a bare env (`2026.07.20`) |
 | `codex` | `~/.nvm/versions/node/v24.13.0/bin/codex` | true | present, **but see below** |

@@ -7,7 +7,7 @@ particular time.
 ## Use Ralphy
 
 | Task | Document |
-|---|---|
+| --- | --- |
 | Set up a project and start a run | [Getting started](getting-started.md) |
 | Choose the planner and executor | [Agents](agents.md) |
 | Set run flags and persistent defaults | [Run options](run-options.md), [configuration](configuration.md) |
@@ -21,7 +21,7 @@ particular time.
 ## Develop Ralphy
 
 | Task | Document |
-|---|---|
+| --- | --- |
 | Follow repository rules | [Agent guide](../AGENTS.md) |
 | Use the domain vocabulary | [Domain model](../CONTEXT.md) |
 | Build, run CI checks, or release | [Building](BUILDING.md) |

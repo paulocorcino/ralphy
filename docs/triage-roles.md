@@ -15,13 +15,13 @@ control separate) is recorded in [adr/0001-triage-vocabulary-and-stop-before.md]
 
 ## The five roles
 
-| Canonical label   | Purpose                                                        | Ralphy's behaviour                                            |
-| ----------------- | ------------------------------------------------------------- | ------------------------------------------------------------ |
-| `needs-triage`    | Maintainer still needs to evaluate the issue.                 | Ignored — not in the queue.                                   |
-| `needs-info`      | Blocked, waiting on the reporter for more information.        | Ignored — not in the queue.                                  |
+| Canonical label   | Purpose                                                                        | Ralphy's behaviour                                                                         |
+| ----------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `needs-triage`    | Maintainer still needs to evaluate the issue.                                  | Ignored — not in the queue.                                                                |
+| `needs-info`      | Blocked, waiting on the reporter for more information.                         | Ignored — not in the queue.                                                                |
 | `ready-for-agent` | Fully specified, AFK-ready: an agent can pick it up with **no** human context. | **The queue.** Worked in ascending issue-number order, then closed on green. Alias: `AFK`. |
-| `ready-for-human` | Requires human implementation.                                | Never queried, so never worked. Alias: `HITL`.               |
-| `wontfix`         | Will not be actioned.                                         | Ignored — not in the queue.                                  |
+| `ready-for-human` | Requires human implementation.                                                 | Never queried, so never worked. Alias: `HITL`.                                             |
+| `wontfix`         | Will not be actioned.                                                          | Ignored — not in the queue.                                                                |
 
 ## State machine
 

@@ -9,7 +9,7 @@ The agent that works a phase reads the plan, not this file.
 Commit 13045ccb05b98b892a76a4a323a498e4eaea985f, 2026-11-09, on Windows 11.
 
 | Tool | Version | Pinned where |
-|---|---|---|
+| --- | --- | --- |
 | Rust and clippy | 1.99.1 (clippy 0.1.99) | `rust-toolchain.toml`, since this run |
 | oxlint | 1.93.0 | `ci.yml` `OXLINT_VERSION`, since this run (was 1.85.0) |
 | oxlint-tsgolint | 7.0.2006 | `ci.yml` `TSGOLINT_VERSION`, since this run (was 7.0.2005) |
@@ -39,7 +39,7 @@ Set `SC` to a scratch folder outside the repo, and run them from the repo root:
 The debt table, largest first:
 
 | Rule | Tool | Class | Production | Test | Scopes | Strategy | Phase |
-|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- |
 | `eslint(curly)` | oxlint | Surface | 2218 | 319 | ui-tests 319, ui 2218 | fix by command | 8 |
 | `clippy::str_to_string` | clippy | Surface | 903 | 1449 | ralphy-daemon 1071, ralphy-cli 563, ralphy-core 286 … | fix by command | 1 |
 | `typescript(strict-boolean-expressions)` | oxlint | Fail fast | 1089 | 0 | ui-tests 0, ui 1089 | fix then flip | 9 |

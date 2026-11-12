@@ -7,7 +7,7 @@ command and path below is the implemented surface, not the plan.
 ## The surface at a glance
 
 | Thing | Value |
-|---|---|
+| --- | --- |
 | Start (foreground) | `ralphy daemon` — Ctrl+C stops it |
 | Default listener | `http://127.0.0.1:7257` ("ralphy" on a keypad) |
 | Flags | `--port <p>`, `--bind <ip>` |
@@ -24,7 +24,7 @@ the page socket `/ws`) map to exactly the blessed
 invocations — nothing else is reachable:
 
 | UI action | Spawned child |
-|---|---|
+| --- | --- |
 | run | `ralphy run --if-idle` |
 | triage | `ralphy triage --if-idle --yes` |
 | push | `ralphy issues --push` |

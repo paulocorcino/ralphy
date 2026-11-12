@@ -163,12 +163,12 @@ merely renamed.
 routes to a **model**, and `model_reasoning_effort` is held at the vendor default
 (`medium`) instead of being derived from the tier:
 
-| role                   | Claude (ADR-0002) | Codex                     |
-| ---------------------- | ----------------- | ------------------------- |
+| role                   | Claude (ADR-0002) | Codex                        |
+| ---------------------- | ----------------- | ---------------------------- |
 | planning               | opus              | `gpt-5.6-sol`, effort medium |
-| execute, tier `high`   | opus              | `gpt-5.6-sol`             |
-| execute, tier `medium` | sonnet            | `gpt-5.6-terra`           |
-| execute, tier `low`    | sonnet            | `gpt-5.6-luna`            |
+| execute, tier `high`   | opus              | `gpt-5.6-sol`                |
+| execute, tier `medium` | sonnet            | `gpt-5.6-terra`              |
+| execute, tier `low`    | sonnet            | `gpt-5.6-luna`               |
 
 - **One axis, not two.** The tier chooses the model; effort stays a single global
   operator override (opt-up to `high`/`xhigh`, the latter model-dependent), never

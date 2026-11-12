@@ -10,7 +10,7 @@ None of the five originally-audited symptoms
 corroborating #202-#208.
 
 | # | Audit id | Symptom | Result | Screenshot |
-|---|----------|---------|--------|------------|
+| --- | ---------- | --------- | -------- | ------------ |
 | 1 | C1 | Demo badge / daemon-mode detection (#202/#208) | PASS | `209-demo-badge-2026-07-14.png` |
 | 2 | C2 | Kanban error state distinct from empty (#207) | PASS | `209-board-error-2026-07-14.png` |
 | 3 | C3 | Auth honesty — loopback | PASS | `209-auth-honest-2026-07-14.png` |

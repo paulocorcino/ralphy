@@ -69,10 +69,10 @@ lingered to the idle watchdog (D3 "stream may end early").
    prose ("Cuts token usage ~75%…"); no `agent-transcripts` JSONL on this build.
 2. **Resume is incremental** (direct 2-turn `--resume`, same UUID):
 
-   | turn | inputTokens | cacheReadTokens | outputTokens |
-   |------|-------------|-----------------|--------------|
-   | 1    | 12941       | 5248            | 33           |
-   | 2 (resume) | 100   | 18176           | 18           |
+   | turn       | inputTokens | cacheReadTokens | outputTokens |
+   | ---------- | ----------- | --------------- | ------------ |
+   | 1          | 12941       | 5248            | 33           |
+   | 2 (resume) | 100         | 18176           | 18           |
 
    Input collapses, cacheRead grows → incremental → D11 keeps the **sum** rule.
 3. **Interactive scan** (daemon `GET /api/usage`, ephemeral `RALPHY_DAEMON_DIR` to avoid
@@ -81,7 +81,7 @@ lingered to the idle watchdog (D3 "stream may end early").
 4. **Unit mismatch** (dashboard CSV vs envelopes, exact matches):
 
    | pass | input | cacheRead | output | Cost (Pro) |
-   |------|-------|-----------|--------|-----------|
+   | ------ | ------- | ----------- | -------- | ----------- |
    | #117 plan | 43169 | 242560 | 5635 | Included |
    | #117 execute | 24629 | 136960 | 2841 | Included |
    | #117 consolidate | 33398 | 337152 | 5444 | Included |

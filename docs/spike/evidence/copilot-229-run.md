@@ -17,7 +17,7 @@ Run dir: `C:\Dev\FinCal\.ralphy\runs\20260720-084338\` (`copilot.log`, 4 038 776
 ## What it proves
 
 | Claim | Evidence |
-|---|---|
+| --- | --- |
 | The plan phase drives Copilot with the Tier 2 charter | `plan written number=108 open_steps=16` — 16 steps parsed out of a plan Copilot wrote from `prompt.plan.copilot.md` |
 | The stream is JSON lines | every line of `copilot.log` is one `{"type","data","id","timestamp","parentId","ephemeral"?}` object |
 | No PTY is allocated | the crate has no `ralphy-pty` edge (`crates/ralphy-agent-copilot/Cargo.toml`); the whole run went through `HeadlessCall` |

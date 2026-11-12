@@ -78,7 +78,7 @@ these reach each vendor?
 ### 2.3 The difference that decides the design
 
 | | Ralphy | Studied framework |
-|---|---|---|
+| --- | --- | --- |
 | Who owns the agent loop | the vendor CLI | the framework |
 | Where an "inject a message" can happen | only where the vendor opens a door: hooks, PTY input, a native protocol | anywhere in its own loop |
 | Cost model | the operator's vendor subscriptions | API keys per token |
@@ -95,7 +95,7 @@ and is out of scope.
 ## 3. Where each foundation stands today
 
 | Capability | Today | Evidence |
-|---|---|---|
+| --- | --- | --- |
 | See the state of a run agent | yes: `phase.agent` in the run snapshot, `issue.agent_state` CloudEvent, Telegram push on `waiting` | ADR-0059 [checked]; notifier [reported] |
 | See the state of a console agent | yes: `agent_state` on `/api/sessions`, yellow dot "an agent is waiting for you" | ADR-0059 §5 [checked]; `app.ts` [reported] |
 | State for the six non-Claude vendors | **no** | ADR-0059 §7 [reported] |
@@ -121,7 +121,7 @@ What each vendor offers for a two-way conversation. Ralphy uses none of the
 two-way options today [reported].
 
 | Vendor | Used today | Two-way option the vendor offers | Status of that claim |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | claude | PTY TUI; `-p stream-json` out | `--input-format stream-json` (messages in on stdin); hooks with `additionalContext`; a `Stop` hook that blocks the stop with a reason | [memory] — verify |
 | codex | `codex exec … -o <file> -` | `codex app-server`: JSON-RPC, thread → turn → item, server-initiated approvals, `turn/steer`, `turn/interrupt` | [docs/reported]; method names not checked against a schema |
 | gemini | headless `stream-json` | `--acp` / `--experimental-acp` | spike doc mentions it [reported] |
@@ -194,7 +194,7 @@ flowchart TB
 ```
 
 | Capability | What it answers | Builds on |
-|---|---|---|
+| --- | --- | --- |
 | **Agent directory** | which agents are live (run agents and console agents), on which host, which vendor, which state | `/api/sessions`, run snapshots, fleet |
 | **Observation** | what state an agent is in; later, what it did (tool calls) | ADR-0059 hooks, run snapshot, events |
 | **Messaging** | leave a message for an agent; deliver it at the next turn boundary; record that it was read | new |
@@ -212,7 +212,7 @@ for the triage role ("supervised session" is the term for a person following
 a live agent).
 
 | Domain | Owns | Candidate terms | Today's owner |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Queue and run (core) | issue order, plan, execute, verify, close | existing | `ralphy-core` |
 | Agent runtime | how one vendor CLI is driven | adapter, execution mode | `ralphy-agent-*` |
 | Live agents | which agents run now, where | *live agent*, *agent directory* | split: daemon (consoles), snapshots (runs) |
@@ -408,7 +408,7 @@ Codex app-server. Each one is an adapter-level change (ADR-0002).
 ## 10. The factory, mapped to what exists [proposal, inferred from ADR titles and the reports]
 
 | Stage of the studied software factory | Ralphy today |
-|---|---|
+| --- | --- |
 | Intake (GitHub, Linear) | the forge queue (GitHub only; the forge is not an extension point, ARCHITECTURE §6) |
 | Triage | `triage-agent` role, evidence gate, escalate (ADR-0017, ADR-0018) |
 | Planning + plan approval | planner; `stop-before`; plan review by a human is not a gate today |
@@ -452,7 +452,7 @@ steps 1–3 exist, because a plan approval is an attention request, and
 ## 12a. Grill decisions (2026-10-11)
 
 | # | Question | Decision |
-|---|---|---|
+| --- | --- | --- |
 | G1 | Who orchestrates the squad | **Hybrid.** Code (rules, queue, gates) decides the moves between phase roles. Inside one role, an agent may coordinate its vendor's own subagents, but its result moves on only through a gate in code. |
 | G2 | Roles | A closed set of four **phase roles**: triager, planner, executor, **reviewer** (the only new one). One-shot tasks are not roles. Each role maps to adapter + model + effort in settings. A reviewer may be the same vendor and model as the executor, but always in a new process with no executor history. CONTEXT.md updated. |
 | G3 | Where the reviewer acts | **Inside the run**, after the verify gate and before close-on-green (the **review gate**). It can only veto. "Changes requested" goes back to the executor **once**; after that the issue stays open for a human. Opt-in by setting. It can move to a PR trigger later, when push and PR exist. CONTEXT.md updated. |
@@ -474,7 +474,7 @@ steps 1–3 exist, because a plan approval is an attention request, and
 ## 12b. What exists today and can be reused [checked 2026-10-11]
 
 | Need | What exists | Where | Gap |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | A stable identity for a console | `DeskRecord.id`, stable across daemon restarts (the `session_id` is volatile and never the key) | `crates/ralphy-daemon/src/desk.rs` `DeskRecord` | the agent process does not know its record id |
 | Where a duty is stored | `DeskRecord.console_name` (ADR-0066) is the pattern: one optional field on the record, capped | `desk.rs` | add `duty` next to it |
 | Fence membership | `fenceMembership` in the browser: a window belongs to the fence that holds its **centre**; fences cannot overlap (`fenceFits`), so the answer is unique | `assets/ui/wb-geometry.ts:138` | **the rule lives only in the browser**. The daemon has every rect (desk layout is daemon state, ADR-0050) but does not compute membership. To enforce squad scope, the daemon must own this rule (ARCHITECTURE §7: one owner per fact) |
@@ -498,7 +498,7 @@ steps 1–3 exist, because a plan approval is an attention request, and
 ### Facts checked (were memory before)
 
 | Claim | Result | Source |
-|---|---|---|
+| --- | --- | --- |
 | Claude has `--mcp-config`, `--append-system-prompt[-file]`, `--disallowed-tools`, `--name` | **true** | `claude --help`, Claude Code 2.1.296 installed |
 | Claude MCP over HTTP with headers | **true** (`--transport http`, `-H "Authorization: Bearer …"`) | `claude mcp add --help` |
 | Hooks return `additionalContext` | **true** on SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, PostToolBatch, Stop, SubagentStop… (wrapped in a system reminder) | code.claude.com/docs/en/hooks |
@@ -578,7 +578,7 @@ relay is exactly "answer a native permission prompt from the attention item"
 ## 12d. Storage and the message stack
 
 | Need | Volume | Writer | Reader |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Fence timeline (letters seen, state changes) | low: bounded by the budget per fence | the daemon only | the browser (push), `agents_list`, the stall rule |
 | Open waits, attention items | tiny | the daemon | the daemon (in memory) |
 | `ask_human` answers | tiny | the daemon | the daemon |
@@ -586,7 +586,7 @@ relay is exactly "answer a native permission prompt from the attention item"
 Options:
 
 | Option | For | Against |
-|---|---|---|
+| --- | --- | --- |
 | **JSONL files + state rebuilt in memory at boot** | the pattern every daemon store already uses (`daemon-audit.jsonl`, `agent-status.jsonl`, desk JSON); one writer; no new code path | queries are scans; retention needs rotation |
 | **SQLite via `rusqlite`** | already compiled into the daemon (bundled); real queries; WAL | first writable database in Ralphy: schema, migrations, a new kind of test |
 | **libSQL** (Turso) | async crate, replicas, sync to a server | a large new dependency; its extra value (sync, replicas) serves a multi-instance server, which Ralphy is not; the planned control plane would be the reason, and it does not exist |
@@ -620,7 +620,7 @@ opencode also reachable from WSL through the Windows npm path).
 ### Squad capabilities per vendor (S1–S4 of G13)
 
 | | Claude | Codex | OpenCode |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **S1 MCP at launch** | `--mcp-config <file>`, HTTP + header [checked: help] | `-c mcp_servers.<n>.url=…` + `bearer_token_env_var` (the `mcp add` flags `--url`, `--bearer-token-env-var` exist) [checked: help; the `-c` form is inferred] | `mcp` in config, `type: "remote"`; delivered by `OPENCODE_CONFIG_CONTENT`, which the run adapter already uses [checked: docs + `ralphy-agent-opencode/src/command.rs:53`]; header field not shown on the config page [to verify] |
 | **S2 charter at launch** | `--append-system-prompt[-file]` [checked] | not found in help [to verify: a `-c` instructions key]; fallback: the first doorbell carries the charter path | `instructions: [path]` in config [checked: docs] |
 | **S3 state** | hooks, already wired (ADR-0059) | **hooks, stable** (`features list`: `hooks stable true`): SessionStart, UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, Stop, Interrupt, SessionEnd… Payload carries `session_id`. Hooks come only from config layers (`~/.codex`, `<repo>/.codex`, inline `[hooks]` in `config.toml`); a per-launch file is not documented; non-managed hooks need trust, or `--dangerously-bypass-hook-trust` for one invocation [checked: docs + help] | **event stream**: the TUI is a client of a local server; `--port` on the TUI; SSE `GET /event` with `session.idle`, `session.status`, `permission.asked`, `permission.replied`; basic auth with `OPENCODE_SERVER_PASSWORD` [checked: docs + help] |
@@ -674,7 +674,7 @@ Readings:
 Comparison:
 
 | | Studied framework | Ralphy desk (squad) |
-|---|---|---|
+| --- | --- | --- |
 | Topology | tree: LLM parent → vendor children | mesh of peers inside a fence, under the operator |
 | Who owns the process | the parent, lazily | the daemon (PTY), started by the operator |
 | Human view | the framework's UI; vendor TUI hidden | the vendor's own TUI, live |
@@ -755,7 +755,7 @@ WSL was not run; the WSL rows stay open.
 ### Claude
 
 | Check | Result |
-|---|---|
+| --- | --- |
 | MCP over HTTP with `--mcp-config` and a header | **pass**: every request carried `Authorization: Bearer console-token-claude`; the client first tried MCP `2026-07-28` (`server/discover`), then fell back to `2025-11-25` |
 | Charter by `--append-system-prompt` | **pass**: the model reported the charter keyword |
 | PreToolUse hook denies a tool | **pass** on `ListAgents` (payload: `session_id`, `transcript_path`, `cwd`, `permission_mode`, `tool_name`, `tool_input: {}`, `tool_use_id`); the agent sees the deny reason |
@@ -771,7 +771,7 @@ checklist.
 ### OpenCode
 
 | Check | Result |
-|---|---|
+| --- | --- |
 | Basic auth on the server | **pass**: `401` without the password, `200` with `OPENCODE_SERVER_PASSWORD` |
 | Remote MCP with a header through `OPENCODE_CONFIG_CONTENT` | **pass**: `initialize`, `notifications/initialized`, `tools/list` all carried `Authorization: Bearer console-token-opencode` |
 | `POST /session/:id/prompt_async` | **pass**: `204` |
@@ -783,7 +783,7 @@ checklist.
 ### Codex
 
 | Check | Result |
-|---|---|
+| --- | --- |
 | Hooks per launch | **pass**: inline `-c "hooks.<Event>=[{hooks=[{type=\"command\",command=\"…\"}]}]"` with `--dangerously-bypass-hook-trust` runs SessionStart, UserPromptSubmit, PreToolUse, Stop; payloads carry `session_id` and `turn_id`; the flag prints a warning each run |
 | Stop hook output | a Stop hook that prints `{}` is reported **"Stop Failed"**; one that prints nothing **completes**. The shared `hook status` must print nothing for Codex |
 | MCP per launch | **pass**: `-c mcp_servers.<n>.url=…` and `-c mcp_servers.<n>.bearer_token_env_var=…` sent the bearer token |

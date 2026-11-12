@@ -21,7 +21,7 @@ host as configured and is scoped rather than assumed.
 ## Verdict per phase
 
 | Phase | AC | Verdict |
-|---|---|---|
+| --- | --- | --- |
 | 0 — topology, loopback-only | AC3 | **pass**, after two design fixes |
 | 1 — `init` inside the distro | AC4, AC5 | **pass** — gate blocked truthfully, repo registered anyway |
 | 2 — roster and availability | AC5, AC8 | **pass**, after one design fix; routing correct throughout |

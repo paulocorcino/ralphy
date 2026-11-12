@@ -53,7 +53,7 @@ Agent CLIs keep their conversation on disk and can open it again. What each
 interactive CLI offers, read from its `--help` on 2026-10-24 (Windows 11):
 
 | Agent | Version | Choose the id at launch | Resume one session by id |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Claude Code | installed | `--session-id <uuid>` | `--resume <id>` |
 | Copilot CLI | 1.0.91 | `--session-id <uuid>` (sets it for a new session) | the same `--session-id`, or `--resume <id>` |
 | Gemini CLI | 0.63.0 | `--session-id <uuid>` | `--resume` takes `latest` or a list index; a UUID is not documented |

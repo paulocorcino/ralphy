@@ -54,7 +54,7 @@ headings, column headers, menu items, dialog titles, placeholders, `title`
 tooltips and `aria-label`s.
 
 | Before | After | Where |
-|---|---|---|
+| --- | --- | --- |
 | `close` | `Close` | `index.html:1804` (and 15 more) |
 | `dismiss` | `Dismiss` | `wb-console.js:245` |
 | `Staged Changes` | `Staged changes` | `index.html:515` |
@@ -94,7 +94,7 @@ that the capital letter or the lowercase word is a name, not a mistake.
 The name is a proper noun, with a capital R in every position.
 
 | Before | After | Where |
-|---|---|---|
+| --- | --- | --- |
 | `About ralphy` | `About Ralphy` | `index.html:2150` |
 | `ralphy · detached fence` | `Ralphy · detached fence` | `detached-fence.html:10` |
 | `Name the consoles ralphy opens` | `Name the consoles Ralphy opens` | `wb-settings.js:323` |
@@ -106,7 +106,7 @@ The lint reports these, and each one gets an exemption with its reason (#425).
 ### 4. One verb per act
 
 | Verb | Means | Example |
-|---|---|---|
+| --- | --- | --- |
 | **Delete** | The thing leaves the disk and cannot be restored. | `Delete permanently` (`wb-changes.js:285`) |
 | **Remove** | The thing leaves a list. Nothing on the disk changes. | `Remove project` … `Files on disk are kept.` (`app.js:719-720`) |
 | **Discard** | Unsaved or uncommitted work is thrown away. | `Discard changes` (`wb-changes.js:291`) |
@@ -143,7 +143,7 @@ second sentence, each sentence ends in a period, but a shorter tooltip is
 better.
 
 | Before | After | Where |
-|---|---|---|
+| --- | --- | --- |
 | `draw a fence, or jump to one` | `Draw a fence, or jump to one` | `index.html:765` |
 | `uncommitted changes` | `Uncommitted changes` | `wb-console.js:1170` (a state, so no verb) |
 
@@ -158,7 +158,7 @@ instead, a second sentence says so. "Unable to" is not used. "Cannot" is kept
 for an act that is not allowed, never for an act that failed.
 
 | Before | After | Where |
-|---|---|---|
+| --- | --- | --- |
 | `could not load projects from the daemon` | `Could not load projects: the daemon did not answer.` | `app.js:406` |
 | `Cannot save as {p.encoding}` | `Could not save as {p.encoding}: …` | `app.js:5337` |
 | `Repo unreachable. Cannot switch branch.` | `Could not switch branch: the project is unreachable.` | `wb-project.js:65` |
@@ -313,7 +313,7 @@ written for them. This extends the repo's "Plain English, no idioms" rule
   what it measures in literal words.
 
 | Before | After | Where |
-|---|---|---|
+| --- | --- | --- |
 | `this card's file is gone — aim the card at another one` | `The file for this card is missing. Choose another file.` | `wb-notes.js:712` |
 | `this note is hidden — the eye in the head shows it` | `This note is hidden. Click the eye icon to show it.` | `wb-notes.js:1904` |
 | `Uncommitted changes here — a run refuses a dirty tree and a checkout may fail against them. Commit or stash first.` | `There are uncommitted changes here. A run does not start while they exist, and a branch switch can fail. Commit or stash them first.` | `index.html:2257` |

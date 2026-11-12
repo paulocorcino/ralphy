@@ -217,7 +217,7 @@ piece should keep its identifier and its emitted `action` stable (they're the
 contract), or update this table when they change.
 
 | Element | Identifier | Purpose | Events / actions |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Topbar | `.topbar` | brand + crumb + stats/account | — |
 | Icon rail | `.rail` | switches sidebar/panels | — |
 | Sidebar | `.side` | hosts the project accordion | — |
@@ -264,7 +264,7 @@ a Security modal, and an opaque login gate (all wired in [app.js](app.js) /
 they're the contract.
 
 | Element | Identifier | Purpose | Events / actions |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Rail toggles | `toggleSide` / `toggleRuns` / `toggleKanban` | show/hide sidebar · Runs panel · Kanban board | `kanban-toggle {open}` |
 | Settings gear | `.rail-spacer` + `openSettings` | pinned to rail bottom; opens Settings | — |
 | Runs panel | `.runs` (+ `body.runs-open`) | right-hand column; collapses to 0 | — |
@@ -315,7 +315,7 @@ editor). A per-block target picker (PT/EN/ES/…) drives it; a same-language tar
 API is absent the control is **hidden entirely** (not disabled).
 
 | Element | Identifier | Purpose | Events / actions |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Branch chip | `.branch-chip` + `canSwitchBranch(p)` | project-row chip → branch switcher; inert when unreachable | — |
 | Branch switcher | `.branch-modal` / `openBranchModal` / `branchList` | filtered local branches (current pinned) + create-from-current | `branch-switch {branch}` · `branch-create {name,from}` |
 | Runs toolbar | `.runs-actions` (run/triage/push) | the daemon verbs, scoped to the open project | `command {verb:"triage"\|"push"}` |
@@ -388,7 +388,7 @@ to the project that was open — and the drawer only takes its `.open` class whe
 empty strip on the right.
 
 | Element | Identifier | Purpose | Events / actions |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Board overlay | `.kanban` / `toggleKanban` / `kanbanOpen` | canvas overlay; project-scoped issue board | `kanban-toggle {open}` |
 | Column classify | `WBKanban.columnOf(iss)` | closed → human → agent(`ready-for-agent`\|`AFK`) → backlog | — |
 | Graph order | `WBKanban.orderGraph(queue, all)` | Kahn port of `blocked.rs`; orders the two Ready columns | — |
@@ -458,7 +458,7 @@ whether the daemon acts directly or delegates to `ralphy`.
 ### Effect classes (the whole model)
 
 | Class | What it does | Mechanism | Examples |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Native** | daemon's own state | daemon-internal | `sessions.list/close`, identity, presence |
 | **Observe** | read working tree as **OS bytes** (no repo semantics) | daemon walks/reads/watches **directly** (confined) | `tree.list`, read a file |
 | **Query** | read that needs `ralphy`'s **judgment** | spawn `ralphy … --json`, answer on the same `id` | `issues.list`, `queue`, `config.get` |

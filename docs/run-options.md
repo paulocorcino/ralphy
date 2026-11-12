@@ -7,7 +7,7 @@ reach for beyond the everyday `ralphy run --agent <agent> --branch-mode <current
 ## Picking what to work
 
 | Flag | What it does |
-|---|---|
+| --- | --- |
 | *(none)* | Work the whole queue — every open issue carrying a queue label — in ascending number order. |
 | `--only-issue <n>` | Work just that one issue. Great for a first trial. |
 | `--issues 5,3,9` | Work exactly these issues, **in the order given**, ignoring queue labels and dependency ordering. Drains the list as a sequence. Mutually exclusive with `--only-issue`. |
@@ -28,7 +28,7 @@ See [ADR-0016](adr/0016-queue-label-precedence.md).
 ## Choosing the agent
 
 | Flag | What it does |
-|---|---|
+| --- | --- |
 | `--agent <agent>` | Who executes the run: `claude` (default), `codex`, `opencode`, and more. |
 | `--plan-agent <agent>` | Who *plans* — defaults to `--agent`. Lets you plan with one agent and execute with another (e.g. `--agent opencode --plan-agent claude`). |
 
@@ -37,7 +37,7 @@ Full detail, including the split planner/executor and per-agent notes: [agents.m
 ## Where commits land
 
 | Flag | What it does |
-|---|---|
+| --- | --- |
 | `--branch-mode new` | *(default)* Cut a fresh `afk/run-<stamp>` branch off the base and commit there, leaving your current branch untouched. |
 | `--branch-mode current` | Commit straight onto the branch you're already on (no new branch). |
 | `--base-branch <ref>` | The commit-ish a `new` run branch is cut from (default `origin/main`). Ignored by `--branch-mode current`. |
@@ -48,7 +48,7 @@ with different `--base-branch`.
 ## Time and safety budgets
 
 | Flag | What it does |
-|---|---|
+| --- | --- |
 | `--dry-run` | Plan only — no source changes, no commits. Inspect `.ralphy/plan.md` afterwards. |
 | `--deadline-hours <h>` | Global wall-clock budget: don't start a new issue past it. |
 | `--max-minutes-per-issue <m>` | Per-issue cap (default: no cap; `0` disables). |
@@ -61,7 +61,7 @@ A run keeps the last 50 run folders under `.ralphy/runs/` and deletes the older 
 ## Models and effort
 
 | Flag | What it does |
-|---|---|
+| --- | --- |
 | `--plan-model <m>` / `--exec-model <m>` | Force the planning / execution model (defaults come from the agent or `settings.json`). |
 | `--plan-effort <e>` / `--exec-effort <e>` | Vendor-neutral reasoning effort. |
 | `--exec-variant <v>` | OpenCode effort passthrough (`opencode run --variant`). |
@@ -70,7 +70,7 @@ A run keeps the last 50 run folders under `.ralphy/runs/` and deletes the older 
 ## Notifications and output
 
 | Flag | What it does |
-|---|---|
+| --- | --- |
 | `--no-telegram` | Mute the Telegram monitor for this run. See [telegram.md](telegram.md). |
 | `--title <text>` | Override the auto-derived Telegram card title. |
 | `--remote-control` / `--no-remote-control` | Turn Claude's mobile Remote Control on/off for this run (off by default). |

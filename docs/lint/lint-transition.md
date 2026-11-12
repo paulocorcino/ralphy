@@ -26,7 +26,7 @@ exception is inline, names its rule and says why, and a ratchet counts it; every
 count only goes down.
 
 | Knob | End state | Pace | Curve at the end state | Reason (or `default taken`) |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Function complexity | 10 (Rust: `xtask complexity`, cognitive, from the source text; TS: oxlint `complexity`, modified) | on | 0 over it | ADR-0081; already on |
 | Nesting depth | 3 (TS `max-depth`); Rust: cognitive complexity counts nesting | on | 0 | already on |
 | Arguments | Rust 5 (`too-many-arguments-threshold`), TS 4 (`max-params`) | Phase 4, Phase 12 | Rust 77 functions at 5 (0 at 6); TS 14 at 4, 1 at 5 | answered in step 3 (D2) |
@@ -92,7 +92,7 @@ In every phase:
 - **Rules**: no lint rule. The items are distinct tasks, with no tracer:
 
 | Slice | What | Count today |
-|---|---|---|
+| --- | --- | --- |
 | 0.1 | shellcheck over every tracked `.sh` file, in the gate and in CI (the release binary, pinned by checksum, as actionlint) | 0 sites on 8 files (shellcheck 0.11.0) |
 | 0.2 | PSScriptAnalyzer over every tracked `.ps1` file (`Invoke-ScriptAnalyzer -Recurse -EnableExit`): measure, then add | not measured: not installed here |
 | 0.3 | A scheduled workflow that compares each pin with its latest stable release (`python docs/lint/scripts/drift.py age`) and opens an issue when one is newer | none today |
@@ -112,7 +112,7 @@ In every phase:
 - **Rules**:
 
 | Rule | Production | Test | Strategy |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `clippy::str_to_string` | 903 | 1449 | fix by command |
 | `unreachable_pub` | 480 | 28 | fix by command |
 | `clippy::doc_markdown` | 171 | 37 | fix by command |
@@ -162,7 +162,7 @@ In every phase:
 - **Rules**:
 
 | Rule | Production | Test | Strategy |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `clippy::let_underscore_untyped` | 133 | 104 | fix then flip |
 | `let_underscore_drop` | 83 | 96 | fix then flip |
 | `clippy::mem_forget` | 0 | 38 | fix then flip |
@@ -180,7 +180,7 @@ In every phase:
 - **Rules**:
 
 | Rule | Production | Test | Strategy |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `clippy::indexing_slicing` | 264 | 166 | fix then flip |
 | `clippy::string_slice` | 58 | 158 | fix then flip |
 | `clippy::as_conversions` | 125 | 70 | fix then flip |
@@ -204,7 +204,7 @@ In every phase:
 - **Rules**:
 
 | Rule | Production | Test | Strategy |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `clippy::format_push_string` | 90 | 13 | fix then flip |
 | `clippy::too_many_arguments` | 72 | 5 | fix then flip |
 | `clippy::needless_pass_by_value` | 57 | 11 | fix then flip |
@@ -242,7 +242,7 @@ In every phase:
 - **Rules**:
 
 | Rule | Production | Test | Strategy |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `clippy::clone_on_ref_ptr` | 127 | 75 | fix then flip |
 | `elided_lifetimes_in_paths` | 92 | 9 | fix then flip |
 | `clippy::missing_panics_doc` | 41 | 50 | fix then flip |
@@ -270,7 +270,7 @@ In every phase:
 - **Rules**:
 
 | Rule | Production | Test | Strategy |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `clippy::tests_outside_test_module` | 0 | 500 | fix then flip |
 | **1 rules** | **0** | **500** | |
 
@@ -286,7 +286,7 @@ In every phase:
 - **Rules**:
 
 | Rule | Production | Test | Strategy |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `clippy::print_stdout` | 275 | 0 | decision first |
 | `clippy::print_stderr` | 32 | 5 | decision first |
 | `clippy::exit` | 9 | 0 | decision first |
@@ -304,7 +304,7 @@ In every phase:
 - **Rules**:
 
 | Rule | Production | Test | Strategy |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `eslint(curly)` | 2218 | 319 | fix by command |
 | `unicorn(no-useless-undefined)` | 11 | 54 | fix by command |
 | `unicorn(no-hex-escape)` | 9 | 55 | fix by command |
@@ -336,7 +336,7 @@ In every phase:
 - **Rules**:
 
 | Rule | Production | Test | Strategy |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `typescript(strict-boolean-expressions)` | 1089 | 0 | fix then flip |
 | `typescript(prefer-nullish-coalescing)` | 648 | 0 | fix then flip |
 | `typescript(no-unnecessary-condition)` | 429 | 0 | fix then flip |
@@ -359,7 +359,7 @@ In every phase:
 - **Rules**:
 
 | Rule | Production | Test | Strategy |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `typescript(no-confusing-void-expression)` | 242 | 0 | fix then flip |
 | `eslint(require-await)` | 12 | 167 | fix then flip |
 | `eslint(no-promise-executor-return)` | 3 | 62 | fix then flip |
@@ -381,7 +381,7 @@ In every phase:
 - **Rules**:
 
 | Rule | Production | Test | Strategy |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `TS4111` | 213 | 0 | fix then flip |
 | `typescript(no-unsafe-type-assertion)` | 102 | 0 | fix then flip |
 | `typescript(consistent-type-imports)` | 41 | 0 | fix then flip |
@@ -405,7 +405,7 @@ In every phase:
 - **Rules**:
 
 | Rule | Production | Test | Strategy |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `eslint(require-unicode-regexp)` | 167 | 294 | fix then flip |
 | `unicorn(consistent-function-scoping)` | 50 | 83 | fix then flip |
 | `unicorn(prefer-add-event-listener)` | 43 | 2 | fix then flip |
@@ -445,7 +445,7 @@ In every phase:
 - **Rules**:
 
 | Rule | Production | Test | Strategy |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `eslint(no-restricted-properties)` | 40 | 6 | decision first |
 | `eslint(no-console)` | 24 | 14 | decision first |
 | `unicorn(require-post-message-target-origin)` | 1 | 0 | decision first |
@@ -463,7 +463,7 @@ In every phase:
 - **Rules**:
 
 | Rule | Production | Test | Strategy |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `jscpd:rust` | 37 | 0 | count ratchet |
 | `jscpd:typescript` | 4 | 0 | count ratchet |
 | **2 rules** | **41** | **0** | |
@@ -480,7 +480,7 @@ In every phase:
 - **Rules**: no lint rule of the record. The items:
 
 | Slice | Tool | Count today |
-|---|---|---|
+| --- | --- | --- |
 | 15.1 | yamllint over the tracked `.yml` (`line-length` 102, `comments` 66, `document-start` 7, `truthy` 6) | 181 |
 | 15.2 | markdownlint over the tracked `.md` files, with the rules D9 sets (`CHANGELOG.md` and vendored files out) | 4,665 with every rule; 1,174 without `MD013` |
 | 15.3 | html-validate over the repo's own `.html`, vendored files out (`no-implicit-button-type` 215, `void-style` 109, `text-content` 92) | 480 |

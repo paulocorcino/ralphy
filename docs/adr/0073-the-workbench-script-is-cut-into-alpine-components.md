@@ -16,7 +16,7 @@ Two files hold most of the workbench script, and they grow fast. Measured on
 `main` on 2026-10-04 with `wc -l` and `git log --since=2026-09-04`:
 
 | File | Lines | 30 days ago | Commits in 30 days |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `crates/ralphy-daemon/assets/ui/app.js` | 7,289 | 4,931 | 147 |
 | `crates/ralphy-daemon/assets/ui/wb-console.js` | 7,482 | 4,210 | 117 |
 | the other 27 `wb-*.js` files | 42 to 2,792 each | | |
@@ -288,7 +288,7 @@ owns (D2), and the behaviour does not change.
 `shell()` fields today, which the cut replaces with methods):
 
 | Cut | `app.js` lines | Markup lines | `uses` | Writes today |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Add a project | 133 | 54 | 8 | none |
 | Security dialog | about 370 | 173 | 5 | `avatarMenu`, and fields inside `security` (about 60 writes) |
 | Settings | 196 | 206 | 7 | `avatarMenu` |
@@ -465,7 +465,7 @@ names of each domain, before any code moves. It was measured on `823cc84c`:
    cuts, so each cut moves code into a file that already has its final name:
 
    | Today | New name | Domain |
-   |---|---|---|
+   | --- | --- | --- |
    | `wb-console-chrome.ts` | `wb-stage-chrome.ts` | stage |
    | `wb-console-view.ts` | `wb-stage-view.ts` | stage |
    | `wb-console-fences.ts` | `wb-stage-fences.ts` | stage |
@@ -563,7 +563,7 @@ names of each domain, before any code moves. It was measured on `823cc84c`:
    the modules through the `ui-copy` lexer, so a comment does not count.
 
    | Ratchet | At `823cc84c` | Target |
-   |---|---|---|
+   | --- | --- | --- |
    | `NOTES_CONSOLE_REACH`: uses of `WBConsole` in `wb-notes.ts` | 49 | 0, when the cards take `CardHost` (decision 4) |
    | `SHELL_FLASH_REACH`: uses of `_flashAction` in each `wb-*.ts` module (`app.ts` owns it) | 19 in 6 modules | an empty table, when the door exists (decision 5) |
    | `the_column_paint_has_one_owner`: each column paint function is declared in one module | `wb-console.ts` | `wb-stage-columns.ts` (decision 2) |
@@ -597,7 +597,7 @@ returned object. Ten workbench modules have more than 700 lines: `app.ts`
 2. **The cuts, in this order.** Each name was checked against CONTEXT.md.
 
    | Order | Module | What it owns |
-   |---|---|---|
+   | --- | --- | --- |
    | 1 | `wb-console-keys.ts` | The input functions (touch surface, font size, clipboard write and read) and the **key bar** of a window. |
    | 2 | `wb-console-feeds.ts` | The last session list, project names, fleet and stale probe that the shell fed. |
    | 3 | `wb-console-dormancy.ts` | Sleep, wake, cover and **resume** of the windows, and the page listeners that start them. |
@@ -675,7 +675,7 @@ the returned object. Without decision 3, `app.ts` stops near 850 lines.
    or code outside Alpine, read it (D6).
 
    | Module | Kind | Alpine name | What it owns |
-   |---|---|---|---|
+   | --- | --- | --- | --- |
    | `wb-console-api.ts` | function | - | `buildConsoleApi(parts)`: the `WBConsole` object. |
    | `wb-runs-store.ts` | Alpine store | `runs` | The runs of each project, their read state, the current run and the runs subscription. The runs panel, the board and the shell read them, so they are a store. |
    | `wb-runs-panel.ts` | component | `wbRuns` | The runs panel, the plan section, the run modal and the raw feed. One region shows them. |

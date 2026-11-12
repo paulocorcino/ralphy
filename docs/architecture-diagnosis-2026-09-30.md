@@ -68,7 +68,7 @@ characteristics:
 trade-offs:
 
 | Role | Characteristic | Meaning in Ralphy |
-|---|---|---|
+| --- | --- | --- |
 | Decides trade-offs | 1. **Recoverability of an unattended run** | The queue keeps moving with no human: limits, idle, stop, resume. |
 | Decides trade-offs | 2. **Integrity of change** | "Green" means the runner saw it pass, not that the agent said so. Ralphy never pushes or opens a PR. |
 | Decides trade-offs | 3. **Extensibility** | New vendors and new surfaces enter without rework. The axes are still open (see below). |
@@ -80,7 +80,7 @@ trade-offs:
 **External dependencies, three classes** (decided):
 
 | Class | Examples | Rule |
-|---|---|---|
+| --- | --- | --- |
 | **Replaceable product** (a vendor's service that has competitors) | GitHub as forge, agent CLIs, models.dev, Telegram, GitHub Releases as the distribution channel | Behind a contract in Ralphy's words. All of the product's meaning lives only in its adapter. |
 | **Standard or platform** (an open protocol with no vendor) | git, ssh, HTTP, CloudEvents, PTY, OS schedulers | Used directly, but by **one owner** only (git only through repo semantics; ssh only through the peer tunnel). |
 | **Library** | crates, Monaco, xterm, Alpine | Normal dependency rules. Outside this principle. |
@@ -192,7 +192,7 @@ tagged each decision with the characteristic it mainly serves (one ADR can
 count for more than one):
 
 | Characteristic | ADRs |
-|---|---|
+| --- | --- |
 | Usability | 20 |
 | Reliability / recoverability | 15 |
 | Integrity of change | 15 |
@@ -238,7 +238,7 @@ flowchart LR
 ```
 
 | Quantum | Talks to | Coupling |
-|---|---|---|
+| --- | --- | --- |
 | Q1 Browser | Q2 | Sync HTTP/WS |
 | Q2 Daemon (with its Query/Mutate children) | CLI children, git, peers | Sync. Children have no deadline |
 | Q3 Run (run + vendor child + hooks) | Q2 | **Async only**: snapshot, watcher, stop sentinel, `run.lock`, ledger |
@@ -264,7 +264,7 @@ I = Ce/(Ca+Ce); A = pub traits / (pub traits + structs + enums);
 D = |A + I − 1|.
 
 | Crate | Ca | Ce | I | A | D | Production lines |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | ralphy-core | 9 | 1 | 0.10 | 0.05 | **0.85** | 12,195 |
 | ralphy-adapter-support | 8 | 2 | 0.20 | 0.00 | **0.80** | 1,847 |
 | ralphy-cli | 0 | 15 | 1.00 | 0.04 | 0.04 | **22,530** |
@@ -283,7 +283,7 @@ utility code. A counts traits only, so it is a rough signal.
 ### Dependency rules
 
 | Rule | Result |
-|---|---|
+| --- | --- |
 | Core does not depend on an agent crate or adapter-support | Holds. **No test checks it.** |
 | No adapter depends on another adapter | Holds |
 | Daemon does not depend on core, CLI or adapters | Holds. Checked by `ralphy-daemon/src/roster.rs:171` |
@@ -293,7 +293,7 @@ utility code. A counts traits only, so it is a rough signal.
 ### Ports
 
 | Trait | Implemented outside its crate? | Note |
-|---|---|---|
+| --- | --- | --- |
 | `Agent` (`core/src/agent.rs:13`) | **Yes**: 7 adapters and `cli::SplitAgent` | The only real port |
 | `IssueTracker` (`core/src/tracker.rs:15`) | No. `GhTracker` lives in core | 1 required method, 12 defaults |
 | `Repo` (`core/src/repo.rs:22`) | No. `GitRepo` lives in core | 3 required, 12 defaults. `run_queue` builds it itself, so it cannot be replaced from outside |
@@ -349,7 +349,7 @@ Other structural points:
 ### Process spawns (production code)
 
 | Program | core | agent-* | usage-scan | cli | daemon |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | git | 1 helper (`git.rs:20`) | – | 7 scanners (10 sites) | – | 1 helper (`registry.rs:135`) |
 | gh | 1 helper (`github/client.rs:16`) | – | – | 1 (`init/gate.rs:206`) | – |
 | vendor CLI | – | 20 | – | 1 | 1 PTY |
@@ -389,7 +389,7 @@ second definition of "dirty" and "branch" (§5).
 ### Disk as an integration channel
 
 | Channel | Writer → reader | Version |
-|---|---|---|
+| --- | --- | --- |
 | `<repo>/.ralphy/runstate/<runid>.json` | run → daemon, `ralphy stop` | **v1** |
 | `~/.ralphy/peers/<id>.toml` | other daemon, `ralphy host` → daemon | **v3** |
 | `~/.ralphy/usage/*.jsonl` (ledger) | run → daemon (path copied from core, rows read as untyped JSON) | none |
@@ -433,7 +433,7 @@ effect classes. A question like "which files are ignored?" matches no term.
 ### Who owns each fact
 
 | Fact | Source of truth | Computed elsewhere too? |
-|---|---|---|
+| --- | --- | --- |
 | Issue state, labels | Forge via `core/src/github` | **Yes.** The Kanban JS hard-codes the label names (`wb-kanban.js:104-110`). It gives a different result when the triage doc remaps labels. |
 | Queue order | `core/src/blocked.rs:229` | A JS port exists, used only by the demo (documented) |
 | Change set, dirty | `core/src/changes.rs:48` ("SINGLE definition", CONTEXT.md) | **Yes.** `daemon/registry.rs:82` runs its own `git status` and does not apply the `.ralphy/` rule |
@@ -471,7 +471,7 @@ field) or `git check-ignore`. No `ralphy` subcommand exposes ignored status.
 ### Duplicated capabilities that look accidental
 
 | Capability | Places |
-|---|---|
+| --- | --- |
 | Dirty and branch readers | `daemon/registry.rs` vs `core/changes.rs`, `core/sync.rs` |
 | `.git` pointer parser inside the daemon | `tree/ignored.rs:149` (needs `gitdir:` with one space) vs `checkout.rs:127` (trims) |
 | `CREATE_NO_WINDOW` | 4 copies beside `proc_util::no_window` |
@@ -524,7 +524,7 @@ and state live in the one shell. No ADR decides the UI module structure.
 ### Compliance
 
 | Compliance of the 62 implemented decisions | Count |
-|---|---|
+| --- | --- |
 | At least one fitness function | 10 (16%) — 0022\*, 0032, 0034, 0035\*, 0039, 0040\*, 0047, 0056, 0057, 0065 (\* partial) |
 | Behaviour tests only | 50 (81%) |
 | Manual only | 1 (0018) |
@@ -598,7 +598,7 @@ ratings. A gap that touches a top-three characteristic gets impact 3 when the
 harm would be real.
 
 | ID | Gap | Type | Characteristic | Impact | Likelihood | Risk |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | G1 | No fact-ownership index; daemon capabilities missing from CONTEXT.md; four notions of "ignored" | K | Extensibility, responsiveness | 3 | 3 | **9** |
 | G2 | 0 Compliance sections; 16% of decisions have a fitness function; ADR-0002 and ADR-0036 §3 unguarded | F | All | 3 | 3 | **9** |
 | G3 | ADR status and amendment drift; ADR-0036 too large to read as the current rule | K, D | All | 2 | 3 | **6** |
@@ -746,7 +746,7 @@ matrix, are the passes' readings and were not checked one by one.
 ### Gap register additions
 
 | ID | Gap | Type | Characteristic | Impact | Likelihood | Risk |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | G16 | No owner or read-again rule for shown facts; failed reads shown as empty | M | **Consistency** | 3 | 3 | **9** |
 | G17 | An owner turns an unreadable store into "empty" and can write over it (`desk.rs`) | D | **Consistency**, integrity | 3 | 1 | 3 → raise, data loss |
 | G18 | No build id between the browser and the daemon | M | **Consistency** | 2 | 2 | 4 |

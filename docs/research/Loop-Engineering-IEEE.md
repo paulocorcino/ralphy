@@ -542,7 +542,7 @@ _Step three: add a state file._ Do not leave results in the chat window. Write e
 `# ./state/triage.md` (the loop’s memory)
 
 | finding | source | status |
-|---|---|---|
+| --- | --- | --- |
 | auth test flaky | CI #4821 | fixing |
 | null deref | issue 92 | PR open |
 | stale dep | commit a3 | inbox |

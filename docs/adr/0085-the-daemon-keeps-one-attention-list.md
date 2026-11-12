@@ -39,7 +39,7 @@ Ubuntu-22.04), with a recorder as the hook command and, where noted, the real
 that decide a rule are below.
 
 | Vendor | Version | Given at launch by | A human is asked | The wait ends | No signal for |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | Claude Code | 2.1.312 | `--settings <file>` | `PermissionRequest`; `PreToolUse` of `AskUserQuestion`; `Elicitation` (from the vendor's hooks reference, not measured) | `PostToolUse`; `ElicitationResult` (not measured) | an interrupt (Esc) |
 | Codex CLI | 0.160.0 Windows, 0.165.0 WSL | `-c hooks.<Event>=…` and `--dangerously-bypass-hook-trust` (without it no hook runs, and Codex says nothing) | `PermissionRequest` (also under auto-review, with no human); `PreToolUse` of `request_user_input` | `PostToolUse`, only when the tool ends; `Interrupt` | a granted permission |
 | OpenCode | 1.19.0 Windows, 1.18.4 WSL | a plugin file named in `OPENCODE_CONFIG_CONTENT`, which the adapter already sets; the user's own plugins still load | `permission.asked`; `question.asked` (TUI only) | `permission.replied`; `question.replied` / `rejected` | — |
@@ -138,7 +138,7 @@ messages.
 **D11. These open an attention request:**
 
 | Source | Ends when |
-|---|---|
+| --- | --- |
 | A console agent `waiting` | the state leaves `waiting`, or the console closes |
 | A run agent `waiting` | the snapshot says so |
 | A **silent** console | its first status line arrives, or it closes |

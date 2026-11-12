@@ -25,7 +25,7 @@ the run, not the cron.
 ## The five moves
 
 | Move | Paper | Ralphy today | Verdict |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Discovery** | Loop finds its own work via a skill | Queue labels (`ready-for-agent`/`AFK`), `## Blocked by` gating, `stop-before`, ascending order | **Partial — by design.** Ralphy discovers the *queue*, but a human chooses *which* issues by labelling. The selection is the deliberate trust boundary, not an oversight. |
 | **Handoff** | One isolated git worktree per task | `.ralphy/plan.md` (vendor-neutral) is the plan→execute handoff; sequential, single run branch, **in place, no worktree** | **Met for its model.** No worktree because there is no parallelism — one issue at a time. Worktrees would only matter if Ralphy ever ran issues concurrently (see Tangled loop below). |
 | **Verification** | A separate, skeptical agent that *acts* and is judged by a fresh model | Runner-enforced **deterministic** verify gate ([ADR-0011](../adr/0011-verify-gate-before-close.md)): re-runs `## Verify` commands over the committed code, exit codes only, bounded repair (2 attempts) | **Strong, but a different shape.** Ralphy's "say no" is a *deterministic* gate, not an LLM evaluator — which is exactly the Stripe lesson the paper itself endorses ("anything deterministic never goes to a probabilistic model"). What it lacks is *behavioral/semantic* checking beyond exit codes (the paper's Playwright-style "does it run right, not look right"). That half is delegated to the human merge. |
@@ -35,7 +35,7 @@ the run, not the cron.
 ## The six parts
 
 | Part | Maps to | Ralphy |
-|---|---|---|
+| --- | --- | --- |
 | **Automations** | Scheduling | External only — no built-in cron/cloud trigger. |
 | **Worktrees** | Handoff | Deliberately not used; runs in place to reuse the warm build cache. N/A while sequential. |
 | **Skills** | Discovery | Ships `reviewer` + `staged-plan` to every agent — but these serve *planning/review*, not discovery. |
@@ -59,7 +59,7 @@ on the agent's self-report — but emits a loud warning, never a silent hole.
 ## The four silent costs, and Ralphy's guards
 
 | Cost | Paper's guard | Ralphy's guard |
-|---|---|---|
+| --- | --- | --- |
 | **Verification debt** | Independent evaluator | Deterministic verify gate (ADR-0011). |
 | **Comprehension rot** | Read a sample, explain it | Structural: **never pushes, never opens a PR** — you merge by hand, reading the per-issue verify artifacts and the morning diff. |
 | **Cognitive surrender** | Keep one door open | The whole design *is* one door — the human is the merge gate. Plus `--dry-run`, `stop-before`, stop-at-first-failure. |

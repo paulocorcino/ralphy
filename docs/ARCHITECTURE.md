@@ -42,7 +42,7 @@ of them conflict, the one higher in the list wins, unless an ADR says
 otherwise.
 
 | # | Characteristic | Meaning in Ralphy |
-|---|---|---|
+| --- | --- | --- |
 | 1 | **Recoverability of an unattended run** | The queue keeps moving with no human: limits, idle children, stop, resume. |
 | 2 | **Integrity of change** | "Green" means the runner saw the check pass, not that the agent said so. Ralphy never pushes a branch or opens a PR on its own. |
 | 3 | **Consistency of the workbench** | What the screen shows is true when it is shown. Stale data is read again on named events. A failed read shows as a failure, never as empty or clean. |
@@ -85,7 +85,7 @@ flowchart LR
 ```
 
 | Unit | Talks to | How |
-|---|---|---|
+| --- | --- | --- |
 | Browser workbench | daemon | Synchronous HTTP and WebSocket, through the verb registry ([ADR-0036](./adr/0036-workbench-daemon-integration-protocol.md)): reads over HTTP, and one socket per page, `/ws`, with a channel for each console, subscription and streamed verb ([ADR-0082](./adr/0082-the-page-holds-one-socket-and-reads-over-http.md)) |
 | Daemon | CLI children, peers, consoles | Spawns `ralphy` for anything that interprets or changes a repo ([ADR-0032](./adr/0032-daemon-mode-supervised-launcher.md), ADR-0036 §3) |
 | Run | daemon | **Asynchronous only**: run snapshot, stop sentinel, run lock, ledger ([ADR-0047](./adr/0047-run-state-snapshot-channel.md), [ADR-0054](./adr/0054-cooperative-run-stop.md)) |
@@ -116,7 +116,7 @@ proposed).
 The component names are CONTEXT.md terms.
 
 | Component | Crate / module |
-|---|---|
+| --- | --- |
 | Queue, Run, Planner / Executor, Verify gate; the Review gate (planned, [ADR-0077](./adr/0077-a-reviewer-can-only-veto-a-green-issue.md)) | `ralphy-core` (`runner`, `blocked`, `verify`, `plan`, `handoff`) |
 | Agent contract (the port) | `ralphy-core::agent` |
 | Adapter | one `ralphy-agent-*` crate per vendor |
@@ -141,7 +141,7 @@ The component names are CONTEXT.md terms.
 "Check" names the code that fails when the rule breaks. "None" is a known gap.
 
 | Rule | Decided by | Check |
-|---|---|---|
+| --- | --- | --- |
 | `ralphy-core` depends on no `ralphy-agent-*` crate and not on `ralphy-adapter-support` | ADR-0002 | `core_and_adapters_keep_their_dependency_edges` (`crates/xtask/tests/crate_dependencies.rs`) |
 | No adapter depends on another adapter | ADR-0002, ADR-0040 | the same test |
 | `ralphy-pricing` and `ralphy-release` are leaf crates | ADR-0034, ADR-0056 | the same test |
@@ -165,7 +165,7 @@ sorts every outside dependency into three classes.
 outside the adapter uses Ralphy's words.
 
 | Product | Adapter (the only place its meaning may live) | Known coupling outside it (contained, must not grow) |
-|---|---|---|
+| --- | --- | --- |
 | GitHub, as the **Forge** | `ralphy-core::github` | the `ralphy_core::github::` items used from `ralphy-cli` (the forge ratchet in §8 holds the count); label names and body conventions in `runner`, `acceptance`, `blocked`; `gh issue view` in the prompts |
 | Agent CLIs | one `ralphy-agent-*` crate each | vendor reset-time formats parsed in `ralphy-core/src/runner/clock.rs`; the vendor enums the ADR-0040 inventory lists |
 | models.dev | `ralphy-pricing` | — |
@@ -175,7 +175,7 @@ outside the adapter uses Ralphy's words.
 **Platforms.** An open standard, used directly, but by one owner.
 
 | Platform | Owner |
-|---|---|
+| --- | --- |
 | git | `ralphy-core` for anything that changes a repo; `ralphy-git-read` for read-only facts ([ADR-0069](./adr/0069-git-facts-have-one-definition.md)) |
 | ssh | the **Peer tunnel** (`ralphy-daemon/src/peer`) and `ralphy host` (`ralphy-cli/src/host`) |
 | PTY | `ralphy-pty` |
@@ -200,7 +200,7 @@ while the tab is visible, 7 a read of a peer project failed (peer state only). E
 panel adds its row here before it adds code.
 
 | Fact | Owner | How to get it | Never from | Read again on |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Issue state, labels, open issues | Forge access (`ralphy-core::github`) | `ralphy issues --format json [--board]`; verbs `board.list`, `issue.show` | a new `gh` call outside the adapter; label rules re-written in the UI | 2, 3, 4, 5; 6 every 120 s (the forge cannot push) |
 | Queue order, blocked-by | `ralphy-core::blocked` | the queue snapshot (`ralphy issues`) | a re-sort in the UI | with the board |
 | **Change set**, dirty tree | `ralphy-core::changes`; the dirty bit on `/api/repos` is `ralphy-git-read::dirty`, by the same `.ralphy/` rule | `ralphy changes list --format json`; verb `changes.list` | a second `git status` | 1 `changes.dirty`, 2–5; 6 every 50 s while the Changes panel is open, because an edit made outside a run has no push yet |
@@ -236,7 +236,7 @@ any code, including code that does not exist yet. A behaviour test is not one.
 **In place:**
 
 | Rule | Check |
-|---|---|
+| --- | --- |
 | The daemon links no vendor crate | `daemon_manifest_has_no_vendor_dependency` |
 | No `tokio`/`reqwest` in the CLI | `cli_manifest_pins_ureq_excludes_reqwest_tokio` |
 | Event vocabulary pinned | `every_decoder_arm_has_a_pin` |
@@ -282,7 +282,7 @@ needs a row here before it has code. "Control" names the code that holds the
 boundary.
 
 | Boundary | What crosses | Control | Decided by |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Network client → daemon | HTTP and WebSocket requests | The auth guard (`ralphy-daemon/src/routes/guard.rs`): Host and Origin, then the policy, then the session | ADR-0032 |
 | Workbench → audit log | **Device facts** the page reports about itself | A fixed shape with a size cap (`routes/api_audit.rs`); facts are recorded with source `client` and no access decision reads them | ADR-0074 |
 | Workbench → scroll probe file (developer build only) | **Scroll probe** records the page reports about its own scrolls | A fixed shape of numbers and closed values (`probe.rs`); served only in a build with the `scroll-probe` feature; no access decision reads a record | ADR-0084 |

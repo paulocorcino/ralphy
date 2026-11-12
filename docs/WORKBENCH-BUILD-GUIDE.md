@@ -9,7 +9,7 @@ are in [TESTING-TRAPS.md](TESTING-TRAPS.md#the-workbench-page-in-a-browser).
 ## Who owns each fact
 
 | Fact | Owner |
-|---|---|
+| --- | --- |
 | The contract between the page and the daemon: verbs, effect classes, the tree watch | [ADR-0036](adr/0036-workbench-daemon-integration-protocol.md) |
 | Colours and type. The tokens are in `styles/01-base.css` `:root`; a new colour is an amendment | [ADR-0035](adr/0035-daemon-ui-visual-language.md) |
 | The tabbed canvas, with the Consoles tab fixed | [ADR-0037](adr/0037-workbench-canvas-tabbed-workspace.md) |

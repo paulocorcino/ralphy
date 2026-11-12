@@ -51,7 +51,7 @@ And three things that are materially worse:
 ## 1. C1 — Invocation and the headless contract
 
 | Question | Finding |
-|---|---|
+| --- | --- |
 | Headless one-shot | `copilot -p <text>` — "Execute a prompt in non-interactive mode (exits after completion)" |
 | Prompt channel | **Both argv and stdin.** `--help` on a missing prompt: *"Run in an interactive terminal or provide a prompt with `-p` or via standard in."* |
 | Argv ceiling | A **23 433-byte** charter was passed on argv successfully (probe P2). Ralphy's `prompt.execute.md` is 23 884 bytes *before* the issue body — so argv is within ~30 % of the Windows ceiling with no margin. **stdin is the only safe channel.** |
@@ -158,7 +158,7 @@ status and `result.exitCode`.
 Exit codes observed:
 
 | Code | Condition | Channel |
-|---|---|---|
+| --- | --- | --- |
 | 0 | clean finish | P1, P2, `--model auto` probe |
 | 1 | not authenticated | stderr `Error: No authentication information found.` |
 | 1 | unknown model | stderr `Error: Model "X" from --model flag is not available.` |
@@ -231,7 +231,7 @@ auto mode, it just isn't implied by omitting the flag.)
 Six probes, same trivial prompt, ~14–31 k input tokens each:
 
 | model | `request_multiplier` | `total_nano_aiu` |
-|---|---|---|
+| --- | --- | --- |
 | `gpt-5.4-mini` | 0.33 | 1 093 650 000 |
 | `kimi-k2.7-code` | 1.0 | 1 288 700 000 |
 | `claude-sonnet-5` | 1.0 | 2 188 830 000 |
@@ -305,7 +305,7 @@ Only `model_picker_enabled` entries are user-selectable; the rest are internal
 (`gpt-4`, `gpt-3.5-turbo`, embeddings).
 
 | model id | vendor | tiers | in | out | cache rd | cache wr | ctx |
-|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- |
 | `claude-haiku-4.5` | Anthropic | **all** | 100 | 500 | 10 | 125 | — |
 | `claude-sonnet-4.5` | Anthropic | pro,pro_plus,max,business,enterprise | 300 | 1500 | 30 | 375 | — |
 | `claude-sonnet-4.6` | Anthropic | pro,pro_plus,individual_trial,business,enterprise,max | 300 | 1500 | 30 | 375 | 200 000 |
@@ -407,7 +407,7 @@ exit = 0    assistant.message.data.model = "kimi-k2.7-code"
 ```
 
 | model | reasoning_effort levels |
-|---|---|
+| --- | --- |
 | `claude-haiku-4.5`, `claude-sonnet-4.5`, `gemini-2.5-pro`, `kimi-k2.7-code` | **none — passing `--effort` is exit 1** |
 | `claude-sonnet-4.6` | low, medium, high, max |
 | `claude-sonnet-5` | low, medium, high, xhigh, max |
@@ -430,7 +430,7 @@ it is the model's own default, in *both* directions. Probe P6, three runs
 against `gpt-5-mini` (supports exactly `low, medium, high`):
 
 | requested | recorded in `assistant_usage_events.reasoning_effort` |
-|---|---|
+| --- | --- |
 | `xhigh` — above the ceiling | **`medium`** |
 | `minimal` — below the floor | **`medium`** |
 | `high` — in range | `high` |
@@ -690,7 +690,7 @@ Copilot ships capabilities that would violate Ralphy's never-push /
 never-open-a-PR ethos, **on by default**.
 
 | Capability | Default | Disable |
-|---|---|---|
+| --- | --- | --- |
 | **Bundled GitHub MCP server** — `github-mcp-server`, `transport: http`, `source: builtin`. Connected in **every** probe (`session.mcp_server_status_changed → connected`), holding the operator's GitHub credential. Its tool surface is a "default CLI subset" expandable to "all toolsets". | **ON** | `--disable-builtin-mcps`, or `--disable-mcp-server github-mcp-server` |
 | **Session export to GitHub web/mobile** | **ON** (implied by `--no-remote-export` existing) | `--no-remote-export` |
 | **Remote control of the session from GitHub web/mobile** | ON | `--no-remote` |
@@ -760,7 +760,7 @@ analog in the other adapters.
 ## 11. Timings
 
 | Probe | Wall time | Note |
-|---|---|---|
+| --- | --- | --- |
 | P1 — trivial sentinel prompt | 11.7 s | 6.8 s session, ~2.7 s API |
 | `--model auto` "say OK" | ~9 s | |
 | P2 — 23 KB charter, file write, git commit | 22.2 s | 14.5 s session, 9.4 s API, 2 model calls |

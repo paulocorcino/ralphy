@@ -19,7 +19,6 @@
     // br breaks lines in the table cells of the converted papers in docs/research;
     // p and img set the phone screenshots of the README side by side
     "MD033": { "allowed_elements": ["br", "p", "img"] },
-    // MD060 (table pipe style) is off: a style of the source only, and --fix cannot reach 0
-    "MD060": false
+    "MD060": true
   }
 }

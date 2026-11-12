@@ -27,7 +27,7 @@ probes).
 ## The problem, in one table
 
 | Adapter | Effort lives in | Real vocabulary | Out-of-range → |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Claude | `--effort` | `low, medium, high, xhigh, max` | ⚠ warning + default, exit 0 |
 | Codex | `-c model_reasoning_effort=` | 7 (OpenAI `reasoning.effort`) | ✅ API 400, loud |
 | Copilot | `--effort`, per-model | 7, per-model catalog | ⚠ silent model default (P6) |
@@ -94,7 +94,7 @@ lifting it to core would force six adapters to reason about rungs they cannot
 validate. Instead each adapter declares one of four postures:
 
 | Posture | Adapters | Behaviour |
-|---|---|---|
+| --- | --- | --- |
 | **Clamp** (silent vendor, has a catalog) | Copilot | Clamp the request down to the model's greatest supported level; omit if none. **Mandatory** — the vendor hides the drop. |
 | **Passthrough** (loud vendor) | Codex, Cursor | Forward the validated word; if the model rejects it, the vendor errors loudly. No clamp needed. |
 | **Direct map** (fixed scale, no per-model table) | Claude | Forward the word; it lands on the CLI's own five-rung enum. Claude publishes **no per-model catalog** (probed), so a clamp is not buildable and Direct map is the ceiling by necessity — the boundary validation (D3) is the only guard. |

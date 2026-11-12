@@ -298,7 +298,7 @@ header and removing: see there.
 ### 12. What the operator sees when something stops
 
 | Event | The workbench | The host |
-|---|---|---|
+| --- | --- | --- |
 | The VPN drops | The group turns grey: the tunnel to that host closed, and it is reconnecting. `ssh` sees the drop in about 45 s (§2). | Runs, agent sessions and consoles continue. |
 | The VPN comes back | The group comes back when the tunnel reopens, with no action. | The operator attaches again; output past 512 KiB is lost from the screen, not from the work. |
 | The local computer is off, then on | The local daemon starts at sign-in, reopens every tunnel, and the groups come back. | Nothing stopped. |
@@ -404,7 +404,7 @@ made for the spike. Local: Windows 11, `OpenSSH_for_Windows_9.5p2`. Ralphy
 ran on Ubuntu 20.04's old glibc.
 
 | Step | Prediction | Result |
-|---|---|---|
+| --- | --- | --- |
 | 1. VPS peer by hand | group appears; free console 502 | **As predicted.** `/api/fleet` shows `svrapp` `reachable`, and its repo under the composite key. A free console through the local daemon is `502 Linux cannot host a free console: peer advertises no WSL distro`. The same console asked directly of the peer is `101`: §7 is a routing change only. |
 | 2. Detach and attach | session alive | **As predicted.** A console ran a one-line-per-second loop on the peer. The tunnel was killed and reopened; a reattach to the same session id replayed ticks 1 to 35 with no gap. |
 | 3. Latency and connections | probe well under 2 s | **As predicted.** `/api/fleet` with two peers: 0.11–0.15 s. A request through the tunnel alone: about 0.1 s. After 60 `/api/fleet` calls, TIME_WAIT sockets on the tunnel port did not grow (10 before, 10 after). |
@@ -437,7 +437,7 @@ workbench showed the peer as `corcino-mac` `macOS` `reachable` through a
 tunnel on local port 7402.
 
 | Where `claude -p` ran | Login Keychain | Claude's answer |
-|---|---|---|
+| --- | --- | --- |
 | An SSH session (GUI session open at the same time) | `User interaction is not allowed` | `Not logged in · Please run /login`: it could not read its credential |
 | A console hosted by the LaunchAgent daemon, through the tunnel | readable (`no-timeout`) | `OAuth access token has expired`: it read its credential, which had expired on that Mac |
 
@@ -759,7 +759,7 @@ for an operator who needs it.
 `0755`.
 
 | Test | Result |
-|---|---|
+| --- | --- |
 | Tunnel as `ralphy1` to the socket of `ralphy1` | answered `I am ralphy1` |
 | Tunnel as `ralphy2` to the socket of `ralphy2`, at the same time | answered `I am ralphy2` |
 | Tunnel as `ralphy2` to the socket of `ralphy1` | refused; `ssh` printed `channel 1: open failed: connect failed: open failed` and stayed up |
@@ -785,7 +785,7 @@ The local computer ran Windows 11 with `OpenSSH_for_Windows_9.5p2`; the host
 ran `OpenSSH_8.2p1 Ubuntu-4ubuntu0.9`. Both sides ran this amendment's build.
 
 | Test | Result |
-|---|---|
+| --- | --- |
 | `host add` for `ralphy1` and `ralphy2` | both descriptors name `peer_socket`; both peers `reachable` at the same time, each `hello` with its own `daemon_id`; `ralphy1` holds port 7257, `ralphy2` serves only its socket (M4) |
 | Stop the daemon of `ralphy2` | its peer becomes `tunnel-silent` ("…its daemon does not answer… Start it.") in under 10 s; `ralphy1` stays `reachable`; after a start it is `reachable` again with no action |
 | Reboot the host | both daemons start from their systemd user units (lingering); both peers `reachable` again with no action |

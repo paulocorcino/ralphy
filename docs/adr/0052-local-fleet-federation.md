@@ -36,7 +36,7 @@ WSL2 Ubuntu-22.04 in default NAT mode. They are recorded because several of
 them contradict the intuitive design.
 
 | Measurement | Result |
-|---|---|
+| --- | --- |
 | Windows → WSL listener bound to `127.0.0.1` | **HTTP 200** (WSL2 `localhostForwarding`) |
 | WSL → Windows listener bound to `127.0.0.1` | fails (separate netns) |
 | WSL → Windows listener bound to `0.0.0.0`, via gateway | HTTP 200 |
@@ -212,7 +212,7 @@ signal, the operator sees "installed" and the daemon says "not found".
 ### 7. What crosses, and what never does
 
 | Surface | Where it runs |
-|---|---|
+| --- | --- |
 | File tree, file read, image bytes, file write | the **owning** daemon |
 | git, Changes, stage/commit/discard/sync/push | the **owning** daemon |
 | Run and queue dispatch, run snapshots, watch | the **owning** daemon |
