@@ -3,6 +3,7 @@
 // the shell (`app.ts`) reads is in `wb-shell-types.d.ts`. Types only: the
 // build skips a `.d.ts` file, so a module imports from here with
 // `import type` (#613).
+import type { createConsole } from "./wb-console.ts";
 import type { createTerminal } from "./wb-console-terminal.ts";
 import type { createTitle } from "./wb-console-title.ts";
 import type { DeskDeps } from "./wb-desk.ts";
@@ -40,7 +41,7 @@ export type ExtentOpts = { grow?: boolean };
  * field may be missing, because each source fills a different part.
  */
 export type SpawnCarry = {
-  id?: string;
+  id?: string | undefined;
   repo?: string | null;
   agent?: string | null;
   kind?: string | null;
@@ -48,7 +49,7 @@ export type SpawnCarry = {
   max?: boolean;
   locked?: boolean;
   consoleName?: string | null;
-  checkout?: string | null;
+  checkout?: string | null | undefined;
   daemonId?: string | null;
   environment?: string | null;
   unrecorded?: boolean;
@@ -131,9 +132,9 @@ export type DeskRecordType = "window" | "fence" | "note";
 
 /** The session of a window in a `set`: a reconnect changes all three. */
 export type DeskSessionFields = {
-  sessionId?: number | null;
-  daemonId?: string | null;
-  environment?: string | null;
+  sessionId?: number | null | undefined;
+  daemonId?: string | null | undefined;
+  environment?: string | null | undefined;
 };
 
 /** The fields a `set` may change on a window. */
@@ -335,7 +336,7 @@ export type NoteCard = HTMLElement & {
   /** The card's desk record. */
   _noteRecord?: DeskNote;
   /** The record of a card whose record left the desk, or the popup's snapshot. */
-  _noteOrphan?: NoteSource;
+  _noteOrphan?: NoteSource | undefined;
   _noteLocked?: boolean;
   _noteEditor?: NoteEditor | null;
   _noteAsleep?: boolean;
@@ -367,7 +368,7 @@ export type NoteCard = HTMLElement & {
  * entry module passes it as `deps.console` of `createNotes`.
  */
 export type CardHost = Pick<
-  ReturnType<typeof import("./wb-console.ts").createConsole>,
+  ReturnType<typeof createConsole>,
   | "notes"
   | "saveNotes"
   | "fenceRecords"

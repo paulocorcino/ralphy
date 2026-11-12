@@ -99,8 +99,9 @@ test("a request with no plain name shows its method, path and status", () => {
   assert.equal(line, "POST /api/fleet/nudge (200)");
 });
 
+const out = (at, ip = "a") => ({ event: "logout", at, ip });
+
 test("repeated lines in a row are one row with a count", () => {
-  const out = (at, ip = "a") => ({ event: "logout", at, ip });
   const rows = load().eventRows(
     { events: [out("4"), out("3"), out("2", "b"), { event: "login_ok", at: "1", ip: "a" }, out("0")] },
     (at) => at,

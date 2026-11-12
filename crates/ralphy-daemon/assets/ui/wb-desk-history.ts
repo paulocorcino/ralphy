@@ -82,7 +82,7 @@ function parseUpload(text: string) {
   } catch {
     return { cause: "the file is not JSON" };
   }
-  if (!isRecord(parsed) || parsed.kind !== VERSION_KIND || !isRecord(parsed.desk)) {
+  if (!isRecord(parsed) || parsed["kind"] !== VERSION_KIND || !isRecord(parsed["desk"])) {
     return { cause: "the file is not a desk layout saved by Ralphy" };
   }
   return { version: parsed };

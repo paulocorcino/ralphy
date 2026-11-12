@@ -206,7 +206,7 @@ test("a document without recognised front matter has no colour", () => {
 
 test("a note with no heading is named by a UTC stamp", () => {
   assert.equal(stampName(new Date(Date.UTC(2026, 8, 22, 7, 5, 3))), "note-20260922-070503");
-  assert.match(stampName(), /^note-\d{8}-\d{6}$/);
+  assert.match(stampName(), /^note-\d{8}-\d{6}$/u);
 });
 
 test("a card with unsaved text never sleeps", () => {
@@ -297,7 +297,7 @@ test("a note carries whether it opens veiled, and every writer carries it along"
   assert.equal(veiledOf(plain), false);
   const hidden = withVeil(plain, true);
   assert.equal(veiledOf(hidden), true);
-  assert.match(hidden, /^---\ntitle: "Keys"\ncolor: ochre\nhidden: true\n---\nsecret\n$/);
+  assert.match(hidden, /^---\ntitle: "Keys"\ncolor: ochre\nhidden: true\n---\nsecret\n$/u);
   // `hidden: false` is what every note already is; writing it would put a line
   // in every file to say nothing.
   assert.equal(withVeil(hidden, false), plain);

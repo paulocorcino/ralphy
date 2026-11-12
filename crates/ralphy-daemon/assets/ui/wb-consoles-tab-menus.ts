@@ -56,7 +56,7 @@ export function wbConsoleMenus() {
         openSlug: this.$store.projects.openSlug,
       });
     },
-    isMac: /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || ""),
+    isMac: /Mac|iPhone|iPad/u.test(navigator.platform || navigator.userAgent || ""),
     // The accelerator pattern, stated ONCE in the menu head (the Fence menu's
     // rule): each row carries only its digit.
     consoleShortcutHint() {
@@ -106,7 +106,7 @@ export function wbConsoleMenus() {
     },
     openConsoleRun() {
       this.consoleRunOpen = true;
-      void this.$nextTick(() => this.$refs.consoleRun?.focus());
+      void this.$nextTick(() => this.$refs["consoleRun"]?.focus());
     },
     // Cancel keeps the menu open: Esc undoes only the field.
     closeConsoleRun() {
@@ -220,7 +220,7 @@ export function wbConsoleMenus() {
       // AFTER the tab is laid out, as `revealWindow`: a `display:none` tab
       // measures a 0×0 viewport and every card would land at the origin.
       void this.$nextTick(() => {
-        const ws = document.getElementById("workspace");
+        const ws = document.querySelector<HTMLElement>("#workspace");
         window.WBNotes.create({
           repo: slug,
           checkout: window.WBConsole.checkoutOf(slug),
@@ -308,7 +308,7 @@ export function wbConsoleMenus() {
       // hands them over (wb-console-terminal.ts).
       document.addEventListener("keydown", (e) => {
         if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
-        if (!/^(?:Digit\d|KeyR)$/.test(e.code)) return;
+        if (!/^(?:Digit\d|KeyR)$/u.test(e.code)) return;
         if (this.$store.modals.consoleShortcutsBlocked(true)) return;
         if (e.code === "KeyR") {
           e.preventDefault();
@@ -328,7 +328,7 @@ export function wbConsoleMenus() {
       // With no fence at that ordinal the key is left UNSWALLOWED.
       document.addEventListener("keydown", (e) => {
         if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
-        if (!/^F(?:[1-9]|1[0-2])$/.test(e.code)) return;
+        if (!/^F(?:[1-9]|1[0-2])$/u.test(e.code)) return;
         if (this.$store.modals.consoleShortcutsBlocked()) return;
         if (!this.jumpFenceAt(Number(e.code.slice(1)))) return;
         e.preventDefault();

@@ -38,7 +38,7 @@ export type Project = {
   /** `idle`, `live`, `waiting`, `silent` or `offline`. */
   state: string;
   /** The reason of a `silent` dot. */
-  dotDetail?: string;
+  dotDetail?: string | undefined;
   env: string;
   os?: string;
   daemonName: string;
@@ -146,7 +146,7 @@ function issueUrl(remoteUrl: string | null | undefined, number: number) {
 // part of another host's name or path.
 function githubRemote(remoteUrl: string | null | undefined) {
   return (remoteUrl ?? "").match(
-    /^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/,
+    /^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/u,
   );
 }
 
@@ -188,7 +188,7 @@ function worktreeCreateRow(
 function maskWorktreeName(raw: string | null | undefined) {
   return (raw ?? "")
     .replaceAll(/[\s\u0000-\u001F\u007F/\\~^:?*[]/gu, "")
-    .replace(/^[-.]+/, "")
+    .replace(/^[-.]+/u, "")
     .replaceAll(/\.{2,}/gu, ".")
     .replaceAll(/@\{+/gu, "@");
 }
@@ -208,7 +208,7 @@ function worktreeNameProblem(
 
 // Which characters of `name` the daemon would refuse.
 function charProblem(name: string) {
-  if (/\s/.test(name)) return "The name cannot contain spaces. Use “-” instead.";
+  if (/\s/u.test(name)) return "The name cannot contain spaces. Use “-” instead.";
   const bad = name.match(/[\u0000-\u001F\u007F/\\~^:?*[]/u);
   if (!bad) return "";
   return /[\u0000-\u001F\u007F]/u.test(bad[0])
@@ -319,7 +319,7 @@ function agentStateOf(sessions: HostedSession[] | null | undefined) {
 // with no block, or no state, has no dot.
 function agentDotOf(block: AgentStateBlock | null | undefined): {
   state: string | null;
-  detail?: string;
+  detail?: string | undefined;
 } {
   if (!block) return { state: null };
   if (block.source === "silent" || block.source === "none") {
@@ -337,7 +337,7 @@ function silentReasonOf(sessions: HostedSession[] | null | undefined) {
 
 // The project's dot from its own sessions: a silent console, then a `waiting`
 // agent, outrank `live` (ADR-0059); no session is `idle`.
-function projectDotOf(mine: HostedSession[]): { state: string; detail?: string } {
+function projectDotOf(mine: HostedSession[]): { state: string; detail?: string | undefined } {
   const seen = agentStateOf(mine);
   if (mine.length === 0) return { state: "idle" };
   if (seen === "silent") return { state: seen, detail: silentReasonOf(mine) };

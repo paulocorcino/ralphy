@@ -34,7 +34,7 @@ export function createNoteDormancy(deps: NoteDormancyDeps) {
   const SWEEP_MS = 5000;
   function trackDormancy(el: NoteCard) {
     if (typeof window.IntersectionObserver !== "function") return;
-    const root = document.getElementById("workspace");
+    const root = document.querySelector<HTMLElement>("#workspace");
     if (!root) return;
     observer ??= new IntersectionObserver(
       (entries) => {
@@ -77,7 +77,7 @@ export function createNoteDormancy(deps: NoteDormancyDeps) {
       }
       const verdict = noteDormancyDecision({
         visible: seen.visible,
-        onTop: el.dataset.noteId === onTopNow(),
+        onTop: el.dataset["noteId"] === onTopNow(),
         dirty: el._noteDirty,
         inFlight: el._noteInFlight,
         asleep: el._noteAsleep === true,
@@ -111,7 +111,7 @@ export function createNoteDormancy(deps: NoteDormancyDeps) {
   function wakeCard(el: NoteCard) {
     if (el._noteAsleep !== true) return;
     el._noteAsleep = false;
-    const record = recordOf(el.dataset.noteId);
+    const record = recordOf(el.dataset["noteId"]);
     // Re-READ rather than remount the text held here: another page may have
     // written the file while this card slept, and the file is the note.
     if (record) loadInto(el, record);

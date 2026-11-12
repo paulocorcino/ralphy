@@ -20,9 +20,11 @@ export type FilePopupMessage =
  * a newer build than the shell. */
 export function isFilePopupMessage(v: unknown): v is FilePopupMessage {
   if (!isRecord(v)) return false;
-  if (v.type === "wb-open-request") return v.detail === undefined || isOpenRequest(v.detail);
-  if (v.type === "wb-reattach") return v.desc === undefined || isFileDescriptor(v.desc);
-  return v.type === "wb-detach-ready" || v.type === "wb-emit";
+  if (v["type"] === "wb-open-request") {
+    return v["detail"] === undefined || isOpenRequest(v["detail"]);
+  }
+  if (v["type"] === "wb-reattach") return v["desc"] === undefined || isFileDescriptor(v["desc"]);
+  return v["type"] === "wb-detach-ready" || v["type"] === "wb-emit";
 }
 
 /** The shell's answer to "ready": the file this window shows. */
@@ -31,7 +33,7 @@ type DetachOpen = { type: "wb-detach-open"; desc: FileDescriptor };
 /** Whether `v` is the shell's answer to "ready". The shell can be an older
  * build than this page, which the daemon served when the window opened. */
 export function isDetachOpen(v: unknown): v is DetachOpen {
-  return isRecord(v) && v.type === "wb-detach-open" && isFileDescriptor(v.desc);
+  return isRecord(v) && v["type"] === "wb-detach-open" && isFileDescriptor(v["desc"]);
 }
 
 export function wireDetached(window: Window, document: Document) {
@@ -91,6 +93,7 @@ export function wireDetached(window: Window, document: Document) {
   // answer it. No opener, or a foreign one, means no file — and we say so
   // rather than rendering anything.
   const empty = (why: string) => {
+    // oxlint-disable-next-line unicorn/prefer-query-selector -- its innerHTML is old debt
     required(document.getElementById("viewers"), "the viewers").innerHTML =
       '<p class="detached-empty">Nothing to show. ' + why + ".</p>";
   };

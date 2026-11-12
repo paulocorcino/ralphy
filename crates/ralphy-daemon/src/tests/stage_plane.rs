@@ -62,7 +62,7 @@ fn shell_drags_only_past_a_threshold() {
         );
         assert!(
             squeeze(&b).contains("opts?.onDrop||(()=>{")
-                && b.contains("setWin(win as ConsoleWin, { rect: restoreRect(win) });"),
+                && b.contains("setWin(consoleWin(win), { rect: restoreRect(win) });"),
             "{handler}'s drop hook must default to writing the window's rect"
         );
     }
@@ -121,7 +121,7 @@ fn titlebar_touch_double_taps_and_holds() {
         "e.preventDefault();",
         // Without it iOS Safari zooms the page on the double tap.
         concat!(
-            r#"if (!(e.target as HTMLElement).closest("button, .session-name-input")) "#,
+            r#"if (!targetClosest(e, "button, .session-name-input")) "#,
             r#"e.preventDefault();"#
         ),
         "{ passive: false }",

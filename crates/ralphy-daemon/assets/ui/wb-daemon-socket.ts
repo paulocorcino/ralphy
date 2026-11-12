@@ -56,14 +56,24 @@ function armHandshakeDeadline(ws: WebSocket) {
 // after the replacement is wired and be read as the NEW connection's news.
 export function detachSocket(ws: WebSocket | null) {
   if (!ws) return;
+  // oxlint-disable-next-line unicorn/prefer-add-event-listener -- detachSocket sets it to null
   ws.onclose = null;
+  // oxlint-disable-next-line unicorn/prefer-add-event-listener -- detachSocket sets it to null
   ws.onmessage = null;
+  // oxlint-disable-next-line unicorn/prefer-add-event-listener -- detachSocket sets it to null
   ws.onopen = null;
+  // oxlint-disable-next-line unicorn/prefer-add-event-listener -- detachSocket sets it to null
   ws.onerror = null;
   try {
     if (ws.readyState <= 1) ws.close();
   } catch {}
 }
+
+const greet = (user: SocketUser, state: { opened: boolean }, layer: PageChannels) => {
+  const reopened = state.opened;
+  state.opened = true;
+  user.onOpen(layer, reopened);
+};
 
 // The page's ONE socket on `/ws` (ADR-0082): presence and the daemon's
 // pushes are channel 0, and each subscription has a channel of its own
@@ -94,11 +104,6 @@ export function createPageSocket({
   // for the handshake deadline. `null` once the wait began.
   let sessionRead: Promise<unknown> | null = null;
   let waitingForSession = false;
-  const greet = (user: SocketUser, state: { opened: boolean }, layer: PageChannels) => {
-    const reopened = state.opened;
-    state.opened = true;
-    user.onOpen(layer, reopened);
-  };
   const bare = (bytes: Uint8Array) => {
     for (const user of [...users.keys()]) user.onBare?.(bytes);
   };
@@ -129,6 +134,7 @@ export function createPageSocket({
     connectingSince = Date.now();
     armHandshakeDeadline(sock);
     sock.binaryType = "arraybuffer";
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- detachSocket sets it to null
     sock.onopen = () => {
       handshakeMs = Date.now() - connectingSince;
       const layer = pageChannels(channelSocket(sock), bare);
@@ -136,7 +142,9 @@ export function createPageSocket({
       for (const [user, state] of [...users]) greet(user, state, layer);
       onOpen();
     };
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- detachSocket sets it to null
     sock.onmessage = (ev: MessageEvent<ArrayBuffer>) => channels?.receive(new Uint8Array(ev.data));
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- detachSocket sets it to null
     sock.onclose = () => {
       lose();
       // The last user left as its channel ended: no user, no socket. A

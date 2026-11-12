@@ -93,7 +93,7 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
             .map(|f| f.matches(r#""Hide this note""#).count())
             .sum::<usize>()
             == 1
-            && veil.contains(r#"btn.title = !marked ? "Hide this note""#),
+            && veil.contains(r#"btn.title = marked ? markedTitle(shown) : "Hide this note""#),
         "the eye is how a note is hidden; the menu must not offer it twice"
     );
     assert!(
@@ -299,25 +299,29 @@ fn spawn_window_sends_the_console_name_on_a_new_agent_launch() {
             .expect("the function must close")
             .0,
     );
-    // The guard of the statement that adds the name, whatever its layout
+    // The condition of the expression that adds the name, whatever its layout
     // and whatever the order of its two conditions.
     let set = body
-        .find("termOpts={...termOpts,name:win._deskConsoleName}")
+        .find("?{...asked,name:win._deskConsoleName}")
         .expect("spawnWindow must send the console name (#480)");
     let before_set = body.split_at(set).0;
     let guard = before_set
         .split_at(
             before_set
-                .rfind("if(")
-                .expect("the name is sent under a guard"),
+                .rfind("named=")
+                .expect("the name is sent under a condition"),
         )
         .1;
-    for condition in ["termOpts.id==null", "termOpts.console!==true"] {
+    for condition in ["asked.id==null", "asked.console!==true"] {
         assert!(
             guard.contains(condition),
             "spawnWindow must send the console name with a new agent launch only (#480): {guard}"
         );
     }
+    assert!(
+        body.contains("launchRecord(named,"),
+        "the named options must be the ones spawnWindow launches (#480)"
+    );
 }
 
 /// Peer session ownership must survive every browser reconnect and close

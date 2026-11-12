@@ -23,20 +23,20 @@ export type PaneRecord = {
   encoding: string;
   bom: boolean;
   el?: HTMLElement;
-  ed?: MonacoEditor | MonacoDiffEditor;
+  ed?: MonacoEditor | MonacoDiffEditor | undefined;
   dirty?: boolean;
   mounting?: boolean;
   mountFailed?: boolean;
   fallbackEl?: HTMLElement;
   saveBtn?: HTMLElement | null;
   mirrorBtn?: HTMLElement | null;
-  saveKey?: MonacoDisposable;
-  ro?: ResizeObserver;
+  saveKey?: MonacoDisposable | undefined;
+  ro?: ResizeObserver | undefined;
   encMenu?: HTMLElement;
   /** A find asked for while the editor was not mounted or the pane was off screen. */
   pendingFind?: string | null;
   /** The bytes of an external write a dirty pane has not taken yet. */
-  pendingDisk?: string;
+  pendingDisk?: string | undefined;
   mermaidPending?: HTMLElement[];
   hits?: HTMLElement[];
   hitIdx?: number;
@@ -49,6 +49,16 @@ export type BytesRecord = PaneRecord & { content: string; refused: null };
 export type RefusedRecord = PaneRecord & { refused: string };
 export type ViewerRecord = BytesRecord | RefusedRecord;
 
+/** The code editor of a pane; undefined before it mounts and on a diff pane. */
+export function codeEditor(ed: PaneRecord["ed"]): MonacoEditor | undefined {
+  return ed && !("getModifiedEditor" in ed) ? ed : undefined;
+}
+
+/** The diff editor of a `diff` pane; undefined before it mounts and on any other. */
+export function diffEditor(ed: PaneRecord["ed"]): MonacoDiffEditor | undefined {
+  return ed && "getModifiedEditor" in ed ? ed : undefined;
+}
+
 /** What `open` takes: the fields of a `FileDescriptor`, or the reason a pane has no bytes. */
 export type OpenSpec = {
   id: string;
@@ -60,8 +70,8 @@ export type OpenSpec = {
   original?: string;
   detached?: boolean;
   checkout?: string | null;
-  encoding?: string;
-  bom?: boolean;
+  encoding?: string | undefined;
+  bom?: boolean | undefined;
 } & ({ content: string; refused?: undefined } | { content?: undefined; refused: string });
 
 /** Whether `v` has the shape `descOf` gives a file: what one window posts to
@@ -69,14 +79,14 @@ export type OpenSpec = {
 export function isFileDescriptor(v: unknown): v is FileDescriptor {
   return (
     isRecord(v) &&
-    typeof v.project === "string" &&
-    typeof v.label === "string" &&
-    typeof v.path === "string" &&
-    typeof v.ftype === "string" &&
-    typeof v.content === "string" &&
-    isNullableString(v.checkout) &&
-    isOptionalString(v.encoding) &&
-    typeof v.bom === "boolean"
+    typeof v["project"] === "string" &&
+    typeof v["label"] === "string" &&
+    typeof v["path"] === "string" &&
+    typeof v["ftype"] === "string" &&
+    typeof v["content"] === "string" &&
+    isNullableString(v["checkout"]) &&
+    isOptionalString(v["encoding"]) &&
+    typeof v["bom"] === "boolean"
   );
 }
 
@@ -85,10 +95,10 @@ export function isFileDescriptor(v: unknown): v is FileDescriptor {
 export function isOpenRequest(v: unknown): v is OpenRequest {
   return (
     isRecord(v) &&
-    isNullableString(v.project) &&
-    typeof v.path === "string" &&
-    isNullableString(v.checkout) &&
-    isOptionalString(v.fragment) &&
-    (v.as === undefined || v.as === "bytes")
+    isNullableString(v["project"]) &&
+    typeof v["path"] === "string" &&
+    isNullableString(v["checkout"]) &&
+    isOptionalString(v["fragment"]) &&
+    (v["as"] === undefined || v["as"] === "bytes")
   );
 }

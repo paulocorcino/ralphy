@@ -166,7 +166,7 @@ fn the_fence_menu_follows_the_cap() {
     // Alt+Shift held, F10/F11/F12 all reach the document — their reserved
     // neighbours (Shift+F10, F11, F12) each want their own exact combo.
     assert!(
-        app.contains(r"if (!/^F(?:[1-9]|1[0-2])$/.test(e.code)) return;"),
+        app.contains(r"if (!/^F(?:[1-9]|1[0-2])$/u.test(e.code)) return;"),
         "the fence accelerators must run F1..F12, matching the cap"
     );
     assert!(
@@ -232,7 +232,7 @@ fn shell_locks_consoles_and_fences() {
         let b = body(handler);
         assert!(
             b.contains("if (heldFast()) return")
-                && b.contains("opts?.locked || (() => isLocked(win as ConsoleWin))"),
+                && b.contains("opts?.locked || (() => isLocked(consoleWin(win)))"),
             "{handler} must refuse a locked console"
         );
     }

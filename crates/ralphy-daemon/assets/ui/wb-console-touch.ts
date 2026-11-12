@@ -41,7 +41,7 @@ export type TouchDeps = {
   // The terminal's opts: `onSelecting` arms or disarms the key bar's button.
   opts: Pick<TerminalOpts, "onSelecting">;
   // The scroll probe's hooks, in a developer build only (wb-console-probe.ts).
-  probe?: Pick<ScrollWatch, "moved" | "step">;
+  probe?: Pick<ScrollWatch, "moved" | "step"> | undefined;
 };
 
 export function wireTouch(deps: TouchDeps) {
@@ -72,7 +72,13 @@ export function wireTouch(deps: TouchDeps) {
   const rowAt = (clientY: number) => {
     const screen = term.element.querySelector(".xterm-screen");
     const top = screen ? screen.getBoundingClientRect().top : 0;
-    return selectionRow(clientY, top, cellHeight(), term.rows, term.buffer.active.viewportY);
+    const viewportY = term.buffer.active.viewportY;
+    return selectionRow(clientY, {
+      screenTop: top,
+      cellHeight: cellHeight(),
+      rows: term.rows,
+      viewportY,
+    });
   };
   const cellHeight = () => {
     const el = term.element;

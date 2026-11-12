@@ -41,6 +41,41 @@ function lockTitle(own: boolean, held: boolean) {
   return own ? "Unlock" : "Lock in place";
 }
 
+// A column restores like a maximize, so it shows the same control; so does
+// a console in a tab of two consoles or more (ADR-0037 §3d).
+function paintMaxButton(win: ConsoleWin) {
+  const btn = win._maxBtn;
+  if (!btn) return;
+  const on = ["maximized", "column", "tab-grid"].some((c) => win.classList.contains(c));
+  btn.title = on ? "Restore" : "Maximize";
+  // oxlint-disable-next-line no-restricted-properties -- a fixed icon, no outside text
+  btn.innerHTML = on ? '<i class="bi bi-fullscreen-exit"></i>' : '<i class="bi bi-fullscreen"></i>';
+}
+
+// A restored console floats again, so the bleed's pin goes; a column keeps it.
+function dropMaxPin(win: ConsoleWin) {
+  if (win.classList.contains("column")) return;
+  win.style.removeProperty("--max-left");
+  win.style.removeProperty("--max-top");
+}
+
+// A window's RESTORE box, from the inline styles. Three states make a live
+// read lie: `.maximized` pins all four offsets via `!important` (a read would
+// persist 0,0); fullscreen sizes the element to the DISPLAY at 0,0 (a read
+// would grow the stage to screen size and persist a monitor-sized box); a
+// `display:none` ancestor — the Consoles tab is Alpine `x-show` and
+// `restoreDesk` runs whatever tab is showing — measures 0×0 at 0,0 (measured
+// 2026-09-09: a reload from a file tab wrote `0,0,0,0`, the next load rendered
+// the CSS floor 240×150 at the origin and stored THAT). The inline rect is
+// untouched by all three; it is what `buildChrome` wrote from the record.
+function measurable(win: HTMLElement) {
+  return Boolean(win.offsetWidth || win.offsetHeight);
+}
+
+// Columns are a maximize too (ADR-0051 §5): all of them, in reading order.
+// oxlint-disable-next-line unicorn/prefer-number-coercion -- "12px" is NaN to Number()
+const at = (w: HTMLElement, v: string) => parseInt(w.style.getPropertyValue(v), 10) || 0;
+
 export function createStageWindow(deps: StageWindowDeps) {
   const { document, workspace, stage, focusWin, setWin, heldByFence, refreshCover } = deps;
 
@@ -50,18 +85,6 @@ export function createStageWindow(deps: StageWindowDeps) {
     return win.classList.contains("maximized") || win.classList.contains("column") || isFull(win);
   }
 
-  // A window's RESTORE box, from the inline styles. Three states make a live
-  // read lie: `.maximized` pins all four offsets via `!important` (a read would
-  // persist 0,0); fullscreen sizes the element to the DISPLAY at 0,0 (a read
-  // would grow the stage to screen size and persist a monitor-sized box); a
-  // `display:none` ancestor — the Consoles tab is Alpine `x-show` and
-  // `restoreDesk` runs whatever tab is showing — measures 0×0 at 0,0 (measured
-  // 2026-09-09: a reload from a file tab wrote `0,0,0,0`, the next load rendered
-  // the CSS floor 240×150 at the origin and stored THAT). The inline rect is
-  // untouched by all three; it is what `buildChrome` wrote from the record.
-  function measurable(win: HTMLElement) {
-    return Boolean(win.offsetWidth || win.offsetHeight);
-  }
   function restoreRect(win: HTMLElement) {
     const inline = (prop: "left" | "top" | "width" | "height", fallback: number) =>
       // oxlint-disable-next-line unicorn/prefer-number-coercion -- "12px" is NaN to Number()
@@ -124,27 +147,8 @@ export function createStageWindow(deps: StageWindowDeps) {
     if (persist) setWin(win, { max: on });
   }
 
-  // A restored console floats again, so the bleed's pin goes; a column keeps it.
-  function dropMaxPin(win: ConsoleWin) {
-    if (win.classList.contains("column")) return;
-    win.style.removeProperty("--max-left");
-    win.style.removeProperty("--max-top");
-  }
-
   function toggleMax(win: ConsoleWin) {
     setMax(win, !win.classList.contains("maximized"), true);
-  }
-
-  // A column restores like a maximize, so it shows the same control; so does
-  // a console in a tab of two consoles or more (ADR-0037 §3d).
-  function paintMaxButton(win: ConsoleWin) {
-    const btn = win._maxBtn;
-    if (!btn) return;
-    const on = ["maximized", "column", "tab-grid"].some((c) => win.classList.contains(c));
-    btn.title = on ? "Restore" : "Maximize";
-    btn.innerHTML = on
-      ? '<i class="bi bi-fullscreen-exit"></i>'
-      : '<i class="bi bi-fullscreen"></i>';
   }
 
   // Raise ONE console to the physical screen, or drop it back. A different axis
@@ -241,10 +245,7 @@ export function createStageWindow(deps: StageWindowDeps) {
   function raiseMaximized() {
     const st = stage();
     if (!st) return;
-    // Columns are a maximize too (ADR-0051 §5): all of them, in reading order.
-    // oxlint-disable-next-line unicorn/prefer-number-coercion -- "12px" is NaN to Number()
-    const at = (w: HTMLElement, v: string) => parseInt(w.style.getPropertyValue(v), 10) || 0;
-    const cols = [...st.querySelectorAll<HTMLElement>(".session-window.column")].sort(
+    const cols = [...st.querySelectorAll<HTMLElement>(".session-window.column")].toSorted(
       (a, b) =>
         at(a, "--col-index") - at(b, "--col-index") || at(a, "--row-index") - at(b, "--row-index"),
     );
@@ -317,7 +318,7 @@ export function createStageWindow(deps: StageWindowDeps) {
     // append (before `spawnWindow` registers it) to its removal. Fences count
     // too — ADR-0051 §2 sizes the plane to windows AND fences.
     const rects = [...st.querySelectorAll<HTMLElement>(".session-window, .fence, .note-card")].map(
-      restoreRect,
+      (w) => restoreRect(w),
     );
     const ext = stageExtent(
       rects,

@@ -13,12 +13,13 @@ type JsonValue =
 
 /** The `payload` of a command: the verb's arguments. */
 type CommandPayload = {
-  repo?: string | null;
+  repo?: string | null | undefined;
   checkout?: string;
   [field: string]: JsonValue | undefined;
 };
 
 // The lib's type for `filter(Boolean)` keeps the falsy members.
+// oxlint-disable-next-line eslint/no-redeclare -- merges into the lib's `Array`
 interface Array<T> {
   filter(predicate: BooleanConstructor): Exclude<T, false | 0 | "" | null | undefined>[];
 }
@@ -351,7 +352,7 @@ type OpenRequest = {
   project: string | null;
   path: string;
   checkout: string | null;
-  fragment?: string;
+  fragment?: string | undefined;
   as?: "bytes";
 };
 

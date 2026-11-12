@@ -29,6 +29,15 @@ export type NoteFileDeps = {
   loadInto: (el: NoteCard, record: NoteSource) => unknown;
 };
 
+function endRename(el: NoteCard) {
+  const field = el.querySelector<HTMLInputElement>(".note-rename");
+  if (!field || field.hidden !== false) return;
+  field.hidden = true;
+  el._notePointing = false;
+  const path = el.querySelector<HTMLElement>(".note-path");
+  if (path) path.hidden = false;
+}
+
 export function createNoteFile(deps: NoteFileDeps) {
   const {
     window,
@@ -47,7 +56,7 @@ export function createNoteFile(deps: NoteFileDeps) {
   // because there is nothing there to touch — which is why this is a separate
   // verb from the rename beside it.
   function pointElsewhere(el: NoteCard) {
-    const record = recordOf(el.dataset.noteId);
+    const record = recordOf(el.dataset["noteId"]);
     if (!record) return;
     const field = el.querySelector<HTMLInputElement>(".note-rename");
     if (!field) return;
@@ -64,7 +73,7 @@ export function createNoteFile(deps: NoteFileDeps) {
   // never renames, so this is the only way a note's name moves). The daemon's
   // `file.rename` is what reaches it, through the denylist's one carve-out.
   function renameNote(el: NoteCard) {
-    const record = recordOf(el.dataset.noteId);
+    const record = recordOf(el.dataset["noteId"]);
     if (record?.path === undefined || record.path === "" || (record.checkout ?? "") !== "") {
       return;
     }
@@ -77,16 +86,8 @@ export function createNoteFile(deps: NoteFileDeps) {
     field.focus();
     field.select();
   }
-  function endRename(el: NoteCard) {
-    const field = el.querySelector<HTMLInputElement>(".note-rename");
-    if (!field || field.hidden !== false) return;
-    field.hidden = true;
-    el._notePointing = false;
-    const path = el.querySelector<HTMLElement>(".note-path");
-    if (path) path.hidden = false;
-  }
   function commitRename(el: NoteCard) {
-    const record = recordOf(el.dataset.noteId);
+    const record = recordOf(el.dataset["noteId"]);
     const field = el.querySelector<HTMLInputElement>(".note-rename");
     const next = (field?.value ?? "").trim();
     const pointing = el._notePointing === true;
@@ -155,7 +156,7 @@ export function createNoteFile(deps: NoteFileDeps) {
   // Delete the file — a SEPARATE act from closing the card (§11), confirmed,
   // and it takes the card with it because there is nothing left to show.
   function deleteNote(el: NoteCard) {
-    const record = recordOf(el.dataset.noteId);
+    const record = recordOf(el.dataset["noteId"]);
     if (record?.path === undefined || record.path === "" || (record.checkout ?? "") !== "") {
       return;
     }

@@ -10,6 +10,7 @@ import { createStageWindow } from "../assets/ui/wb-stage-window.ts";
 import { createDormancy } from "../assets/ui/wb-console-dormancy.ts";
 import { createStack } from "../assets/ui/wb-stage-stack.ts";
 import { wirePress } from "../assets/ui/wb-console-press.ts";
+import { idLookups } from "./fake-document.mjs";
 
 // The store reaches `WBViewer` as a bare global: each test puts the real one back.
 const realViewer = globalThis.WBViewer;
@@ -122,7 +123,7 @@ test("a console tab takes the new name of the console that names it, and of no o
   page.names.w1 = "build";
   tabs.syncConsoleTabs();
   const title = tabs.tabOf("w1").title;
-  assert.match(title, /build/);
+  assert.match(title, /build/u);
   assert.equal(stored().consoleTabs[0].title, title);
   tabs.leaveTab("w1");
   assert.equal(tabs.tabOf("w2").title, "tests (codex)", "the console left in the tab names it");
@@ -525,20 +526,22 @@ test("the + and Go-to show the tab of a console that has one", () => {
   }
 });
 
+const matches = (el, sel) =>
+  sel.split(",").some((p) =>
+    p
+      .trim()
+      .split(".")
+      .filter(Boolean)
+      .every((c) => el.classList.contains(c)),
+  );
+
+const root = (els) => ({ querySelectorAll: (sel) => els.filter((el) => matches(el, sel)) });
+
 // A document whose `#workspace` and `#console-tabs-pane` answer the selector
 // of the focus mark.
 function stackPage(onStage, inPane) {
-  const matches = (el, sel) =>
-    sel.split(",").some((p) =>
-      p
-        .trim()
-        .split(".")
-        .filter(Boolean)
-        .every((c) => el.classList.contains(c)),
-    );
-  const root = (els) => ({ querySelectorAll: (sel) => els.filter((el) => matches(el, sel)) });
   const ids = { workspace: root(onStage), "console-tabs-pane": root(inPane) };
-  return { getElementById: (id) => ids[id] ?? null };
+  return { ...idLookups((id) => ids[id] ?? null) };
 }
 
 function surface() {
@@ -623,20 +626,21 @@ test("Alt+Shift+arrows walk the grid of the active console tab", () => {
   }
 });
 
+const keep = (selectorHit) => {
+  let handler = null;
+  wirePress({
+    term: { attachCustomKeyEventHandler: (h) => (handler = h) },
+    body: { closest: (sel) => (selectorHit(sel) ? {} : null), addEventListener() {} },
+    window: {},
+    writeClipboard() {},
+  });
+  return handler({ type: "keydown", altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, code: "ArrowLeft" });
+};
+
 // The terminal's key handler: it gives Alt+Shift+arrows to the page in a
 // column of the stage and in the grid of a console tab, and keeps them in a
 // lone window.
 test("a terminal in a tab's grid lets Alt+Shift+arrows go to the page", () => {
-  const keep = (selectorHit) => {
-    let handler = null;
-    wirePress({
-      term: { attachCustomKeyEventHandler: (h) => (handler = h) },
-      body: { closest: (sel) => (selectorHit(sel) ? {} : null), addEventListener() {} },
-      window: {},
-      writeClipboard() {},
-    });
-    return handler({ type: "keydown", altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, code: "ArrowLeft" });
-  };
   assert.equal(keep((sel) => sel.includes(".session-window.tab-grid")), false);
   assert.equal(keep((sel) => sel.includes(".session-window.column")), false);
   assert.equal(keep(() => false), true, "a lone window keeps the chord for its child");

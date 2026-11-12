@@ -66,7 +66,7 @@ const tenth = (ms: number) => Math.round(ms * 10) / 10;
 // The frame figures of one scroll: `gaps` are the times between frames, and
 // `output` says, per gap, whether the terminal wrote output in it.
 export function frameFigures(gaps: number[], output: boolean[]) {
-  const sorted = [...gaps].sort((a, b) => a - b);
+  const sorted = [...gaps].toSorted((a, b) => a - b);
   let slow = 0;
   let slowWithOutput = 0;
   gaps.forEach((gap, i) => {

@@ -49,7 +49,7 @@ test("wbSpend lists only shell() names in uses, and its members left shell()", (
 test("every name the markup of wbSpend reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbSpend");
   const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
+  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
   // The `x-for` loop variables of the two panes.
   const loopVars = new Set(["p", "t", "d", "o", "m", "r", "c", "i", "peer", "cause", "col", "row"]);
   let read = 0;
@@ -69,11 +69,11 @@ test("nothing outside the Spend element names its state", () => {
   // The page without the Spend part: the shell and the other components.
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["spendView", "spendModel", "ledgerModel", "ledgerView", "spendPane", "spendPeriod", "setSpendPane", "setSpendPeriod", "showUnpricedLedger", "loadLedger", "loadSpend", "refreshSpend"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
+    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
   }
   // The rail button asks for the tab with an event: the element hears it.
-  assert.match(outside, /\$dispatch\('workbench:spend-open'\)/);
-  assert.match(partMarkup(PART), /@workbench:spend-open\.window="openSpend\(\)"/);
+  assert.match(outside, /\$dispatch\('workbench:spend-open'\)/u);
+  assert.match(partMarkup(PART), /@workbench:spend-open\.window="openSpend\(\)"/u);
 });
 
 // ---- the workbench events ------------------------------------------------------
@@ -178,8 +178,8 @@ test("a Ledger read keeps the rows of the open project and the period", async ()
   const body = { records: [{ id: 1 }], interactive: "junk", missing: [{ peer: "p" }], daemon_id: "d1" };
   await withUsage(usageReply(true, body), async (urls) => {
     await spend.loadLedger();
-    assert.match(urls[0], /project=o%2Fr/);
-    assert.match(urls[0], /period=7d/);
+    assert.match(urls[0], /project=o%2Fr/u);
+    assert.match(urls[0], /period=7d/u);
   });
   assert.deepEqual(
     [spend.ledger.records, spend.ledger.interactive, spend.ledger.missing, spend.ledger.daemonId, spend.ledger.slug, spend.ledger.error],

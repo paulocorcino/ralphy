@@ -232,7 +232,7 @@ test("two windows that copied one storage order their attempts by the clock", as
 
 test("the attempt is in the open payload only beside a holder", () => {
   const { openPayload, requestOpts } = load();
-  const at = (req, holder) => openPayload(requestOpts(req, holder, false, 9));
+  const at = (req, holder) => openPayload(requestOpts(req, holder, { gzip: false, attempt: 9 }));
   assert.deepEqual(at({ id: 3, repo: "o/r" }, "h1"), { id: 3, repo: "o/r", holder: "h1", attempt: 9 });
   assert.deepEqual(at({ console: true }, "h1"), { console: 1, holder: "h1", attempt: 9 });
   assert.deepEqual(at({ repo: "o/r", agent: "claude" }, "h1"), {
@@ -250,7 +250,7 @@ test("the attempt is in the open payload only beside a holder", () => {
 // ADR-0079 D8: the byte count the terminal shows rides only on a reattach.
 test("since is in the open payload of a reattach only, a watch's included", () => {
   const { openPayload, requestOpts } = load();
-  const at = (req) => openPayload(requestOpts(req, "h1", false, undefined, 4096));
+  const at = (req) => openPayload(requestOpts(req, "h1", { gzip: false, since: 4096 }));
   assert.deepEqual(at({ id: 3, repo: "o/r" }), { id: 3, repo: "o/r", since: 4096, holder: "h1" });
   assert.deepEqual(at({ id: 3, watch: true }), { id: 3, since: 4096, watch: 1 });
   assert.deepEqual(at({ console: true }), { console: 1, holder: "h1" }, "a launch opens a new terminal");
@@ -270,7 +270,7 @@ test("tabAttempt raises the tab's counter on every call", () => {
 test("tabHolder mints one well-formed holder per document and keeps it", () => {
   const { tabHolder } = load();
   const first = tabHolder();
-  assert.match(first, /^[0-9a-f]{32}$/);
+  assert.match(first, /^[0-9a-f]{32}$/u);
   assert.equal(tabHolder(), first, "every console of the tab claims as the same holder");
 });
 

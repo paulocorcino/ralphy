@@ -85,7 +85,7 @@ const IDENT = /[\p{L}\p{N}_$]+/uy;
 
 function skipSpaces(s: string, i: number) {
   let j = i;
-  while (j < s.length && /\s/.test(s.charAt(j))) j += 1;
+  while (j < s.length && /\s/u.test(s.charAt(j))) j += 1;
   return j;
 }
 
@@ -140,7 +140,7 @@ function typeEnd(s: string, start: number) {
     return close < 0 ? s.length : close + 1;
   }
   let i = start;
-  while (i < s.length && !/\s/.test(s.charAt(i))) {
+  while (i < s.length && !/\s/u.test(s.charAt(i))) {
     if (s[i] === "[" && i === start) break;
     i = skipGroup(s, i);
   }
@@ -217,15 +217,15 @@ function readSettings(parts: string[]): Settings {
     if (low === "pk" || low === "primary key") out.pk = true;
     else if (low === "not null") out.notNull = true;
     else if (low === "unique") out.unique = true;
-    else if (/^note\s*:/.test(low)) out.note = unquote(value);
-    else if (/^ref\s*:/.test(low)) out.ref = value.trim();
+    else if (/^note\s*:/u.test(low)) out.note = unquote(value);
+    else if (/^ref\s*:/u.test(low)) out.ref = value.trim();
   }
   return out;
 }
 
 // ---- refs ----------------------------------------------------------------------
 
-const REF_OP = /\s*(<>|>|<|-)\s*/y;
+const REF_OP = /\s*(<>|>|<|-)\s*/uy;
 
 function readOp(s: string, i: number): { op: string; end: number } | null {
   REF_OP.lastIndex = i;
@@ -280,7 +280,7 @@ type State = { schema: DbmlSchema; stack: Block[]; aliases: Map<string, string> 
 const SKIP: Block = { kind: "skip" };
 
 function openTable(st: State, header: string): Block {
-  const rest = header.replace(/^table\s*/i, "");
+  const rest = header.replace(/^table\s*/iu, "");
   const name = readDotted(rest, 0);
   if (name === null || name === "composite") {
     st.schema.skipped += 1;
@@ -292,7 +292,7 @@ function openTable(st: State, header: string): Block {
     note: readSettings(splitSettings(after)).note,
     columns: [],
   };
-  const alias = /^\s+as\s+("[^"]*"|\S+)/i.exec(after);
+  const alias = /^\s+as\s+("[^"]*"|\S+)/iu.exec(after);
   const aliasName = alias?.[1];
   if (aliasName !== undefined) st.aliases.set(unquote(aliasName), table.name);
   st.schema.tables.push(table);
@@ -300,7 +300,7 @@ function openTable(st: State, header: string): Block {
 }
 
 function openGroup(st: State, header: string): Block {
-  const name = readPart(header.replace(/^tablegroup\s*/i, ""), 0);
+  const name = readPart(header.replace(/^tablegroup\s*/iu, ""), 0);
   if (!name) {
     st.schema.skipped += 1;
     return SKIP;
@@ -312,7 +312,7 @@ function openGroup(st: State, header: string): Block {
 
 // The block a header line opens at the top of the file.
 function openTopBlock(st: State, header: string): Block {
-  const word = (/^[A-Za-z]+/.exec(header)?.[0] ?? "").toLowerCase();
+  const word = (/^[A-Za-z]+/u.exec(header)?.[0] ?? "").toLowerCase();
   switch (word) {
     case "table":
       return openTable(st, header);
@@ -373,12 +373,12 @@ function readColumn(st: State, table: DbmlTable, line: string) {
 }
 
 function readTableLine(st: State, table: DbmlTable, line: string) {
-  if (/^note\s*:/i.test(line)) table.note = unquote(line.slice(line.indexOf(":") + 1));
+  if (/^note\s*:/iu.test(line)) table.note = unquote(line.slice(line.indexOf(":") + 1));
   else readColumn(st, table, line);
 }
 
 function readGroupLine(st: State, group: DbmlGroup, line: string) {
-  if (/^note\s*:/i.test(line)) return;
+  if (/^note\s*:/iu.test(line)) return;
   let i = 0;
   while (skipSpaces(line, i) < line.length) {
     const name = readDotted(line, i);
@@ -400,10 +400,10 @@ function readRefLine(st: State, line: string) {
 // A line at the top of the file that is not a block header: only
 // `Ref name: a.b > c.d` is one the reader knows.
 function readTopLine(st: State, line: string) {
-  const m = /^ref\b[^:]*:(.*)$/i.exec(line);
+  const m = /^ref\b[^:]*:(.*)$/iu.exec(line);
   const rest = m?.[1];
-  if (rest !== undefined) readRefLine(st, rest);
-  else st.schema.skipped += 1;
+  if (rest === undefined) st.schema.skipped += 1;
+  else readRefLine(st, rest);
 }
 
 function readBlockLine(st: State, block: Block, line: string) {

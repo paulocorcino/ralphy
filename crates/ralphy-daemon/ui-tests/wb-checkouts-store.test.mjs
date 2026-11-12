@@ -9,6 +9,10 @@ import assert from "node:assert/strict";
 import { projectsStore } from "../assets/ui/wb-projects-store.ts";
 import { checkoutsStore } from "../assets/ui/wb-checkouts-store.ts";
 
+const fireListing = (type, detail) => globalThis.window.dispatchEvent({ type, detail });
+
+let landListingDesk = () => {};
+
 // The open project is `o/r`. `desk` is what `WBConsole.checkouts()` answers
 // once the desk lands; `landDesk()` lands it.
 function page({ desk = {} } = {}) {
@@ -18,8 +22,7 @@ function page({ desk = {} } = {}) {
   const events = [];
   const flashed = [];
   const hooks = {};
-  let landDesk = () => {};
-  const landed = new Promise((resolve) => { landDesk = resolve; });
+  const landed = new Promise((resolve) => { landListingDesk = resolve; });
   globalThis.window = {
     Alpine: { store: (name) => (name === "projects" ? projects : undefined), nextTick: (fn) => fn() },
     addEventListener: (type, fn) => (listeners[type] ||= []).push(fn),
@@ -40,8 +43,7 @@ function page({ desk = {} } = {}) {
   };
   const store = checkoutsStore({ messages: { flash: (msg) => flashed.push(msg) } });
   const sent = (type) => events.filter((e) => e.type === type).map((e) => e.detail);
-  const fire = (type, detail) => globalThis.window.dispatchEvent({ type, detail });
-  return { store, projects, events, sent, fire, flashed, hooks, landDesk: () => (landDesk(), landed) };
+  return { store, projects, events, sent, fire: fireListing, flashed, hooks, landDesk: () => (landListingDesk(), landed) };
 }
 
 test("checkoutGone resets the checkout to the main tree, and says so", () => {

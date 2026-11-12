@@ -4,9 +4,9 @@ import { WBFail } from "./wb-fail.ts";
 import { need } from "./wb-dom-need.ts";
 import { refreshEncodingPill } from "./wb-viewer-encoding.ts";
 import { isRendered } from "./wb-viewer-render.ts";
-import type { MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { BytesRecord, RefusedRecord, ViewerRecord } from "./wb-file-viewer.ts";
+import { codeEditor } from "./wb-file-viewer-records.ts";
 
 /** What a refused pane is rebuilt from once the daemon serves its bytes. */
 export type ReopenBytes = { content: string; encoding?: string; bom?: boolean };
@@ -50,6 +50,69 @@ export function wireFileButtons(el: HTMLElement, rec: BytesRecord, acts: FileAct
   });
 }
 
+function hideDiskBadge(rec: ViewerRecord) {
+  rec.pendingDisk = undefined;
+  const b = rec.el?.querySelector<HTMLElement>(".viewer-disk-badge");
+  if (b) b.style.display = "none";
+}
+
+// The "changed on disk" badge: shown when an EXTERNAL write lands on a DIRTY
+// tab (never auto-applied — the operator's unsaved edits win until they click).
+function showDiskBadge(rec: ViewerRecord) {
+  const b = rec.el?.querySelector<HTMLElement>(".viewer-disk-badge");
+  if (b) b.style.display = "";
+}
+
+// `file.read` for this pane, with `encoding` as the hint: a tab's encoding is
+// sticky once opened (the daemon's detection, or a "reopen with…"), so a
+// reload never silently re-detects it.
+function readWith(rec: ViewerRecord, encoding: string | undefined) {
+  const payload = WBDaemon.withCheckout({ repo: rec.project, path: rec.path }, rec.checkout);
+  if (encoding !== undefined && encoding !== "") payload["encoding"] = encoding;
+  return WBDaemon.observe("file.read", payload);
+}
+
+// The pane's current bytes, whether shown as source (Monaco) or as a rendered
+// markdown preview. Before Monaco finishes booting `rec.ed` is undefined and
+// `rec.content` is still authoritative.
+function contentOf(rec: BytesRecord) {
+  if (rec.kind === "diff") return rec.content;
+  const ed = codeEditor(rec.ed);
+  if (ed && (rec.kind === "code" || rec.editing)) return ed.getValue();
+  return rec.content;
+}
+
+function clearSaveError(rec: ViewerRecord) {
+  const el = rec.el?.querySelector<HTMLElement>(".viewer-save-err");
+  if (el) el.style.display = "none";
+}
+
+// The inline "not saved" line beside the Save button: a write refusal must
+// be read from the pane it concerns, not from a flash in another panel.
+function showSaveError(rec: ViewerRecord, text: string) {
+  const el = rec.el?.querySelector<HTMLElement>(".viewer-save-err");
+  if (!el) return;
+  el.textContent = text;
+  el.style.display = "";
+}
+
+// A portable descriptor — enough to reopen this file anywhere (a tab or a
+// detached popup), carrying the *current* (possibly edited) content.
+// The pin rides the descriptor (#406): a detached pane saves and reloads
+// against the tree its bytes came from, and re-attaches pinned to it.
+function descOf(rec: BytesRecord): FileDescriptor {
+  return {
+    project: rec.project,
+    label: rec.label,
+    path: rec.path,
+    ftype: rec.kind,
+    content: contentOf(rec),
+    checkout: rec.checkout ?? null,
+    encoding: rec.encoding,
+    bom: rec.bom,
+  };
+}
+
 export function createViewerSave(deps: ViewerSaveDeps) {
   const { window, messages, reopenRefused, renderMarkdown, drawMermaid } = deps;
 
@@ -80,45 +143,6 @@ export function createViewerSave(deps: ViewerSaveDeps) {
       bom: rec.bom,
     });
     if (isRendered(rec.kind) && !rec.editing) renderMarkdown(rec); // keep preview fresh
-  }
-
-  // The inline "not saved" line beside the Save button: a write refusal must
-  // be read from the pane it concerns, not from a flash in another panel.
-  function showSaveError(rec: ViewerRecord, text: string) {
-    const el = rec.el?.querySelector<HTMLElement>(".viewer-save-err");
-    if (!el) return;
-    el.textContent = text;
-    el.style.display = "";
-  }
-  function clearSaveError(rec: ViewerRecord) {
-    const el = rec.el?.querySelector<HTMLElement>(".viewer-save-err");
-    if (el) el.style.display = "none";
-  }
-
-  // The pane's current bytes, whether shown as source (Monaco) or as a rendered
-  // markdown preview. Before Monaco finishes booting `rec.ed` is undefined and
-  // `rec.content` is still authoritative.
-  function contentOf(rec: BytesRecord) {
-    if (rec.kind === "diff") return rec.content;
-    if (rec.ed && (rec.kind === "code" || rec.editing)) return (rec.ed as MonacoEditor).getValue();
-    return rec.content;
-  }
-
-  // A portable descriptor — enough to reopen this file anywhere (a tab or a
-  // detached popup), carrying the *current* (possibly edited) content.
-  // The pin rides the descriptor (#406): a detached pane saves and reloads
-  // against the tree its bytes came from, and re-attaches pinned to it.
-  function descOf(rec: BytesRecord): FileDescriptor {
-    return {
-      project: rec.project,
-      label: rec.label,
-      path: rec.path,
-      ftype: rec.kind,
-      content: contentOf(rec),
-      checkout: rec.checkout ?? null,
-      encoding: rec.encoding,
-      bom: rec.bom,
-    };
   }
 
   // Reload discards local edits and reloads from source. Daemon-backed repos
@@ -181,15 +205,6 @@ export function createViewerSave(deps: ViewerSaveDeps) {
     else reopenRefused(rec, { content: url });
   }
 
-  // `file.read` for this pane, with `encoding` as the hint: a tab's encoding is
-  // sticky once opened (the daemon's detection, or a "reopen with…"), so a
-  // reload never silently re-detects it.
-  function readWith(rec: ViewerRecord, encoding: string | undefined) {
-    const payload = WBDaemon.withCheckout({ repo: rec.project, path: rec.path }, rec.checkout);
-    if (encoding !== undefined && encoding !== "") payload["encoding"] = encoding;
-    return WBDaemon.observe("file.read", payload);
-  }
-
   function applyFresh(rec: BytesRecord, fresh: string) {
     // A diff pane has no single "fresh bytes" to apply: reloading it means
     // re-resolving BOTH sides, which is a reopen, not a refresh.
@@ -213,7 +228,8 @@ export function createViewerSave(deps: ViewerSaveDeps) {
       const img = rec.el?.querySelector<HTMLImageElement>(".img-canvas");
       if (img) img.src = fresh;
     } else if (rec.kind === "code" || rec.editing) {
-      if (rec.ed) (rec.ed as MonacoEditor).setValue(fresh);
+      const ed = codeEditor(rec.ed);
+      if (ed) ed.setValue(fresh);
       // In the read-only fallback there is no editor to update, and leaving the
       // <pre> stale would show bytes that no longer match rec.content.
       else if (rec.fallbackEl) rec.fallbackEl.textContent = fresh;
@@ -221,18 +237,6 @@ export function createViewerSave(deps: ViewerSaveDeps) {
       renderMarkdown(rec);
       if (rec.visible) drawMermaid(rec);
     }
-  }
-
-  // The "changed on disk" badge: shown when an EXTERNAL write lands on a DIRTY
-  // tab (never auto-applied — the operator's unsaved edits win until they click).
-  function showDiskBadge(rec: ViewerRecord) {
-    const b = rec.el?.querySelector<HTMLElement>(".viewer-disk-badge");
-    if (b) b.style.display = "";
-  }
-  function hideDiskBadge(rec: ViewerRecord) {
-    rec.pendingDisk = undefined;
-    const b = rec.el?.querySelector<HTMLElement>(".viewer-disk-badge");
-    if (b) b.style.display = "none";
   }
 
   return {

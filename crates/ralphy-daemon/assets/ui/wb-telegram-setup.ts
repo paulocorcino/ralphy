@@ -157,7 +157,8 @@ export function telegramSetup() {
       } catch (e) {
         this.loaded = false;
         this.reply = null;
-        this.error = `Could not read the Telegram bot: ${(e as Error).message}.`;
+        const why = e instanceof Error ? e.message : String(e);
+        this.error = `Could not read the Telegram bot: ${why}.`;
       }
     },
     // Send the token once; the field is emptied whatever the answer.

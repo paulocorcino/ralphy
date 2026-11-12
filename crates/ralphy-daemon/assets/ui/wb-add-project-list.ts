@@ -15,9 +15,9 @@ export function listed(state: State): Row[] {
 export function upText(state: State) {
   const dir = state.listing && state.listing.dir;
   if (!dir || !dir.path || !endsWithSep(state.text)) return null;
-  const trimmed = dir.path.replace(/[\\/]+$/, "");
+  const trimmed = dir.path.replace(/[\\/]+$/u, "");
   if (!trimmed) return null;
-  if (/^[A-Za-z]:$/.test(trimmed)) return "";
+  if (/^[A-Za-z]:$/u.test(trimmed)) return "";
   return parentText(trimmed) || null;
 }
 

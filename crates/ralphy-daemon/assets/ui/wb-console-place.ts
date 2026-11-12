@@ -101,8 +101,8 @@ function slotKey(slot: Slot | null) {
 
 function paint(win: ConsoleWin, slot: Slot | null, key: string) {
   const p = slot?.p ?? null;
-  if (key) win.dataset.tabSlot = key;
-  else delete win.dataset.tabSlot;
+  if (key) win.dataset["tabSlot"] = key;
+  else delete win.dataset["tabSlot"];
   win.classList.toggle("in-tab", slot !== null);
   win.classList.toggle("tab-shown", p !== null);
   win.classList.toggle("tab-grid", p !== null && slot?.many === true);
@@ -127,6 +127,11 @@ function slotsOf(held: readonly string[], grid: Grid | null, width: number) {
   const slot = (id: string): Slot | null =>
     held.includes(id) ? { p: boxes.get(id) ?? null, many } : null;
   return { slot, head: painted[0]?.id ?? null };
+}
+
+function dropShadow(win: ConsoleWin) {
+  win._tabShadow?.remove();
+  win._tabShadow = null;
 }
 
 export function createPlace(deps: PlaceDeps) {
@@ -175,18 +180,13 @@ export function createPlace(deps: PlaceDeps) {
     return sh;
   }
 
-  function dropShadow(win: ConsoleWin) {
-    win._tabShadow?.remove();
-    win._tabShadow = null;
-  }
-
   // Whether the window went into the pane, and whether it is shown now and
   // was not before.
   function placeOne(win: ConsoleWin, parent: HTMLElement, slot: Slot | null) {
     const moves = win.parentElement !== parent;
     if (moves) parent.append(win);
     const key = slotKey(slot);
-    const was = win.dataset.tabSlot ?? "";
+    const was = win.dataset["tabSlot"] ?? "";
     if (key !== was) paint(win, slot, key);
     if (key !== was || moves) moved(win);
     return { entered: moves && slot !== null, shown: key !== was && newlyShown(was, slot) };

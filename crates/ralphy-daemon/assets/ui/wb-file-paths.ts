@@ -47,7 +47,7 @@ const BINARY_EXT = new Set([
 
 function extOf(name: string) {
   const n = name.toLowerCase();
-  return n.includes(".") ? (n.split(".").pop() as string) : "";
+  return n.includes(".") ? (n.split(".").pop() ?? "") : "";
 }
 
 // The directories the daemon's Write path refuses (`fswrite::PROTECTED_DIRS`),
@@ -82,7 +82,7 @@ function isNoteInNotesDir(rel: string) {
 
 export function underProtectedDir(rel: string) {
   if (isNoteInNotesDir(rel)) return false;
-  return rel.split("/").some(isProtectedDir);
+  return rel.split("/").some((name) => isProtectedDir(name));
 }
 
 // The title of a create gesture, one sentence with its word order kept
@@ -96,9 +96,9 @@ export function newEntryTitle(kind: string, dir: string) {
 export function fullPath(root: string, rel: string) {
   if (!rel) return root;
   // Windows by SHAPE (drive letter or UNC lead), not by "contains a backslash".
-  const sep = /^[A-Za-z]:/.test(root) || root.startsWith("\\\\") ? "\\" : "/";
+  const sep = /^[A-Za-z]:/u.test(root) || root.startsWith("\\\\") ? "\\" : "/";
   // Trim a trailing separator so a drive root (`C:\`) does not double it.
-  const base = root.replace(/[\\/]+$/, "");
+  const base = root.replace(/[\\/]+$/u, "");
   return base + sep + rel.split("/").join(sep);
 }
 

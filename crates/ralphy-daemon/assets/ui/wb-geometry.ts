@@ -44,6 +44,8 @@ type Placed = { id: string; rect: Rect };
 // A client rect: `getBoundingClientRect()`.
 type ClientBox = { left: number; top: number; right: number; bottom: number };
 
+const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
 export const WBGeometry = (function () {
   // A point; a missing point or coordinate reads 0.
   function pointOf(point: Partial<Point> | null | undefined) {
@@ -263,7 +265,6 @@ export const WBGeometry = (function () {
   function storedOffset(
     stored: { left?: unknown; top?: unknown } | null | undefined,
   ): Offset | null {
-    const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
     const left = num(stored?.left);
     const top = num(stored?.top);
     return left !== null && top !== null ? { left, top } : null;

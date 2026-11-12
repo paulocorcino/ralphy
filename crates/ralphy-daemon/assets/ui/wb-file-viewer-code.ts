@@ -6,6 +6,7 @@ import { encodingBtnHtml } from "./wb-viewer-encoding.ts";
 import type { MonacoDiffEditor, MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { BytesRecord, ViewerRecord } from "./wb-file-viewer-records.ts";
+import { codeEditor } from "./wb-file-viewer-records.ts";
 import type { ViewerEncoding } from "./wb-viewer-encoding.ts";
 import { wireFileButtons } from "./wb-viewer-save.ts";
 import type { ViewerSave } from "./wb-viewer-save.ts";
@@ -49,7 +50,7 @@ export function createViewerCode(deps: ViewerCodeDeps) {
   const isNarrow = (el: HTMLElement | undefined) =>
     el !== undefined && el.clientWidth > 0 && el.clientWidth <= NARROW_PX;
   function watchNarrow(
-    rec: { el?: HTMLElement; ro?: ResizeObserver },
+    rec: { el?: HTMLElement; ro?: ResizeObserver | undefined },
     ed: MonacoEditor | MonacoDiffEditor,
   ) {
     if (!rec.el || typeof ResizeObserver !== "function") return;
@@ -152,7 +153,7 @@ export function createViewerCode(deps: ViewerCodeDeps) {
   function buildCode(rec: BytesRecord) {
     const el = document.createElement("div");
     el.className = "viewer code-viewer";
-    el.dataset.tabId = rec.id;
+    el.dataset["tabId"] = rec.id;
     el.style.display = "none";
     el.innerHTML = `
       <div class="viewer-toolbar">
@@ -179,16 +180,16 @@ export function createViewerCode(deps: ViewerCodeDeps) {
     wireEncodingMenu(rec, el);
 
     const saveBtn = need(el, '[data-act="save"]');
-    need(el, '[data-act="find"]').onclick = () => {
-      (rec.ed as MonacoEditor | undefined)?.focus();
-      (rec.ed as MonacoEditor | undefined)
+    need(el, '[data-act="find"]').addEventListener("click", () => {
+      codeEditor(rec.ed)?.focus();
+      codeEditor(rec.ed)
         ?.getAction("actions.find")
         ?.run()
         .catch((err: unknown) => {
           // oxlint-disable-next-line no-console -- the failure is for a developer
           console.error("[workbench] monaco find failed", err);
         });
-    };
+    });
     const mirrorBtn = el.querySelector<HTMLElement>('[data-act="mirror"]');
     mirrorBtn?.addEventListener("click", () => {
       window.Alpine.store("tabs").toggleMirror();

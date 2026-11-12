@@ -29,11 +29,11 @@ test("the state literal declares no key twice", () => {
   // shorthands — a gate covering 30% of the thing it guards.
   const keys = new Map();
   const count = (key) => keys.set(key, (keys.get(key) || 0) + 1);
-  for (const m of body.matchAll(/^ {4}([A-Za-z_$][\w$]*):/gm)) count(m[1]);
+  for (const m of body.matchAll(/^ {4}([A-Za-z_$][\w$]*):/gmu)) count(m[1]);
   // A control keyword at method indent (`    if (…)`) is not a key. Without
   // this the scan reports `if` as declared three times.
   const KEYWORD = new Set(["if", "for", "while", "switch", "catch", "return", "do", "else"]);
-  for (const m of body.matchAll(/^ {4}(?:async )?([A-Za-z_$][\w$]*)\s*\(/gm)) {
+  for (const m of body.matchAll(/^ {4}(?:async )?([A-Za-z_$][\w$]*)\s*\(/gmu)) {
     if (!KEYWORD.has(m[1])) count(m[1]);
   }
   const dupes = [...keys].filter(([, n]) => n > 1).map(([k]) => k);
@@ -485,7 +485,7 @@ test("a delete that the daemon answers 'not found' flashes the refusal and re-li
   await act({ action: "delete", project: "o/r", path: "src/a/gone.txt", title: "gone.txt" });
   assert.deepEqual(written.map((w) => [w.verb, w.payload.path]), [["file.delete", "src/a/gone.txt"]]);
   assert.equal(flashed.length, 1);
-  assert.match(flashed[0], /Could not delete/);
+  assert.match(flashed[0], /Could not delete/u);
   assert.deepEqual(sent("workbench:tree-dirty"), [{ rel: "src/a" }]);
 });
 
@@ -497,7 +497,7 @@ test("a delete that works says so and re-lists nothing; one that is refused for 
 
   seam = writeSeam({ status: "error", message: "permission denied" });
   await seam.act({ action: "delete", project: "o/r", path: "src/a.txt" });
-  assert.match(seam.flashed[0], /Could not delete/);
+  assert.match(seam.flashed[0], /Could not delete/u);
   assert.deepEqual(seam.sent("workbench:tree-dirty"), []);
 });
 
@@ -520,7 +520,7 @@ test("a rename writes the full paths and flashes only a refusal", async () => {
   await seam.act({ action: "rename", project: "o/r", from: "src/a.txt", to: "src/b.txt" });
   await new Promise((r) => { setImmediate(r); });
   assert.equal(seam.flashed.length, 1);
-  assert.match(seam.flashed[0], /Could not rename/);
+  assert.match(seam.flashed[0], /Could not rename/u);
 });
 
 test("a worktree-created action re-reads the worktree list and flashes its message as one line", async () => {

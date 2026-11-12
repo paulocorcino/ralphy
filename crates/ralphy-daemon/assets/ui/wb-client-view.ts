@@ -40,11 +40,11 @@ export type StoredTab = {
 function isStoredTab(v: unknown): v is StoredTab {
   return (
     isRecord(v) &&
-    typeof v.project === "string" &&
-    typeof v.path === "string" &&
-    isOptionalString(v.title) &&
-    typeof v.kind === "string" &&
-    (v.checkout === undefined || isNullableString(v.checkout))
+    typeof v["project"] === "string" &&
+    typeof v["path"] === "string" &&
+    isOptionalString(v["title"]) &&
+    typeof v["kind"] === "string" &&
+    (v["checkout"] === undefined || isNullableString(v["checkout"]))
   );
 }
 
@@ -76,15 +76,19 @@ function isIdGrid(v: unknown): v is string[][] {
 function storedConsoleTab(v: unknown): StoredConsoleTab | null {
   if (
     !isRecord(v) ||
-    typeof v.deskId !== "string" ||
-    v.deskId === "" ||
-    typeof v.title !== "string"
+    typeof v["deskId"] !== "string" ||
+    v["deskId"] === "" ||
+    typeof v["title"] !== "string"
   ) {
     return null;
   }
-  const id = typeof v.id === "string" && v.id !== "" ? v.id : null;
-  if (v.grid === undefined) return { id, deskId: v.deskId, title: v.title, grid: [[v.deskId]] };
-  return isIdGrid(v.grid) ? { id, deskId: v.deskId, title: v.title, grid: v.grid } : null;
+  const id = typeof v["id"] === "string" && v["id"] !== "" ? v["id"] : null;
+  if (v["grid"] === undefined) {
+    return { id, deskId: v["deskId"], title: v["title"], grid: [[v["deskId"]]] };
+  }
+  return isIdGrid(v["grid"])
+    ? { id, deskId: v["deskId"], title: v["title"], grid: v["grid"] }
+    : null;
 }
 
 function storedConsoleTabs(raw: unknown): StoredConsoleTab[] {
@@ -105,7 +109,7 @@ export const WBView = (function () {
       const parsed: unknown = JSON.parse(raw);
       if (!isRecord(parsed)) return null;
       // A record from a future (or corrupt) version is not ours to interpret.
-      if (parsed.v !== 1) return null;
+      if (parsed["v"] !== 1) return null;
       // `command` was the free console's stored startup command. The command is
       // now typed per console in the Consoles menu, so the field is dropped
       // here, and the next `patch` writes the record without it.
@@ -116,29 +120,29 @@ export const WBView = (function () {
       // try/catch exists to prevent, one level down.
       return {
         ...stored,
-        tabs: Array.isArray(parsed.tabs) ? parsed.tabs.filter(isStoredTab) : [],
+        tabs: Array.isArray(parsed["tabs"]) ? parsed["tabs"].filter(isStoredTab) : [],
         // The console tabs of this device (ADR-0037 §3d): an id, the console
         // the tab opened for, a title and the grid of its consoles.
-        consoleTabs: storedConsoleTabs(parsed.consoleTabs),
+        consoleTabs: storedConsoleTabs(parsed["consoleTabs"]),
         // The tab that was active: a file tab's id, a console tab's id, or "consoles".
-        active: typeof parsed.active === "string" ? parsed.active : null,
+        active: typeof parsed["active"] === "string" ? parsed["active"] : null,
         // Read STRICTLY: anything that is not a stored `true` means "do not
         // launch". A truthy coercion here would turn a corrupt or half-written
         // record into permission to spawn a vendor CLI per saved console.
-        relaunch: parsed.relaunch === true,
-        keys: keysOf(parsed.keys),
-        font: fontOf(parsed.font),
-        off: isRecord(parsed.off) ? parsed.off : null,
+        relaunch: parsed["relaunch"] === true,
+        keys: keysOf(parsed["keys"]),
+        font: fontOf(parsed["font"]),
+        off: isRecord(parsed["off"]) ? parsed["off"] : null,
         // The secondary pane (ADR-0037 §3c): a pin names a file the way `tabs`
         // does; a mirror names nothing. The ratio is the left column's share,
         // held to the range the divider drag can produce. Anything else is
         // "no slot" — `WBSplit.fromStored` folds the survivor against the tabs.
-        split: splitOf(parsed.split),
-        columns: columnsOf(parsed.columns),
+        split: splitOf(parsed["split"]),
+        columns: columnsOf(parsed["columns"]),
         // "Notify me in this browser" (Settings, Notifications): a stored `true`
         // only, so a corrupt record never turns notifications on.
-        notify: parsed.notify === true,
-        columnDir: columnDirOf(parsed.columnDir),
+        notify: parsed["notify"] === true,
+        columnDir: columnDirOf(parsed["columnDir"]),
       };
     } catch {
       return null;
@@ -178,14 +182,20 @@ export const WBView = (function () {
   function splitOf(raw: unknown) {
     if (!isRecord(raw)) return null;
     const ratio =
-      typeof raw.ratio === "number" && raw.ratio >= 0.2 && raw.ratio <= 0.8 ? raw.ratio : null;
-    if (raw.kind === "mirror") return { kind: "mirror", ratio };
-    if (raw.kind === "pin" && typeof raw.project === "string" && typeof raw.path === "string") {
+      typeof raw["ratio"] === "number" && raw["ratio"] >= 0.2 && raw["ratio"] <= 0.8
+        ? raw["ratio"]
+        : null;
+    if (raw["kind"] === "mirror") return { kind: "mirror", ratio };
+    if (
+      raw["kind"] === "pin" &&
+      typeof raw["project"] === "string" &&
+      typeof raw["path"] === "string"
+    ) {
       return {
         kind: "pin",
-        project: raw.project,
-        path: raw.path,
-        checkout: typeof raw.checkout === "string" ? raw.checkout : null,
+        project: raw["project"],
+        path: raw["path"],
+        checkout: typeof raw["checkout"] === "string" ? raw["checkout"] : null,
         ratio,
       };
     }

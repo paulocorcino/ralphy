@@ -40,7 +40,7 @@ export const WBConsoleName = (function () {
     prefix: string,
     names: Iterable<string | null | undefined> | null | undefined,
   ) {
-    const form = new RegExp(`^${escapeRegExp(prefix)} #([1-9][0-9]*)$`);
+    const form = new RegExp(`^${escapeRegExp(prefix)} #([1-9][0-9]*)$`, "u");
     const used = new Set<number>();
     for (const name of names ?? []) {
       const m = form.exec(name ?? "");
@@ -92,7 +92,7 @@ export const WBConsoleName = (function () {
   // records and never mutates the input, so running it twice changes nothing.
   function nameDesk<R extends NamedRecord>(
     records: R[],
-    prefixOfRepo: (repo: R["repo"]) => string,
+    prefixOfRepo: (repo: R["repo"] | undefined) => string,
   ): R[] {
     const names = records.map((r) => r.consoleName).filter(Boolean);
     return records.map((r) => {

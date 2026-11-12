@@ -22,6 +22,9 @@ import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
 import type { Run, RunIssue } from "./wb-shell-types.d.ts";
 
+const at = (iso: string) =>
+  new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
 export function wbRuns() {
   // Every `shell()` member this component's code or markup reads or calls.
   return component(["runsOpen", "toggleRuns", "nowMs", "kanbanOpen", "toggleKanban", "toggle"], {
@@ -111,8 +114,6 @@ export function wbRuns() {
     clockTitle(run: Run | null) {
       if (!run) return "";
       const parts: string[] = [];
-      const at = (iso: string) =>
-        new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       if (run.since) parts.push(`phase since ${at(run.since)}`);
       if (run.startedAt) {
         const ms = Math.max(0, this.nowMs - Date.parse(run.startedAt));
@@ -288,14 +289,14 @@ export function wbRuns() {
       const theirs = this.planProseIssue(run);
       if (theirs != null) {
         // The plan on disk is the PREVIOUS issue's; name both numbers.
-        return wanted != null
-          ? `This plan is for #${theirs}. Waiting for the plan for #${wanted}.`
-          : `This plan is for #${theirs}.`;
+        return wanted == null
+          ? `This plan is for #${theirs}.`
+          : `This plan is for #${theirs}. Waiting for the plan for #${wanted}.`;
       }
       if (run.planReadFailed) return "Could not read plan.md.";
       if (run.phase === "planning") return "Writing the plan…";
       if (run.planMd) return "The plan is still being written.";
-      return wanted != null ? `No plan for #${wanted} yet.` : "No plan for this issue yet.";
+      return wanted == null ? "No plan for this issue yet." : `No plan for #${wanted} yet.`;
     },
 
     // --- run / triage / push (the daemon verbs) ---------------------------

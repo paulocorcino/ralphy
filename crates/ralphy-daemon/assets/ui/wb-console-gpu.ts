@@ -76,7 +76,7 @@ export function gpuHolders(windows: GpuCandidate[], budget: number) {
   return windows
     .map((w, i) => ({ ...w, i }))
     .filter((w) => w.seen && !w.covered && w.hasTerminal)
-    .sort((a, b) => b.z - a.z)
+    .toSorted((a, b) => b.z - a.z)
     .slice(0, budget)
     .map((w) => w.i);
 }
@@ -107,6 +107,8 @@ export function createGpuBudget(deps: GpuBudgetDeps) {
   // Built on first use: `#workspace` is not in the document when this module
   // evaluates. Without `IntersectionObserver` the feature is inert.
   let dormancyObserver: IntersectionObserver | null = null;
+  // The windows it watches, by the element an entry names.
+  const watched = new Map<Element, ConsoleWin>();
   function dormancyWatch() {
     if (dormancyObserver) return dormancyObserver;
     const IntersectionObserver = deps.IntersectionObserver;
@@ -116,8 +118,10 @@ export function createGpuBudget(deps: GpuBudgetDeps) {
     dormancyObserver = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          (entry.target as ConsoleWin)._visible = entry.isIntersecting;
-          applyDormancy(entry.target as ConsoleWin);
+          const win = watched.get(entry.target);
+          if (!win) continue;
+          win._visible = entry.isIntersecting;
+          applyDormancy(win);
         }
       },
       { root, rootMargin: `${DORMANT_MARGIN_PX}px`, threshold: 0 },
@@ -126,8 +130,10 @@ export function createGpuBudget(deps: GpuBudgetDeps) {
   }
   function trackDormancy(win: ConsoleWin) {
     const watch = dormancyWatch();
-    if (watch) watch.observe(win);
-    else {
+    if (watch) {
+      watched.set(win, win);
+      watch.observe(win);
+    } else {
       // Nothing will ever report this window seen.
       win._visible = true;
       scheduleGpu();
@@ -140,6 +146,7 @@ export function createGpuBudget(deps: GpuBudgetDeps) {
       clearTimeout(win._dormantTimer);
       win._dormantTimer = null;
     }
+    watched.delete(win);
     dormancyObserver?.unobserve(win);
     // Its context, if it had one, goes to the next window in line.
     scheduleGpu();

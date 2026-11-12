@@ -38,7 +38,7 @@ test("a mermaid file is one diagram holder with the whole file as its source", (
   const article = { innerHTML: "<p>old</p>", append: (el) => appended.push(el) };
   const doc = { createElement: (tag) => ({ tag, className: "", id: "", dataset: {} }) };
   const source = "flowchart TD\n  A[Start] --> B[Finish]\n";
-  const pending = renderBody("mermaid", article, source, 7, doc);
+  const pending = renderBody({ kind: "mermaid", content: source, uid: 7 }, article, doc);
   assert.equal(article.innerHTML, "");
   assert.equal(appended.length, 1);
   assert.deepEqual(pending, appended);

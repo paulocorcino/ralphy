@@ -128,7 +128,7 @@ export function createNoteSave(deps: NoteSaveDeps) {
     const found = recordOf(el.dataset["noteId"]);
     const orphan = el._noteOrphan;
     return found && (found.path ?? "") === "" && (orphan?.path ?? "") !== ""
-      ? { ...found, path: orphan?.path }
+      ? { ...found, path: orphan?.path ?? "" }
       : (found ?? orphan);
   }
 

@@ -131,7 +131,7 @@ export function createFenceGestures(deps: FenceGestureDeps) {
         .concat(
           [...st.querySelectorAll<NoteCard>(".note-card")].map((card): Carried => ({
             el: card,
-            id: "n:" + card.dataset.noteId,
+            id: "n:" + card.dataset["noteId"],
             kind: "note",
             rect: restoreRect(card),
           })),
@@ -302,8 +302,7 @@ export function createFenceGestures(deps: FenceGestureDeps) {
           way,
           start,
           { dx: ev.clientX - startX, dy: ev.clientY - startY },
-          FENCE_MIN,
-          bounds,
+          { min: FENCE_MIN, bounds },
         );
         fits = fenceFits(fences(), { id: f.id, rect: next });
         if (next.width !== start.width || next.height !== start.height) sized = true;

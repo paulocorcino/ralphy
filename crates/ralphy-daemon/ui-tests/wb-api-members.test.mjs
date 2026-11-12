@@ -16,7 +16,7 @@ const CHANGE = "a member list changes only by a design decision (an ADR or an am
 
 // `name type` of each member, sorted by name.
 function members(api) {
-  return Object.keys(api).sort().map((k) => `${k} ${typeof api[k]}`);
+  return Object.keys(api).toSorted().map((k) => `${k} ${typeof api[k]}`);
 }
 
 // Node 22 ships a real `BroadcastChannel`, and `createConsole` subscribes:
@@ -34,8 +34,9 @@ function buildConsole() {
   }
 }
 
+const noop = () => {};
+
 function buildNotes() {
-  const noop = () => {};
   const window = { addEventListener: noop, removeEventListener: noop, setTimeout, clearTimeout, setInterval, clearInterval };
   const document = { readyState: "loading", addEventListener: noop, removeEventListener: noop };
   return createNotes(window, document, { console: null });

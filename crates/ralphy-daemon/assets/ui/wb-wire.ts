@@ -135,23 +135,30 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
   // handle to this window.
   window.addEventListener("message", (e) => {
     if (e.origin !== window.location.origin) return;
-    if (!detachedWindows.has(e.source as Window)) return;
+    const source = heldWindow(e.source);
+    if (!source) return;
     const m: unknown = e.data;
     if (!isFilePopupMessage(m)) return;
-    popupMessage(m, e);
+    popupMessage(m, source);
   });
 
+  // The detached window that sent a message; null for any other source.
+  function heldWindow(source: MessageEventSource | null) {
+    for (const win of detachedWindows.keys()) if (win === source) return win;
+    return null;
+  }
+
   // One message of a detached file window this page opened.
-  function popupMessage(m: FilePopupMessage, e: MessageEvent) {
+  function popupMessage(m: FilePopupMessage, source: Window) {
     if (m.type === "wb-detach-ready") {
       // The popup booted and is asking for its file.
-      (e.source as Window).postMessage(
-        { type: "wb-detach-open", desc: detachedWindows.get(e.source as Window) },
+      source.postMessage(
+        { type: "wb-detach-open", desc: detachedWindows.get(source) },
         window.location.origin,
       );
     } else if (m.type === "wb-emit") {
       // `fromWindow` lets a save's answer reach the pane that sent it.
-      forwardAction(window.WB, m.action, m.detail, e.source as Window);
+      forwardAction(window.WB, m.action, m.detail, source);
     } else if (m.type === "wb-open-request" && m.detail) {
       // A link clicked inside a detached pane; `openLink` re-classifies, so the
       // popup decides nothing about what opens.
@@ -164,32 +171,34 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     } else if (m.type === "wb-reattach" && m.desc) {
       // A second `wb-reattach` from the same popup (the button, then its own
       // unload) never gets here: the guard above drops a window no longer held.
-      reattachFile(e.source as Window, m.desc);
+      reattachFile(source, m.desc);
     }
   }
+
+  const flash = (msg: string) => {
+    messages.flash(msg);
+  };
+
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- a page with no daemon door
+  const daemonBacked = () => window.WBDaemon?.write !== undefined;
+
+  const call = (verb: string, payload: CommandPayload, okMsg?: string) => {
+    WBDaemon.write(verb, payload)
+      .then((reply) => {
+        if (WBFail.isError(reply)) {
+          flash(WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
+        } else if (okMsg !== undefined) flash(okMsg);
+        return null;
+      })
+      .catch(() => {
+        flash("Could not rename: the daemon did not answer.");
+      });
+  };
 
   // --- Write byte-ops (#197): the workspace-mutating seam actions go to the
   // daemon's confined `file.*` verbs; a refusal is flashed. The browser composes
   // the full rel path.
   (function wireWriteVerbs() {
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a page with no daemon door
-    const daemonBacked = () => window.WBDaemon?.write !== undefined;
-    const flash = (msg: string) => {
-      messages.flash(msg);
-    };
-    const call = (verb: string, payload: CommandPayload, okMsg?: string) => {
-      WBDaemon.write(verb, payload)
-        .then((reply) => {
-          if (WBFail.isError(reply)) {
-            flash(WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
-          } else if (okMsg !== undefined) flash(okMsg);
-          return null;
-        })
-        .catch(() => {
-          flash("Could not rename: the daemon did not answer.");
-        });
-    };
-
     // Where a write is aimed: the project, and the checkout it carries.
     type Aim = {
       repo: string;
@@ -276,7 +285,11 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     // add had to say.
     function actWorktreeCreated(d: ActionOf<"worktree-created">, { repo }: Aim) {
       void window.Alpine.store("checkouts").ensureWorktreeListing(repo, true);
-      if (d.message) flash(d.message.split("\n").map(WBFail.sentence).filter(Boolean).join(" "));
+      if (d.message) {
+        const lines = d.message.split("\n");
+        const sentences = lines.map((line) => WBFail.sentence(line));
+        flash(sentences.filter(Boolean).join(" "));
+      }
     }
 
     // The name of a new entry: the prompt dialog where the page has a shell,
@@ -355,7 +368,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
       flash(WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
       // "not found" on a delete says the ROW is the lie: re-list the parent
       // so the ghost ends up off the screen.
-      if (/not found/i.test(reason)) {
+      if (/not found/iu.test(reason)) {
         sendWindow(window, "workbench:tree-dirty", { rel: parentRel(d.path) });
       }
     }
@@ -423,7 +436,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
 
   // Dismiss the context menu on any outside interaction.
   const hideContextMenu = () => {
-    const menu = document.getElementById("ctxmenu");
+    const menu = document.querySelector<HTMLElement>("#ctxmenu");
     if (menu) menu.style.display = "none";
   };
   document.addEventListener("click", hideContextMenu);

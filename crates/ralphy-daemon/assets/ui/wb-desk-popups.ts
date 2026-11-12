@@ -29,7 +29,7 @@ export type PopupMember = {
   session?: number | null;
   rect?: Partial<Rect>;
   draft?: string;
-  claim?: string | null;
+  claim?: string | null | undefined;
 };
 
 const RECT_SIDES = ["left", "top", "width", "height"] as const;
@@ -43,15 +43,15 @@ export function isPartialRect(v: unknown): v is Partial<Rect> {
  * opened it post members to each other, and either one can be a page of
  * another build: the daemon serves the popup's page when it opens. */
 export function isPopupMember(v: unknown): v is PopupMember {
-  if (!isRecord(v) || typeof v.id !== "string") return false;
+  if (!isRecord(v) || typeof v["id"] !== "string") return false;
   return (
-    [v.kind, v.agent, v.repo, v.consoleName, v.claim].every(
+    [v["kind"], v["agent"], v["repo"], v["consoleName"], v["claim"]].every(
       (f) => f == null || typeof f === "string",
     ) &&
-    isOptionalString(v.path) &&
-    isOptionalString(v.draft) &&
-    (v.session == null || typeof v.session === "number") &&
-    (v.rect === undefined || isPartialRect(v.rect))
+    isOptionalString(v["path"]) &&
+    isOptionalString(v["draft"]) &&
+    (v["session"] == null || typeof v["session"] === "number") &&
+    (v["rect"] === undefined || isPartialRect(v["rect"]))
   );
 }
 
@@ -79,6 +79,28 @@ export type PopupRegistryDeps = {
   startBeat: () => void;
   stopBeat: () => void;
 };
+
+// A popup entry with no popup behind it yet — the shape both the boot restore
+// and an unheralded `popup-here` start from.
+function newPopupEntry(memberIds?: string[]): PopupEntry {
+  return {
+    handle: null,
+    members: [],
+    memberIds: memberIds ?? [],
+    fence: null,
+    poll: null,
+    greeted: false,
+    rescue: null,
+    // Whether the POPUP has told us its member set. Until it has, an empty
+    // `members` means "not asked yet" and the restored ids stand in; after it
+    // has, an empty one means EMPTY — the operator closed them all in there.
+    adopted: false,
+    peer: { seen: Date.now(), lost: false },
+    // Whether a silent window has already been probed: one unanswered probe
+    // is death, not one quiet window (`stillThere`).
+    probed: false,
+  };
+}
 
 export function createPopupRegistry(deps: PopupRegistryDeps) {
   const { link, startBeat, stopBeat } = deps;
@@ -127,28 +149,6 @@ export function createPopupRegistry(deps: PopupRegistryDeps) {
 
   function remove(id: string) {
     fencePopups.delete(id);
-  }
-
-  // A popup entry with no popup behind it yet — the shape both the boot restore
-  // and an unheralded `popup-here` start from.
-  function newPopupEntry(memberIds?: string[]): PopupEntry {
-    return {
-      handle: null,
-      members: [],
-      memberIds: memberIds ?? [],
-      fence: null,
-      poll: null,
-      greeted: false,
-      rescue: null,
-      // Whether the POPUP has told us its member set. Until it has, an empty
-      // `members` means "not asked yet" and the restored ids stand in; after it
-      // has, an empty one means EMPTY — the operator closed them all in there.
-      adopted: false,
-      peer: { seen: Date.now(), lost: false },
-      // Whether a silent window has already been probed: one unanswered probe
-      // is death, not one quiet window (`stillThere`).
-      probed: false,
-    };
   }
 
   // The member ids each detached fence holds, for the registry: the live

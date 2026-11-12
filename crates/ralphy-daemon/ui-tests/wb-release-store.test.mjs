@@ -31,9 +31,10 @@ test("loadRelease keeps the last view when the read fails", async () => {
   assert.equal(state.release, known);
 });
 
+const view = (latest) => ({ ...WBRelease.EMPTY, latest, severity: "notable", gap: [{}] });
+
 test("loadRelease shows a newer release again after the older one was dismissed", async () => {
   const { store: state } = storeOnly();
-  const view = (latest) => ({ ...WBRelease.EMPTY, latest, severity: "notable", gap: [{}] });
   WBRelease.read = () => Promise.resolve(view("v0.1.0-rc.26"));
   await state.loadRelease();
   state.releaseSeen = true;

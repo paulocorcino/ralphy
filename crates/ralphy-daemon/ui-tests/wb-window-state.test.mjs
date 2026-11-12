@@ -26,7 +26,7 @@ test("initWindow writes every declared field, so no window is born half-stated",
   const { FIELDS, initWindow } = load();
   const win = {};
   initWindow(win);
-  assert.deepEqual(Object.keys(win).sort(), Object.keys(FIELDS).sort());
+  assert.deepEqual(Object.keys(win).toSorted(), Object.keys(FIELDS).toSorted());
   for (const [name, value] of Object.entries(FIELDS)) {
     assert.equal(win[name], value, `${name} must be born holding its declared default`);
   }
@@ -53,7 +53,7 @@ test("initWindow applies the seed over the defaults and leaves the rest declared
 test("initWindow refuses a field the inventory does not declare", () => {
   const { initWindow } = load();
   assert.throws(() => initWindow({}, { _sessionOwner: "01ARZ3NDEKTSV4RRFFQ69G5FAY" }), {
-    message: /unknown window field _sessionOwner/,
+    message: /unknown window field _sessionOwner/u,
   });
 });
 

@@ -274,7 +274,7 @@ export function wbBoard() {
         // lacks the full open-set + `## Parent` context.
         agent: bucket.agent,
         human: bucket.human,
-        closed: bucket.closed.sort((a, b) => (b.updated || "").localeCompare(a.updated || "")),
+        closed: bucket.closed.toSorted((a, b) => (b.updated || "").localeCompare(a.updated || "")),
       };
     },
     // Per-column live count (post-filter), for the column header badge.
@@ -288,7 +288,7 @@ export function wbBoard() {
       for (const i of this.projectIssues()) for (const l of i.labels) seen.add(l);
       // Distinct members, so no tie; `<` compares UTF-16 code units, as the
       // sort without a compare function does.
-      return [...seen].sort((a, b) => (a < b ? -1 : 1));
+      return [...seen].toSorted((a, b) => (a < b ? -1 : 1));
     },
 
     // The run pill for a card (the actively-worked issue of a live run).

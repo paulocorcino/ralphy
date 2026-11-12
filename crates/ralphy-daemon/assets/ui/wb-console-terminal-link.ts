@@ -204,13 +204,11 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
     s.replayNext = false;
     // A terminal that no `session-open` of this window has written to yet.
     let fresh = s.firstConnect;
-    const request = WBSessionRoute.requestOpts(
-      connOpts,
-      WBSessionRoute.tabHolder(),
-      WBSessionRoute.canGunzip(),
-      WBSessionRoute.tabAttempt(),
-      s.shown ?? undefined,
-    );
+    const request = WBSessionRoute.requestOpts(connOpts, WBSessionRoute.tabHolder(), {
+      gzip: WBSessionRoute.canGunzip(),
+      attempt: WBSessionRoute.tabAttempt(),
+      since: s.shown ?? undefined,
+    });
     const fields = WBSessionRoute.openPayload({ ...request, link: WBSessionRoute.tabLink() });
     s.connectingSince = Date.now();
     // The channel this connect opens. A frame or a close of a channel the

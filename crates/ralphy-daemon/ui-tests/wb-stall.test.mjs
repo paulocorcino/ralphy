@@ -31,7 +31,7 @@ test("reportStall posts the stall to the daemon", async () => {
     assert.equal(init.headers["content-type"], "application/json");
     const body = JSON.parse(init.body);
     // The body the daemon reads (`fixtures/api-device-stall--report.json`).
-    assert.deepEqual(Object.keys(body).sort(), Object.keys(fixture("api-device-stall--report")).sort());
+    assert.deepEqual(Object.keys(body).toSorted(), Object.keys(fixture("api-device-stall--report")).toSorted());
     assert.equal(body.kind, "read-deadline");
     assert.equal(body.what, "GET /api/repos");
     assert.equal(body.waited_ms, 20000);

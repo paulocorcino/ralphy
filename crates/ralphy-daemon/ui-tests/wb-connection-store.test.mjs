@@ -405,7 +405,7 @@ test("with unsaved work the tab keeps the page, shows the notice and locks write
   assert.equal(t.reloads(), 0);
   assert.equal(t.store.buildSkew, true);
   assert.equal(t.store.writeLocked(), true);
-  assert.match(t.store.writeLockReason(), /older than Ralphy/);
+  assert.match(t.store.writeLockReason(), /older than Ralphy/u);
 });
 
 test("a page with no build id never reloads for a build", () => {

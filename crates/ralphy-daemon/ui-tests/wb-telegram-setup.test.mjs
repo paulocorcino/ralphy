@@ -115,13 +115,13 @@ test("the Telegram section says why it could not read the bot", async () => {
     assert.equal(s.hasBot(), false);
     assert.equal(s.error, "Could not read the Telegram bot: the daemon answered 503.");
   });
-  assert.match(section(), /type="password"[^>]*x-model="token"/);
+  assert.match(section(), /type="password"[^>]*x-model="token"/u);
 });
 
 test("every name the Telegram section's markup reads is its own", () => {
   const { scope } = loadComponent("wbTelegramSetup");
   let read = 0;
-  for (const [, attr, value] of section().matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)) {
+  for (const [, attr, value] of section().matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)) {
     if (attr === "x-data" || attr === "x-if" || attr === ":key") continue;
     for (const name of bindingNames(value)) {
       if (name.startsWith("$")) continue;

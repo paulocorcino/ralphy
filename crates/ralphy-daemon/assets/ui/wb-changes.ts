@@ -60,6 +60,15 @@ function splitPath(path: string) {
   return cut < 0 ? { name: path, dir: "" } : { name: path.slice(cut + 1), dir: path.slice(0, cut) };
 }
 
+// A grouped row is marked by ITS OWN side, not by the derived status: under
+// a "Changes" headline an `AM` path is a modification, and printing the
+// derived `A` there would assert something false about the worktree.
+const sided = (e: ChangeEntry, status: string | null | undefined) => {
+  if (status === null || status === undefined || status === "" || status === e.status) return e;
+  const { mark, cls } = marker(status);
+  return { ...e, mark, cls };
+};
+
 function fold(reply: ReplyOf<"changes.list"> | null | undefined) {
   // A non-ok reply can still carry a `changes` body (an error frame the daemon
   // built over a partial read); folding it would report a count nobody proved.
@@ -87,14 +96,6 @@ function fold(reply: ReplyOf<"changes.list"> | null | undefined) {
         dir,
       };
     });
-  // A grouped row is marked by ITS OWN side, not by the derived status: under
-  // a "Changes" headline an `AM` path is a modification, and printing the
-  // derived `A` there would assert something false about the worktree.
-  const sided = (e: ChangeEntry, status: string | null | undefined) => {
-    if (status === null || status === undefined || status === "" || status === e.status) return e;
-    const { mark, cls } = marker(status);
-    return { ...e, mark, cls };
-  };
   // Every entry lands in at least one group: an older or malformed payload
   // carrying neither side field still renders under Changes rather than
   // vanishing from a list whose badge still counts it.

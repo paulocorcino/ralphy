@@ -25,6 +25,8 @@ import { WBSecurityDialog } from "./wb-security-dialog.ts";
 import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { ConfirmAsk, ModalEntry, PromptAsk, Timer } from "./wb-shell-types.d.ts";
+import { canFocus, isTextField } from "./wb-dom-need.ts";
+import { isRecord } from "./wb-api.ts";
 
 /** What `main.ts` gives the store. */
 export type ModalsStoreDeps = {
@@ -34,12 +36,12 @@ export type ModalsStoreDeps = {
 
 // Whether the focus is on an element that takes the keys: a field, an editable
 // element or the code editor.
-function focusTakesKeys(el: HTMLElement | null) {
+function focusTakesKeys(el: Element | null) {
   return Boolean(
     el &&
     (el.tagName === "INPUT" ||
       el.tagName === "TEXTAREA" ||
-      el.isContentEditable ||
+      ("isContentEditable" in el && el.isContentEditable === true) ||
       el.closest(".monaco-editor")),
   );
 }
@@ -69,7 +71,7 @@ function blockingDialogOpen(modals: { modalOpen(path: string): boolean }) {
 // Why `name` cannot be a single directory entry, or "" when it can.
 function nameProblem(name: string) {
   if (!name) return "name is required";
-  if (/[\\/]/.test(name)) return "name cannot contain / or \\";
+  if (/[\\/]/u.test(name)) return "name cannot contain / or \\";
   return name === "." || name === ".." ? "name cannot be . or .." : "";
 }
 
@@ -126,10 +128,9 @@ export function modalsStore(_deps: ModalsStoreDeps) {
     // what a modal holds. Only its own buttons and Escape close it.
     scrim(path: string, close: () => void) {
       const isOpen = (scope: object) =>
-        path
-          .split(".")
-          .reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], scope);
+        path.split(".").reduce<unknown>((o, k) => (isRecord(o) ? o[k] : undefined), scope);
       let was = false;
+      // oxlint-disable-next-line unicorn/no-this-assignment -- Alpine binds `this` to its scope
       const self = this;
       return {
         "x-show"(this: object) {
@@ -167,7 +168,8 @@ export function modalsStore(_deps: ModalsStoreDeps) {
       return this._modalStack.some((m) => m.path === path);
     },
     modalOpened(path: string, scrimEl: Element) {
-      this._modalStack.push({ path, opener: document.activeElement as HTMLElement | null });
+      const active = document.activeElement;
+      this._modalStack.push({ path, opener: canFocus(active) ? active : null });
       // One frame later: `x-show` has flipped by then, and a modal that focuses
       // its own field on open (Branch, Prompt) has already done so.
       window.requestAnimationFrame(() => {
@@ -196,7 +198,7 @@ export function modalsStore(_deps: ModalsStoreDeps) {
       if (!window.Alpine.store("connection").authed) return true;
       if (blockingDialogOpen(this)) return true;
       if (this.modalOpen(WBReleaseDialogs.whatsNewFlag)) return true;
-      const el = document.activeElement as HTMLElement | null;
+      const el = document.activeElement;
       // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test's element has none
       if (allowTerminal && el?.closest?.(".xterm")) return false;
       return focusTakesKeys(el);
@@ -231,8 +233,8 @@ export function modalsStore(_deps: ModalsStoreDeps) {
       };
       // Focus after Alpine has painted; caret at the end, not selected.
       queueMicrotask(() => {
-        const el = document.getElementById("prompt-input") as HTMLInputElement | null;
-        if (!el) return;
+        const el = document.querySelector("#prompt-input");
+        if (!isTextField(el)) return;
         el.focus();
         el.setSelectionRange(el.value.length, el.value.length);
       });

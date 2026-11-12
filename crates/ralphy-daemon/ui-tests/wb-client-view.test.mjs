@@ -78,12 +78,13 @@ test("columns reads as a list of strings, or null", () => {
   assert.equal(load(JSON.stringify({ v: 1 })).read().columns, null, "absent is null, not undefined");
 });
 
+const readColumns = (columns) => load(JSON.stringify({ v: 1, columns })).read().columns;
+
 // Rows (ADR-0051 §8, rows amendment): a column is a list of ids; its other
 // entries drop, and a column that is neither a list nor an id drops.
 test("columns reads a grid of ids, next to the flat list stored before rows", () => {
-  const read = (columns) => load(JSON.stringify({ v: 1, columns })).read().columns;
-  assert.deepEqual(read([["a", 1, "b"], ["c"]]), [["a", "b"], ["c"]]);
-  assert.deepEqual(read(["a", ["b", "c"], 3, { x: 1 }]), ["a", ["b", "c"]]);
+  assert.deepEqual(readColumns([["a", 1, "b"], ["c"]]), [["a", "b"], ["c"]]);
+  assert.deepEqual(readColumns(["a", ["b", "c"], 3, { x: 1 }]), ["a", ["b", "c"]]);
 });
 
 test("columnDir reads right or down, anything else is null", () => {
@@ -130,23 +131,25 @@ test("a legacy command is dropped on read and on the next patch", () => {
   assert.equal(written.keys, "on", "the other fields survive");
 });
 
+const readFields = (fields) => load(JSON.stringify({ v: 1, ...fields })).read();
+
 // A record an older build wrote may hold a tab of another shape: only a tab
 // that names its file comes back, and `active` is a string or null.
 test("tabs read as the file tabs the shell stored; active as a string or null", () => {
   const tab = { project: "o/r", path: "a.md", title: "a.md", kind: "markdown", checkout: null };
-  const read = (fields) => load(JSON.stringify({ v: 1, ...fields })).read();
-  const stored = read({ tabs: [tab, { ...tab, path: 3 }, { ...tab, kind: undefined }, "a.md", null], active: "file:o/r:a.md" });
+  const stored = readFields({ tabs: [tab, { ...tab, path: 3 }, { ...tab, kind: undefined }, "a.md", null], active: "file:o/r:a.md" });
   assert.deepEqual(stored.tabs, [tab]);
   assert.equal(stored.active, "file:o/r:a.md");
-  assert.deepEqual(read({ tabs: "a.md", active: 4 }).tabs, []);
-  assert.equal(read({ active: 4 }).active, null);
+  assert.deepEqual(readFields({ tabs: "a.md", active: 4 }).tabs, []);
+  assert.equal(readFields({ active: 4 }).active, null);
 });
+
+const tabs = (consoleTabs) => load(JSON.stringify({ v: 1, consoleTabs })).read().consoleTabs;
 
 // A console tab (ADR-0037 §3d) is read with its grid. One stored before the
 // grid is a grid of its one console, with no id: the store gives it the id it
 // had. A grid of another shape drops the tab.
 test("a console tab is read with its grid, and one stored before the grid is a grid of its console", () => {
-  const tabs = (consoleTabs) => load(JSON.stringify({ v: 1, consoleTabs })).read().consoleTabs;
   assert.deepEqual(tabs([{ id: "console:a-2", deskId: "a", title: "t", grid: [["a", "b"], ["c"]] }]), [
     { id: "console:a-2", deskId: "a", title: "t", grid: [["a", "b"], ["c"]] },
   ]);
@@ -155,9 +158,10 @@ test("a console tab is read with its grid, and one stored before the grid is a g
   assert.deepEqual(tabs([{ id: "x", deskId: "a", title: "t", grid: [["a", 3]] }]), []);
 });
 
+const notify = (fields) => load(JSON.stringify({ v: 1, ...fields })).read().notify;
+
 // "Notify me in this browser" is on only when the record holds a stored `true`.
 test("the notification switch is read strictly: only a stored true is on", () => {
-  const notify = (fields) => load(JSON.stringify({ v: 1, ...fields })).read().notify;
   assert.equal(notify({ notify: true }), true);
   for (const value of [false, "true", 1, null, {}]) assert.equal(notify({ notify: value }), false, String(value));
   assert.equal(notify({}), false, "absent is off");

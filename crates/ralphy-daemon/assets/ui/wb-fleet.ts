@@ -82,7 +82,7 @@ function isPeerRef(ref: string | null | undefined) {
   const slash = value.indexOf("/");
   if (slash < 0) return false;
   const head = value.slice(0, slash);
-  return /^[0-9A-HJKMNP-TV-Z]{26}$/.test(head);
+  return /^[0-9A-HJKMNP-TV-Z]{26}$/u.test(head);
 }
 
 // Group `repos` by the daemon that owns them, attaching each peer's name and

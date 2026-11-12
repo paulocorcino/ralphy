@@ -91,7 +91,7 @@ export function wbLogin() {
     // Once the 6th digit lands: the password field if required, else submit.
     _otpAdvancePastLast(el: HTMLElement) {
       if (this.$store.connection.security.passwordSet || this.login.passwordRequired) {
-        this.$refs.loginPassword?.focus();
+        this.$refs["loginPassword"]?.focus();
       } else {
         el.closest("form")?.querySelector<HTMLElement>(".login-btn")?.focus();
       }

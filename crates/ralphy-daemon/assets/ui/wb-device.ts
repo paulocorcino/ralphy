@@ -131,8 +131,8 @@ export const WBDevice = (function () {
     };
     const dbg = gl.getExtension("WEBGL_debug_renderer_info");
     if (dbg) {
-      out.unmasked_vendor = glString(gl, dbg.UNMASKED_VENDOR_WEBGL);
-      out.unmasked_renderer = glString(gl, dbg.UNMASKED_RENDERER_WEBGL);
+      out["unmasked_vendor"] = glString(gl, dbg.UNMASKED_VENDOR_WEBGL);
+      out["unmasked_renderer"] = glString(gl, dbg.UNMASKED_RENDERER_WEBGL);
     }
     const lose = gl.getExtension("WEBGL_lose_context");
     if (lose) lose.loseContext();
@@ -328,7 +328,7 @@ export const WBDevice = (function () {
     async function send(left: number) {
       if (sent) return;
       const facts = await collect(win);
-      facts.holder = (await attempt(() => WBSessionRoute.tabHolder())) ?? null;
+      facts["holder"] = (await attempt(() => WBSessionRoute.tabHolder())) ?? null;
       const res = await win.fetch("/api/device/facts", {
         method: "POST",
         headers: { "content-type": "application/json" },

@@ -82,6 +82,61 @@ export type FenceListDeps = {
   buildFence: (f: DeskFence) => HTMLElement;
 };
 
+// Does `rect` sit whole inside the viewport at `offset`?
+function rectInView(rect: Rect, offset: Offset, viewport: Size) {
+  return (
+    rect.left >= offset.left &&
+    rect.top >= offset.top &&
+    rect.left + rect.width <= offset.left + viewport.width &&
+    rect.top + rect.height <= offset.top + viewport.height
+  );
+}
+
+// Where the operator is looking: the scroll offset and the size of the
+// viewport, 0 before the page has one.
+function workspaceView(ws: HTMLElement | null) {
+  return {
+    offset: { left: ws?.scrollLeft ?? 0, top: ws?.scrollTop ?? 0 },
+    viewport: { width: ws?.clientWidth ?? 0, height: ws?.clientHeight ?? 0 },
+  };
+}
+
+// The fence elements on the stage, by id. Indexed rather than found with an
+// attribute SELECTOR: an id is daemon data (a hand-edited `desk.toml` can
+// carry any string), and one quote in it would throw a SyntaxError out of
+// the whole restore.
+function indexFences(st: HTMLElement) {
+  const nodes = new Map<string, FenceElement>();
+  for (const el of st.querySelectorAll<FenceElement>(".fence")) nodes.set(el.dataset.fenceId, el);
+  return nodes;
+}
+
+// A fence's lock, painted: the class, the glyph, and the tile button, which is a
+// no-op on a locked fence and says so by being disabled.
+function paintFenceLock(el: HTMLElement, locked: boolean) {
+  el.classList.toggle("locked", locked);
+  const btn = el.querySelector<HTMLButtonElement>(".fence-lock");
+  if (btn) {
+    // oxlint-disable-next-line no-restricted-properties -- a fixed icon, no outside text
+    btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
+    btn.title = locked ? "Unlock this fence" : "Lock this fence in place";
+    btn.setAttribute("aria-pressed", locked ? "true" : "false");
+  }
+  const tile = el.querySelector<HTMLButtonElement>(".fence-arrange");
+  if (tile) tile.disabled = locked;
+}
+
+// One fence's count readout and its columns button.
+function paintFenceCount(el: FenceElement, s: FenceSummary, away: Record<string, string[]>) {
+  const n = away[s.id]?.length ?? s.count;
+  // Parenthesised: it trails the name field and reads as an aside to it.
+  const count = el.querySelector<HTMLElement>(".fence-count");
+  if (count) count.textContent = `(${n} console${n === 1 ? "" : "s"})`;
+  const cols = el.querySelector<HTMLButtonElement>(".fence-columns");
+  // A console in its own tab does not open as a column of its fence.
+  if (cols) cols.disabled = s.onStage === 0;
+}
+
 export function createFenceList(deps: FenceListDeps) {
   const {
     window,
@@ -149,17 +204,6 @@ export function createFenceList(deps: FenceListDeps) {
     markHeldNotes(st);
   }
 
-  // One fence's count readout and its columns button.
-  function paintFenceCount(el: FenceElement, s: FenceSummary, away: Record<string, string[]>) {
-    const n = away[s.id]?.length ?? s.count;
-    // Parenthesised: it trails the name field and reads as an aside to it.
-    const count = el.querySelector<HTMLElement>(".fence-count");
-    if (count) count.textContent = `(${n} console${n === 1 ? "" : "s"})`;
-    const cols = el.querySelector<HTMLButtonElement>(".fence-columns");
-    // A console in its own tab does not open as a column of its fence.
-    if (cols) cols.disabled = s.onStage === 0;
-  }
-
   // A console HELD by a locked fence wears the fence's lock (the class drops
   // its bands and grab cursor). Derived here with membership, from live rects.
   function markHeldWindows(st: HTMLElement) {
@@ -174,7 +218,7 @@ export function createFenceList(deps: FenceListDeps) {
   // rects while `fences` holds the shell's coordinates.
   function markHeldNotes(st: HTMLElement) {
     for (const el of OPTS.autoBoot === false ? [] : st.querySelectorAll<NoteCard>(".note-card")) {
-      const own = notes().find((n: DeskNote) => n.id === el.dataset.noteId);
+      const own = notes().find((n: DeskNote) => n.id === el.dataset["noteId"]);
       const held = own?.locked !== true && Boolean(fenceOf(fences(), restoreRect(el))?.locked);
       el.classList.toggle("held", held);
       window.WBNotes.applyLock(el, own?.locked === true || held);
@@ -243,19 +287,6 @@ export function createFenceList(deps: FenceListDeps) {
   function heldByFence(el: HTMLElement) {
     return fenceHolds(fences(), restoreRect(el), OPTS.autoBoot === false);
   }
-  // A fence's lock, painted: the class, the glyph, and the tile button, which is a
-  // no-op on a locked fence and says so by being disabled.
-  function paintFenceLock(el: HTMLElement, locked: boolean) {
-    el.classList.toggle("locked", locked);
-    const btn = el.querySelector<HTMLButtonElement>(".fence-lock");
-    if (btn) {
-      btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
-      btn.title = locked ? "Unlock this fence" : "Lock this fence in place";
-      btn.setAttribute("aria-pressed", locked ? "true" : "false");
-    }
-    const tile = el.querySelector<HTMLButtonElement>(".fence-arrange");
-    if (tile) tile.disabled = locked;
-  }
   function setFenceLock(id: string, locked: boolean) {
     saveFences(fences().map((x: DeskFence) => (x.id === id ? { ...x, locked } : x)));
     renderFences();
@@ -307,16 +338,6 @@ export function createFenceList(deps: FenceListDeps) {
     }
     settleFenceFocus(seen);
     refreshFenceChrome();
-  }
-
-  // The fence elements on the stage, by id. Indexed rather than found with an
-  // attribute SELECTOR: an id is daemon data (a hand-edited `desk.toml` can
-  // carry any string), and one quote in it would throw a SyntaxError out of
-  // the whole restore.
-  function indexFences(st: HTMLElement) {
-    const nodes = new Map<string, FenceElement>();
-    for (const el of st.querySelectorAll<FenceElement>(".fence")) nodes.set(el.dataset.fenceId, el);
-    return nodes;
   }
 
   // One record onto its element: the rect unless the fence is under a gesture,
@@ -386,15 +407,6 @@ export function createFenceList(deps: FenceListDeps) {
     return true;
   }
 
-  // Where the operator is looking: the scroll offset and the size of the
-  // viewport, 0 before the page has one.
-  function workspaceView(ws: HTMLElement | null) {
-    return {
-      offset: { left: ws?.scrollLeft ?? 0, top: ws?.scrollTop ?? 0 },
-      viewport: { width: ws?.clientWidth ?? 0, height: ws?.clientHeight ?? 0 },
-    };
-  }
-
   // The refusal said on the fence that holds the first spawn slot.
   function flashBlockingFence(offset: Offset, viewport: Size) {
     const blocked = fenceSpawnRect(offset, viewport, 0);
@@ -405,16 +417,6 @@ export function createFenceList(deps: FenceListDeps) {
       el.classList.add("fence-invalid");
       fenceFlash = { el, timer: setTimeout(clearFenceFlash, 600) };
     }
-  }
-
-  // Does `rect` sit whole inside the viewport at `offset`?
-  function rectInView(rect: Rect, offset: Offset, viewport: Size) {
-    return (
-      rect.left >= offset.left &&
-      rect.top >= offset.top &&
-      rect.left + rect.width <= offset.left + viewport.width &&
-      rect.top + rect.height <= offset.top + viewport.height
-    );
   }
 
   function renameFence(id: string, name: string | null | undefined) {

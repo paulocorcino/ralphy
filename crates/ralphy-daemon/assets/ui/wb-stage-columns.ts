@@ -74,6 +74,31 @@ export type StageColumnsDeps = {
   tearDownMember: (win: ConsoleWin, reason: DetachReason) => void;
 };
 
+// A column's place in the grid, as the CSS variables its box is drawn from.
+// An older grid names no row: one row, at the top.
+function paintColumnSlot(
+  win: ConsoleWin,
+  p: Omit<Painted, "row" | "rows"> & { row?: number; rows?: number },
+) {
+  win.classList.add("column");
+  win.style.setProperty("--col-index", String(p.index));
+  win.style.setProperty("--col-count", String(p.count));
+  win.style.setProperty("--row-index", String(p.row ?? 0));
+  win.style.setProperty("--row-count", String(p.rows ?? 1));
+}
+
+// A phone has no hover to show a title, so the icon changes with it.
+function paintColumnButton(btn: HTMLButtonElement, narrow: boolean) {
+  const label = narrow ? "Switch" : "Slice";
+  if (btn.getAttribute("aria-label") === label) return;
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+  // oxlint-disable-next-line no-restricted-properties -- a fixed icon, no outside text
+  btn.innerHTML = narrow
+    ? '<i class="bi bi-arrow-down-up"></i>'
+    : '<i class="bi bi-arrows-expand-vertical"></i>';
+}
+
 export function createStageColumns(deps: StageColumnsDeps) {
   const {
     OPTS,
@@ -114,17 +139,6 @@ export function createStageColumns(deps: StageColumnsDeps) {
     return { viewport: workspace()?.clientWidth ?? 0 };
   }
 
-  // A phone has no hover to show a title, so the icon changes with it.
-  function paintColumnButton(btn: HTMLButtonElement, narrow: boolean) {
-    const label = narrow ? "Switch" : "Slice";
-    if (btn.getAttribute("aria-label") === label) return;
-    btn.title = label;
-    btn.setAttribute("aria-label", label);
-    btn.innerHTML = narrow
-      ? '<i class="bi bi-arrow-down-up"></i>'
-      : '<i class="bi bi-arrows-expand-vertical"></i>';
-  }
-
   function clearColumn(win: ConsoleWin) {
     win.classList.remove("column");
     win.style.removeProperty("--col-index");
@@ -139,19 +153,6 @@ export function createStageColumns(deps: StageColumnsDeps) {
     try {
       win._term?.fit.fit();
     } catch {}
-  }
-
-  // A column's place in the grid, as the CSS variables its box is drawn from.
-  // An older grid names no row: one row, at the top.
-  function paintColumnSlot(
-    win: ConsoleWin,
-    p: Omit<Painted, "row" | "rows"> & { row?: number; rows?: number },
-  ) {
-    win.classList.add("column");
-    win.style.setProperty("--col-index", String(p.index));
-    win.style.setProperty("--col-count", String(p.count));
-    win.style.setProperty("--row-index", String(p.row ?? 0));
-    win.style.setProperty("--row-count", String(p.rows ?? 1));
   }
 
   // Paint one console of `grid` and bring its maximize in step. Answers the

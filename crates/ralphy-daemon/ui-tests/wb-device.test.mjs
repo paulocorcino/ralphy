@@ -82,7 +82,7 @@ test("report: a 401 before login waits for the login action, then sends once", a
   assert.equal(bodies.length, 1, "another action sends nothing");
   onAction({ detail: { action: "login" } });
   await until(() => bodies.length === 2, "the send after login");
-  assert.match(bodies[0].holder, /^[A-Za-z0-9_-]{1,64}$/, "the facts name the tab's holder");
+  assert.match(bodies[0].holder, /^[A-Za-z0-9_-]{1,64}$/u, "the facts name the tab's holder");
   assert.equal(bodies[1].holder, bodies[0].holder);
   await settle();
   onAction({ detail: { action: "login" } });
@@ -140,7 +140,7 @@ test("report: a 409 before the device cookie sends again later, a few times at m
 test("collect: the report has the fields of the shared request body", async () => {
   const body = fixture("api-device-facts--report");
   const facts = { ...(await load().collect({})), holder: null };
-  assert.deepEqual(Object.keys(facts).sort(), Object.keys(body).sort());
-  assert.deepEqual(Object.keys(facts.media).sort(), Object.keys(body.media).sort());
-  assert.deepEqual(Object.keys(facts.engine_signals).sort(), Object.keys(body.engine_signals).sort());
+  assert.deepEqual(Object.keys(facts).toSorted(), Object.keys(body).toSorted());
+  assert.deepEqual(Object.keys(facts.media).toSorted(), Object.keys(body.media).toSorted());
+  assert.deepEqual(Object.keys(facts.engine_signals).toSorted(), Object.keys(body.engine_signals).toSorted());
 });

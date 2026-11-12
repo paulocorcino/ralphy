@@ -44,7 +44,7 @@ export function createConsole(
   opts: ConsoleOpts,
 ) {
   // The viewport (the scrolling box) and the stage (the sized plane inside it).
-  const workspace = () => document.getElementById("workspace");
+  const workspace = () => document.querySelector<HTMLElement>("#workspace");
   // Defensive about the DOM ITSELF, not just about the element: the ui-tests
   // evaluate this module against a document that answers nothing (and a page
   // ingests its first desk before the stage exists), and every caller already
@@ -57,7 +57,7 @@ export function createConsole(
   // the stage's layout reads the stage only.
   const tabsPane = () =>
     typeof document.getElementById === "function"
-      ? document.getElementById("console-tabs-pane")
+      ? document.querySelector<HTMLElement>("#console-tabs-pane")
       : null;
   const pageWindows = () =>
     [stage(), tabsPane()].flatMap((el) =>

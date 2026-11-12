@@ -4,6 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createNotes } from "../assets/ui/wb-notes.ts";
+import { idLookups } from "./fake-document.mjs";
 
 // A stage the module can read: `list()` walks the LIVE cards, because the
 // title is the card's text and not the desk's. The fake is
@@ -16,7 +17,7 @@ function withCards(cards, records, fences) {
     fenceRecords: () => fences || [],
   };
   const document = {
-    getElementById: (id) => (id === "stage" ? { querySelectorAll: () => cards } : null),
+    ...idLookups((id) => (id === "stage" ? { querySelectorAll: () => cards } : null)),
   };
   window.WBNotes = createNotes(window, document, { console: stub });
   return window.WBNotes;
@@ -87,7 +88,7 @@ test("the map says which card is on top, and which is in a detached popup", () =
   // a missing node.
   const cards = [{ dataset: { noteId: "away" } }];
   const document = {
-    getElementById: (id) => (id === "stage" ? { querySelectorAll: () => cards } : null),
+    ...idLookups((id) => (id === "stage" ? { querySelectorAll: () => cards } : null)),
   };
   window.WBNotes = createNotes(window, document, { console: stub });
   const rows = window.WBNotes.list();
@@ -151,8 +152,7 @@ test("a card that handed its draft to a popup does not write the note", async ()
     },
   };
   const document = {
-    getElementById: (id) => (id === "stage" ? { querySelectorAll: () => cards } : null),
-    querySelector: () => null,
+    ...idLookups((id) => (id === "stage" ? { querySelectorAll: () => cards } : null)),
   };
   window.WBNotes = createNotes(window, document, {
     console: { notes: () => [record], fenceRecords: () => [], saveNotes() {} },
@@ -184,14 +184,14 @@ test("a keystroke the editor holds but has not reported yet counts as unsaved", 
   const window = {};
   const stub = { notes: () => [], fenceRecords: () => [] };
   const document = {
-    getElementById: (id) => (id === "stage" ? { querySelectorAll: () => [card] } : null),
+    ...idLookups((id) => (id === "stage" ? { querySelectorAll: () => [card] } : null)),
   };
   window.WBNotes = createNotes(window, document, { console: stub });
   assert.equal(window.WBNotes.anyDirty(), true);
   // NEGATIVE CONTROL: an editor that holds the saved text is clean.
   const clean = { ...card, _noteDirty: false, _noteMarkdown: "saved\n", _noteEditor: { getMarkdown: () => "saved\n" } };
   const w2 = {};
-  const d2 = { getElementById: (id) => (id === "stage" ? { querySelectorAll: () => [clean] } : null) };
+  const d2 = { ...idLookups((id) => (id === "stage" ? { querySelectorAll: () => [clean] } : null)) };
   w2.WBNotes = createNotes(w2, d2, { console: stub });
   assert.equal(w2.WBNotes.anyDirty(), false);
 });
@@ -204,7 +204,7 @@ test("a card is refused at the cap, with a toast and no write", () => {
   const toasts = [];
   const window = {};
   const stub = { notes: () => records, fenceRecords: () => [], saveNotes: (next) => saved.push(next) };
-  const document = { getElementById: () => null };
+  const document = { ...idLookups(() => null) };
   window.WBNotes = createNotes(window, document, { console: stub, messages: { toast: (t) => toasts.push(t.text) } });
   assert.equal(window.WBNotes.create({ repo: "r" }), null);
   assert.equal(window.WBNotes.openFromExplorer({ repo: "r", path: "new.note" }), null);
@@ -229,7 +229,7 @@ function fakeEl(tag) {
     },
     set className(v) {
       classes.clear();
-      for (const c of String(v).split(/\s+/).filter(Boolean)) classes.add(c);
+      for (const c of String(v).split(/\s+/u).filter(Boolean)) classes.add(c);
     },
     classList: {
       add: (...cs) => cs.forEach((c) => classes.add(c)),
@@ -259,7 +259,7 @@ function fakeEl(tag) {
       el.parent = null;
     },
     querySelectorAll(sel) {
-      const cls = sel.replace(/^\./, "");
+      const cls = sel.replace(/^\./u, "");
       const out = [];
       const walk = (n) => {
         for (const k of n.children) {
@@ -303,9 +303,8 @@ function onStage({ records, WBDaemon = {} }) {
     },
   };
   const document = {
-    getElementById: (id) => (id === "stage" ? stage : null),
+    ...idLookups((id) => (id === "stage" ? stage : null)),
     createElement: (tag) => fakeEl(tag),
-    querySelector: () => null,
     addEventListener() {},
     events: [],
     dispatchEvent(ev) {
@@ -433,7 +432,7 @@ test("a note whose file cannot be read stays on the stage and says why beside it
   for (let i = 0; i < 5; i++) await new Promise((r) => { setImmediate(r); });
   const card = notes.cardEl("m");
   assert.equal(card.classList.contains("missing"), true);
-  assert.match(card.querySelector(".note-state").title, /^gone\.note — /);
+  assert.match(card.querySelector(".note-state").title, /^gone\.note — /u);
   assert.deepEqual(document.events, []);
 });
 

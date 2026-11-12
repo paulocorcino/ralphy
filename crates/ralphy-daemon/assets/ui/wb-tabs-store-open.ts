@@ -29,19 +29,22 @@ type OpenTabs = {
   ): Promise<TabBody>;
 };
 
+/** The file one `fetchContent` reads: where it is, its kind, and its pinned checkout. */
+type FileToRead = {
+  project: string;
+  path: string;
+  ftype: string;
+  checkout: string | null | undefined;
+};
+
 // `file.read`, resolving to what the pane opens with: `{content, encoding,
 // bom}` (ADR-0036 amendment 2026-09-22), or `{refused: reason}` when the
 // daemon served nothing for a reason the pane can state (`binary`, `too
 // large`, …) — the tab KEEPS its place and says so — or `null` when there
 // is nothing to hold a tab open for (`not found`, a transport drop): the
 // tab closes. `checkout` is the tab's PINNED checkout (#406).
-export function fetchContent(
-  store: OpenTabs,
-  project: string,
-  path: string,
-  ftype: string,
-  checkout: string | null | undefined,
-): Promise<TabBody> {
+export function fetchContent(store: OpenTabs, file: FileToRead): Promise<TabBody> {
+  const { project, path, ftype, checkout } = file;
   const refuse = (reason: string) => {
     window.WB.emit("open-refused", { project, path, reason });
     window.Alpine.store("modals").flash(
@@ -119,7 +122,7 @@ export function openTab(
   { project, path, title, ftype, content, fragment, find, checkout, encoding, bom }: TabOpen,
 ) {
   const ck =
-    checkout !== undefined ? checkout : window.Alpine.store("checkouts").checkoutOf(project);
+    checkout === undefined ? window.Alpine.store("checkouts").checkoutOf(project) : checkout;
   const id = fileTabId(project, path, ck);
   if (store.tabs.some((t) => t.id === id)) {
     store.activate(id);
@@ -143,9 +146,9 @@ export function openTab(
   void window.Alpine.nextTick(() => {
     // A re-attach passes bytes in; a fresh open reads `file.read`.
     const bytes: Promise<TabBody> =
-      content != null
-        ? Promise.resolve({ content, encoding, bom })
-        : store.fetchContent(project, path, ftype, ck);
+      content == null
+        ? store.fetchContent(project, path, ftype, ck)
+        : Promise.resolve({ content, encoding, bom });
     void bytes.then((body) => {
       if (body == null) return null; // nothing to show: fetchContent closed the tab
       WBViewer.open({

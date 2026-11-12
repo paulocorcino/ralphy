@@ -135,9 +135,12 @@ export function tileIntoRect(
 // minimum size and the stage `bounds` yield a new rect. East/south move the
 // far edge; west/north move `left`/`top` and derive the size, so the OPPOSITE
 // edge stays put and the window does not slide under the cursor.
+/** The smallest size a resize leaves, and the stage size it stays inside. */
+export type ResizeLimits = { min: Size; bounds: Size };
 export const RESIZE_MIN = { width: 240, height: 150 }; // matches .session-window's CSS minimums
 
-export function resizeRect(dir: string, rect: Rect, delta: Delta, min: Size, bounds: Size) {
+export function resizeRect(dir: string, rect: Rect, delta: Delta, limits: ResizeLimits) {
+  const { min, bounds } = limits;
   let { left, top, width, height } = rect;
   const right = rect.left + rect.width;
   const bottom = rect.top + rect.height;

@@ -139,7 +139,7 @@ function mermaidWord(raw: string) {
     .replaceAll(/\s+/gu, "")
     // One `_` per UTF-16 unit, as the pattern had no `u` flag.
     .replaceAll(/[^A-Za-z0-9_()[\]-]/gu, (c) => "_".repeat(c.length));
-  return /^[A-Za-z_]/.test(word) ? word : `_${word}`;
+  return /^[A-Za-z_]/u.test(word) ? word : `_${word}`;
 }
 
 function entityLines(id: string, table: DbmlTable) {

@@ -1,5 +1,6 @@
 // The encoding pill and its menu, on a file pane that has bytes.
 import { WBFail } from "./wb-fail.ts";
+import { isNode, targetClosest } from "./wb-dom-need.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { ViewerRecord } from "./wb-file-viewer.ts";
 import type { ReopenRefused, ViewerSave } from "./wb-viewer-save.ts";
@@ -36,8 +37,8 @@ const ENCODINGS: Encoding[] = [
 // was read and will be written back.
 export function encodingLabel(name: string | null | undefined, bom: boolean) {
   let text = (name ?? "") || "UTF-8";
-  text = text.replace(/^utf-16(le|be)$/i, (_, e: string) => `UTF-16 ${e.toUpperCase()}`);
-  text = text.replace(/^windows-/i, "Windows-");
+  text = text.replace(/^utf-16(le|be)$/iu, (_, e: string) => `UTF-16 ${e.toUpperCase()}`);
+  text = text.replace(/^windows-/iu, "Windows-");
   return bom ? `${text} BOM` : text;
 }
 
@@ -57,7 +58,7 @@ export function refreshEncodingPill(rec: ViewerRecord) {
 
 function markCurrentEncoding(rec: ViewerRecord, menu: HTMLElement) {
   for (const item of menu.querySelectorAll<HTMLElement>(".enc-item")) {
-    const i = Number(item.dataset.reopen ?? item.dataset.savewith);
+    const i = Number(item.dataset["reopen"] ?? item.dataset["savewith"]);
     const row = ENCODINGS[i];
     if (!row) continue;
     const [, name, bom] = row;
@@ -79,6 +80,12 @@ export type ViewerEncodingDeps = {
 
 export type ViewerEncoding = ReturnType<typeof createViewerEncoding>;
 
+const group = (head: string, act: string) =>
+  `<div class="dropdown-head">${head}</div>` +
+  ENCODINGS.map(
+    ([label], i) => `<button class="enc-item" data-${act}="${i}"><span>${label}</span></button>`,
+  ).join("");
+
 export function createViewerEncoding(deps: ViewerEncodingDeps) {
   const { window, document, messages, saver, reopenRefused } = deps;
   const { readWith, showSaveError, applyFresh, save } = saver;
@@ -89,12 +96,6 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
     const menu = document.createElement("div");
     menu.className = "enc-menu";
     menu.style.display = "none";
-    const group = (head: string, act: string) =>
-      `<div class="dropdown-head">${head}</div>` +
-      ENCODINGS.map(
-        ([label], i) =>
-          `<button class="enc-item" data-${act}="${i}"><span>${label}</span></button>`,
-      ).join("");
     menu.innerHTML = group("Reopen with", "reopen") + group("Save with", "savewith");
     el.append(menu);
     rec.encMenu = menu;
@@ -104,12 +105,12 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
       document.removeEventListener("keydown", onKey, true);
     };
     const onOutside = (ev: MouseEvent) => {
-      if (!menu.contains(ev.target as Node) && ev.target !== btn) close();
+      if (!(isNode(ev.target) && menu.contains(ev.target)) && ev.target !== btn) close();
     };
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key === "Escape") close();
     };
-    btn.onclick = (ev: MouseEvent) => {
+    btn.addEventListener("click", (ev: MouseEvent) => {
       ev.stopPropagation();
       if (menu.style.display !== "none") {
         close();
@@ -119,18 +120,17 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
       menu.style.display = "";
       document.addEventListener("click", onOutside, true);
       document.addEventListener("keydown", onKey, true);
-    };
-    menu.onclick = (ev: MouseEvent) => {
-      // oxlint-disable-next-line typescript/no-unnecessary-condition -- a text node has no closest
-      const item = (ev.target as Element).closest?.<HTMLElement>(".enc-item");
+    });
+    menu.addEventListener("click", (ev: MouseEvent) => {
+      const item = targetClosest(ev, ".enc-item");
       if (!item) return;
       ev.stopPropagation();
       close();
-      const encoding = ENCODINGS[Number(item.dataset.reopen ?? item.dataset.savewith)];
+      const encoding = ENCODINGS[Number(item.dataset["reopen"] ?? item.dataset["savewith"])];
       if (!encoding) return;
-      if (item.dataset.reopen != null) reopenWith(rec, encoding);
-      else if (item.dataset.savewith != null) saveWith(rec, encoding);
-    };
+      if (item.dataset["reopen"] != null) reopenWith(rec, encoding);
+      else if (item.dataset["savewith"] != null) saveWith(rec, encoding);
+    });
   }
 
   // Reopen: the same bytes, decoded as `name`. Unsaved edits would be lost

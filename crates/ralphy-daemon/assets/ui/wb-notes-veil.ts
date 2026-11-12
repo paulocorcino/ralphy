@@ -26,15 +26,15 @@ function markedTitle(shown: boolean) {
   return shown ? "Hide this note again" : "Show this note";
 }
 
+// Is this card showing nothing RIGHT NOW? The mark is the file's and the
+// reveal is the session's; a card is veiled when it carries the first and
+// has not been given the second.
+function veiledNow(el: NoteCard) {
+  return veiledOf(el._noteMarkdown) && !el._noteRevealed;
+}
+
 export function createNoteVeil(deps: NoteVeilDeps) {
   const { document, recordOf, loadInto, syncFromEditor, markDirty, flush } = deps;
-
-  // Is this card showing nothing RIGHT NOW? The mark is the file's and the
-  // reveal is the session's; a card is veiled when it carries the first and
-  // has not been given the second.
-  function veiledNow(el: NoteCard) {
-    return veiledOf(el._noteMarkdown) && !el._noteRevealed;
-  }
 
   // What the body holds instead of an editor. Says what it is and what opens
   // it — a card that is simply blank reads as one that failed to load.
@@ -64,7 +64,7 @@ export function createNoteVeil(deps: NoteVeilDeps) {
     const shown = marked && el._noteRevealed;
     const hides = !marked || shown;
     btn.innerHTML = hides ? '<i class="bi bi-eye-slash"></i>' : '<i class="bi bi-eye"></i>';
-    btn.title = !marked ? "Hide this note" : markedTitle(shown);
+    btn.title = marked ? markedTitle(shown) : "Hide this note";
     el.classList.toggle("veiled", veiledNow(el));
   }
 
@@ -72,7 +72,7 @@ export function createNoteVeil(deps: NoteVeilDeps) {
   // file says, so a note shown once is veiled again on the next open.
   function toggleReveal(el: NoteCard) {
     if (!veiledOf(el._noteMarkdown)) return;
-    const record = recordOf(el.dataset.noteId);
+    const record = recordOf(el.dataset["noteId"]);
     if (!record) return;
     if (el._noteRevealed) {
       // Away first, THEN the teardown: `loadInto` reads the file again, and
@@ -98,7 +98,7 @@ export function createNoteVeil(deps: NoteVeilDeps) {
     // So the file is read back FIRST and the unmark rides the load out, the
     // same door `toggleReveal` opens.
     if (!marked && veiledNow(el)) {
-      const record = recordOf(el.dataset.noteId);
+      const record = recordOf(el.dataset["noteId"]);
       if (!record) return;
       el._noteRevealed = true;
       void loadInto(el, record).then(() => {
@@ -117,7 +117,7 @@ export function createNoteVeil(deps: NoteVeilDeps) {
     // The write lands first; only then does the body go, or the flush would
     // find an editor that had already been taken away from under it.
     void flush(el).then(() => {
-      const record = recordOf(el.dataset.noteId);
+      const record = recordOf(el.dataset["noteId"]);
       if (record) void loadInto(el, record);
       return null;
     });

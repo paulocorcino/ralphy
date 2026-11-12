@@ -377,7 +377,7 @@ test("verbLockTitle states each verb's OWN description when nothing holds the lo
   for (const verb of ["run", "triage", "push"]) {
     const title = wb.verbLockTitle(verb, "");
     assert.equal(title, wb.VERB_TITLE[verb], verb);
-    assert.ok(!/lock/i.test(title), `an unlocked verb must not claim a lock: ${title}`);
+    assert.ok(!/lock/iu.test(title), `an unlocked verb must not claim a lock: ${title}`);
   }
   assert.equal(new Set(["run", "triage", "push"].map((v) => wb.verbLockTitle(v, ""))).size, 3);
 });

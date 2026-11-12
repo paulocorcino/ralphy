@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createStack, createGestures } from "../assets/ui/wb-stage-stack.ts";
 import { createConsole } from "../assets/ui/wb-console.ts";
+import { idLookups } from "./fake-document.mjs";
 
 // A surface on the plane: a console window or a note card. `style.zIndex`
 // keeps what was written, as the fold reads it back with `parseInt`.
@@ -21,17 +22,18 @@ function surface(kind) {
   };
 }
 
+const matches = (el, part) => part.split(".").filter(Boolean).every((c) => el.classList.contains(c));
+
 // A document whose `#workspace` answers the two selectors the stack uses:
 // `.a, .b` and `.a.focused, .b.focused`.
 function page(surfaces) {
-  const matches = (el, part) => part.split(".").filter(Boolean).every((c) => el.classList.contains(c));
   const workspace = {
     querySelectorAll: (sel) => surfaces.filter((el) => sel.split(",").some((p) => matches(el, p.trim()))),
   };
   return {
     readyState: "loading",
     addEventListener() {},
-    getElementById: (id) => (id === "workspace" ? workspace : null),
+    ...idLookups((id) => (id === "workspace" ? workspace : null)),
   };
 }
 

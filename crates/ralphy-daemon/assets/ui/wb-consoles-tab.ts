@@ -157,13 +157,13 @@ export function wbColumns() {
         raise: shouldRaise(opts, moved),
         persist: true,
       });
-      refocusAfterPaint(
-        this.$store.tabs.active === "consoles",
-        this.columnIds(),
+      refocusAfterPaint({
+        tabActive: this.$store.tabs.active === "consoles",
+        columnIds: this.columnIds(),
         ids,
         before,
         moved,
-      );
+      });
     },
     // A fence detached to a popup takes its consoles out of the columns.
     leaveColumns(ids: string[]) {
@@ -225,7 +225,7 @@ export function wbColumns() {
       this.columnFilter = "";
       this.closeMenus();
       this.columnMenu = !was;
-      if (this.columnMenu) void this.$nextTick(() => this.$refs.columnFilter?.focus());
+      if (this.columnMenu) void this.$nextTick(() => this.$refs["columnFilter"]?.focus());
     },
     columnFilterShown() {
       return this.columnGroups.reduce((n, g) => n + g.rows.length, 0) >= WBColumns.FILTER_MIN;
@@ -273,7 +273,7 @@ export function wbColumns() {
       const from = this.columnFrom;
       if (from === null || from === "") return;
       const { tab, grid } = this.menuGrid(from);
-      const out = WBColumns.open(grid, from, id, this.columnCap(), this.columnDir);
+      const out = WBColumns.open(grid, from, id, { cap: this.columnCap(), dir: this.columnDir });
       if (!out.ok) {
         if (out.reason !== null && out.reason !== "") this.$store.modals.flash(out.reason);
         return;

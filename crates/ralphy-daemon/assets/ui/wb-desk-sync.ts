@@ -40,6 +40,12 @@ type CheckoutChange = Extract<DeskChange, { op: "checkout" | "checkout-clear" }>
 type CreateChange = Extract<DeskChange, { op: "create" }>;
 type SetChange = Extract<DeskChange, { op: "set" }>;
 
+// Absent, `null` and `false` are one value on the daemon (an `Option` or a
+// `bool` that is not serialised), so they are one value here.
+const none = (v: FieldValue) => v == null || v === false;
+
+const copyList = <T>(v: T[] | undefined) => (Array.isArray(v) ? v.slice() : []);
+
 export const WBDeskSync = (function () {
   // The record types; each lives in the collection named by its plural.
   const TYPES = new Set(["window", "fence", "note"]);
@@ -51,19 +57,15 @@ export const WBDeskSync = (function () {
   // A served desk as the four collections, each a fresh array: a page never
   // mutates what the daemon sent.
   function deskOf(payload: ServedDesk): DeskView {
-    const list = <T>(v: T[] | undefined) => (Array.isArray(v) ? v.slice() : []);
     const map = payload?.checkouts;
     return {
-      windows: list(payload?.windows),
-      fences: list(payload?.fences),
-      notes: list(payload?.notes),
+      windows: copyList(payload?.windows),
+      fences: copyList(payload?.fences),
+      notes: copyList(payload?.notes),
       checkouts: map && typeof map === "object" && !Array.isArray(map) ? { ...map } : {},
     };
   }
 
-  // Absent, `null` and `false` are one value on the daemon (an `Option` or a
-  // `bool` that is not serialised), so they are one value here.
-  const none = (v: FieldValue) => v == null || v === false;
   function same(a: FieldValue, b: FieldValue) {
     if (none(a) || none(b)) return none(a) && none(b);
     if (typeof a === "object" || typeof b === "object") {

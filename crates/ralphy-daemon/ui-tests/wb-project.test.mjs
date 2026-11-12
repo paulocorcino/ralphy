@@ -294,11 +294,12 @@ test("checkoutAfterListing drops the selection when the listing no longer carrie
   assert.equal(wb.checkoutAfterListing(null, { primary: "p", worktrees: [{ name: "wt-a" }] }), null);
 });
 
+const s = (state) => ({ agent_state: state ? { state, since: "t" } : undefined });
+
 // ADR-0059: the many-sessions fold. `waiting` outranks everything (the agent
 // is asking), `working` the rest, `unknown` beats `done`; rows without a
 // state say nothing; no state at all is `null`.
 test("agentStateOf ranks waiting over working over unknown over done", () => {
-  const s = (state) => ({ agent_state: state ? { state, since: "t" } : undefined });
   assert.equal(wb.agentStateOf([]), null);
   assert.equal(wb.agentStateOf([s(null), { agent: "console" }]), null);
   assert.equal(wb.agentStateOf([s("done")]), "done");

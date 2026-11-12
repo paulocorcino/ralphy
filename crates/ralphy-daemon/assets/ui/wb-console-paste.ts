@@ -79,9 +79,10 @@ export function wirePaste(deps: PasteDeps) {
     reader.onerror = () => {
       term.write("\r\n[paste refused — unreadable]\r\n");
     };
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- the ui-tests' fake lacks it
     reader.onload = () => {
       const base64 = (typeof reader.result === "string" ? reader.result : "").replace(
-        /^data:[^,]*,/,
+        /^data:[^,]*,/u,
         "",
       );
       daemon

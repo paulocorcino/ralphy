@@ -52,6 +52,16 @@ export type NotesDeps = {
   gestures: Gestures | null;
 };
 
+// The cards on the stage, by id. `buildCard` sets every card's `data-note-id`.
+function cardNodes(st: HTMLElement): CardNodes {
+  const nodes: CardNodes = new Map();
+  for (const el of st.querySelectorAll<NoteCard>(".note-card")) {
+    const id = el.dataset["noteId"];
+    if (id !== undefined) nodes.set(id, el);
+  }
+  return nodes;
+}
+
 export function createNotes(window: NotesWindow, document: Document, deps: NotesDeps) {
   const consoleHost = deps.console;
   const messages = deps.messages;
@@ -60,7 +70,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // ---- the card ----------------------------------------------------------------
 
   function stage() {
-    return document.getElementById("stage");
+    return document.querySelector<HTMLElement>("#stage");
   }
 
   function cardEl(id: string | null | undefined) {
@@ -69,7 +79,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     // Indexed, not selected: an id is daemon data and one quote in it would
     // throw a SyntaxError out of the whole render (`renderFences`' lesson).
     for (const el of st.querySelectorAll<NoteCard>(".note-card")) {
-      if (el.dataset.noteId === id) return el;
+      if (el.dataset["noteId"] === id) return el;
     }
     return null;
   }
@@ -103,7 +113,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // the whole set, so a fence carrying six cards uploads once.
   function persistCards(els: NoteCard | NoteCard[]) {
     const list = Array.isArray(els) ? els : [els];
-    const moved = new Map(list.filter(Boolean).map((el) => [el.dataset.noteId, rectOf(el)]));
+    const moved = new Map(list.filter(Boolean).map((el) => [el.dataset["noteId"], rectOf(el)]));
     if (moved.size === 0) return;
     const next = (consoleHost?.notes() ?? []).map((n) => {
       const rect = moved.get(n.id);
@@ -115,6 +125,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // The card's chrome for one record. Mirrors `buildFence`'s construction
   // order, including its hit-test rule; `assembleCard` does the rest.
   function buildCard(record: NoteSource) {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- assembleCard sets its fields
     const el = document.createElement("div") as HTMLElement as NoteCard;
     return assembleCard(el, record);
   }
@@ -330,15 +341,6 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
       paint(el, record, fences);
     }
     dropUnseen(nodes, seen);
-  }
-
-  // The cards on the stage, by id. `buildCard` sets every card's `data-note-id`.
-  function cardNodes(st: HTMLElement): CardNodes {
-    const nodes: CardNodes = new Map();
-    for (const el of st.querySelectorAll<NoteCard>(".note-card")) {
-      nodes.set(el.dataset.noteId as string, el);
-    }
-    return nodes;
   }
 
   // Is this record's card this window's to show? Not when its fence is in a

@@ -148,11 +148,11 @@ test("the plugin never throws and never prints", async () => {
 test("the plugin imports only the file system module", () => {
   const source = readFileSync(PLUGIN, "utf8");
   const specifiers = [
-    ...source.matchAll(/\bimport\s+(?:[^"'`;]*?\s+from\s+)?["'`]([^"'`]+)["'`]/g),
-    ...source.matchAll(/\bimport\s*\(\s*["'`]([^"'`]+)["'`]/g),
-    ...source.matchAll(/\brequire\s*\(\s*["'`]([^"'`]+)["'`]/g),
+    ...source.matchAll(/\bimport\s+(?:[^"'`;]*?\s+from\s+)?["'`]([^"'`]+)["'`]/gu),
+    ...source.matchAll(/\bimport\s*\(\s*["'`]([^"'`]+)["'`]/gu),
+    ...source.matchAll(/\brequire\s*\(\s*["'`]([^"'`]+)["'`]/gu),
   ].map((m) => m[1]);
   assert.deepEqual(specifiers, ["node:fs"]);
-  assert.equal(/\bimport\s*\(/.test(source), false, "no dynamic import");
-  assert.equal(/\brequire\s*\(/.test(source), false, "no require");
+  assert.equal(/\bimport\s*\(/u.test(source), false, "no dynamic import");
+  assert.equal(/\brequire\s*\(/u.test(source), false, "no require");
 });

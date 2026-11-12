@@ -4,6 +4,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { decorateZoomable, openZoom, wireDiagramZoom } from "../assets/ui/wb-zoom-overlay.ts";
 
+// An element, then each of its parents up to the root.
+function* upFrom(el) {
+  for (let at = el; at; at = at.parentElement) yield at;
+}
+
 class FakeEl {
   constructor(doc, tag, props = {}) {
     this.ownerDocument = doc;
@@ -21,19 +26,19 @@ class FakeEl {
     Object.assign(this, props);
   }
   get classes() {
-    return this.className.split(/\s+/).filter(Boolean);
+    return this.className.split(/\s+/u).filter(Boolean);
   }
   matches(sel) {
     return sel.split(",").some((part) => {
       const s = part.trim();
       if (s.startsWith(".")) return this.classes.includes(s.slice(1));
-      const data = s.match(/^\[data-zoom(?:="(.*)")?\]$/);
+      const data = s.match(/^\[data-zoom(?:="(.*)")?\]$/u);
       if (data) return this.dataset.zoom !== undefined && (data[1] === undefined || this.dataset.zoom === data[1]);
       return this.tag === s;
     });
   }
   closest(sel) {
-    for (let el = this; el; el = el.parentElement) if (el.matches(sel)) return el;
+    for (const el of upFrom(this)) if (el.matches(sel)) return el;
     return null;
   }
   querySelectorAll(sel) {
@@ -95,7 +100,7 @@ class FakeEl {
     const event = { type, target: this, defaultPrevented: false, stopped: false, ...ev };
     event.preventDefault = () => (event.defaultPrevented = true);
     event.stopPropagation = () => (event.stopped = true);
-    for (let el = this; el; el = el.parentElement) {
+    for (const el of upFrom(this)) {
       for (const fn of el.listeners[type] ?? []) fn(event);
       if (event.stopped) break;
     }
@@ -213,7 +218,7 @@ test("Escape closes the view, stops there, and gives the focus back to the butto
 });
 
 const stageOf = (overlay) => overlay.querySelector(".zoom-stage");
-const scaleOf = (overlay) => Number(/scale\(([\d.]+)\)/.exec(stageOf(overlay).style.transform)[1]);
+const scaleOf = (overlay) => Number(/scale\(([\d.]+)\)/u.exec(stageOf(overlay).style.transform)[1]);
 
 test("the view opens fitted, and the + and - keys zoom around its middle", () => {
   const doc = makeDocument();

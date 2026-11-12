@@ -232,7 +232,7 @@ type RelaunchRecord = {
   repo?: string | null;
   kind?: string | null;
   agent?: string | null;
-  checkout?: string | null;
+  checkout?: string | null | undefined;
 };
 export function relaunchRequest(record: RelaunchRecord) {
   const repo = record.repo === "~" ? undefined : record.repo;

@@ -80,9 +80,10 @@ test("an unknown key goes to the identity step; cancel goes back with no keys", 
   assert.equal(H.next(s, { type: "trusted" }).step, "checks");
 });
 
+const ev = (event) => ({ type: "event", event });
+
 test("check events upsert by id, fixed turns a fix into a pass, ready follows", () => {
   const H = load();
-  const ev = (event) => ({ type: "event", event });
   let s = H.next(H.initial(), ev({ event: "check", id: "ralphy", status: "copy", text: "old", command: "ralphy update" }));
   assert.equal(s.checks.length, 1);
   assert.equal(s.checks[0].command, "ralphy update");
@@ -149,7 +150,7 @@ test("an install event offers the install until the checks run again", () => {
   assert.equal(H.needsInstall(s), true);
   assert.equal(H.installText(s), "Ralphy v0.1.0-rc.30 for linux-x64, downloaded from its release, into ~/.ralphy/bin on the host.");
   const local = H.next(s, { type: "event", event: { event: "install", version: "v1", target: "t", source: "this-computer", folder: "f" } });
-  assert.match(H.installText(local), /from this computer/);
+  assert.match(H.installText(local), /from this computer/u);
   const again = H.next(H.next(s, { type: "check-again" }), {
     type: "event",
     event: { event: "check", id: "ralphy", status: "copy", command: "download Ralphy by hand" },
@@ -184,7 +185,7 @@ test("add exit 0 shows the last step; any other code keeps the checks with a fai
   assert.equal(s.open, true);
   assert.equal(s.failure.message, "No");
   const silent = H.next(open, { type: "exit", verb: "host.add", code: 2 });
-  assert.match(silent.failure.message, /code 2/);
+  assert.match(silent.failure.message, /code 2/u);
 });
 
 test("an exit with no code says the command stopped before it finished", () => {
@@ -196,21 +197,22 @@ test("an exit with no code says the command stopped before it finished", () => {
   }
 });
 
+const hostEvent = (e) => ({ type: "event", event: e });
+
 test("the password is dropped once signed in, on a refusal and on close", () => {
   const H = load();
   const typed = Object.assign(H.initial(), { open: true, step: "checks", password: "s3cret" });
-  const event = (e) => ({ type: "event", event: e });
-  assert.equal(H.next(typed, event({ event: "connected", os: "Linux" })).password, "");
-  const refused = H.next(typed, event({ event: "failed", kind: "password_refused", message: "the host h refused the password" }));
+  assert.equal(H.next(typed, hostEvent({ event: "connected", os: "Linux" })).password, "");
+  const refused = H.next(typed, hostEvent({ event: "failed", kind: "password_refused", message: "the host h refused the password" }));
   assert.equal(refused.password, "");
   assert.equal(refused.step, "connection", "back to the field where it is typed again");
   assert.equal(refused.failure.message, "The host h refused the password");
-  const keys = H.next(typed, event({ event: "failed", kind: "auth_refused", message: "m" }));
+  const keys = H.next(typed, hostEvent({ event: "failed", kind: "auth_refused", message: "m" }));
   assert.equal(keys.step, "connection", "a refused key asks for the password");
   const closed = H.next(typed, { type: "close" });
   assert.equal(closed.open, false);
   assert.equal(closed.password, "");
-  assert.equal(H.next(typed, event({ event: "failed", kind: "other", message: "m" })).step, "checks");
+  assert.equal(H.next(typed, hostEvent({ event: "failed", kind: "other", message: "m" })).step, "checks");
 });
 
 test("the help panel has a tab per system with the commands that work", () => {
@@ -222,15 +224,15 @@ test("the help panel has a tab per system with the commands that work", () => {
   assert.ok(commands("windows").includes("Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0"));
   assert.ok(commands("windows").includes("Get-NetFirewallRule -Name OpenSSH-Server-In-TCP"));
   assert.ok(commands("windows").includes("whoami"));
-  assert.match(texts("windows"), /PIN/);
-  assert.match(texts("macos"), /Remote Login/);
-  assert.match(texts("macos"), /System Settings/);
-  assert.match(texts("macos"), /System Preferences/);
+  assert.match(texts("windows"), /PIN/u);
+  assert.match(texts("macos"), /Remote Login/u);
+  assert.match(texts("macos"), /System Settings/u);
+  assert.match(texts("macos"), /System Preferences/u);
   assert.ok(commands("linux").some((c) => c.includes("openssh-server")));
-  assert.doesNotMatch(JSON.stringify(tabs), /launchctl/);
+  assert.doesNotMatch(JSON.stringify(tabs), /launchctl/u);
   const wrong = JSON.stringify(H.WRONG_ADDRESS);
-  assert.match(wrong, /refused/);
-  assert.match(wrong, /ipconfig getifaddr en0/);
+  assert.match(wrong, /refused/u);
+  assert.match(wrong, /ipconfig getifaddr en0/u);
   assert.equal(H.next(H.initial(), { type: "help-tab", tab: "linux" }).helpTab, "linux");
 });
 
@@ -283,12 +285,12 @@ test("each row of Your hosts has Edit and Remove, and Remove asks in that row", 
   const end = html.indexOf("</ul>", start);
   assert.ok(start > 0 && end > start);
   const list = html.slice(start, end);
-  assert.match(list, /x-for="h in sshHosts\(\)"/);
-  assert.match(list, /@click="addHostEdit\(h\)"[^>]*>Edit</);
-  assert.match(list, /@click="openRemoveHost\(h\)"[^>]*>Remove</);
-  assert.match(list, /x-show="removeHost\.open && removeHost\.daemon === h\.daemon_id"/);
-  assert.match(list, /@click="confirmRemoveHost\(\)"/);
-  assert.doesNotMatch(assembledPage("index.html"), /scrim\('removeHost\.open'/, "no second dialog for Remove");
+  assert.match(list, /x-for="h in sshHosts\(\)"/u);
+  assert.match(list, /@click="addHostEdit\(h\)"[^>]*>Edit</u);
+  assert.match(list, /@click="openRemoveHost\(h\)"[^>]*>Remove</u);
+  assert.match(list, /x-show="removeHost\.open && removeHost\.daemon === h\.daemon_id"/u);
+  assert.match(list, /@click="confirmRemoveHost\(\)"/u);
+  assert.doesNotMatch(assembledPage("index.html"), /scrim\('removeHost\.open'/u, "no second dialog for Remove");
 });
 
 test("the Hosts dialog renders host text with x-text only", () => {
@@ -297,7 +299,7 @@ test("the Hosts dialog renders host text with x-text only", () => {
   assert.ok(start > 0);
   const block = html.slice(start);
   assert.ok(block.includes('class="host-list"'), "the list is in the block");
-  assert.doesNotMatch(block, /x-html|innerHTML/);
+  assert.doesNotMatch(block, /x-html|innerHTML/u);
 });
 
 test("fields reads back the form that built a destination", () => {
@@ -355,9 +357,10 @@ test("typing in the Host field leaves the SSH config host", () => {
   assert.equal(H.destination(s), "ssh://deploy@10.1.1.4:2222", "user and port stay");
 });
 
+const checkEv = (event) => ({ type: "event", event: Object.assign({ event: "check" }, event) });
+
 test("the checks view shows the one blocking check first, and hides waiting checks", () => {
   const H = load();
-  const ev = (event) => ({ type: "event", event: Object.assign({ event: "check" }, event) });
   let s = H.initial();
   for (const c of [
     { id: "ralphy", label: "Ralphy", status: "warn", text: "ralphy is not installed on the host. Build it there" },
@@ -365,7 +368,7 @@ test("the checks view shows the one blocking check first, and hides waiting chec
     { id: "sleep", label: "Sleep", status: "copy", text: "the host sleeps", command: "sudo pmset -a sleep 0" },
     { id: "user", label: "User", status: "pass", text: "signed in as a normal user" },
   ]) {
-    s = H.next(s, ev(c));
+    s = H.next(s, checkEv(c));
   }
   let v = H.view(s);
   assert.deepEqual(v.blocker, {
@@ -378,9 +381,9 @@ test("the checks view shows the one blocking check first, and hides waiting chec
   assert.equal(v.passedText, "1 check passed");
   assert.equal(H.primary(Object.assign({}, s, { step: "checks" })), "check");
 
-  s = H.next(s, ev({ id: "ralphy", label: "Ralphy", status: "pass", text: "installed" }));
-  s = H.next(s, ev({ id: "name", label: "Name", status: "fix", text: "Ralphy names it mac" }));
-  s = H.next(s, ev({ id: "autostart", label: "Start at boot", status: "fix", text: "installs autostart" }));
+  s = H.next(s, checkEv({ id: "ralphy", label: "Ralphy", status: "pass", text: "installed" }));
+  s = H.next(s, checkEv({ id: "name", label: "Name", status: "fix", text: "Ralphy names it mac" }));
+  s = H.next(s, checkEv({ id: "autostart", label: "Start at boot", status: "fix", text: "installs autostart" }));
   v = H.view(s);
   assert.equal(v.blocker, null);
   assert.deepEqual(v.advice.map((c) => c.id), ["sleep"]);
@@ -406,9 +409,9 @@ test("the connection fields are never offered to autofill or a password manager"
   const end = html.indexOf("<!-- 2. Host identity", start);
   assert.ok(start > 0 && end > start);
   const block = html.slice(start, end);
-  const inputs = (block.match(/<input\b[^>]*>/g) || []).filter((i) => !/type="checkbox"/.test(i));
+  const inputs = (block.match(/<input\b[^>]*>/gu) || []).filter((i) => !/type="checkbox"/u.test(i));
   assert.equal(inputs.length, 5, "host, port, user, password, key file");
-  for (const input of inputs) assert.match(input, /autocomplete="off"/, input);
-  assert.doesNotMatch(block, /type="password"/, "the type comes from hostSecretType()");
-  assert.doesNotMatch(block, /type="radio"/);
+  for (const input of inputs) assert.match(input, /autocomplete="off"/u, input);
+  assert.doesNotMatch(block, /type="password"/u, "the type comes from hostSecretType()");
+  assert.doesNotMatch(block, /type="radio"/u);
 });

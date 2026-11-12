@@ -130,6 +130,17 @@ export type SpawnDeps = {
   markRelaunch: (deskId: string, takeDown: () => void) => void;
 };
 
+// The state `sleepWindow` leaves. `_visible` is false until the observer
+// reports: a window not yet reported reads as visible, and any
+// `applyDormancy` before the report would wake it.
+function markDormant(win: ConsoleWin, termOpts: TerminalOpts) {
+  win._dormantSession = termOpts.id ?? null;
+  win._dormantWatch = termOpts.watch;
+  win._dormant = true;
+  win._visible = false;
+  win.classList.add("dormant");
+}
+
 export function createSpawn(deps: SpawnDeps) {
   const {
     document,
@@ -172,34 +183,22 @@ export function createSpawn(deps: SpawnDeps) {
     restoreRect,
   });
 
-  // The state `sleepWindow` leaves. `_visible` is false until the observer
-  // reports: a window not yet reported reads as visible, and any
-  // `applyDormancy` before the report would wake it.
-  function markDormant(win: ConsoleWin, termOpts: TerminalOpts) {
-    win._dormantSession = termOpts.id ?? null;
-    win._dormantWatch = termOpts.watch;
-    win._dormant = true;
-    win._visible = false;
-    win.classList.add("dormant");
-  }
-
   // Build the chrome and attach a live terminal. Shared by `open()` and the
   // load-time restore; `termOpts` is the `attachTerminal` opts, `desk` the
   // record this window continues (absent for a fresh launch).
   function spawnWindow(
-    termOpts: TerminalOpts,
+    asked: TerminalOpts,
     label: string | null | undefined,
     repo: string | null | undefined,
     desk?: SpawnCarry,
   ) {
-    const kind = termOpts.console === true ? "console" : "agent";
+    const kind = asked.console === true ? "console" : "agent";
     const { win, body, title, restartBtn, closeBtn } = buildChrome(label, repo, desk, kind);
     // Read at launch, never later: a rename reaches the next restart and never
     // restarts the running session (ADR-0066 §6).
-    if (termOpts.id == null && termOpts.console !== true) {
-      termOpts = { ...termOpts, name: win._deskConsoleName };
-    }
-    termOpts = launchRecord(termOpts, win);
+    const named =
+      asked.id == null && asked.console !== true ? { ...asked, name: win._deskConsoleName } : asked;
+    const termOpts = launchRecord(named, win);
 
     // The terminal owns the Ctrl and Shift latches and the selection arming;
     // the key-bar buttons (assigned below) only REFLECT them.
@@ -375,7 +374,7 @@ export function createSpawn(deps: SpawnDeps) {
             agent: termOpts.agent ?? label,
             // Explicit target, else `windowCheckout`: announcement beats
             // request beats record.
-            checkout: checkout !== undefined ? checkout : windowCheckout(win, termOpts.checkout),
+            checkout: checkout === undefined ? windowCheckout(win, termOpts.checkout) : checkout,
           };
       void spawnOrMissing(fresh, label, repo, carry);
       WB.emit("console-restart", { repo: orNull(at), agent: plain ? null : label });
@@ -393,7 +392,7 @@ export function createSpawn(deps: SpawnDeps) {
     // THE KEY BAR is `wb-console-keys.ts`.
     ({ ctrlBtn, shiftBtn, selBtn } = buildKeyBar(win));
 
-    closeBtn.onclick = async () => {
+    const closeClicked = async () => {
       // A dormant window has no handle; it carried both answers across the gap.
       const id = sessionIdOf(win);
       const watching = watchingOf(win);
@@ -439,6 +438,9 @@ export function createSpawn(deps: SpawnDeps) {
         finish();
       }
     };
+    closeBtn.addEventListener("click", () => {
+      void closeClicked();
+    });
 
     wins.add(win);
     budget.trackDormancy(win);
@@ -462,7 +464,7 @@ export function createSpawn(deps: SpawnDeps) {
     agent?: string | null;
     plain?: boolean;
     checkout?: string | null;
-    command?: string;
+    command?: string | undefined;
   }) {
     if (atDeskCap()) {
       toast({ text: `You can have at most ${DESK_MAX} consoles. Close one first.` });
@@ -481,11 +483,11 @@ export function createSpawn(deps: SpawnDeps) {
 
 // The terminal options of a launch with the record of the window `win`, and
 // the worktree intent written on the window.
-function launchRecord(termOpts: TerminalOpts, win: ConsoleWin): TerminalOpts {
+function launchRecord(asked: TerminalOpts, win: ConsoleWin): TerminalOpts {
   // Every NEW launch names its record: the daemon keeps one session per
   // record, so a second page relaunching it joins this one (ADR-0050
   // amendment 2026-10-04).
-  if (termOpts.id == null) termOpts = { ...termOpts, record: win._deskId };
+  const termOpts = asked.id == null ? { ...asked, record: win._deskId } : asked;
   // A launch that names a worktree records the intent NOW, so a daemon that
   // dies mid-launch still leaves it behind.
   if (termOpts.checkout !== undefined) win._deskCheckout = termOpts.checkout ?? null;

@@ -6,38 +6,38 @@
 // `since`: on a reattach, the count of the session's output bytes the
 // terminal shows.
 // `link`: the network the browser reports, for the daemon's traffic log.
-type SessionOpenOpts = { link?: LinkFacts } & (ReattachOpts | ConsoleOpts | LaunchOpts);
+type SessionOpenOpts = { link?: LinkFacts | undefined } & (ReattachOpts | ConsoleOpts | LaunchOpts);
 type ReattachOpts = {
   id: number;
-  since?: number;
-  repo?: string;
-  takeover?: boolean;
-  watch?: boolean;
-  holder?: string;
-  gzip?: boolean;
-  attempt?: number;
+  since?: number | undefined;
+  repo?: string | undefined;
+  takeover?: boolean | undefined;
+  watch?: boolean | undefined;
+  holder?: string | undefined;
+  gzip?: boolean | undefined;
+  attempt?: number | undefined;
 };
 type ConsoleOpts = {
-  id?: null;
+  id?: null | undefined;
   console: true;
-  repo?: string;
-  command?: string;
-  record?: string;
-  holder?: string;
-  gzip?: boolean;
-  attempt?: number;
+  repo?: string | undefined;
+  command?: string | undefined;
+  record?: string | undefined;
+  holder?: string | undefined;
+  gzip?: boolean | undefined;
+  attempt?: number | undefined;
 };
 type LaunchOpts = {
-  id?: null;
-  console?: false;
+  id?: null | undefined;
+  console?: false | undefined;
   repo: string;
   agent: string;
-  checkout?: string | null;
-  name?: string | null;
-  record?: string;
-  holder?: string;
-  gzip?: boolean;
-  attempt?: number;
+  checkout?: string | null | undefined;
+  name?: string | null | undefined;
+  record?: string | undefined;
+  holder?: string | undefined;
+  gzip?: boolean | undefined;
+  attempt?: number | undefined;
 };
 
 // The members of `navigator.connection` the daemon's traffic log records.
@@ -51,16 +51,16 @@ export type SessionPayload = { [field: string]: string | number };
 // What one connect of a terminal asks for, before it is one of the shapes
 // above: `id` set is a reattach, `console` a free console, else an agent launch.
 export type SessionRequest = {
-  id?: number | null;
-  repo?: string | null;
-  agent?: string | null;
-  console?: boolean;
-  command?: string;
-  checkout?: string | null;
-  name?: string | null;
-  record?: string;
-  takeover?: boolean;
-  watch?: boolean;
+  id?: number | null | undefined;
+  repo?: string | null | undefined;
+  agent?: string | null | undefined;
+  console?: boolean | undefined;
+  command?: string | undefined;
+  checkout?: string | null | undefined;
+  name?: string | null | undefined;
+  record?: string | undefined;
+  takeover?: boolean | undefined;
+  watch?: boolean | undefined;
 };
 // The owner of a session as a terminal knows it.
 type SessionOwner = {
@@ -98,7 +98,7 @@ export const WBSessionRoute = (function () {
   // socket still holds half-open behind a tunnel. The daemon's rule, mirrored:
   // anything else is not a holder.
   const HOLDER_KEY = "ralphy.holder";
-  const HOLDER_RE = /^[A-Za-z0-9_-]{1,64}$/;
+  const HOLDER_RE = /^[A-Za-z0-9_-]{1,64}$/u;
 
   // `sessionStorage` is per tab and survives a reload, which is the scope that
   // must keep the name. A storage that throws or is absent still yields a
@@ -185,7 +185,7 @@ export const WBSessionRoute = (function () {
     const out: SessionPayload = { id: opts.id };
     if (opts.repo !== undefined && opts.repo !== "") out["repo"] = opts.repo;
     if (Number.isSafeInteger(opts.since) && opts.since != null && opts.since >= 0) {
-      out.since = opts.since;
+      out["since"] = opts.since;
     }
     if (opts.takeover === true) out["takeover"] = 1;
     // A watcher claims nothing, so it names no holder.
@@ -209,23 +209,25 @@ export const WBSessionRoute = (function () {
       out["checkout"] = opts.checkout;
     }
     // The console name: the daemon folds it into Claude's session name.
-    if (typeof opts.name === "string" && opts.name) out.name = opts.name;
+    if (typeof opts.name === "string" && opts.name) out["name"] = opts.name;
     return { ...out, ...recordFields(opts.record), ...holderFields(opts.holder, opts.attempt) };
   }
 
   // Only the values the daemon reads; any other value is not sent. The
   // daemon reads the three as strings, so a bad one is absent there.
-  const EFFECTIVE_TYPE_RE = /^(slow-2g|2g|3g|4g)$/;
+  const EFFECTIVE_TYPE_RE = /^(slow-2g|2g|3g|4g)$/u;
   function linkFields(link: LinkFacts | undefined): SessionPayload {
     const out: SessionPayload = {};
     if (!link) return out;
     const { effectiveType, rtt, downlink } = link;
     if (typeof effectiveType === "string" && EFFECTIVE_TYPE_RE.test(effectiveType)) {
-      out.net = effectiveType;
+      out["net"] = effectiveType;
     }
-    if (typeof rtt === "number" && Number.isSafeInteger(rtt) && rtt >= 0) out.net_rtt = String(rtt);
+    if (typeof rtt === "number" && Number.isSafeInteger(rtt) && rtt >= 0) {
+      out["net_rtt"] = String(rtt);
+    }
     if (typeof downlink === "number" && Number.isFinite(downlink) && downlink >= 0) {
-      out.net_down = String(downlink);
+      out["net_down"] = String(downlink);
     }
     return out;
   }
@@ -250,12 +252,16 @@ export const WBSessionRoute = (function () {
   // launch with no repo or no agent sends the value empty, never `null`: the
   // daemon refuses it as an unknown repo or agent.
   // `since` is sent only on a reattach: a launch opens a new terminal.
+  /** The facts of one connect: a gzipped replay, the try number, and the reattach point. */
+  interface ConnectFacts {
+    gzip?: boolean;
+    attempt?: number | undefined;
+    since?: number | undefined;
+  }
   function requestOpts(
     req: SessionRequest,
     holderId: string,
-    gzip = false,
-    attempt?: number,
-    since?: number,
+    { gzip = false, attempt, since }: ConnectFacts = {},
   ): SessionOpenOpts {
     const repo = req.repo ?? undefined;
     if (req.id != null) {

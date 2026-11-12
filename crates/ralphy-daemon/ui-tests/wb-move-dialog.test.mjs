@@ -49,11 +49,11 @@ test("wbMoveDialog lists only shell() names in uses, and its members left shell(
 test("every name the markup of wbMoveDialog reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbMoveDialog");
   const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
+  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
   let read = 0;
   for (const [, attr, value] of attrs) {
     if (attr === "x-data") continue;
-    const raw = attr === "x-for" ? value.split(/\s+in\s+/)[1] : value;
+    const raw = attr === "x-for" ? value.split(/\s+in\s+/u)[1] : value;
     for (const n of bindingNames(raw)) {
       // `e` is the row of the `x-for`.
       if (n.startsWith("$") || n === "e") continue;
@@ -63,9 +63,9 @@ test("every name the markup of wbMoveDialog reads is its own or in its uses list
   }
   assert.ok(read > 10, `the markup was read: ${read} names`);
   // The files open it with this event; nothing outside names its state.
-  assert.match(partMarkup(PART), /<div class="move-dialog" x-data="wbMoveDialog" @workbench:move-open\.window="openMove\(\$event\.detail\.from\)">/);
+  assert.match(partMarkup(PART), /<div class="move-dialog" x-data="wbMoveDialog" @workbench:move-open\.window="openMove\(\$event\.detail\.from\)">/u);
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
-  assert.doesNotMatch(outside, /\bmovePick/);
+  assert.doesNotMatch(outside, /\bmovePick/u);
 });
 
 test("the picker opens on the parent of the row, in the tree's checkout, and offers only folders it may take", async () => {

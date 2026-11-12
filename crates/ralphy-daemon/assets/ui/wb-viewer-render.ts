@@ -18,18 +18,16 @@ export function isRendered(kind: string): kind is RenderedKind {
   return kind === "markdown" || kind === "mermaid" || kind === "dbml";
 }
 
+/** A file `renderBody` draws: its kind, its text, and the number that makes its ids unique. */
+export type RenderedFile = { kind: RenderedKind; content: string; uid: number };
+
 /**
  * Fill `article` with the body of a file of `kind` whose text is `content`,
  * and return the Mermaid holders still to draw. `uid` makes the holder ids
  * unique on the page.
  */
-export function renderBody(
-  kind: RenderedKind,
-  article: Element,
-  content: string,
-  uid: number,
-  doc: Document,
-): HTMLElement[] {
+export function renderBody(file: RenderedFile, article: Element, doc: Document): HTMLElement[] {
+  const { kind, content, uid } = file;
   switch (kind) {
     case "markdown":
       return markdownBody(article, content, uid, doc);
@@ -79,7 +77,7 @@ function markdownBody(article: Element, content: string, uid: number, doc: Docum
     if (!pre) return;
     const holder = doc.createElement("div");
     holder.className = "mermaid";
-    holder.dataset.src = code.textContent;
+    holder.dataset["src"] = code.textContent;
     holder.id = `mmd-${uid}-${i}`;
     pre.replaceWith(holder);
     pending.push(holder);
@@ -93,7 +91,7 @@ function diagramBody(article: Element, content: string, uid: number, doc: Docume
   const holder = doc.createElement("div");
   holder.className = "mermaid";
   holder.id = `mmd-${uid}-0`;
-  holder.dataset.src = content;
+  holder.dataset["src"] = content;
   article.append(holder);
   return [holder];
 }

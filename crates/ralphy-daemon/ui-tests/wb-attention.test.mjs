@@ -87,11 +87,12 @@ test("the title shows the count of open requests", async (t) => {
   assert.equal(document.title, "Ralphy");
 });
 
+const repoSession = (repo, record) => ({ id: 1, repo, agent: "claude", kind: "agent", started_at: 1, daemon_id: "", environment: "", record });
+
 test("go to the console focuses its window", (t) => {
   const one = fixture("api-attention").requests[0];
-  const session = (repo, record) => ({ id: 1, repo, agent: "claude", kind: "agent", started_at: 1, daemon_id: "", environment: "", record });
   const { data, reveals, activated } = page(t, {
-    sessions: [session(one.repo, "w-local"), session(`${PEER}/${one.repo}`, "w-peer")],
+    sessions: [repoSession(one.repo, "w-local"), repoSession(`${PEER}/${one.repo}`, "w-peer")],
   });
   data.open = true;
   data.goTo(fromPeer(one));
@@ -136,8 +137,8 @@ test("a run's row opens the run, and a console's row goes to the console", (t) =
   }
   // The row is one button: its click does the action, its tooltip names it.
   const markup = partMarkup(PART);
-  assert.match(markup, /class="attention-main"[^>]*:disabled="actionOf\(r\) === 'none'"/);
-  assert.match(markup, /class="attention-main"[^>]*:title="actionTitle\(r\)" @click="act\(r\)"/);
+  assert.match(markup, /class="attention-main"[^>]*:disabled="actionOf\(r\) === 'none'"/u);
+  assert.match(markup, /class="attention-main"[^>]*:title="actionTitle\(r\)" @click="act\(r\)"/u);
   assert.equal(data.actionTitle(run), "Open the run");
   assert.equal(data.actionTitle({ ...run, kind: "console-waiting" }), "Go to the console");
 });
@@ -166,7 +167,7 @@ test("the dot of a row says its kind", (t) => {
   assert.equal(dot("console-silent"), "silent");
   assert.equal(dot("console-done"), "done");
   assert.equal(dot("run-finished"), "");
-  assert.match(partMarkup(PART), /<span class="dot" :class="dotOf\(r\)"><\/span>/);
+  assert.match(partMarkup(PART), /<span class="dot" :class="dotOf\(r\)"><\/span>/u);
 });
 
 test("the age of a request is short", () => {
@@ -196,7 +197,7 @@ test("only a finished run can be dismissed", async (t) => {
   assert.equal(data.actionOf(finished[0]), "none", "a finished run is no longer in the Runs panel");
   assert.equal(data.kindOf(finished[0]), "Run stopped on this issue");
   const markup = partMarkup(PART);
-  assert.match(markup, /x-show="canDismiss\(r\)" @click="dismiss\(r\)"\s+title="Dismiss"/);
+  assert.match(markup, /x-show="canDismiss\(r\)" @click="dismiss\(r\)"\s+title="Dismiss"/u);
 
   // "Dismiss" posts the id, then reads the list again.
   const sent = [];
@@ -226,7 +227,7 @@ test("every name the markup of wbAttention reads is its own", (t) => {
   const { data } = page(t);
   const markup = partMarkup(PART);
   let read = 0;
-  for (const [, attr, value] of markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)) {
+  for (const [, attr, value] of markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)) {
     if (attr === "x-data" || attr === "x-for" || attr === ":key") continue;
     for (const n of bindingNames(value)) {
       if (n.startsWith("$") || n === "r") continue;
@@ -270,7 +271,7 @@ test("the notification is off by default", async (t) => {
   assert.deepEqual(asked, [], "no permission is asked before the switch");
   assert.equal(stored.size, 0);
   assert.deepEqual(shown, []);
-  assert.doesNotMatch(partMarkup(PART), /Notify me/, "the switch is in Settings, not in the panel");
+  assert.doesNotMatch(partMarkup(PART), /Notify me/u, "the switch is in Settings, not in the panel");
 
   assert.equal(await WBNotify.turn(true), true);
   assert.equal(asked.length, 1, "turning it on asks once");
@@ -330,6 +331,8 @@ test("what is on the page at load is not new", async (t) => {
   assert.deepEqual(shown, []);
 });
 
+const inside = (record) => ({ closest: () => ({ _deskId: record }) });
+
 test("opening the console of a done request dismisses it", async (t) => {
   const waiting = waitingRow();
   const done = { ...waiting, id: "done:1:1", kind: "console-done", detail: undefined, dismissable: true };
@@ -343,7 +346,6 @@ test("opening the console of a done request dismisses it", async (t) => {
     sent.push([init.method, url, init.body]);
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ requests: [] }) });
   };
-  const inside = (record) => ({ closest: () => ({ _deskId: record }) });
   data.requests = [done, waiting];
 
   await data.focused(inside("w-other"));
@@ -356,10 +358,11 @@ test("opening the console of a done request dismisses it", async (t) => {
   assert.deepEqual(posts, [["POST", "/api/attention/dismiss", JSON.stringify({ id: "done:1:1" })]]);
 });
 
+const peerSession = (id, daemon_id, record) => ({ id, repo: "owner/app", agent: "claude", kind: "agent", started_at: 1, daemon_id, environment: "", record });
+
 test("a console url focuses the console after load and leaves the url", (t) => {
-  const session = (id, daemon_id, record) => ({ id, repo: "owner/app", agent: "claude", kind: "agent", started_at: 1, daemon_id, environment: "", record });
   const { data, reveals, activated } = page(t, {
-    sessions: [session(7, "01OTHER", "w-other"), session(7, PEER, "w-linked")],
+    sessions: [peerSession(7, "01OTHER", "w-other"), peerSession(7, PEER, "w-linked")],
   });
   let beat = null;
   const urls = [];

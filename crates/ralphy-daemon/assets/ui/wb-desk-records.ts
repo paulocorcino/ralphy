@@ -45,6 +45,13 @@ export type DeskRecordsDeps = {
   consolePrefix: (repo: string | null | undefined) => string;
 };
 
+// The fields a `set` may carry per type, read off a record, so a list of
+// records handed back (`saveFences`, `saveNotes`) becomes the changes that
+// tell it from the view: a create, a remove, or a set of the fields that
+// differ, and nothing for a record left as it was.
+const rectOnly = (r: Rect | undefined) =>
+  r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null;
+
 export function createDeskRecords(deps: DeskRecordsDeps) {
   const {
     sync,
@@ -105,12 +112,6 @@ export function createDeskRecords(deps: DeskRecordsDeps) {
     refreshFenceChrome();
   }
 
-  // The fields a `set` may carry per type, read off a record, so a list of
-  // records handed back (`saveFences`, `saveNotes`) becomes the changes that
-  // tell it from the view: a create, a remove, or a set of the fields that
-  // differ, and nothing for a record left as it was.
-  const rectOnly = (r: Rect | undefined) =>
-    r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null;
   const SET_FIELDS: Record<
     "fence" | "note",
     (r: Partial<DeskFence & DeskNote>) => { [field: string]: JsonValue | undefined }
