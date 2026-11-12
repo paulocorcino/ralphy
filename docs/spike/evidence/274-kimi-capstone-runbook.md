@@ -31,7 +31,7 @@ recorded in `~/.kimi/.migrated-to-kimi-code`). The adapter source already tracks
 **re-grounded against code** for this run:
 
 | Plan text (1.48.0) | Reality in `crates/ralphy-agent-kimi/src` (0.28) |
-|---|---|
+| --- | --- |
 | `PYTHONUTF8=1` is the headline encoding fix; the Textual "No Windows console found" TUI trap | **No `PYTHONUTF8` anywhere in the crate** (grep: 0 hits). 0.28 is not the Python build; the encoding phase (2, 6) re-targets to "zero decode/charmap crashes under a subprocess-heavy build", not an env-var assertion |
 | auth stop prints `LLM not set` / exit 1 | `auth.rs:8` message `Kimi is not authenticated (auth.login_required)…`; `auth.rs:16` matches `auth.login_required` via the **shared** `ralphy_adapter_support::auth_error` helper |
 | model `kimi-code/kimi-for-coding` passed with `-m` (D4) | `command.rs:10` default `kimi-code/k3` (config.toml `default_model = "kimi-code/k3"`; `kimi-for-coding` still exists as a named model) |
@@ -48,7 +48,7 @@ the gap protocol below.
 ## Resolved environment (captured 2026-07-22)
 
 | Field | Value |
-|-------|-------|
+| ------- | ------- |
 | Host OS | Windows 11 Pro 26200 |
 | Kimi CLI | **`kimi-code` 0.28.0** (`kimi --version`) — #155 ran `kimi` **1.48.0** (a *different product line*, migrated 2026-07-20; the version-skew data point for Phase 6) |
 | Kimi on PATH | `C:\Users\PICHAU\.kimi-code\bin\kimi.exe` (git-bash `/c/Users/PICHAU/.kimi-code/bin/kimi`) — resolved by `resolve_program("kimi")` (`command.rs:28`, off `PATH`/`~/.local/bin`) |
@@ -256,7 +256,7 @@ note; host clean.
 ## Acceptance-criteria ledger (#274)
 
 | AC | Criterion | Phase(s) | Kind |
-|----|-----------|----------|------|
+| ---- | ----------- | ---------- | ------ |
 | 0 | Auth stop force-reproduced: `auth.login_required` stops (no loop), re-login returns | 0 | **HITL** (real logout) |
 | 1 | Plan-only re-confirmed; `wire.jsonl` harvest recovers input/cache_read/output; baseline captured | 1 | mechanical |
 | 2 | `Stuck`/`Done` ladder + encoding re-confirmed (zero charmap crashes); stream-vs-diff delta recorded | 2 | mechanical |

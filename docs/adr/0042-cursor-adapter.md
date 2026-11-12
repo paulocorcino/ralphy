@@ -109,7 +109,7 @@ Four failure shapes were forced deliberately, because a spike that only ever
 sees success writes an `outcome.rs` against half a contract:
 
 | Shape | Exit | stdout | Envelope | stderr |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | **Tool call fails** (`exit 42` via the shell tool) | **0** | full stream | **`subtype:"success"`, `is_error:false`** | empty |
 | **Preflight rejection** (`--workspace C:\definitely\not\here`) | 1 | **zero records** | none | `Error: Workspace directory does not exist: …` |
 | **Killed mid-run** (`kill -9`) | — | partial stream | **none** | **empty** |
@@ -200,7 +200,7 @@ Therefore:
   claims**. Nine ids were probed:
 
   | Result | Ids |
-  |---|---|
+  | --- | --- |
   | **runs, exit 0** | `composer-2.5`, `composer-2.5-fast` |
   | refused, exit 1 | `claude-opus-4-8-thinking-max`, `gpt-5.6-sol-max`, `cursor-grok-4.5-low`, `gpt-5-mini`, `gemini-3-flash`, `kimi-k2.7-code`, `glm-5.2-high`, `gpt-5.4-nano-low` |
 
@@ -276,7 +276,7 @@ the working directory it was given.
 A controlled A/B on two fresh 12-file repositories settles the opt-out:
 
 | Repo | Ignore file | `Applying change` |
-|---|---|---|
+| --- | --- | --- |
 | `cursorlab-a` | none | **15** |
 | `cursorlab-b` | `.cursorindexingignore` = `*` | **0** |
 
@@ -360,7 +360,7 @@ unchanged — both the run path and the daemon's interactive launch call the sam
 Every run is spawned with, and only with, the autonomy it needs:
 
 | Flag | Stance | Why |
-|---|---|---|
+| --- | --- | --- |
 | `--force` | **set** | required for non-interactive; note it is *"unless explicitly denied"* by the operator's `permissions.deny` (D8) |
 | `--auto-review` | **never** | a server-side classifier that prompts for anything it deems unsafe — prompting is fatal headless, and it ships tool-call decisions to a Cursor service |
 | `--approve-mcps` | **never** | `.cursor/mcp.json` is repo-local, so a cloned repository can propose MCP servers |
@@ -518,7 +518,7 @@ graph in two tables) and `~/.cursor/projects/<cwd-slug>/agent-transcripts/…jso
   invocations against one minted session id:
 
   | Turn | `inputTokens` | `outputTokens` | `cacheReadTokens` |
-  |---|---|---|---|
+  | --- | --- | --- | --- |
   | 1 | 18 336 | 16 | 128 |
   | 2 | **102** | 16 | **18 432** |
 
@@ -664,7 +664,7 @@ operator did not ask for".
 credential lives:
 
 | Under an isolated `CURSOR_CONFIG_DIR` | Result |
-|---|---|
+| --- | --- |
 | `agent status --format json` | **still `authenticated`** — the credential is at `%APPDATA%\Cursor\auth.json`, outside the config dir |
 | `-p --model composer-2.5-fast` | **exit 0**, ran normally |
 | the operator's `~/.cursor/cli-config.json` | **untouched** — the pin did not leak |

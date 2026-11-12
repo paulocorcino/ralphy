@@ -3,7 +3,7 @@
 `--agent` picks the CLI for the whole run (default `claude`):
 
 | `--agent` | Runs | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `claude` (default) | Claude Code, live session | Mobile Remote Control, model routing |
 | `codex` | `codex exec`, headless | Scales effort on one model |
 | `kimi` | `kimi -p`, headless | Fixed model (`kimi-code/k3`) |

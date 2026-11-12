@@ -83,7 +83,7 @@ when it removes an orphaned document.
 Six sites must read it, and they share no seam:
 
 | Site | What it prevents |
-|---|---|
+| --- | --- |
 | `runner.rs` queue loop | starting the next issue |
 | `runner.rs` post-execute guard | spending minutes in the protocol lint + verify gate after a green execute |
 | `phases.rs` resume loop | calling `execute()` **again** when a stop-killed child classifies as `Limit` |
@@ -278,8 +278,8 @@ it returned. When the flag is up, the issue is recorded exactly as D6 records a
 stop after execute, and the run ends with `StopReason::Stopped { number:
 Some(n) }`. This adds one row to D3's table:
 
-| Site | What it prevents |
-|---|---|
+| Site                        | What it prevents                                                                       |
+| --------------------------- | -------------------------------------------------------------------------------------- |
 | `runner.rs` post-plan guard | a stop during planning failing the run, reading as `Deadline`, or starting an executor |
 
 A stopped planner has no ledger line: `plan_phase` records the plan line only

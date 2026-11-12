@@ -39,7 +39,7 @@ well-refactored against `adapter-support` (`run_headless`, `run_json_session`,
 ## Duplication map (verified, with evidence)
 
 | # | Duplicated logic | Claude | Codex | OpenCode | Verdict |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | D1 | Issue budget/deadline: `with_max_minutes_per_issue` + `with_run_deadline` + `issue_deadline` clamp to `UNBOUNDED_ISSUE_HORIZON` | `lib.rs:240–260` | `lib.rs:227–256` | `lib.rs:324–353` | **Promote** — identical clock arithmetic, zero vendor content |
 | D2 | Headless run wrapper: `run_headless` → combine stdout+stderr → write `<name>.log` → `exited_cleanly = exit.map(success).unwrap_or(false)` | `run_headless_call` `lib.rs:345–397` | `run_codex` `lib.rs:664–682` | `run_opencode` `lib.rs:610–630` | **Promote** — same post-`run_headless` shell |
 | D3 | Non-JSON one-shot session (headless + write log + auth/timeout bail, no artifact) | `consolidate_knowledge` `lib.rs:483–536` | — | — | **Promote** — a `run_json_session` sibling; folds the one entrypoint still hand-rolling argv |

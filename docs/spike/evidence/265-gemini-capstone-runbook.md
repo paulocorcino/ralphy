@@ -261,7 +261,7 @@ filed.
 ## Acceptance-criteria ledger (#265)
 
 | AC | Criterion | Phase(s) | Kind |
-|----|-----------|----------|------|
+| ---- | ----------- | ---------- | ------ |
 | 1 | Real plan-then-execute reaches green | 2 (parity 5) | mechanical |
 | 2 | Reported usage vs vendor billing, discrepancy **explained** | 3 | HITL |
 | 3 | Autonomy revocations against a real env, not fixtures | 1 | mechanical |

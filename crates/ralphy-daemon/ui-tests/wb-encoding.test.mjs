@@ -329,3 +329,13 @@ test("Reload of a refused image that is an image now rebuilds it as an image pan
   });
   assert.deepEqual(emitted, [{ action: "reload", project: "o/r", path: "a.png" }]);
 });
+
+test("an encoding name that holds markup is the pill's text, not markup", () => {
+  const { viewer, mount } = loadViewer();
+  const name = "<img src=x onerror=alert(1)>";
+  viewer.open({ id: "t9", project: "o/r", path: "e.txt", ftype: "code", content: "x", encoding: name, bom: false });
+  const pane = mount.children[0];
+  assert.equal(pane.querySelector(".viewer-enc-label").textContent, name);
+  // The whole fake pane, the markup it was given included, holds no tag from the name.
+  assert.doesNotMatch(JSON.stringify(pane), /<img/u, "the name never enters the markup");
+});

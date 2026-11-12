@@ -25,7 +25,7 @@ which bucket each finding landed in.
 ## Resolved environment (capture before Phase 0)
 
 | Field | Value |
-|-------|-------|
+| ------- | ------- |
 | Host OS | *(capture)* |
 | WSL distro + version | *(capture — `wsl -l -v`)* |
 | WSL networking mode | *(capture — NAT expected; mirrored mode invalidates §2)* |
@@ -259,7 +259,7 @@ Any one of these stops the capstone and is a defect, not a note:
 ## Ledger
 
 | AC | Phase | Verdict |
-|---|---|---|
+| --- | --- | --- |
 | Sync and push on a peer repo, gate + ff-only unchanged | 3 | |
 | `verify.command` still denied through the proxy | 3.4 | |
 | Native Linux daemon federates over loopback, neither non-loopback | 0 | |

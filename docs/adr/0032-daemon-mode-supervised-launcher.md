@@ -145,7 +145,7 @@ the provider. Measured 2026-07-26, forwarding a probe that echoed its received
 headers:
 
 | | `Host` | `Origin` | true hostname |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **dev tunnels** | `localhost:<port>` | `http://localhost:<port>` | `X-Forwarded-Host` only |
 | **ngrok** | the public hostname | the public hostname | preserved in place |
 
@@ -723,7 +723,7 @@ now, not on the client's spelling (F1: `.git.`, `GIT~1`, an in-root symlink).
   unconditional `Secure` would break the two plain rows).
 
   | Path | The browser opens | `X-Forwarded-Proto` | Cookie | Wire |
-  |---|---|---|---|---|
+  | --- | --- | --- | --- | --- |
   | loopback | `http://127.0.0.1:7257` | absent | plain | loopback |
   | dev tunnels | `https://…devtunnels.ms` | `https` (measured) | `Secure` | TLS at Microsoft's edge |
   | ngrok | `https://…ngrok.app` | `https` (documented) | `Secure` | TLS at ngrok's edge; needs `--allowed-host` (preserves `Host`/`Origin`) |

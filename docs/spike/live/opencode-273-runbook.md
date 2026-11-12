@@ -8,7 +8,7 @@ note when the phases close.
 ## Environment (captured 2026-07-22)
 
 | Item | Value |
-|---|---|
+| --- | --- |
 | opencode build | **1.18.4** (first note ran 1.16.2 → version skew to record) |
 | resolver | `resolve_program` → PATH/`PATHEXT`, `~/.local/bin` fallback (`ralphy-proc-util/src/lib.rs:127`) |
 | providers authed | `kimi-for-coding`, `zai-coding-plan` (z.ai/GLM — glm cap candidate for F4b) |
@@ -42,7 +42,7 @@ The map already resolves several plan worries — annotate, don't re-litigate:
 ## Open gaps carried in (disposition decided live)
 
 | # | Gap | Code evidence | Disposition |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | G1 | **WAL-safety**: `scan_opencode` reads live `.db` in place, no sidecar copy; Copilot copies `.db`+`-wal`+`-shm` via private `copy_store` | `opencode.rs:48-51` vs `copilot.rs:66` | **Measure in F3 first** (is the under-count real on the live store?), then **file issue** — promoting `copy_store` mid-capstone would contaminate the F3 measurement |
 | G2 | **#41 in-adapter guard**: no abort when `.ralphy/plan.md` is *already tracked*; dirty check ignores `.ralphy/` | `git.rs:269`; Cursor has a resume guard, OpenCode doesn't | #41 CLOSED at core level; confirm live in F5. Issue only if the tracked-plan trap reproduces |
 | G3 | **One-shot `out_path`**: triage/draft artifact path is caller-controlled | `tasks.rs:83,131` | Verify CLI keeps `out_path` under `.ralphy/` in F4; issue if it escapes |

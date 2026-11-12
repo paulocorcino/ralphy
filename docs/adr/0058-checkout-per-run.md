@@ -59,7 +59,7 @@ This ADR gives the orchestrator that business.
 `.ralphy/*` path is assigned to exactly one of them:
 
 | Root | Meaning | Paths |
-|---|---|---|
+| --- | --- | --- |
 | **`checkout_root`** | the working tree the agent edits in and commits from; the agent's cwd | `issue.json`, `plan.md`, `plan-charter.md`, `exec.md`, `handoffs.md`, `references.md`, `verify-failure.md`, `protocol-failure.md`, `environment.md`, `skills/`, `plugin/`, `gemini-home/`, `cursor-config/`, `runs/<stamp>/` |
 | **`repo_home`** | `<primary working tree>/.ralphy`; durable per-repo state that outlives a run | `settings.json`, `knowledge/` (incl. `KNOWLEDGE.md`, `raw/`, `citations.jsonl`), `runstate/`, `run.lock.d/` (§6), `cmd-costs.json`, `init-state.json`, `issues-draft.json`, `diagnosis.json` |
 

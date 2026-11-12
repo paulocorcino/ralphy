@@ -34,7 +34,7 @@ breaks (§3–§5).
 ### Size of the suite
 
 | Slice | Tests | LIES-FP | LIES-FN | Proposed change |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `ralphy-adapter-support` + 7 `ralphy-agent-*` | 652 | ~24 | ~27 | about −150 |
 | `ralphy-daemon/src/tests.rs` | 171 | 10 | 29 | −22, and about half the assertions of 39 pin tests |
 | `ralphy-daemon/src/*` (other modules) | 490 | 10 | 10 | about −35 |
@@ -59,7 +59,7 @@ std, serde, clap or a constant.
 Fix these; do not delete them. Each fix is 1–5 lines.
 
 | ID | Where | What lies | Mutation that survives today |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | P0-1 | `ralphy-daemon/src/tree.rs:609` `read_masks_escape_as_not_found`; `tree.rs:578` `read_image_masks_escape…`; `note.rs:460` `read_masks_a_missing_or_escaping_target…`; `ralphy-daemon/tests/observe_read.rs:306` `image_read_masks_traversal_as_not_found`, `:326` `file_read_masks_traversal_as_not_found` | They read `../secret`, but no `secret` file exists outside the root (`serve_repo` never writes one). "not found" comes back either way. | `tree.rs:154` `confine::confine(root, rel)` → `Ok(root.join(rel))` (same at `:328`). The whole suite stays green. Verified by hand. |
 | P0-2 | `ralphy-agent-gemini/src/auth.rs:164` `the_auth_probe_reads_no_credential`; gemini `command/tests.rs:108` `autonomy_argv_is_never_downgraded` (source half); cursor `tests.rs` `no_adapter_side_retry_of_a_quota_stop` | They cut each source file at the first `#[cfg(test)]`. gemini `lib.rs:163` and cursor `lib.rs:182` hold a `#[cfg(test)] fn issue_deadline` before `plan`/`execute`. The rest of `lib.rs` is never scanned. | Reading `oauth_creds` in gemini `plan`; `--approval-mode auto_edit` in gemini `execute`; a retry loop around cursor `lib.rs:371`. Verified by hand. |
 | P0-3 | `ralphy-daemon/tests/child_env_hygiene.rs:13` | The test calls `auth::strip_token_from_env()` itself (`:26`). Its doc claims it proves the boot-time strip. | Delete `serve.rs:136` `auth::strip_token_from_env();` — every child inherits `RALPHY_DAEMON_TOKEN`. Verified by hand. |
@@ -86,7 +86,7 @@ Actions: **fix** (make the test able to fail), **delete**, **merge**, **loosen**
 ### 3.1 `ralphy-adapter-support` and `ralphy-agent-*` (652 tests)
 
 | Crate | KEEP | MERGE | DELETE | LIES-FP | LIES-FN |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | adapter-support | 78 | 3 | 2 | 1 | 0 |
 | claude | 85 | 20 | 0 | 2 | 1 |
 | codex | 34 | 11 | 2 | 3 | 1 |
@@ -171,7 +171,7 @@ gemini exit→Blocked 4→1, `usage.rs` 3→1, `root.rs` 3→1; codex
 **Cross-adapter duplication (shared path proven):**
 
 | Tests | Copies | Proof | Action |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `*_honours_max_minutes_per_issue`, `*_zero_minutes_disables…` | 13 in 7 crates | Each `issue_deadline()` is `self.budget.deadline(UNBOUNDED_ISSUE_HORIZON)` (codex `lib.rs:142`, copilot `:235`, cursor `:183`, gemini `:164`, kimi `:134`, opencode `:173`; claude calls `ralphy_adapter_support::issue_deadline`). `budget.rs:98-150` covers it. | Delete all. |
 | `classify_{done,blocked,timeout_wins,done_on_no_commit,stuck_on_no_sentinel}` | codex 5, kimi 4, copilot 3, opencode 9 | Pass-through to `adapter_support::classify` (`classify.rs:60` tests the ladder). | Keep vendor-specific cases only (non-zero exit → Stuck, vendor limits, kimi exit 75, opencode error event). Delete about 21. |
 | `prompt_plan_*_carries_finalize_trailer` | 8 asserts in 7 crates | The trailer lives in `assets/prompts/plan/template.md`; `ralphy-core/tests/prompt_assembly.rs` checks every artifact against template + overlay. | One test. |
@@ -558,7 +558,7 @@ queue suite.
 ### 3.8 Small crates and `xtask` (334 tests)
 
 | Crate | Tests | KEEP | MERGE | LIES-FP | LIES-FN | DELETE |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | ralphy-usage-scan | 87 | 80 | 4 | 2 | 0 | 1 |
 | ralphy-release | 34 | 33 | 1 | 0 | 0 | 0 |
 | ralphy-proc-util | 32 | 25 | 1 | 5 | 0 | 1 |
@@ -685,7 +685,7 @@ of 4.9 s).
 ## 4. Behavior gaps found (no test today)
 
 | ID | Gap | Evidence |
-|---|---|---|
+| --- | --- | --- |
 | G-1 | `adapter-support` `classify` has no case with `errored: true`; removing `&& !s.errored` is caught only by opencode. | `classify.rs` |
 | G-2 | The scaffold charter write and the stale-plan removal are untested. | `adapter-support/src/scaffold.rs:78` |
 | G-3 | codex: limit text on a clean exit is not tested; removing `if !exited_cleanly` (`outcome.rs:51`) survives. | codex `outcome.rs:51` |
@@ -762,7 +762,7 @@ deleted, merged, loosened, rejected (the mutation did not survive, with the
 reason), or moved to a follow-up issue.
 
 | Measure | Before | After |
-|---|---|---|
+| --- | --- | --- |
 | `cargo nextest run --workspace`, Windows, median of 3 | 107.8 s | 98.9 s |
 | Rust test functions | 2921 | 2488 |
 | Rust test binaries | 101 | 62 |
@@ -790,7 +790,7 @@ and 9 deleted and merged JS tests; stage 10 did not touch the JS suite, and the
 The After column is the end of Stage 10. After the review fixes, `cargo nextest list --workspace --message-format oneline` lists 2493 Rust tests and `node --test crates/ralphy-daemon/ui-tests` runs 588 tests.
 
 | ID | Status | Commit | Note |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | P0-1 | fixed | 2cffa4bf | `tree.rs` `read_masks_escape_as_not_found`, `read_image_masks_escape_as_not_found`, `note.rs` `read_masks_a_missing_or_escaping_target_as_a_miss` and `observe_read.rs` `serve_repo` (all callers) now put a real `secret`, `secret.png` or `outside.note` right outside the root. Each fails when `confine::confine` is replaced by `root.join(rel)`. |
 | P0-3 | follow-up | 2cffa4bf | Doc comment reworded: the test proves the strip works, not that boot calls it. No mutation: the boot path has no test seam without a production change. The boot seam goes into the follow-up draft (Stage 5). |
 | P0-4 | fixed | 2cffa4bf | Both `cursor.rs` tests seed an operator body (`# operator\nsecrets/\n`) that differs from the gate's `*\n` and assert its bytes. They fail when the `.filter(..exists())` is removed. |

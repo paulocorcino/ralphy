@@ -4,7 +4,7 @@ Evidence for a prospective `ralphy-agent-cursor`, gathered against **Cursor
 Agent CLI** on **both** target platforms:
 
 | Platform | Binary | Version |
-|---|---|---|
+| --- | --- | --- |
 | Windows 11 Pro 26200 | `%LOCALAPPDATA%\cursor-agent\agent.cmd` | `2026.07.16-899851b` |
 | WSL (Ubuntu) | `~/.local/bin/cursor-agent` | `2026.07.17-3e2a980` |
 
@@ -78,7 +78,7 @@ fire in the CLI**. Only `beforeShellExecution` did (§3, P15).
 ## 1. C1 — Invocation and the headless contract
 
 | Question | Finding |
-|---|---|
+| --- | --- |
 | Headless one-shot | `-p, --print` — *"Print responses to console (for scripts or non-interactive use). Has access to all tools, including write and shell."* |
 | **Prompt channel** | ✅ **stdin, verified (P1).** `agent -p --output-format stream-json --force < payload.txt`, **no prompt argument**: 26 372 bytes arrived whole — reply echoed both `RALPHY_HEAD_7F3A` (first line) and `RALPHY_TAIL_9C2B` (last line); envelope recorded `inputTokens: 19264`. Cursor's docs confirm print mode is inferred from *"non-TTY stdout or piped stdin"*. **This is the channel the adapter must use.** |
 | Argv ceiling | ⏸ not probed. With stdin proven there is no reason to push a ~26 KB charter at the ~32 KB Windows argv ceiling. |
@@ -98,7 +98,7 @@ text deltas.
 ### Discriminators observed (P1 and run C)
 
 | `type/subtype` | Shape |
-|---|---|
+| --- | --- |
 | `system/init` | once, first — `apiKeySource`, `cwd`, `session_id`, `model`, `permissionMode` |
 | `user/` | the echoed prompt |
 | `thinking/delta` … `thinking/completed` | 34 and 48 deltas in the two runs |
@@ -201,7 +201,7 @@ subcommand — produce identical output, exit 0, no paid call. **170 ids** on a
 ### Entitlement: the listing is a catalogue, not a permission (P6)
 
 | `--model` | Cost | stderr |
-|---|---|---|
+| --- | --- | --- |
 | `definitely-not-a-real-model` | free, 6 s, **no paid call** | `Cannot use this model: definitely-not-a-real-model. Available models: auto, gpt-5.3-codex-low, …` — **the full 170-id list inline** |
 | `claude-opus-4-8-thinking-max` | 15 s | `ActionRequiredError: Named models unavailable Free plans can only use Auto. Switch to Auto or upgrade plans to continue.` |
 | `gpt-5.6-sol-max` | 6 s | *(identical `ActionRequiredError`)* |
@@ -283,7 +283,7 @@ logged-out; ⚠ unverified.
 Identical byte-for-byte on Windows and WSL:
 
 | Probe | Exit | Channel | Message |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `agent status` | **0** | stdout | `Not logged in` |
 | `agent about` | **0** | stdout | `User Email  Not logged in` |
 | `agent --list-models` | **1** | stderr | `Error: Authentication required. Run 'agent login', pass --api-key/--auth-token, or set CURSOR_API_KEY/CURSOR_AUTH_TOKEN.` |
@@ -405,7 +405,7 @@ A marker `SKILL.md` was planted in four candidate roots and the agent was asked
 to list every skill available to it:
 
 | Root | Result |
-|---|---|
+| --- | --- |
 | `~/.cursor/skills/` | ✅ found |
 | `<repo>/.cursor/skills/` | ✅ found |
 | `<repo>/.claude/skills/` | ✅ found |
@@ -494,7 +494,7 @@ The install ships `merkle-tree-napi.win32-x64-msvc.node` for exactly this.
 identical trivial prompt:
 
 | Repo | Ignore file | `Applying change` | `Syncing merkle` |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `cursorlab-a` | none | **15** | 16 |
 | `cursorlab-b` | `.cursorindexingignore` = `*` | **0** | 1 |
 
@@ -526,7 +526,7 @@ asking exactly this has been unanswered since Aug 2025.
 ### The rest of the surface
 
 | Capability | Evidence | Concern |
-|---|---|---|
+| --- | --- | --- |
 | **Operator config overrides argv, and argv writes back** | §4: a *failed* `--model` persisted 4 keys; `--force` is *"unless explicitly denied"* by `permissions.deny` | **New axis.** Autonomy and model are not fully expressible in argv, and Ralphy can corrupt the operator's config. |
 | **Server-pushed skills** | 17 skills synced mid-run, incl. `split-to-prs`, `update-cursor-settings` | A live vendor→agent instruction channel, including PR-opening guidance. |
 | **Foreign skill harvesting** | 78 skills injected, incl. all of `~/.claude/skills` | No CLI-side allowlist (§8). |
@@ -579,7 +579,7 @@ Captured logged-out, Windows `2026.07.16-899851b`. Identical structure on WSL.
 ### Global options
 
 | Flag | Meaning |
-|---|---|
+| --- | --- |
 | `-v, --version` | version number |
 | `--api-key <key>` | auth key (or `CURSOR_API_KEY`) |
 | `-H, --header <header>` | custom header on agent requests, repeatable |
@@ -613,7 +613,7 @@ Environment: `CURSOR_API_KEY`, `CURSOR_AUTH_TOKEN`, `CURSOR_CONFIG_DIR`,
 ### Subcommands
 
 | Command | Purpose | Machine-readable? |
-|---|---|---|
+| --- | --- | --- |
 | `login` / `logout` | authenticate / clear auth | — |
 | `mcp` | `login \| list \| list-tools \| enable \| disable` | ⚠ |
 | `plugin` | `marketplace` | ⚠ |
@@ -632,7 +632,7 @@ Environment: `CURSOR_API_KEY`, `CURSOR_AUTH_TOKEN`, `CURSOR_CONFIG_DIR`,
 ## B. Probe log
 
 | # | Probe | Status |
-|---|---|---|
+| --- | --- | --- |
 | P1 | stdin channel, 26 372 B with head/tail markers | ✅ both markers echoed, `inputTokens: 19264` |
 | P2 | argv ceiling | ⏸ deferred — stdin proven |
 | P3 | stream shape, `stream-json` | ✅ 6 discriminators, envelope with usage |

@@ -413,7 +413,7 @@ charter from stdin to argv (`-p, --prompt`), which turns the process's
 single-argument limit into a real constraint:
 
 | platform | single-arg ceiling | measured |
-|---|---|---|
+| --- | --- | --- |
 | Windows (`CreateProcess` `lpCommandLine`) | 32,767 chars | passes at 32,000, `WinError 206` at 33,000 |
 | Linux (`MAX_ARG_STRLEN`, 32 pages) | 131,072 bytes | passes at 131,000, `E2BIG` at 131,072 |
 

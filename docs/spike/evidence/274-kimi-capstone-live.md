@@ -308,7 +308,7 @@ be rewritten to "exit-1 + `provider.api_error: 403 … billing cycle` text" per 
 ## Final status (capstone closed; ADR stays proposed)
 
 | Phase | Verdict |
-|-------|---------|
+| ------- | --------- |
 | 1 plan-only + D7 harvest | ✅ PASS |
 | — Finding #1 (scan pricing) | ✅ fixed on `feat/copilot`, green gate clean |
 | 2 green run + ladder + stream-vs-diff | ✅ PASS (fresh green close carried from #155) |

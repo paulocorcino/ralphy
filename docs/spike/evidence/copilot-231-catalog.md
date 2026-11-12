@@ -71,7 +71,7 @@ both guards in place: `1 passed`, 5.71s.
 ## Rate card / effort samples pinned from the fixture
 
 | id | selectable | restricted_to | reasoning_effort | in / out / cache_read / cache_write | max_prompt_tokens |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | `claude-sonnet-5` | yes | pro, pro_plus, business, enterprise, max | low, medium, high, xhigh, max | 200 / 1000 / 20 / 250 | 200000 |
 | `gpt-5-mini` | yes | *(absent → every tier)* | low, medium, high | 25 / 200 / 2 / 0 | *(absent)* |
 | `claude-opus-4.8` | no | pro_plus, business, enterprise, max | low, medium, high, xhigh, max | 500 / 2500 / 50 / 625 | 200000 |

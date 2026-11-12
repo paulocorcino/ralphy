@@ -169,7 +169,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
           <i class="bi bi-exclamation-triangle"></i>
           <span class="vbtn-label">Changed on disk — reload</span></button>
         <span class="viewer-save-err" style="display:none"></span>
-        ${encodingBtnHtml(rec)}
+        ${encodingBtnHtml()}
         <button class="vbtn save" data-act="save" title="Save" aria-label="Save">
           <i class="bi bi-save"></i><span class="vbtn-label">Save</span></button>
         ${detachBtnHtml(rec)}

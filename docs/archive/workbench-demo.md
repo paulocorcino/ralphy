@@ -27,7 +27,7 @@ The demo read five seed files from `crates/ralphy-daemon/assets/ui-demo/`,
 outside the tree that the daemon embeds:
 
 | Seed file | What it filled |
-|---|---|
+| --- | --- |
 | `wb-seed-projects.js` | four projects in the sidebar |
 | `wb-seed-runs.js` | runs with their plans, and the ⚡ button that moved a run one step |
 | `wb-seed-kanban.js` | the board |
@@ -66,7 +66,7 @@ None of these is decided. Each one starts from the same fact: the demo mode
 must come from an explicit flag, not from the protocol of the page.
 
 | Way | How | Cost |
-|---|---|---|
+| --- | --- | --- |
 | Hosted demo | CI publishes the built tree with the seeds to GitHub Pages over https, where ES modules load | A workflow for Pages, and seeds kept up to date |
 | `ralphy demo` | The binary serves the same tree with the seeds on loopback, with no store | A small subcommand, and the same seeds |
 | The real daemon with sample data | `ralphy demo` starts a daemon with a scratch store and sample repositories. No seed is needed, and consoles work | Runs and the board need sample forge data, because they read GitHub today |

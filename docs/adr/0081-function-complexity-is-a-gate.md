@@ -18,7 +18,7 @@ the function in front of it instead of splitting the function.
 Measured on `70c46c78` (2026-10-12), limit 10, production code only:
 
 | Language | Measure | Tool | Functions over 10 | 11–20 | 21–50 | 51 or more |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | Rust | cognitive complexity | `clippy::cognitive_complexity`, clippy 0.1.98 | 122 | 81 | 34 | 7 |
 | TypeScript | cyclomatic complexity, `variant: "modified"` | oxlint 1.85.0 `eslint(complexity)` | 114, in 61 of 108 modules | 91 | 23 | 0 |
 
@@ -194,7 +194,7 @@ there, and nothing says where it ends. The baseline on `50f1be4a` lists 292
 functions over 10:
 
 | Score | Rust | TypeScript | Total |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 51 or more | 12 | 0 | 12 |
 | 41–50 | 3 | 1 | 4 |
 | 31–40 | 16 | 6 | 22 |
@@ -217,7 +217,7 @@ ceiling only goes down, as the values of D4 do.
 done.** Each step is one issue, cut into sub-issues by file:
 
 | Step | Functions | Ceiling when the step closes |
-|---|---|---|
+| --- | --- | --- |
 | 1 | the 12 at 51 or more (#709) | 50 |
 | 2 | the 26 at 31–50 | 30 |
 | 3 | the 44 at 21–30 | 20 |
@@ -250,9 +250,9 @@ baseline as a normal state. Step 5 brings each one to 10 or less.
 
 **A9. Adds step 5 to the table of A6.**
 
-| Step | Functions | Ceiling when the step closes |
-|---|---|---|
-| 5 | the 156 at 11–15 (#815) | 10 |
+| Step | Functions               | Ceiling when the step closes |
+| ---- | ----------------------- | ---------------------------- |
+| 5    | the 156 at 11–15 (#815) | 10                           |
 
 The step is cut into sub-issues by file, as the other steps are. It has no
 date, for the reason A6 gives.

@@ -191,7 +191,7 @@ same page, a fixture with headings, task list, table, links, a mermaid fence,
 code, quote and an ordered list):
 
 | | Milkdown Crepe 7.22.1, lean | ink-mde 0.34.0 | Editor.js |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | family | document model (ProseMirror), markdown serialised in/out | source-based live preview (CodeMirror 6) | block editor |
 | stores | markdown | markdown | **its own JSON** — rejected on that alone |
 | last release | 2026-08-12, monthly cadence | 2024-09-28 | — |

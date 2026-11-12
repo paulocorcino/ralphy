@@ -36,7 +36,7 @@ stops being something a review counts by hand and gets wrong (a review in July
 put it at 110; the plan that opened this work said 145):
 
 | Shape | What a file split does to it |
-|---|---|
+| --- | --- |
 | A — `contains("identifier")` | survives, if the text lands in the file the test names |
 | F — `!contains(…)` | restate over the tree and it gets **stronger** |
 | B — scoped slice (`find`/`split_once` + `.expect()`) | **panics** on a missing delimiter, not fails |

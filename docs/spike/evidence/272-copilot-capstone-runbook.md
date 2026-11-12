@@ -26,7 +26,7 @@ section governs; those five stop conditions are reproduced in the ledger below.
 ## Resolved environment (captured 2026-07-22)
 
 | Field | Value |
-|-------|-------|
+| ------- | ------- |
 | Host OS | Windows 11 Pro 26200 |
 | Copilot CLI | **1.0.72** (ADR-0041 cut against `1.0.71` — minor skew; a Phase 6 / version-note data point) |
 | Copilot on PATH | `…/WinGet/Links/copilot` (WinGet shim, not `resolve_program`) |
@@ -268,7 +268,7 @@ ADR-0041 accepted; host clean.
 ## Acceptance-criteria ledger (#272)
 
 | AC | Criterion | Phase(s) | Kind |
-|----|-----------|----------|------|
+| ---- | ----------- | ---------- | ------ |
 | 0 | All preflight refusals fire (logged-out, D8 scrub, D7 receipt, D11 pre-spawn) | 0 | mechanical |
 | 1 | Plan-only: real artifact, charter markers survive, minted id keys rows, clean price, no exec-model line | 1 | mechanical |
 | 2 | Full run green on sentinel; `codeChanges` false friend; `Timeout`/`non_green` + `Blocked` | 2 | mechanical |

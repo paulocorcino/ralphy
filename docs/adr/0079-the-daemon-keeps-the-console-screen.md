@@ -38,7 +38,7 @@ Codex and OpenCode streams (spawned through `ralphy-pty`, with a resize
 method and every number are in the spike report of #689; the deciding numbers:
 
 | criterion | alacritty_terminal 0.26.0 | vt100 0.16.2 |
-|---|---|---|
+| --- | --- | --- |
 | reflow on resize (a 300-char line, 120 -> 60 -> 120) | yes | no: cut to 60 chars |
 | scrollback while DECSTBM 1;37 of 40 is set, 3000 lines | 3000 kept | 0 kept |
 | heap per session, 120 cols, 1000 / 2000 / 5000 / 10000 lines | 5.00 / 7.78 / 16.21 / 30.20 MiB | 3.84 / 7.54 / 18.71 / 37.27 MiB |

@@ -410,7 +410,7 @@ The map of the crates, with the component each one holds, is §4 of
 [ARCHITECTURE.md](./ARCHITECTURE.md). The other paths:
 
 | Path | Role |
-|------|------|
+| ------ | ------ |
 | `crates/xtask/` | Out-of-band repo tooling (`refresh-seed`, `changelog`, `bump`, `ui-copy`, `asset-pins`, `capabilities`); not part of the shipped binary. |
 | `scripts/` | Developer scripts that are not part of CI, such as `update-ralphy.ps1`. |
 | `changelog.d/` | Human-owned changelog fragments, one per pull request; consumed by the `changelog` xtask. |

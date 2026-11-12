@@ -15,7 +15,7 @@ ADR-0040.
 ## M1 — a guard hook that cannot start lets the tool run
 
 | Hook command on `PreToolUse`, matcher `Bash` | Hook result | Bash tool |
-|---|---|---|
+| --- | --- | --- |
 | `"\\?\C:\Users\…\ralphy.exe" hook guard` | Git Bash: `\?\C:\Users\…\ralphy.exe: No such file or directory`, exit 127 | **ran** (`probe.txt` was written) |
 | `echo blocked-by-probe >&2; exit 2` | exit 2 | blocked; the model reported the hook's message |
 
@@ -39,7 +39,7 @@ no shell. Hooks on `SessionStart`, `UserPromptSubmit` and `Stop`, the
 command `C:\Dev\ralphy\target\debug\ralphy.exe`:
 
 | CLI | Status lines written | What happened |
-|---|---|---|
+| --- | --- | --- |
 | 2.1.312 | 3 of 3 | the program ran with `hook status` |
 | 2.1.139 | 3 of 3 | the program ran with `hook status` |
 | 2.1.138 | 0 of 3 | `args` was ignored and `command` went to Git Bash unquoted: `C:Devralphytargetdebugralphy.exe: command not found`, exit 127 |
@@ -77,7 +77,7 @@ with `RALPHY_STATUS_FILE` set and no positional prompt. `s.json` has
 (`echo "<Event> $(date +%s%3N)" >> "$RALPHY_STATUS_FILE"`).
 
 | When | Status file |
-|---|---|
+| --- | --- |
 | 15 s after the spawn, the question "Is this a project you created or one you trust?" on screen | empty (no file) |
 | after the answer "Yes, I trust this folder" (`ESC [ B`, then `\r`) | `SessionStart` written within 10 s |
 
@@ -126,7 +126,7 @@ Claude Code session that ran it (the TUI showed "Transcript saving is off").
 (b) Which bytes submit the prompt:
 
 | Variant | Prompt | Settle | Submitted |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | (i) text + `\r` in one write | `Reply with the single word OK.` | 1500 ms | 3 of 3 |
 | (i) text + `\r` in one write | same | 0 ms | 3 of 3 |
 | (ii) text, pause 300 ms, `\r` | same | 1500 ms | 3 of 3 |
@@ -156,7 +156,7 @@ claude -p --model haiku --input-format stream-json --output-format stream-json -
 ```
 
 | Case | Prompt | Exit | Fixture |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | (a) done | two short lines, then `RALPHY_DONE_EXIT` alone on the last line, no tools | 0 | `crates/ralphy-agent-claude/tests/fixtures/stream_json_done.jsonl` |
 | (b) blocked | exactly the line `RALPHY_BLOCKED_EXIT missing key`, no tools | 0 | `stream_json_blocked.jsonl` |
 | (c) logged out | `Reply OK.`, with `CLAUDE_CONFIG_DIR=<empty temp dir>` and `ANTHROPIC_API_KEY` empty | 1 | `stream_json_logged_out.jsonl` |
@@ -209,7 +209,7 @@ plan session (`claude -p`), so these rows cover the headless path. Claude
 Code is 2.1.312 except in L4.
 
 | Case | OS | Setup | Claude Code | What happened | Error text (start) |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | L1 normal | Windows | none | 2.1.312 | exit 0; plan written; `agent-status.jsonl` starts with `SessionStart`, then `UserPromptSubmit`; branch returned | none |
 | L1 normal | WSL | none | 2.1.312 | exit 0; plan written; `SessionStart` before `UserPromptSubmit`; branch returned | none |
 | L2 `disableAllHooks` | Windows | `{"disableAllHooks": true}` in `.claude/settings.local.json` | 2.1.312 | exit 1 after 30 s, prompt not sent; issue unchanged; back on `capstone/opencode-273`; run branch removed | `the agent's hooks did not prove they run: C:/Dev/FinCal\.claude\settings.local.json sets disableAllHooks to true, so Claude Code runs no hook; no SessionStart hook event came in 30 s; …` |
@@ -248,7 +248,7 @@ deleted on Windows, and the check runs in the first second of `doctor`, so a
 renamed copy was not used here.
 
 | Case | OS | Setup | What happened |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | D1 `doctor` | Windows | none | `[ok  ] claude hooks: the hook command ran and wrote a status line`, then six `[ok  ]` lines `<agent> hooks: no state source` (codex, kimi, opencode, copilot, cursor, gemini) |
 | D1 `doctor --json` | Windows | none | seven `"tool":"hooks"` lines, all `required: false`; the claude one has `ok: true` |
 | D1 `doctor` | WSL | none | the same claude line, `ok` |
@@ -279,7 +279,7 @@ then renamed (Windows) or deleted (WSL), and a second Claude console was
 opened and typed into the same way.
 
 | Case | OS | Dot | `agent_state` on `/api/sessions` | Time from the typed input |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | working | Windows | `session-state done`, tooltip `Agent is done` | `{"state":"done","since":…}` | not silent |
 | hook program renamed | Windows | `session-state silent`, tooltip `Agent state not reported: No hook event reached Ralphy in the 30 seconds after your first input, …` | `{"source":"silent","reason":…,"since":…}`, no `state` | silent 18.3 s after `hello` |
 | working | WSL | `session-state done`, tooltip `Agent is done` | `{"state":"done","since":…}` | not silent |

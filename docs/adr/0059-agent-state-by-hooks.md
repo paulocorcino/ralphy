@@ -57,7 +57,7 @@ that is `working` or `waiting`; a run in `sleeping` has no agent at all.
 `phase.state` is untouched.
 
 | State | Meaning | Claude Code hook that produces it |
-|---|---|---|
+| --- | --- | --- |
 | `working` | the agent is in a turn: thinking, calling a tool | `UserPromptSubmit`, `PreToolUse` (any tool but `AskUserQuestion`), `PostToolUse` (any tool — amended 2026-09-16) |
 | `waiting` | the agent needs the operator: a permission prompt or a question | `PermissionRequest`; `PreToolUse` with `tool_name == "AskUserQuestion"` |
 | `done` | the turn ended; the agent is idle at its prompt | `Stop`, `SessionStart` |
@@ -128,7 +128,7 @@ is a few hundred bytes a minute.
 `exec_settings_json` registers, in addition to today's three:
 
 | Event | Matcher | Command |
-|---|---|---|
+| --- | --- | --- |
 | `SessionStart` | — | `hook status` |
 | `UserPromptSubmit` | — | `hook status` |
 | `PreToolUse` | `*` | `hook status` (a second entry; the guard keeps its narrow `Bash\|Edit\|Write\|MultiEdit\|NotebookEdit` matcher and its own command — the two are independent hooks on the same event) |

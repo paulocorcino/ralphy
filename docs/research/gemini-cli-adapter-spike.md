@@ -4,7 +4,7 @@ Evidence for a prospective `ralphy-agent-gemini`, gathered against **Google
 Gemini CLI** on **both** target platforms:
 
 | Platform | Binary | Version |
-|---|---|---|
+| --- | --- | --- |
 | Windows 11 Pro 26200 | `%APPDATA%\npm\gemini.cmd` | `0.51.0` |
 | WSL (Ubuntu) | `~/.nvm/versions/node/v24.13.0/bin/gemini` | `0.51.0` |
 
@@ -24,7 +24,7 @@ because the operator is logged out on both platforms and no paid call has been
 made. Every claim below carries one of:
 
 | Marker | Meaning |
-|---|---|
+| --- | --- |
 | 🔬 | **Observed.** A command was run in this session; its output is quoted. |
 | 🔎 | **Read from the shipped source.** Recovered from the bundled JavaScript — stronger than documentation, weaker than an observed run. |
 | 📖 | **Documented only.** Sourced from the version-matched docs shipped inside the installed bundle. Not yet exercised. |
@@ -150,7 +150,7 @@ And five findings that are blocking or near-blocking:
 ## 1. C1 — Invocation and the headless contract
 
 | Question | Finding |
-|---|---|
+| --- | --- |
 | Headless one-shot | 🔬 `-p, --prompt` — *"Run in non-interactive (headless) mode with the given prompt."* Also 📖: *"Headless mode is triggered when the CLI is run in a non-TTY environment **or** when providing a query with the `-p` flag"* — so redirected stdio alone flips the mode. |
 | **Prompt channel** | 🔬 `--help`: `-p` is *"Appended to input on stdin (if any)"*. **stdin is a documented, first-class channel** — no previous vendor documented this. See the source-confirmed semantics immediately below; **the docs state the ordering backwards.** |
 | Argv ceiling | ⚠ Not probed. `[query..]` is variadic positional. With stdin proven in source there is no reason to risk the ~32 KB Windows ceiling. |
@@ -273,7 +273,7 @@ Four consequences:
 `total_tokens` exceeds `input_tokens + output_tokens` in every run:
 
 | Run | `total` | `input_tokens` | `output_tokens` | residual = thinking |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | 25 KB charter | 32 281 | 30 073 | 88 | **2 120** |
 | skill probe | 33 818 | 32 415 | 121 | **1 282** |
 | pinned Pro | 14 391 | 14 300 | 1 | **90** |
@@ -396,7 +396,7 @@ HEAD diff.
   `packages/core/src/utils/errors.ts` with class names preserved):
 
   | Code | Error class | Meaning | Evidence |
-  |---|---|---|---|
+  | --- | --- | --- | --- |
   | `0` | — | Success | 📖 + 🔎 |
   | `1` | — | Generic fallback (any non-numeric error code) | 📖 + 🔎 |
   | **`41`** | `FatalAuthenticationError` | Auth failure — no method set, OAuth unobtainable, browser launch failed, timeout | 🔬 **observed** + 🔎 · *undocumented* |
@@ -449,7 +449,7 @@ Three live failures, three different shapes. The pattern is consistent and it is
 **not** what the output format promises:
 
 | Failure kind | Channel | Shape |
-|---|---|---|
+| --- | --- | --- |
 | **Fatal** (`Fatal*Error`: auth 41, turn-limit 53, untrusted 55) | **stderr**, even under `-o json`; **stdout empty** | JSON blob with `error.type` = **the class name** and `error.code` = the exit code |
 | **Mid-run API error** (invalid model) | **stdout** | `result` envelope, `status:"error"`, but `error.type:"unknown"` and a useless message; real diagnosis on stderr |
 | **Pre-flight under `stream-json`** | stderr, **prose only** | no JSON at all (§5) |
@@ -534,7 +534,7 @@ wrong; noise means the script is wrong.*
 The identical hook block was probed twice with the same command strings:
 
 | Scope | File | Fired? |
-|---|---|---|
+| --- | --- | --- |
 | Workspace | `C:\Dev\FinCal\.gemini\settings.json` | ❌ **no**, silently — even with `--skip-trust` |
 | User | `~/.gemini/settings.json` | ✅ all four events |
 
@@ -566,7 +566,7 @@ owns and shares with Antigravity. That is an ADR decision, and `GEMINI_CLI_HOME`
   2.5-centric world; the binary ships 3.x:
 
   | Constant | Id |
-  |---|---|
+  | --- | --- |
   | `PREVIEW_GEMINI_MODEL` | `gemini-3-pro-preview` |
   | `PREVIEW_GEMINI_3_1_MODEL` | `gemini-3.1-pro-preview` |
   | `PREVIEW_GEMINI_3_1_CUSTOM_TOOLS_MODEL` | `gemini-3.1-pro-preview-customtools` |
@@ -662,7 +662,7 @@ USD per 1M tokens, [Gemini API pricing], Standard tier. Thinking is billed at
 the **output** rate (see §2, 2b).
 
 | Model id | Input | Output | Cached read | >200 k tier |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `gemini-3.1-pro-preview` | 2.00 / 4.00 | 12.00 / 18.00 | 0.20 / 0.40 | **yes** |
 | `gemini-3.5-flash` | 1.50 | 9.00 | 0.15 | no |
 | `gemini-3-flash-preview` | 0.50 | 3.00 | 0.05 | no |
@@ -731,7 +731,7 @@ method in your /home/corcino/.gemini/settings.json or specify …","code":41}}
 Per-surface behaviour, all logged out:
 
 | Probe | Exit | Channel | Result |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `gemini -p "…"` | **41** | stderr | prose |
 | `gemini -p "…" -o json` | **41** | stderr | **structured JSON with `"code": 41`** |
 | `gemini -p "…" -o stream-json` | **41** | stderr | prose (**not** JSON) |
@@ -821,7 +821,7 @@ For OAuth the file-based paths below presumably still apply:
 `packages/core/src/config/storage.ts`:
 
 | Path | Contents |
-|---|---|
+| --- | --- |
 | `~/.gemini/oauth_creds.json` | OAuth credentials (`OAUTH_FILE`) |
 | `~/.gemini/google_accounts.json` | account identity |
 | `~/.gemini/mcp-oauth-tokens.json` | MCP server tokens |
@@ -863,7 +863,7 @@ $ GEMINI_CLI_HOME=… gemini -p "Reply with exactly: ISOLATED" --approval-mode y
 four separate holes at once:
 
 | Hole | How the isolated root closes it |
-|---|---|
+| --- | --- |
 | User-tier policies outrank `--yolo` (§9) | `~/.gemini/policies/` is no longer read |
 | `~/.gemini/GEMINI.md` prepends to every prompt (§8) | not read |
 | Hooks only fire at *user* scope, forcing Ralphy to mutate the operator's file (§3) | Ralphy's root **is** the user scope — it writes only its own file |
@@ -887,7 +887,7 @@ Ralphy writes under `~/.gemini` is shared with another product.
 ### Topology 📖
 
 | Path | Contents |
-|---|---|
+| --- | --- |
 | `~/.gemini/tmp/<project_hash>/chats/` | sessions |
 | `~/.gemini/tmp/<project_hash>/checkpoints` | checkpoint JSON |
 | `~/.gemini/tmp/<project_hash>/plans/` | plan-mode artifacts |
@@ -955,7 +955,7 @@ a small event-sourced store, not a document:
 Every run silently makes a **second, paid model call to route the request**.
 
 | Run | Stream envelope total | Session file total | Missing |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `Reply with exactly: OK` | 18 273 | 14 567 | 3 706 (`gemini-3.1-flash-lite`, role `utility_router`) |
 | 25 KB charter probe | 32 281 | 20 924 | 11 357 (35%) |
 
@@ -1039,7 +1039,7 @@ the ADR goes this way it must set `telemetry.logPrompts: false` explicitly.
 📖 Daily caps (*"maximum requests per user per day"*):
 
 | Auth | Tier | Cap |
-|---|---|---|
+| --- | --- | --- |
 | Google account | Code Assist Individual | 1,000 |
 | Google account | Google AI Pro | 1,500 |
 | Google account | Google AI Ultra | 2,000 |
@@ -1368,7 +1368,7 @@ be fixed.
 ### The rest of the surface
 
 | Capability | Evidence | Concern |
-|---|---|---|
+| --- | --- | --- |
 | **Enterprise Strict Mode** | 📖 "Default: enabled. If enabled, users will not be able to enter yolo mode." | On a managed machine the autonomy flag is simply unavailable. Needs a preflight. |
 | **Unmanaged Capabilities off by default** | 📖 "this control disables Agent Skills" | Skills-based design breaks on managed machines. |
 | **Remote agents (A2A)** | 📖 `experimental.enableAgents` — **enabled by default**; defined by `.gemini/agents/*.md` (repo-local) with an `agent_card_url` | Delegates tasks to arbitrary remote endpoints; can shell out for tokens (`!gcloud auth print-token`) and open a browser for OAuth. **Repo-local definition + on-by-default is the sharpest edge in this table.** |
@@ -1538,7 +1538,7 @@ Recorded because the false positive is easy to reproduce.)*
 ### ⚠ The docs and the binary disagree — trust `--help`
 
 | Flag | In `--help` 🔬 | In `cli-reference.md` 📖 |
-|---|---|---|
+| --- | --- | --- |
 | `--session-id` | ✅ | ❌ **absent** |
 | `--session-file` | ✅ | ❌ absent |
 | `--policy` / `--admin-policy` | ✅ | ❌ absent |
@@ -1563,7 +1563,7 @@ source is what the binary *should* do; only a run shows what it does.
 ### Global options 🔬
 
 | Flag | Meaning |
-|---|---|
+| --- | --- |
 | `-d, --debug` | debug mode, verbose logging |
 | `-m, --model <id>` | model (default `auto`) |
 | `-p, --prompt <text>` | **headless mode**; *"Appended to input on stdin (if any)"* |
@@ -1595,7 +1595,7 @@ source is what the binary *should* do; only a run shows what it does.
 ### Subcommands 🔬
 
 | Command | Subcommands |
-|---|---|
+| --- | --- |
 | `gemini [query..]` | default — launch the agent |
 | `gemini mcp` | `add <name> <cmdOrUrl> [args…]` · `remove` · `list` · `enable` · `disable` |
 | `gemini extensions` | `install` · `uninstall` · `list` · `update` · `enable` · `disable` · `link` · `new` · `validate` · `config` |
@@ -1631,7 +1631,7 @@ Live runs: **2026-07-20**, `C:\Dev\FinCal`, branch `afk/run-20260720-143515`,
 auth `gemini-api-key`, CLI `0.51.0` on Windows.
 
 | # | Probe | C | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | P0 | logged-out signature, both platforms | C5 | ✅ **🔒 final** — exit `41`, structured under `-o json` only |
 | P1 | **stdin channel** — 25 404-byte charter with head/tail markers | C1 | ✅ **pass** — arrived whole, both markers echoed, 30 073 input tokens; `-p` text confirmed to land **after** stdin |
 | P2 | **`--session-id` adoption** | C6 | ✅ **pass** — `init.session_id` and the on-disk header both read `ralphy-probe-p1p2p3p4p6`; a non-UUID string was accepted |

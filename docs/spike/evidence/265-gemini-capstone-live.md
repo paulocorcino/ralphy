@@ -90,7 +90,7 @@ models: {"gemini-3.5-flash": {…}}   # single key — pinning removed the route
 The three D9 traps, live:
 
 | Trap | Naive | Correct | Here |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1 billable output | `output_tokens` 1342 | `total − input_tokens` = **4289** | thinking residual 2947 (~3.2× undercount) |
 | 2 cached in input | 565088 + 448012 | `input` 117076 = `input_tokens − cached` | disjoint buckets, no double-count |
 | 3 models map | one model | heaviest-model fold | one key ⇒ **no router tax** (D8) ✅ |

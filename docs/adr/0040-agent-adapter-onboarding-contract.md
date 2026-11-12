@@ -223,7 +223,7 @@ files** measured against `ralphy-agent-copilot`, deps: `anyhow, tracing,
 serde_json, include_dir, ralphy-core, ralphy-adapter-support`):
 
 | File | Owns |
-|---|---|
+| --- | --- |
 | `lib.rs` | `impl Agent`, `ACCEPTS_IMAGES`, the plan-prompt `include_str!`, the three budget builders (`with_max_minutes_per_issue`, `with_idle_minutes`, `with_run_deadline` — `build_agent` calls all three) |
 | `command.rs` | Two command builders (run + one-shot); argv, stdio piping, env hygiene |
 | `auth.rs` | `<VENDOR>_AUTH_ERROR_MSG` + `is_<vendor>_auth_error` (+ limit predicate if text-based) |

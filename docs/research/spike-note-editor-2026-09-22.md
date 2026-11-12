@@ -10,7 +10,7 @@ scratch and are not kept; this file is the record.
 ## Candidates
 
 | | Milkdown Crepe 7.22.1 (lean, via `CrepeBuilder`) | ink-mde 0.34.0 |
-|---|---|---|
+| --- | --- | --- |
 | family | document model (ProseMirror), markdown serialised in/out | source-based live preview (CodeMirror 6) |
 | licence | MIT | MIT |
 | last release | 2026-08-12 (monthly cadence) | 2024-09-28 |

@@ -41,7 +41,7 @@ build a port now, but how to stop the coupling from growing.
 **D1. Three classes of external dependency.**
 
 | Class | What it is | Examples |
-|---|---|---|
+| --- | --- | --- |
 | Replaceable product | A vendor's service that has competitors | GitHub as the forge, agent CLIs, models.dev, Telegram, GitHub Releases as Ralphy's distribution channel |
 | Platform | An open standard or protocol with no vendor | git, ssh, HTTP, CloudEvents, the PTY, the OS schedulers |
 | Library | Code linked into Ralphy | crates, Monaco, xterm, Alpine |

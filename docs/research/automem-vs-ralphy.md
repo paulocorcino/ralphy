@@ -46,7 +46,7 @@ exactly what Ralphy ships. The concrete failure modes their structure loop
 discovered are the ones Ralphy's design already addresses:
 
 | AUTOMEM finding (games) | Ralphy today |
-|---|---|
+| --- | --- |
 | Unbounded append-only memory buries signal (v0 `dungeon_map.txt`) | `consolidate` with dedup, 200-line cap, provenance (`knowledge.rs`) |
 | Consult-before-write had to be *trained into* the model | `prompt.execute.md` mandates reading `KNOWLEDGE.md` first |
 | Scaffold-maintained auto-synced files (`inventory`, `status`) beat model-maintained ones | Runner materializes `issue.json`, `references.md`, `handoffs.md` deterministically |

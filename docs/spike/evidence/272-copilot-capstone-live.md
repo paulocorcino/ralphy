@@ -13,7 +13,7 @@ two-currency reconciliation against a real bill, and the interactive-scan invers
 ## Environment
 
 | Field | Value |
-|-------|-------|
+| ------- | ------- |
 | Host | Windows 11 Pro 26200; WSL Ubuntu-22.04 (Phase 6) |
 | Copilot CLI | **1.0.72 → 1.0.73** (self-updated mid-session; both observed) |
 | Ralphy | `target/release/ralphy.exe` (Windows) · `~/ralphy-target-wsl/release/ralphy` (Linux) · branch `feat/copilot` |
@@ -60,7 +60,7 @@ Issue #120, `--dry-run`. Real plan artifact (`## Feasible: yes`, `## Done when`,
   The sums matched ralphy's report to the digit:
 
   | field | store sum | ralphy |
-  |-------|-----------|--------|
+  | ------- | ----------- | -------- |
   | input_tokens | 290243 | up=290243 |
   | cache_read_tokens | 250641 | cr=250641 |
   | cache_write_tokens | 39381 | cw=39381 |
@@ -115,7 +115,7 @@ Issue #120, `--dry-run`. Real plan artifact (`## Feasible: yes`, `## Done when`,
 The GitHub billing dashboard CSV for 2026-07-22:
 
 | Meter | Value |
-|-------|-------|
+| ------- | ------- |
 | **GitHub actual bill** | **215.93 AI credits = $2.16** (Claude Sonnet 5); +0.50 credits GPT-5.3-Codex (not this capstone) |
 | **Store `total_nano_aiu`** (ralphy's D10 source of truth) | **204.02 credits** across 113 rows |
 | **Ralphy USD counterfactual** (ADR-0034 list price) | ~$13 projected |
@@ -180,7 +180,7 @@ runbook-predicted git autocrlf friction, so a **WSL-native clone** (`~/FinCal-ws
 Plan-only parity on #125 was **identical** to Windows:
 
 | Aspect | Windows | WSL |
-|--------|---------|-----|
+| -------- | --------- | ----- |
 | D7 receipt | `status:disabled` | `status:disabled` |
 | minted UUID = store key | `b160d934` | `0c1cc009` |
 | D10 fold | up=290243 = store | up=231157 = store (8 rows) |

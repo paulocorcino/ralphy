@@ -26,7 +26,7 @@ degrades silently** (Claude does it too, not only Copilot).
 ## 1. The map
 
 | Executable | Effort lives in | Real vocabulary | Out-of-range value → | Provenance |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | **claude** | flag `--effort <level>` | `low, medium, high, xhigh, max` (5) | ⚠ **warning + default, exit 0** (silent degrade) | live probe (§2) |
 | **codex** | `-c model_reasoning_effort=<v>` | `none, minimal, low, medium, high, xhigh, max` (7) | ✅ **API 400, loud** (no degrade) | live probe (§3) |
 | **copilot** | flag `--effort <level>` | `none, minimal, low, medium, high, xhigh, max` (7), **per-model** support list | ⚠ valid-but-unsupported → model default, silent (P6) | spike §4 |

@@ -30,7 +30,7 @@ wins", `event.rs:174`). `RunEvent` has 28 variants (`event.rs:18`).
 Four consumers share that decoder:
 
 | Sink | Mechanism | Fold |
-|---|---|---|
+| --- | --- | --- |
 | `ralphy.log` / stderr | `fmt::layer` | none (raw lines) |
 | Console presenter | `Presenter: Layer` (`ui/presenter.rs:573`) → render thread | **own** `LiveState` + `QueueState` (see F3) |
 | Telegram | `DeliveryLayer` + `TelegramEngine` (`telegram/notifier.rs:348`) | `RunState::apply` |
@@ -56,7 +56,7 @@ by the decoder.
 30 distinct message strings are contract. Emit sites verified by grep:
 
 | Message | Emitter | Decoder arm | Drift protection |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `queue built` | cli `run.rs:614` | `event.rs:182` | decoder tests only |
 | `run started` | cli `run.rs:328` | `event.rs:310` | decoder tests only |
 | `run finished` | cli `run/report.rs:75` | `event.rs:321` | decoder tests only |
@@ -138,7 +138,7 @@ presenter instead maintains `LiveState`/`ActiveIssue` (`ui/presenter.rs:33,51`)
 and `QueueState` (`ui.rs:80`). Semantic diff, verified field by field:
 
 | Fact | Presenter | `RunState` | Divergence |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Supersede (new `IssueStarted` while prior active issue is non-terminal — dry-run plan-only) | `QueueState::supersede` advances the bar (`presenter.rs:227`) | **absent** — the prior issue stays `Planning` forever | **Live bug**: in a `--dry-run` multi-issue run the Telegram card and the heartbeat's `counts().planning` count already-passed issues as active, forever |
 | `stop_before` | kept, marks the cut on the pending bar (`ui.rs:139`) | **dropped** by `apply(QueueBuilt)` (`state.rs:206`) | remote consumers can't see the announced halt point except inside `queue.built` data |
 | Queue order / pending list | kept (`QueueState.pending`) | partial (`queue: Vec<QueueRef>` has order, no progress) | two progress derivations |
@@ -299,7 +299,7 @@ Wire format: byte-identical. `docs/events.md`: unchanged.
 ### Effort & risk matrix
 
 | Phase | Blast radius | Risk | Mitigation |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 0 | test-only | none | — |
 | 1 | every emit site (mechanical), decoder arms | low — behavior pinned by Phase 0 + round-trips | wire byte-identical; revert = revert one module |
 | 2 | `run_cmd` orchestration order | medium — worker start order is subtle (`run.rs:194-199` comment) | events.md additive; characterization of teardown order; manual `--dry-run`/empty-queue smoke on both OSes |
