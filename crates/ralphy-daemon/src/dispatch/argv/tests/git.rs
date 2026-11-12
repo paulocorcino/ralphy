@@ -290,6 +290,7 @@ fn config_argv_refuses_local_only_keys() {
         "events.token",
         "queue.trust_all_comments",
         "claude.run_without_guard_proof_i_understand_the_risk",
+        "antigravity.run_without_guard_proof_i_understand_the_risk",
     ] {
         assert_eq!(
             config_argv(

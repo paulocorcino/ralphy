@@ -43,13 +43,14 @@ fn well_shaped_key(key: &str) -> bool {
 /// `pub(crate)` so the settings-panel gate in `lib.rs` can assert the schema
 /// declares each of these `readonly` — a key denied here but offered as an
 /// editable field is a control that takes an edit and answers "refused".
-pub(crate) const LOCAL_ONLY_KEYS: [&str; 6] = [
+pub(crate) const LOCAL_ONLY_KEYS: [&str; 7] = [
     "verify.command",
     "copilot.allow_builtin_mcp_servers_i_understand_the_risk",
     "cursor.allow_codebase_indexing_i_understand_the_risk",
     "events.token",
     "queue.trust_all_comments",
     "claude.run_without_guard_proof_i_understand_the_risk",
+    "antigravity.run_without_guard_proof_i_understand_the_risk",
 ];
 
 /// Whether `key` may be set through the daemon's `config.set`/`config.unset`.
