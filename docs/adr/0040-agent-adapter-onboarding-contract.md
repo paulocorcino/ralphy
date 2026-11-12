@@ -28,6 +28,9 @@ Evidence in [the Gemini spike, §C](../research/gemini-cli-adapter-spike.md).
 **Amendment 3** (2026-10-01) lets the workbench console prepare an owned
 configuration root through a CLI subcommand, instead of refusing until a run has
 made one — see the end of this file.
+**Amendment 5** (2026-11-12) records the Antigravity adapter: the first vendor
+exception to C12 rule 4, and the drift found in the wiring inventory — see the end
+of this file.
 **Amendment 4** (2026-10-28) adds §C12, the rules for a hook command, sharpens
 C3, and adds the state source to Tier 4 — see the end of this file.
 
@@ -538,3 +541,50 @@ same answer in the adapter. A new vendor starts as `none`. It moves to
 `hooks` or `stream` only with a finding in `docs/research/` that answers C3
 for it, and with its own mapping table from vendor events to states,
 pinned by a fixture the way ADR-0059 §5 pins Claude's.
+
+## Amendment 5 — 2026-11-12, the Antigravity adapter
+
+Source: [ADR-0086](./0086-antigravity-adapter.md) D9 and its
+`## Wiring for the adapter`. Antigravity (`agy`) is the first vendor that
+changes a rule of this ADR.
+
+### C12 rule 4 — the first vendor exception
+
+`agy` accepts a hook only as a shell command line (rule 2 has no exec form
+for it), so an unattended `agy` session runs the shell form. This is allowed
+for `agy` alone, because both of these hold:
+
+1. **The guard fails closed.** A `PreToolUse` hook that fails, or answers
+   anything but `{"decision":"allow"}`, denies the tool.
+2. **The proof turn closes rule 5.** Before the task, the adapter sends one
+   fixed message with no task and waits up to 30 seconds for that session's
+   `SessionStart` line in its status file. Without the line, the session
+   ends as a fatal error of the run, unless the operator set
+   `antigravity.run_without_guard_proof_i_understand_the_risk`. The daemon
+   refuses that key (`LOCAL_ONLY_KEYS`): it is set only on the machine.
+
+The program path is not quoted, because `agy` passes a quoted path to `cmd /c`
+and the hook then fails. A path with a space or a shell character uses the
+Windows short (8.3) form; with none, the session is refused and the message
+names the path.
+
+### Wiring inventory — drift found
+
+- The seed `wb-seed-agents.js` no longer exists. The workbench takes its
+  agent list from the daemon, so a new vendor has nothing to add there.
+- Roster digit `8` is taken by Antigravity (`roster.rs`). The next vendor
+  needs a new digit or a change of the roster scheme.
+- The Tier 1 file list of `agy` is `lib.rs`, `command.rs`, `auth.rs`,
+  `outcome.rs`, `usage.rs`, `tasks.rs`, `skills.rs`, `settings.rs`, `root.rs`,
+  `catalog.rs`, `effort.rs`, plus `console.rs`, `session.rs`, `quota.rs` and
+  `status.rs` for the proof turn and the console.
+- The owned root is one per OS user, `<Ralphy data folder>/antigravity-root`,
+  not one per workspace. The daemon and the CLI resolve it through
+  `ralphy_proc_util::antigravity::owned_root`.
+- The program is found by one shared locator,
+  `ralphy_proc_util::antigravity::locate_agy`, because the daemon imports no
+  adapter crate. The console gate writes the root through the hidden command
+  `ralphy antigravity prepare-root` (Amendment 3).
+- The state source is `hooks`: the map of the six `agy` events is in
+  `agent_state/antigravity.rs`, pinned by
+  `tests/fixtures/antigravity_agent_state_mapping.json`.
