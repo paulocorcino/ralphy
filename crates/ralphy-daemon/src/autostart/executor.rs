@@ -76,6 +76,10 @@ pub fn powershell_flavor(path: Option<&str>) -> PowerShellFlavor {
 /// The uid that owns this process — the launchd `gui/<uid>` domain.
 #[cfg(unix)]
 #[expect(unsafe_code, reason = "FFI: libc::getuid")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "one signature across systems: the non-unix arm has no uid"
+)]
 fn current_uid() -> Option<u32> {
     // SAFETY: `getuid` takes no arguments, cannot fail, and touches no memory.
     Some(unsafe { libc::getuid() })

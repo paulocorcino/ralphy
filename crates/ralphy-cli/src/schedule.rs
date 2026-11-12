@@ -264,6 +264,10 @@ fn host_status(spec: &TimerSpec) -> Result<()> {
 }
 
 #[cfg(not(windows))]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "one signature across systems: the Windows arm can fail"
+)]
 fn host_status(spec: &TimerSpec) -> Result<()> {
     let existing = read_crontab().unwrap_or_default();
     match existing

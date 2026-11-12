@@ -206,6 +206,10 @@ pub(crate) fn agent_program(a: Agent) -> Option<PathBuf> {
 }
 
 #[cfg(target_os = "linux")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "one signature across systems: the others have no linger to read"
+)]
 fn linger() -> Option<LingerRead> {
     let Some(user) = std::env::var("USER").ok().filter(|u| !u.is_empty()) else {
         return Some(LingerRead(None));
