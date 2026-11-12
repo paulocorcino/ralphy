@@ -380,8 +380,10 @@ pub(crate) mod win {
 #[cfg(test)]
 mod temp_name_tests;
 
-#[cfg(all(test, windows))]
+#[cfg(test)]
+#[cfg(windows)]
 pub(crate) mod tests;
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
+#[cfg(unix)]
 mod unix_tests;
