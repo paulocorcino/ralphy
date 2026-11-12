@@ -7,6 +7,7 @@ import { openerOf } from "./wb-events.ts";
 import { isFileDescriptor, isOpenRequest } from "./wb-file-viewer.ts";
 import { windowTitle } from "./wb-window-title.ts";
 import { required } from "./wb-dom-need.ts";
+import { devLog } from "./wb-log.ts";
 
 /** A message this window sends the shell. */
 export type FilePopupMessage =
@@ -51,7 +52,7 @@ export function wireDetached(window: Window, document: Document) {
     emit(action, ...detail) {
       const to = opener();
       if (to) to.postMessage({ type: "wb-emit", action, detail: detail[0] }, PEER);
-      else console.log("[workbench:action]", { action, ...detail[0] });
+      else devLog("[workbench:action]", { action, ...detail[0] });
     },
   };
 

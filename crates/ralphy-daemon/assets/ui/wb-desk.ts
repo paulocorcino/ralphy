@@ -41,6 +41,7 @@ import type {
   Presentation,
   SpawnCarry,
 } from "./wb-types.d.ts";
+import { devWarn } from "./wb-log.ts";
 
 // What the desk reads from the console, and nothing else.
 export type DeskDeps = {
@@ -125,8 +126,7 @@ async function unreadableDesk(r: ApiRefusal<"GET /api/desk">) {
   if (r.status !== 409) return null;
   const body = await r.json().catch(() => null);
   if (body?.state !== "unreadable") return null;
-  // oxlint-disable-next-line no-console -- the daemon's text is for a developer
-  if (body.error) console.warn("saved desk:", body.error);
+  if (body.error) devWarn("saved desk:", body.error);
   return "the file is damaged";
 }
 
@@ -360,8 +360,7 @@ export function createDesk(deps: DeskDeps) {
   // the failure and sends nothing until the desk reads again.
   function deskUnreadable(out: FlushAnswer) {
     const error = out.reply?.error ?? "";
-    // oxlint-disable-next-line no-console -- the daemon's text is for a developer
-    if (error !== "") console.warn("saved desk:", error);
+    if (error !== "") devWarn("saved desk:", error);
     deskFailure = "the file is damaged";
     deskLoaded = false;
     sync.fail();

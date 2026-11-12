@@ -9,6 +9,7 @@ import type { Messages } from "./wb-messages.ts";
 import type { BytesRecord, RefusedRecord, ViewerRecord } from "./wb-file-viewer.ts";
 import type { MermaidWindow } from "./wb-dbml-draw.ts";
 import { diffEditor } from "./wb-file-viewer-records.ts";
+import { devError } from "./wb-log.ts";
 
 /** What `createViewer` hands the read-only panes. */
 export type ViewerReadOnlyDeps = {
@@ -67,7 +68,7 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
         // "no changes". Say it failed and close the tab (#311).
         rec.mounting = false;
         rec.mountFailed = true;
-        console.error("[workbench] monaco diff failed to mount", err);
+        devError("[workbench] monaco diff failed to mount", err);
         messages.flash("Could not open the editor.");
         window.Alpine.store("tabs").closeTab(rec.id);
       });
@@ -100,8 +101,7 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
         ?.getAction("actions.find")
         ?.run()
         .catch((err: unknown) => {
-          // oxlint-disable-next-line no-console -- the failure is for a developer
-          console.error("[workbench] monaco find failed", err);
+          devError("[workbench] monaco find failed", err);
         });
     });
     rec.el = el;

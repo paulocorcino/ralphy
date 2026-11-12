@@ -97,10 +97,15 @@ test("the plugin never throws and never prints", async () => {
   const keep = {
     out: process.stdout.write,
     err: process.stderr.write,
+    // oxlint-disable-next-line no-console -- the test checks that the plugin prints nothing
     log: console.log,
+    // oxlint-disable-next-line no-console -- the test checks that the plugin prints nothing
     error: console.error,
+    // oxlint-disable-next-line no-console -- the test checks that the plugin prints nothing
     warn: console.warn,
+    // oxlint-disable-next-line no-console -- the test checks that the plugin prints nothing
     info: console.info,
+    // oxlint-disable-next-line no-console -- the test checks that the plugin prints nothing
     debug: console.debug,
   };
   const capture = (name) => (...args) => {

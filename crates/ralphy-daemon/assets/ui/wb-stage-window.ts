@@ -12,6 +12,7 @@ import { WBGeometry } from "./wb-geometry.ts";
 import { sendDocument } from "./wb-events.ts";
 import { inTab } from "./wb-console-place.ts";
 import type { ConsoleWin, DeskWindowFields, ExtentOpts, Stacked } from "./wb-types.d.ts";
+import { devWarn } from "./wb-log.ts";
 
 // Plane geometry is `wb-geometry.ts` (ADR-0057): pure folds over rects.
 const { STAGE_MARGIN, stageExtent } = WBGeometry;
@@ -212,7 +213,7 @@ export function createStageWindow(deps: StageWindowDeps) {
     win.requestFullscreen().catch((err: unknown) => {
       // The browser refusing (no user gesture, a policy header). Say so; the
       // console is still usable maximized.
-      console.warn("fullscreen refused", err);
+      devWarn("fullscreen refused", err);
     });
   }
 

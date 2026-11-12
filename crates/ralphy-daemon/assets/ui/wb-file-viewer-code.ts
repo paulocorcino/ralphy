@@ -11,6 +11,7 @@ import type { ViewerEncoding } from "./wb-viewer-encoding.ts";
 import { wireFileButtons } from "./wb-viewer-save.ts";
 import type { ViewerSave } from "./wb-viewer-save.ts";
 import type { MermaidWindow } from "./wb-dbml-draw.ts";
+import { devError, devWarn } from "./wb-log.ts";
 
 /** What `createViewer` hands the code pane. */
 export type ViewerCodeDeps = {
@@ -104,7 +105,7 @@ export function createViewerCode(deps: ViewerCodeDeps) {
         pre.textContent = rec.content;
         container.append(pre);
         rec.fallbackEl = pre;
-        console.warn("[workbench] monaco did not boot; read-only fallback", err);
+        devWarn("[workbench] monaco did not boot; read-only fallback", err);
         return null;
       })
       .then((monaco) => {
@@ -144,7 +145,7 @@ export function createViewerCode(deps: ViewerCodeDeps) {
         // A create()/wiring failure is NOT a boot failure: the pane would look
         // editable while nothing is wired, so say so instead of degrading.
         rec.mounting = false;
-        console.error("[workbench] monaco editor failed to mount", err);
+        devError("[workbench] monaco editor failed to mount", err);
         messages.flash("Could not open the editor.");
       });
   }
@@ -186,8 +187,7 @@ export function createViewerCode(deps: ViewerCodeDeps) {
         ?.getAction("actions.find")
         ?.run()
         .catch((err: unknown) => {
-          // oxlint-disable-next-line no-console -- the failure is for a developer
-          console.error("[workbench] monaco find failed", err);
+          devError("[workbench] monaco find failed", err);
         });
     });
     const mirrorBtn = el.querySelector<HTMLElement>('[data-act="mirror"]');

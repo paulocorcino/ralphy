@@ -9,6 +9,8 @@
    lists.
    --------------------------------------------------------------------------- */
 
+import { devLog } from "./wb-log.ts";
+
 /** The `workbench:*` names sent on `window`. */
 export type WindowEventName = Extract<keyof WindowEventMap, `workbench:${string}`>;
 /** The `workbench:*` names sent on `document`. */
@@ -83,8 +85,7 @@ export function createEmitter(document: Document): Window["WB"] {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a generic spread
       const full = { action, ...detail[0], at: new Date().toISOString() } as WorkbenchAction;
       sendDocument(document, "workbench:action", full);
-      // eslint-disable-next-line no-console
-      console.log("[workbench:action]", full);
+      devLog("[workbench:action]", full);
     },
   };
 }

@@ -14,6 +14,7 @@ import { component } from "./wb-alpine.ts";
 import * as WBHosts from "./wb-hosts.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBFleet } from "./wb-fleet.ts";
+import { devWarn } from "./wb-log.ts";
 
 type RemoveHost = {
   open: boolean;
@@ -87,8 +88,7 @@ export function hostsDialog() {
         })
         // Without the list the operator types the address.
         .catch((e: unknown) => {
-          // oxlint-disable-next-line no-console -- the failure is for a developer
-          console.warn("host aliases:", e);
+          devWarn("host aliases:", e);
         });
     },
     closeAddHost() {
@@ -371,7 +371,7 @@ export function hostsDialog() {
         await navigator.clipboard.writeText(command);
       } catch (e) {
         // No clipboard off a secure origin; the command stays on screen to type.
-        console.warn("copy host command:", e);
+        devWarn("copy host command:", e);
         return;
       }
       this.$store.modals.flash(done);
