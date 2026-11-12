@@ -12,23 +12,41 @@
 
 use std::path::Path;
 use std::process::ExitCode;
-use std::sync::LazyLock;
 
-use regex::Regex;
 use serde_json::{json, Value};
 
 use super::{evaluate_guard, normalise_path, read_payload, GuardContext, GuardDecision};
 
-/// The agy commands that start a remote take-over, a listening server, or
-/// change the installed binary: Ralphy never runs them, so the agent may not.
+/// The agy verbs that start a remote take-over, a listening server, or change
+/// the installed binary: Ralphy never runs them, so the agent may not.
 // ADR-0086 D12.
-static DAEMON_COMMAND: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(concat!(
-        r#"(?i)\b(?:agy|antigravity)(?:\.exe)?['"]?(?:\s+-\S+)*\s+"#,
-        r"(?:remote-control|mic-serve|install|update)\b",
-    ))
-    .expect("valid agy deny regex")
-});
+const DAEMON_VERBS: [&str; 4] = ["remote-control", "mic-serve", "install", "update"];
+
+/// Does `command` name an agy program token with a denied verb as a later
+/// token? Quotes, `,`, `;`, `|`, `&` and parentheses separate tokens, so a
+/// quoted verb, a flag value before the verb, a path, `agy.exe` and
+/// `Start-Process agy -ArgumentList 'update'` all match.
+fn is_daemon_command(command: &str) -> bool {
+    let tokens = command
+        .split(|c: char| c.is_whitespace() || ",;|&()'\"`".contains(c))
+        .filter(|t| !t.is_empty());
+    let mut after_agy = false;
+    for token in tokens {
+        let lower = token.to_lowercase();
+        if after_agy && DAEMON_VERBS.contains(&lower.as_str()) {
+            return true;
+        }
+        after_agy |= is_agy_program(&lower);
+    }
+    false
+}
+
+/// A token whose last path component is `agy` or `antigravity`, with or
+/// without `.exe`; a flag is never a program.
+fn is_agy_program(token: &str) -> bool {
+    let name = token.rsplit(['/', '\\']).next().unwrap_or(token);
+    !token.starts_with('-') && matches!(name.trim_end_matches(".exe"), "agy" | "antigravity")
+}
 
 /// The Claude tool whose rules judge a `run_command`: agy runs it in
 /// PowerShell on Windows (measured on agy 1.5.6).
@@ -45,6 +63,10 @@ const FILE_TOOLS: [&str; 7] = [
     "sed_file",
     "notebook_edit",
 ];
+
+/// The `args` keys that carry the text a `send_command_input` types. The name
+/// was not measured, so the usual spellings are read.
+const INPUT_KEYS: &[&str] = &["Input", "input", "Text", "text"];
 
 /// The `args` keys that name the file a file tool changes.
 const FILE_KEYS: [&str; 2] = ["Path", "TargetFile"];
@@ -94,7 +116,8 @@ fn decide(
         temp_dir,
     };
     match name {
-        "run_command" => judge_command(args, &ctx),
+        "run_command" => judge_command(args, &["CommandLine"], &ctx),
+        "send_command_input" => judge_command(args, INPUT_KEYS, &ctx),
         _ if FILE_TOOLS.contains(&name) => judge_file_write(&payload, args, &ctx),
         _ => GuardDecision::Allow,
     }
@@ -104,12 +127,16 @@ fn unreadable(what: &str) -> GuardDecision {
     GuardDecision::Deny(format!("could not read the tool call: {what}"))
 }
 
-/// A `run_command`: the agy daemon commands, then the rules of the shell tool.
-fn judge_command(args: &Value, ctx: &GuardContext) -> GuardDecision {
-    let Some(command) = args.get("CommandLine").and_then(Value::as_str) else {
-        return unreadable("no CommandLine");
+/// A `run_command`, or the input of a `send_command_input` (it types into a
+/// running shell): the agy daemon commands, then the rules of the shell tool.
+fn judge_command(args: &Value, keys: &[&str], ctx: &GuardContext) -> GuardDecision {
+    let Some(command) = keys
+        .iter()
+        .find_map(|k| args.get(*k).and_then(Value::as_str))
+    else {
+        return unreadable(&format!("no {}", keys.join(" or ")));
     };
-    if DAEMON_COMMAND.is_match(command) {
+    if is_daemon_command(command) {
         return GuardDecision::Deny(
             "agy remote control, mic-serve, install and update are blocked".into(),
         );

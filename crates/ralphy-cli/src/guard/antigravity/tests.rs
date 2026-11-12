@@ -156,6 +156,95 @@ fn agy_remote_control_mic_serve_install_and_update_are_denied() {
     }
 }
 
+#[test]
+fn agy_daemon_verbs_are_denied_in_every_spelling() {
+    let rows = [
+        r#"agy "update""#,
+        "agy 'remote-control' start",
+        "agy --gemini_dir C:/x update",
+        "agy -m x install",
+        "agy.exe mic-serve",
+        r"C:\Users\u\AppData\Local\agy\agy.exe update",
+        "/usr/local/bin/agy install",
+        "Start-Process agy -ArgumentList 'remote-control','start'",
+        "Start-Process -FilePath agy.exe -ArgumentList \"update\"",
+        r#"& "agy" 'install'"#,
+        r"& 'C:\Program Files\agy\agy.exe' 'update'",
+        "cd x; agy update",
+        "Start-Process agy -ArgumentList update,x",
+        "AGY REMOTE-CONTROL start",
+    ];
+    for cmd in rows {
+        assert_denied(&answer(&command(cmd)), cmd);
+    }
+}
+
+#[test]
+fn agy_commands_without_a_daemon_verb_are_allowed() {
+    for cmd in [
+        "agy --version",
+        "agy chat hello",
+        "git status",
+        "echo update",
+    ] {
+        assert_eq!(answer(&command(cmd)), r#"{"decision":"allow"}"#, "{cmd}");
+    }
+}
+
+fn input(text: &Value) -> String {
+    with_args(RUN_COMMAND, json!({ "CommandId": "c1", "Input": text }))
+        .replace("run_command", "send_command_input")
+}
+
+#[test]
+fn agy_send_command_input_is_judged_like_a_command() {
+    let rows = [
+        (
+            "destructive",
+            input(&json!(r"Remove-Item -Recurse -Force C:\Users")),
+        ),
+        ("git push", input(&json!("git push origin main\n"))),
+        ("daemon verb", input(&json!("agy update"))),
+        ("not a string", input(&json!(7))),
+        (
+            "no text field",
+            with_args(RUN_COMMAND, json!({ "CommandId": "c1" }))
+                .replace("run_command", "send_command_input"),
+        ),
+    ];
+    for (case, raw) in rows {
+        assert_denied(&answer(&raw), case);
+    }
+    assert_eq!(answer(&input(&json!("y\n"))), r#"{"decision":"allow"}"#);
+}
+
+fn write_in(cwd: &str, path: &str) -> String {
+    let call = json!({ "name": "write_file", "args": { "Path": path, "Content": "x" } });
+    json!({ "cwd": cwd, "toolCall": call }).to_string()
+}
+
+#[cfg(unix)]
+#[test]
+fn a_case_different_folder_is_outside_the_workspace_on_unix() {
+    assert_denied(
+        &answer(&write_in("/home/u/repo", "/home/u/Repo/a.txt")),
+        "case differs",
+    );
+    assert_eq!(
+        answer(&write_in("/home/u/repo", "/home/u/repo/a.txt")),
+        r#"{"decision":"allow"}"#
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn a_case_different_folder_is_inside_the_workspace_on_windows() {
+    assert_eq!(
+        answer(&write_in("C:/Users/u/Repo", "c:/users/u/repo/a.txt")),
+        r#"{"decision":"allow"}"#
+    );
+}
+
 /// A tool that changes no file is not judged, as Claude's other tools are not.
 #[test]
 fn an_agy_read_only_tool_is_allowed() {

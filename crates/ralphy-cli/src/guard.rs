@@ -115,8 +115,8 @@ pub(crate) enum GuardDecision {
 }
 
 /// The environment [`evaluate_guard`] judges against. All paths are
-/// pre-normalised via [`normalise_path`] (lowercase, `/`-separated, no
-/// trailing slash) so the pure evaluation logic never touches the filesystem.
+/// pre-normalised via [`normalise_path`], so the pure evaluation logic never
+/// touches the filesystem.
 pub(crate) struct GuardContext {
     /// The Ralphy binary's parent directory (writes here are blocked).
     pub tool_dir: String,
@@ -325,13 +325,16 @@ fn evaluate_file_write(tool_input: &Value, ctx: &GuardContext) -> GuardDecision 
     GuardDecision::Allow
 }
 
-/// Normalise a path for use in [`GuardContext`]: lower-case, `\` → `/`, and no
-/// trailing slash.
+/// Normalise a path for use in [`GuardContext`]: `\` → `/`, no trailing
+/// slash, and lower-case on Windows only.
 fn normalise_path(dir: &std::path::Path) -> String {
-    dir.to_string_lossy()
-        .replace('\\', "/")
-        .trim_end_matches('/')
-        .to_lowercase()
+    let p = dir.to_string_lossy().replace('\\', "/");
+    let p = p.trim_end_matches('/');
+    if cfg!(windows) {
+        p.to_lowercase()
+    } else {
+        p.to_owned()
+    }
 }
 
 /// Parse a hook payload and judge it. Input the guard cannot read — empty,
