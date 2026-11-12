@@ -297,7 +297,7 @@ fn well_shaped_ref(raw: &str) -> bool {
     !raw.is_empty()
         && !raw.starts_with('-')
         && !raw.ends_with('/')
-        && !raw.ends_with(".lock")
+        && raw.strip_suffix(".lock").is_none()
         && !raw.contains("..")
         && !raw.contains("@{")
         && !raw.contains("//")

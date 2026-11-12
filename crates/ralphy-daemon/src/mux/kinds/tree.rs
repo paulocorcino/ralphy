@@ -126,7 +126,7 @@ mod tests {
         registry::save_to(&store, &registry_path).expect("save the registry");
         let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
         let host = TreeHost {
-            watchers: watchers.clone(),
+            watchers: Arc::clone(&watchers),
             registry_path,
             peers_dir: dir.path().join("peers"),
             daemon_id: None,

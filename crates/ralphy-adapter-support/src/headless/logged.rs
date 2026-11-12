@@ -73,6 +73,17 @@ pub struct HeadlessCall<'a> {
     gate: Option<PromptGate<'a>>,
 }
 
+// The command is left out: its environment can hold a secret for the child.
+impl std::fmt::Debug for HeadlessCall<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HeadlessCall")
+            .field("timeout", &self.timeout)
+            .field("log_path", &self.log_path)
+            .field("idle", &self.idle)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<'a> HeadlessCall<'a> {
     /// A call with only the wall `timeout` and the streamed log at `log_path`.
     pub fn new(cmd: Command, prompt: &'a str, timeout: Duration, log_path: &'a Path) -> Self {
@@ -92,6 +103,7 @@ impl<'a> HeadlessCall<'a> {
     /// read, but the prompt is written only after the gate returns `Ok`. On
     /// `Err` the child is killed, no prompt is sent, and [`run`](Self::run)
     /// returns that error.
+    #[must_use]
     pub fn hold_prompt(mut self, gate: PromptGate<'a>) -> Self {
         self.gate = Some(gate);
         self
@@ -99,6 +111,7 @@ impl<'a> HeadlessCall<'a> {
 
     /// Reap the child as soon as a **stderr** line matches — the child's own
     /// terminal signal, so the run classifies identically, only faster.
+    #[must_use]
     pub fn kill_on_stderr_line(
         mut self,
         pred: impl Fn(&str) -> bool + Send + Sync + 'static,
@@ -109,6 +122,7 @@ impl<'a> HeadlessCall<'a> {
 
     /// Arm the idle watchdog: reap the child after `minutes` with no output on
     /// either stream. `0` leaves it disabled (the default).
+    #[must_use]
     pub fn idle_minutes(mut self, minutes: u64) -> Self {
         self.idle = IdleWatch::from_minutes(minutes);
         self
@@ -116,6 +130,7 @@ impl<'a> HeadlessCall<'a> {
 
     /// [`idle_minutes`](Self::idle_minutes) with an exact window — used by tests
     /// to drive the real kill path in seconds.
+    #[must_use]
     pub fn idle_window(mut self, window: Duration) -> Self {
         self.idle = IdleWatch::from_window(window);
         self
@@ -127,6 +142,7 @@ impl<'a> HeadlessCall<'a> {
     /// `API_DEGRADED_MSG` / `API_RECOVERED_MSG` events (docs/adr/0038 normalization
     /// over the headless path). The predicate never kills the child — a false
     /// negative degrades gracefully to today's behaviour.
+    #[must_use]
     pub fn degraded_line(mut self, pred: impl Fn(&str) -> bool + Send + Sync + 'static) -> Self {
         self.degraded_line = Some(Box::new(pred));
         self

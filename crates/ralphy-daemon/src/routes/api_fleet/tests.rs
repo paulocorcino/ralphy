@@ -84,7 +84,7 @@ async fn fleet(dir: &Path, cache: &PeerRepoCache) -> serde_json::Value {
             }),
             environment: "Windows".into(),
         },
-        cache.clone(),
+        Arc::clone(cache),
         1,
     )
     .await;
@@ -108,7 +108,7 @@ fn peer_slugs(body: &serde_json::Value) -> Vec<String> {
 async fn keeps_the_last_good_repos_when_the_peer_serves(mode: u8) {
     let dir = tempfile::tempdir().unwrap();
     let served = Arc::new(AtomicU8::new(GOOD));
-    let (port, serving) = serve_peer(served.clone()).await;
+    let (port, serving) = serve_peer(Arc::clone(&served)).await;
     peer::write_descriptor(dir.path(), &descriptor(port)).unwrap();
     let cache = PeerRepoCache::default();
 

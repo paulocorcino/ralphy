@@ -358,6 +358,10 @@ pub const UNTRUSTED_NOTE: &str = "not an owner, member or collaborator";
 /// #N)` block per issue, the thread as pretty JSON in a `json` fence. JSON
 /// escaping keeps every body on one line inside a string, so a comment can
 /// neither forge its own `"trusted"` field nor start a heading of its own.
+///
+/// # Panics
+///
+/// Never: a thread of strings serializes, and a write to a `String` does not fail.
 pub fn render_triage_threads(threads: &[IssueThread]) -> String {
     #[derive(serde::Serialize)]
     struct CommentOut<'a> {

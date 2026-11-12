@@ -198,7 +198,7 @@ impl Score {
 /// The expressions of a `select!`: an optional `biased;`, then arms
 /// `pattern = future (, if guard)? => handler` and an optional
 /// `else => handler`, each followed by an optional comma.
-fn select_exprs(input: ParseStream) -> syn::Result<Vec<Expr>> {
+fn select_exprs(input: ParseStream<'_>) -> syn::Result<Vec<Expr>> {
     let mut exprs = Vec::new();
     let fork = input.fork();
     if fork.parse::<syn::Ident>().is_ok_and(|i| i == "biased") && fork.peek(Token![;]) {
@@ -212,7 +212,7 @@ fn select_exprs(input: ParseStream) -> syn::Result<Vec<Expr>> {
     Ok(exprs)
 }
 
-fn select_arm(input: ParseStream, exprs: &mut Vec<Expr>) -> syn::Result<()> {
+fn select_arm(input: ParseStream<'_>, exprs: &mut Vec<Expr>) -> syn::Result<()> {
     if input.parse::<Option<Token![else]>>()?.is_none() {
         Pat::parse_multi_with_leading_vert(input)?;
         input.parse::<Token![=]>()?;
@@ -343,7 +343,7 @@ pub(super) fn production_files(crate_dir: &Path) -> Result<Vec<PathBuf>> {
         {
             let path = entry.context("reading a bin entry")?.path();
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if name.ends_with(".rs") && !name.ends_with("_test_child.rs") {
+            if path.extension().is_some_and(|e| e == "rs") && !name.ends_with("_test_child.rs") {
                 roots.push(path);
             }
         }

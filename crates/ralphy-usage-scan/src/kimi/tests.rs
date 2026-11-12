@@ -49,8 +49,8 @@ fn legacy_dedups_progressive_status_updates_by_message_id() {
     // Same message_id, totals 110 then 155 → keep the larger snapshot only.
     let body = format!(
         "{{\"type\": \"metadata\"}}\n{}\n{}",
-        status_update(1770983410.0, 100, 10, 0, "msg-p"),
-        status_update(1770983420.0, 120, 30, 5, "msg-p"),
+        status_update(1_770_983_410.0, 100, 10, 0, "msg-p"),
+        status_update(1_770_983_420.0, 120, 30, 5, "msg-p"),
     );
     write_wire(tmp.path(), "sessions/GRP/SESS/wire.jsonl", &body);
     let records = scan_legacy_only(tmp.path());
@@ -79,10 +79,10 @@ fn legacy_keeps_distinct_and_missing_message_ids_separate() {
     };
     let body = format!(
         "{}\n{}\n{}\n{}",
-        status_update(1770983410.0, 10, 1, 0, "msg-1"),
-        status_update(1770983420.0, 20, 2, 0, "msg-2"),
-        missing(1770983430.0, 30, 3),
-        missing(1770983440.0, 40, 4),
+        status_update(1_770_983_410.0, 10, 1, 0, "msg-1"),
+        status_update(1_770_983_420.0, 20, 2, 0, "msg-2"),
+        missing(1_770_983_430.0, 30, 3),
+        missing(1_770_983_440.0, 40, 4),
     );
     write_wire(tmp.path(), "sessions/GRP/SESS/wire.jsonl", &body);
     let records = scan_legacy_only(tmp.path());
@@ -111,9 +111,9 @@ fn kimi_code_counts_only_turn_scope_and_strips_the_model_prefix() {
     let tmp = tempfile::tempdir().unwrap();
     let body = format!(
         "{}\n{}\n{}",
-        usage_record(Some("session"), 999, 999, 1780319377000),
-        usage_record(None, 888, 888, 1780319377005),
-        usage_record(Some("turn"), 100, 50, 1780319377010),
+        usage_record(Some("session"), 999, 999, 1_780_319_377_000),
+        usage_record(None, 888, 888, 1_780_319_377_005),
+        usage_record(Some("turn"), 100, 50, 1_780_319_377_010),
     );
     write_wire(tmp.path(), "sessions/WS/SESS/agents/main/wire.jsonl", &body);
     let records = scan_code_only(tmp.path());
@@ -131,12 +131,12 @@ fn subagent_wire_attributed_to_parent_session() {
     write_wire(
         tmp.path(),
         "sessions/GRP/SESS/wire.jsonl",
-        &status_update(1770983410.0, 100, 0, 0, "msg-main"),
+        &status_update(1_770_983_410.0, 100, 0, 0, "msg-main"),
     );
     write_wire(
         tmp.path(),
         "sessions/GRP/SESS/subagents/SUB/wire.jsonl",
-        &status_update(1770983420.0, 50, 0, 0, "msg-sub"),
+        &status_update(1_770_983_420.0, 50, 0, 0, "msg-sub"),
     );
     let records = scan_legacy_only(tmp.path());
     assert_eq!(records.len(), 1);
@@ -161,12 +161,12 @@ fn excludes_run_owned_sessions() {
     write_wire(
         tmp.path(),
         "sessions/GRP/RUN/wire.jsonl",
-        &status_update(1770983410.0, 10, 1, 0, "m-run"),
+        &status_update(1_770_983_410.0, 10, 1, 0, "m-run"),
     );
     write_wire(
         tmp.path(),
         "sessions/GRP/INT/wire.jsonl",
-        &status_update(1770983420.0, 20, 2, 0, "m-int"),
+        &status_update(1_770_983_420.0, 20, 2, 0, "m-int"),
     );
     let mut runs = HashSet::new();
     runs.insert("RUN".to_owned());
@@ -196,7 +196,7 @@ fn kimi_missing_stores_contribute_zero() {
 #[test]
 fn since_drops_an_older_session_and_keeps_one_ending_at_the_bound() {
     let tmp = tempfile::tempdir().unwrap();
-    let (old_ms, new_ms) = (1780000000000, 1780319377010);
+    let (old_ms, new_ms) = (1_780_000_000_000, 1_780_319_377_010);
     write_wire(
         tmp.path(),
         "sessions/WS/OLD/agents/main/wire.jsonl",
@@ -240,7 +240,7 @@ fn legacy_default_model_when_config_absent() {
     write_wire(
         tmp.path(),
         "sessions/GRP/SESS/wire.jsonl",
-        &status_update(1770983410.0, 10, 1, 0, "m"),
+        &status_update(1_770_983_410.0, 10, 1, 0, "m"),
     );
     let records = scan_legacy_only(tmp.path());
     assert_eq!(records[0].model, "kimi-for-coding");
@@ -258,7 +258,7 @@ fn legacy_reads_model_from_config() {
     write_wire(
         tmp.path(),
         "sessions/GRP/SESS/wire.jsonl",
-        &status_update(1770983410.0, 10, 1, 0, "m"),
+        &status_update(1_770_983_410.0, 10, 1, 0, "m"),
     );
     let records = scan_legacy_only(tmp.path());
     assert_eq!(records[0].model, "kimi-k2-custom");
@@ -271,7 +271,7 @@ fn kimi_code_attributes_workspace_to_registered_repo() {
     write_wire(
         tmp.path(),
         "sessions/wsrepo/SESS/agents/main/wire.jsonl",
-        &usage_record(Some("turn"), 10, 5, 1780319377010),
+        &usage_record(Some("turn"), 10, 5, 1_780_319_377_010),
     );
     let repos = vec![RegisteredRepo {
         slug: "o/wsrepo".into(),
@@ -294,8 +294,8 @@ fn legacy_tie_on_total_is_won_by_the_later_timestamp() {
     // Same message_id, both totals 100; the later snapshot comes first in the file.
     let body = format!(
         "{}\n{}",
-        status_update(1770983420.0, 0, 100, 0, "msg-t"),
-        status_update(1770983410.0, 100, 0, 0, "msg-t"),
+        status_update(1_770_983_420.0, 0, 100, 0, "msg-t"),
+        status_update(1_770_983_410.0, 100, 0, 0, "msg-t"),
     );
     write_wire(tmp.path(), "sessions/GRP/SESS/wire.jsonl", &body);
     let records = scan_legacy_only(tmp.path());
@@ -308,8 +308,8 @@ fn legacy_tie_on_total_is_won_by_the_later_timestamp() {
     let tmp = tempfile::tempdir().unwrap();
     let body = format!(
         "{}\n{}",
-        status_update(1770983410.0, 100, 0, 0, "msg-t"),
-        status_update(1770983420.0, 0, 100, 0, "msg-t"),
+        status_update(1_770_983_410.0, 100, 0, 0, "msg-t"),
+        status_update(1_770_983_420.0, 0, 100, 0, "msg-t"),
     );
     write_wire(tmp.path(), "sessions/GRP/SESS/wire.jsonl", &body);
     let records = scan_legacy_only(tmp.path());
@@ -323,8 +323,8 @@ fn legacy_empty_message_id_counts_each_snapshot() {
     let tmp = tempfile::tempdir().unwrap();
     let body = format!(
         "{}\n{}",
-        status_update(1770983410.0, 10, 1, 0, ""),
-        status_update(1770983420.0, 20, 2, 0, ""),
+        status_update(1_770_983_410.0, 10, 1, 0, ""),
+        status_update(1_770_983_420.0, 20, 2, 0, ""),
     );
     write_wire(tmp.path(), "sessions/GRP/SESS/wire.jsonl", &body);
     let records = scan_legacy_only(tmp.path());

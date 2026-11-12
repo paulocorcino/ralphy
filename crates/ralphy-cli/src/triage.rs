@@ -94,7 +94,7 @@ struct AgentChoice<'a> {
 fn triage_with_agent(
     repo: &Path,
     out_path: &Path,
-    req: &TriageRequest,
+    req: &TriageRequest<'_>,
     chosen: AgentChoice<'_>,
     timeout: Duration,
 ) -> Result<TriageDraft> {

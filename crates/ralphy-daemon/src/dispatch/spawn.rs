@@ -219,6 +219,7 @@ pub fn ralphy_exe() -> OsString {
 }
 
 /// The production spawner: a real detached OS process with null stdio.
+#[derive(Debug)]
 pub struct ProcessSpawner;
 
 impl Spawner for ProcessSpawner {

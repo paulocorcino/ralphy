@@ -62,7 +62,7 @@ fn parse_plan_usage_attributes_to_dominant_not_alphabetical_model() {
     // The numeric split is the main model's (the top-level `usage`), unchanged.
     assert_eq!(usage.input, 4237);
     assert_eq!(usage.output, 14023);
-    assert_eq!(usage.cache_read, 1129426);
+    assert_eq!(usage.cache_read, 1_129_426);
     assert_eq!(usage.cache_creation, 76510);
 }
 

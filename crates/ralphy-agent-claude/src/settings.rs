@@ -135,6 +135,7 @@ fn model_of_judgment(token: &str) -> &str {
 }
 
 /// The execution-side configuration, separate from the planning knobs.
+#[derive(Debug)]
 pub(crate) struct ExecConfig {
     /// Forces the execution model for the issue when set (overrides the plan's
     /// judgment).

@@ -208,13 +208,13 @@ pub(crate) fn session_routes(s: &RouterShared) -> Router {
         .route(
             "/api/sessions",
             get({
-                let sessions = s.sessions.clone();
+                let sessions = Arc::clone(&s.sessions);
                 let peers = s.peers_dir.clone();
                 let identity = s.identity.clone();
                 let environment = s.environment.clone();
                 move |Query(query): Query<SessionsQuery>| {
                     sessions_route(
-                        sessions.clone(),
+                        Arc::clone(&sessions),
                         peers.clone(),
                         identity.clone(),
                         environment.clone(),
@@ -226,11 +226,11 @@ pub(crate) fn session_routes(s: &RouterShared) -> Router {
         .route(
             "/api/sessions/close",
             post({
-                let sessions = s.sessions.clone();
+                let sessions = Arc::clone(&s.sessions);
                 let peers = s.peers_dir.clone();
                 let identity = s.identity.clone();
                 move |q: Query<CloseQuery>| {
-                    close_session_route(q, sessions.clone(), peers.clone(), identity.clone())
+                    close_session_route(q, Arc::clone(&sessions), peers.clone(), identity.clone())
                 }
             }),
         )

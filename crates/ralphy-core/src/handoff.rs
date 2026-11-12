@@ -61,6 +61,10 @@ pub fn is_bundle_reason(reason: &str) -> bool {
 /// Whether a plan carries a bundle verdict. A `## Feasible: yes` heading is
 /// never one, whatever its prose says ("Not a bundle: …" contains the word);
 /// any other heading defers to [`is_bundle_reason`] over its prose.
+///
+/// # Panics
+///
+/// Never: each regex is a valid literal.
 pub fn is_bundle_verdict(plan_md: &str) -> bool {
     let says_yes = Regex::new(r"(?im)^##\s+Feasible\s*:\s*yes\b")
         .expect("valid regex")
@@ -70,6 +74,10 @@ pub fn is_bundle_verdict(plan_md: &str) -> bool {
 
 /// Pick the handoff out of an issue's comments: the LAST comment containing a
 /// `## Handoff` heading (a re-run of the issue supersedes earlier reports).
+///
+/// # Panics
+///
+/// Never: each regex is a valid literal.
 pub fn find_handoff_comment(comments: &[String]) -> Option<String> {
     let re = Regex::new(r"(?im)^##\s+Handoff\s*$").expect("valid regex");
     comments

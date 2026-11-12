@@ -102,7 +102,7 @@ impl<S: tracing::Subscriber> Layer<S> for Capture {
 fn an_opencode_run_emits_the_agent_state_of_its_plugin() {
     let sink: Sink = Arc::new(Mutex::new(Vec::new()));
     tracing::subscriber::set_global_default(
-        tracing_subscriber::registry().with(Capture(sink.clone())),
+        tracing_subscriber::registry().with(Capture(Arc::clone(&sink))),
     )
     .expect("this test installs the one global subscriber of its process");
     let temp = tempfile::tempdir().unwrap();

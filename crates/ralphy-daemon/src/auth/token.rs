@@ -74,6 +74,10 @@ pub fn save_token_to(token: &str, path: &Path) -> Result<()> {
 
 /// Generate a fresh access token: 32 CSPRNG bytes (256 bits) hex-encoded to 64
 /// chars. No `hex` crate.
+///
+/// # Panics
+///
+/// When the OS random source is not available.
 pub fn generate_token() -> String {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes).expect("the OS CSPRNG must be available to mint a token");

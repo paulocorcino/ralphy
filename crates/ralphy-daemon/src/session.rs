@@ -96,6 +96,12 @@ pub struct Session {
     output: Option<UnboundedReceiver<Vec<u8>>>,
 }
 
+impl std::fmt::Debug for Session {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Session").finish_non_exhaustive()
+    }
+}
+
 impl Session {
     /// Spawn the child in its PTY and start forwarding its output. The reader
     /// runs on a dedicated `std::thread` (a blocking read must not sit on the
@@ -119,6 +125,10 @@ impl Session {
 
     /// Take the output receiver. Callable once — the consumer (the WS loop or a
     /// test) owns the receiver so `select!`ing on it does not borrow the session.
+    ///
+    /// # Panics
+    ///
+    /// When the output was already taken: it is taken once, by its one reader.
     pub fn take_output(&mut self) -> UnboundedReceiver<Vec<u8>> {
         self.output.take().expect("output receiver taken once")
     }
@@ -300,7 +310,7 @@ pub type SessionId = u64;
 /// The identity of a live session as the UI lists it: which repo and agent, what
 /// kind, and when it started. `kind` is `"agent"` for the curated launcher and
 /// `"console"` for the free console (issue #167, PRD #157 story 11).
-#[derive(Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionInfo {
     pub id: SessionId,
     pub repo: String,
@@ -363,6 +373,7 @@ impl EndReason {
 /// the only object spanning the firing side (a takeover, a close, the pump's
 /// EOF) and the waiting side (the bridge loop), so the reason has to live here
 /// for the bridge to be able to announce it.
+#[derive(Debug)]
 pub struct EvictToken {
     pub notify: Notify,
     reason: Mutex<Option<EndReason>>,
@@ -386,6 +397,10 @@ impl EvictToken {
     }
 
     /// Why this attachment was evicted, or `None` if it was not.
+    ///
+    /// # Panics
+    ///
+    /// When the reason lock was poisoned by a panic in another thread.
     pub fn reason(&self) -> Option<EndReason> {
         *self.reason.lock().expect("evict reason mutex")
     }

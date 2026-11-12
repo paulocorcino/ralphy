@@ -177,7 +177,7 @@ pub(crate) fn router_with_roster(
     // connection for this router's lifetime — same ownership model as `sessions`,
     // constructed here (NOT a `router` param) so the `router` signature holds.
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
-    let peer_watch_subs = Arc::new(fleet::watchsub::WatchSubs::new(watchers.clone()));
+    let peer_watch_subs = Arc::new(fleet::watchsub::WatchSubs::new(Arc::clone(&watchers)));
     // Where `/api/release` reads what the watch cached: the same sibling rooting
     // `desk.toml` uses, so a scratch store keeps its own. The watch itself is
     // spawned by `serve`, never here — a router built in a test must not reach
@@ -226,7 +226,7 @@ pub(crate) fn router_with_roster(
         release_store,
         start,
         shutdown,
-        auth: auth.clone(),
+        auth: Arc::clone(&auth),
         roster_locator,
         sessions,
         watchers,
@@ -235,9 +235,9 @@ pub(crate) fn router_with_roster(
         heal_memo,
         run_exits,
         pushes,
-        audit: audit.clone(),
-        presence: Default::default(),
-        telegram_claim: Default::default(),
+        audit: Arc::clone(&audit),
+        presence: crate::presence_board::Shared::default(),
+        telegram_claim: crate::telegram_state::SharedClaim::default(),
         page_sockets,
     };
     Router::new()
@@ -262,7 +262,7 @@ pub(crate) fn router_with_roster(
         // WS upgrade, and the UI fallback — so a network bind rejects an
         // unauthenticated request before it reaches any handler or upgrade.
         .layer(axum::middleware::from_fn_with_state(
-            auth.clone(),
+            Arc::clone(&auth),
             require_auth,
         ))
         // Outermost, so the security headers ride every response the guard

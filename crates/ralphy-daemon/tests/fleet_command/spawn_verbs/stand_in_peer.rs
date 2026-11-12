@@ -5,7 +5,7 @@ async fn a_peer_that_ends_a_spawn_before_its_last_frame_is_one_error_reply() {
     // A stand-in peer: its handshake passes, and its page socket answers the
     // open with `channel.closed {reason: refused}` and no frame of the run.
     let opens = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let seen = opens.clone();
+    let seen = Arc::clone(&opens);
     let stand_in = axum::Router::new()
         .route(
             "/api/peer/hello",
@@ -19,7 +19,7 @@ async fn a_peer_that_ends_a_spawn_before_its_last_frame_is_one_error_reply() {
         .route(
             "/ws",
             axum::routing::get(move |ws: axum::extract::ws::WebSocketUpgrade| {
-                let seen = seen.clone();
+                let seen = Arc::clone(&seen);
                 async move { ws.on_upgrade(move |socket| refuse_the_open(socket, seen)) }
             }),
         );

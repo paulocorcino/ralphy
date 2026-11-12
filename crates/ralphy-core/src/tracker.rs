@@ -114,6 +114,7 @@ pub trait IssueTracker {
 /// The production tracker: closes issues and writes acceptance evidence through
 /// the `gh` CLI, pinned to the `--repo` target so every call hits the right
 /// repository regardless of the process's working directory.
+#[derive(Debug)]
 pub struct GhTracker {
     repo_root: PathBuf,
     /// Fold EVERY comment into the issue, whoever wrote it — the
@@ -134,6 +135,7 @@ impl GhTracker {
     }
 
     /// Whether to fold every comment regardless of its author's association.
+    #[must_use]
     pub fn with_comment_trust(mut self, trust_all: bool) -> Self {
         self.trust_all_comments = trust_all;
         self

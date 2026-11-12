@@ -24,6 +24,12 @@ const PERIOD: u64 = 30;
 #[derive(Clone)]
 pub struct Seed(Vec<u8>);
 
+impl std::fmt::Debug for Seed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Seed").finish_non_exhaustive()
+    }
+}
+
 impl Seed {
     /// Wrap raw seed bytes (used by tests with the RFC 6238 vector seed).
     pub fn from_bytes(bytes: Vec<u8>) -> Seed {
@@ -95,6 +101,10 @@ impl Seed {
 
 /// Generate a fresh 20-byte seed from the OS CSPRNG (mirrors
 /// `auth::generate_token`).
+///
+/// # Panics
+///
+/// When the OS random source is not available.
 pub fn generate_seed() -> Seed {
     let mut bytes = vec![0u8; 20];
     getrandom::fill(&mut bytes).expect("the OS CSPRNG must be available to mint a TOTP seed");

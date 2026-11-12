@@ -59,6 +59,10 @@ pub fn parse_blocked_by_all(body: &str, comments: &[String]) -> Vec<u64> {
 /// (e.g. "None - can start immediately").
 ///
 /// Stops at the next `##` heading so refs in unrelated sections are not collected.
+///
+/// # Panics
+///
+/// Never: each regex is a valid literal.
 pub fn parse_blocked_by(body: &str) -> Vec<u64> {
     let heading_re = Regex::new(r"(?im)^##\s+Blocked by\s*$").expect("valid regex");
     let section = crate::markdown::section_after_heading(body, &heading_re);
@@ -90,6 +94,10 @@ pub fn parse_blocked_by(body: &str) -> Vec<u64> {
 /// siblings — which the follow-the-split blocker gate then reads as a real
 /// dependency edge, up to blocking the issue on itself. Kept as a `Vec` so the
 /// public shape (and every caller) is unchanged.
+///
+/// # Panics
+///
+/// Never: each regex is a valid literal.
 pub fn parse_parent(body: &str) -> Vec<u64> {
     let heading_re = Regex::new(r"(?im)^##\s+Parent\s*$").expect("valid regex");
     let section = crate::markdown::section_after_heading(body, &heading_re);
@@ -284,7 +292,7 @@ fn children_by_parent(queue: &[Issue]) -> BTreeMap<u64, Vec<u64>> {
 /// `root`: an in-queue ref is a direct predecessor; an open out-of-queue ref is
 /// transparent (recurse into its own blockers); a closed ref substitutes its
 /// split children.
-fn queue_predecessors(root: u64, graph: &Graph) -> BTreeSet<u64> {
+fn queue_predecessors(root: u64, graph: &Graph<'_>) -> BTreeSet<u64> {
     let mut acc: BTreeSet<u64> = BTreeSet::new();
     let mut seen: BTreeSet<u64> = BTreeSet::new();
     let mut stack: Vec<u64> = vec![root];
@@ -307,7 +315,13 @@ fn queue_predecessors(root: u64, graph: &Graph) -> BTreeSet<u64> {
 
 /// One blocker `n` of the walk from `root`: terminal when in the queue,
 /// transparent when open, replaced by its split children when closed.
-fn follow_blocker(n: u64, root: u64, graph: &Graph, acc: &mut BTreeSet<u64>, stack: &mut Vec<u64>) {
+fn follow_blocker(
+    n: u64,
+    root: u64,
+    graph: &Graph<'_>,
+    acc: &mut BTreeSet<u64>,
+    stack: &mut Vec<u64>,
+) {
     if graph.in_queue.contains(&n) {
         acc.insert(n); // terminal: a real in-queue predecessor
     } else if graph.open_numbers.contains(&n) {

@@ -196,13 +196,13 @@ pub(crate) fn presence_routes(s: &RouterShared) -> Router {
     let page = PageShared {
         start: s.start,
         pushes: s.pushes.clone(),
-        board: s.presence.clone(),
-        audit: s.audit.clone(),
+        board: Arc::clone(&s.presence),
+        audit: Arc::clone(&s.audit),
         host: SessionHost::of(s),
         daemon_id: s.daemon_id.clone(),
-        watchers: s.watchers.clone(),
+        watchers: Arc::clone(&s.watchers),
         run_exits: s.run_exits.clone(),
-        auth: s.auth.clone(),
+        auth: Arc::clone(&s.auth),
         sockets: s.page_sockets.clone(),
     };
     Router::new().route(
@@ -253,16 +253,16 @@ impl PageShared {
             shutdown: self.host.shutdown.clone(),
             sessions: self.host.sessions.subscribe_changes(),
             pushes: self.pushes.subscribe(),
-            board: self.board.clone(),
+            board: Arc::clone(&self.board),
             ctx: mux::Ctx {
-                who: SocketAudit::of(self.audit.clone(), caller),
+                who: SocketAudit::of(Arc::clone(&self.audit), caller),
                 secret_ok: request_may_carry_a_secret(headers),
                 host: self.host.clone(),
                 daemon_id: self.daemon_id.clone(),
-                watchers: self.watchers.clone(),
+                watchers: Arc::clone(&self.watchers),
                 run_exits: self.run_exits.clone(),
             },
-            login: mux::Login::of(self.auth.clone(), login),
+            login: mux::Login::of(Arc::clone(&self.auth), login),
             held: self.sockets.hold(),
         }
     }

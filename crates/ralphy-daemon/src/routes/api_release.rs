@@ -84,10 +84,10 @@ pub(crate) fn release_routes(s: &RouterShared) -> Router {
         .route(
             "/api/release/update",
             post({
-                let auth = s.auth.clone();
+                let auth = std::sync::Arc::clone(&s.auth);
                 let store = s.release_store.clone();
                 move |headers: axum::http::HeaderMap, form: Form<UpdateForm>| {
-                    release_update_route(auth.clone(), store.clone(), headers, form)
+                    release_update_route(std::sync::Arc::clone(&auth), store.clone(), headers, form)
                 }
             }),
         )

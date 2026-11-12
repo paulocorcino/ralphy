@@ -18,7 +18,7 @@ use anyhow::{Context, Result};
 /// materialize into a directory the executor might otherwise commit
 /// (Codex → `.agents`, `OpenCode` → `.ralphy`).
 pub fn materialize_assets(
-    asset: &include_dir::Dir,
+    asset: &include_dir::Dir<'_>,
     dest_dir: &Path,
     gitignore_dir: Option<&Path>,
 ) -> Result<()> {

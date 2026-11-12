@@ -31,11 +31,10 @@ non_ascii_idents = "deny"
 unreachable_pub = "deny"
 unused_qualifications = "deny"
 let_underscore_drop = "deny"
+missing_debug_implementations = "deny"
 # The lint gate: `rust_2018_idioms` is on. A lint `allow` below is debt that
 # docs/lint/lint-transition.md turns on (this list only shrinks).
 rust_2018_idioms = { level = "deny", priority = -1 }
-# debt: 101 sites
-elided_lifetimes_in_paths = "allow"
 
 # The error rules of AGENTS.md, checked by clippy. The settings of
 # `disallowed_methods` and `too_many_arguments` are in `clippy.toml`.
@@ -60,6 +59,7 @@ string_slice = "deny"
 as_conversions = "deny"
 undocumented_unsafe_blocks = "deny"
 mod_module_files = "deny"
+clone_on_ref_ptr = "deny"
 # The lint gate: `pedantic` is on. A lint `allow` below is debt that docs/lint/lint-transition.md
 # turns on (this list only shrinks), or noise, off for good with its reason.
 pedantic = { level = "deny", priority = -1 }
@@ -67,26 +67,6 @@ pedantic = { level = "deny", priority = -1 }
 missing_errors_doc = "allow"
 # noise: fires on every pure function; #[must_use] goes where ignoring the value is a bug (D3)
 must_use_candidate = "allow"
-# debt: 91 sites
-missing_panics_doc = "allow"
-# debt: 54 sites
-return_self_not_must_use = "allow"
-# debt: 45 sites
-case_sensitive_file_extension_comparisons = "allow"
-# debt: 33 sites
-unreadable_literal = "allow"
-# debt: 23 sites
-default_trait_access = "allow"
-# debt: 13 sites
-similar_names = "allow"
-# debt: 11 sites
-used_underscore_binding = "allow"
-# debt: 6 sites
-unnecessary_debug_formatting = "allow"
-# debt: 4 sites
-struct_field_names = "allow"
-# debt: 2 sites
-many_single_char_names = "allow"
 
 [workspace.package]
 edition = "2021"

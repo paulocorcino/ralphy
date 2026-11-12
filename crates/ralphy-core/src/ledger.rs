@@ -77,6 +77,7 @@ pub trait LedgerSink {
 }
 
 /// The production sink: the project's JSONL file under the usage root.
+#[derive(Debug)]
 pub struct FileLedger;
 
 impl LedgerSink for FileLedger {

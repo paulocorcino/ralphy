@@ -107,10 +107,10 @@ async fn a_watcher_reads_but_never_writes() {
 
     taker.send(terminal(b"after-takeover\r")).await.unwrap();
     read_until(&mut taker, "GOT:after-takeover", false).await;
-    let watched = read_until(&mut watcher, "GOT:after-takeover", false).await;
+    let seen = read_until(&mut watcher, "GOT:after-takeover", false).await;
     assert!(
-        watched.contains("GOT:after-takeover"),
-        "the watcher's stream survives a takeover and keeps showing the session, got {watched:?}"
+        seen.contains("GOT:after-takeover"),
+        "the watcher's stream survives a takeover and keeps showing the session, got {seen:?}"
     );
 
     // A genuine end reaches the watcher too, named as such.

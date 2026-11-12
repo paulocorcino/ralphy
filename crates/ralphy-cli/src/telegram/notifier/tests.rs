@@ -104,7 +104,7 @@ fn should_notify_truth_table() {
 #[test]
 fn worker_sends_one_card_then_edits_in_place_no_pushes() {
     let transport = RecordingTransport::new();
-    let calls = transport.calls.clone();
+    let calls = Arc::clone(&transport.calls);
     let client = BotClient::new(transport);
     let queue = Arc::new(EventQueue::new());
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -126,8 +126,8 @@ fn worker_sends_one_card_then_edits_in_place_no_pushes() {
         usage: UsageLite::default(),
     });
 
-    let worker_queue = queue.clone();
-    let worker_shutdown = shutdown.clone();
+    let worker_queue = Arc::clone(&queue);
+    let worker_shutdown = Arc::clone(&shutdown);
     let state = RunState::new("title", 1);
     let handle =
         std::thread::spawn(move || drive_worker(client, 7, state, &worker_queue, &worker_shutdown));
@@ -198,7 +198,7 @@ fn delete_ids(calls: &[(String, Value)]) -> Vec<i64> {
 fn worker_swallows_edit_error_and_finishes_cleanly() {
     let mut transport = RecordingTransport::new();
     transport.fail_edit = true;
-    let calls = transport.calls.clone();
+    let calls = Arc::clone(&transport.calls);
     let client = BotClient::new(transport);
     let queue = Arc::new(EventQueue::new());
     let shutdown = Arc::new(AtomicBool::new(true)); // run inline: drain then finish.
@@ -232,7 +232,7 @@ fn worker_terminal_edit_adds_footer_as_the_last_call() {
     // issue processed nothing, so that footer is the `🛑` stopped marker (never
     // the celebratory `🏁 … ✅ 0 done`).
     let transport = RecordingTransport::new();
-    let calls = transport.calls.clone();
+    let calls = Arc::clone(&transport.calls);
     let client = BotClient::new(transport);
     let queue = Arc::new(EventQueue::new());
     let shutdown = Arc::new(AtomicBool::new(true));
@@ -264,7 +264,7 @@ fn progress_edit_fires_ping_coalesces_then_expires_and_deletes() {
     // 2s waits: a genuine card edit posts a `🔔`, a burst coalesces into it, and
     // once aged past PING_TTL the next tick deletes it.
     let transport = RecordingTransport::new();
-    let calls = transport.calls.clone();
+    let calls = Arc::clone(&transport.calls);
     let client = BotClient::new(transport);
     let mut engine = TelegramEngine {
         client,
@@ -324,7 +324,7 @@ fn progress_ping_is_suppressed_while_sleeping() {
     // The countdown card re-renders each refresh while parked; that edit must not
     // ping every minute — the disposable sleep notice already buzzes.
     let transport = RecordingTransport::new();
-    let calls = transport.calls.clone();
+    let calls = Arc::clone(&transport.calls);
     let client = BotClient::new(transport);
     let mut engine = TelegramEngine {
         client,

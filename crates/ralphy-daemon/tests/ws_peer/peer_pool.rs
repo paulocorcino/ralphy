@@ -46,7 +46,7 @@ async fn counting_peer() -> (u16, Arc<AtomicUsize>) {
         .expect("read the bound address")
         .port();
     let accepts = Arc::new(AtomicUsize::new(0));
-    let counter = accepts.clone();
+    let counter = Arc::clone(&accepts);
     tokio::spawn(async move {
         while let Ok((mut sock, _)) = listener.accept().await {
             counter.fetch_add(1, Ordering::SeqCst);

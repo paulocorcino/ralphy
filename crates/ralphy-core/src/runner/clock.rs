@@ -50,6 +50,7 @@ pub trait RunClock {
 }
 
 /// The production clock: a wall-clock deadline. `None` never expires.
+#[derive(Debug)]
 pub struct WallClock {
     pub deadline: Option<Instant>,
 }

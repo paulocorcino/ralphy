@@ -35,6 +35,7 @@ const RETRY_SLEEP: Duration = Duration::from_millis(200);
 
 /// Options for a best-effort models.dev refresh. `url` is injectable so tests
 /// can point at a loopback listener.
+#[derive(Debug)]
 pub struct RefreshOpts<'a> {
     pub url: &'a str,
     pub cache_path: &'a Path,

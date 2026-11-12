@@ -406,7 +406,7 @@ pub(crate) fn desk_routes(s: &RouterShared) -> Router {
             get({
                 let path = s.desk_path.clone();
                 let registry = s.registry_path.clone();
-                let peers = s.peer_repo_cache.clone();
+                let peers = Arc::clone(&s.peer_repo_cache);
                 move || std::future::ready(desk_get_route(&path, &registry, &peers))
             })
             .put({
@@ -426,12 +426,12 @@ pub(crate) fn desk_routes(s: &RouterShared) -> Router {
             })
             .post({
                 let pushes = s.pushes.clone();
-                let sessions = s.sessions.clone();
+                let sessions = Arc::clone(&s.sessions);
                 move |Json(body): Json<RestoreBody>| {
                     desk_history_restore_route(
                         files.clone(),
                         pushes.clone(),
-                        sessions.clone(),
+                        Arc::clone(&sessions),
                         body,
                     )
                 }

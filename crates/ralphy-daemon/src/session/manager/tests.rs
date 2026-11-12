@@ -23,7 +23,7 @@ fn attach_during_a_pump(
     let (half_tx, half_rx) = std::sync::mpsc::channel();
     let (attached_tx, attached_rx) = std::sync::mpsc::channel();
     let pump = std::thread::spawn({
-        let (kept, tx) = (kept.clone(), tx.clone());
+        let (kept, tx) = (Arc::clone(kept), tx.clone());
         move || {
             let half = chunks.len() / 2;
             let mut chunks = chunks.into_iter();
@@ -118,7 +118,7 @@ async fn a_watcher_does_not_occupy_the_writer_slot() {
     // and the second must still be told the session ended. Inverting the
     // guard's `ptr_eq` (keep the departing one, drop everyone else) makes
     // this reason `None`.
-    let survivor = second.evict.clone();
+    let survivor = Arc::clone(&second.evict);
     drop(watcher);
     manager.close(id);
     assert_eq!(
@@ -159,7 +159,7 @@ async fn list_renders_the_agent_state_with_the_staleness_rule() {
             spec,
         )
         .expect("the platform shell must spawn");
-    let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
+    let sess = Arc::clone(&manager.sessions.lock().expect("sessions mutex")[&id]);
     let now = SystemTime::now();
     assert_eq!(
         manager.list_at(now)[0].agent_state,

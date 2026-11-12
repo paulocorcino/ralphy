@@ -45,6 +45,7 @@ const USER_AGENT: &str = "ralphy";
 
 /// Options for a best-effort releases refresh. `url` is injectable so tests
 /// point at a loopback listener and never touch the network.
+#[derive(Debug)]
 pub struct RefreshOpts<'a> {
     pub url: &'a str,
     pub cache_path: &'a Path,

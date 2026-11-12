@@ -142,6 +142,10 @@ fn mask(payload: &mut [u8]) {
 
 /// Pack `markdown` into a container. The text is stored verbatim — front
 /// matter included — so what [`decode`] returns is byte-identical.
+///
+/// # Panics
+///
+/// Never: deflate into a `Vec` cannot fail, because the sink never errors.
 pub fn encode(markdown: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(markdown.len() / 3 + HEADER);
     out.extend_from_slice(MAGIC);
@@ -163,6 +167,10 @@ pub fn encode(markdown: &str) -> Vec<u8> {
 /// [`NoteError::NotNote`], and an inflated text over [`MAX_READ_BYTES`] with
 /// [`NoteError::TooLarge`] — the cap is on the OUTPUT, so a small file that
 /// inflates to a gigabyte is refused rather than allocated.
+///
+/// # Panics
+///
+/// Never: the header is longer than the magic and the version byte.
 pub fn decode(bytes: &[u8]) -> Result<String, NoteError> {
     let Some((head, body)) = bytes.split_at_checked(HEADER) else {
         return Err(NoteError::NotNote);
@@ -262,7 +270,11 @@ fn is_landing_path(rel: &str) -> bool {
     let [dir, sub, name] = parts[..] else {
         return false;
     };
-    dir == ".ralphy" && sub == "notes" && name.len() > ".note".len() && name.ends_with(".note")
+    dir == ".ralphy"
+        && sub == "notes"
+        && name
+            .strip_suffix(".note")
+            .is_some_and(|stem| !stem.is_empty())
 }
 
 /// Both directions' first gate: a path this module touches is spelled `.note`.

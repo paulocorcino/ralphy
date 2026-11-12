@@ -101,11 +101,11 @@ pub(crate) enum VerifyGate {
 /// — depending on `require_verify_gate` — to a loud warn-and-close or to
 /// parking the issue for a human (ADR-0015). Records the `repair` ledger line.
 pub(crate) fn verify_gate(
-    cx: &IssueCtx,
+    cx: &IssueCtx<'_>,
     issue: &Issue,
     plan: &Plan,
     plan_md: &str,
-    ledger: &mut RunLedger,
+    ledger: &mut RunLedger<'_>,
 ) -> Result<VerifyGate> {
     let mut repairs = Repairs::default();
     let gate: GateDecision = match resolve_verify(plan_md, cx.cfg.verify_fallback.as_ref()) {
@@ -198,7 +198,7 @@ struct Repairs {
 /// Run the gate's commands, and hand a failure back to the agent until the
 /// commands pass or the repair budget is spent.
 fn run_with_repairs(
-    cx: &IssueCtx,
+    cx: &IssueCtx<'_>,
     issue: &Issue,
     plan: &Plan,
     commands: &[Vec<String>],
@@ -267,7 +267,7 @@ fn run_with_repairs(
 }
 
 /// Run the gate's commands once and record what each one cost.
-fn run_commands(cx: &IssueCtx, commands: &[Vec<String>]) -> verify::VerifyReport {
+fn run_commands(cx: &IssueCtx<'_>, commands: &[Vec<String>]) -> verify::VerifyReport {
     let report = verify::run(commands, &cx.cfg.repo_root, cx.cfg.verify_timeout);
     // Feed the durable command-cost knowledge the verification-cost
     // gate reads: the gate just measured the real price of each
@@ -287,7 +287,7 @@ fn run_commands(cx: &IssueCtx, commands: &[Vec<String>]) -> verify::VerifyReport
 /// One repair attempt: hand the failure to the executor and record its usage
 /// and session. Returns whether the attempt hit a usage limit.
 fn repair(
-    cx: &IssueCtx,
+    cx: &IssueCtx<'_>,
     plan: &Plan,
     report: &verify::VerifyReport,
     repairs: &mut Repairs,
@@ -314,7 +314,11 @@ fn repair(
 }
 
 /// The gate result when a command could not spawn: failed, with no repair.
-fn spawn_failed_gate(cx: &IssueCtx, issue: &Issue, report: &verify::VerifyReport) -> GateDecision {
+fn spawn_failed_gate(
+    cx: &IssueCtx<'_>,
+    issue: &Issue,
+    report: &verify::VerifyReport,
+) -> GateDecision {
     let summary = verify_spawn_failure_summary(report);
     // consumed by the telegram notifier / presenter — keep stable
     info!(
@@ -335,7 +339,7 @@ fn spawn_failed_gate(cx: &IssueCtx, issue: &Issue, report: &verify::VerifyReport
 
 /// The gate result for a malformed `## Verify` section: failed, with the
 /// parse error as its summary.
-fn invalid_gate(cx: &IssueCtx, issue: &Issue, error: String) -> GateDecision {
+fn invalid_gate(cx: &IssueCtx<'_>, issue: &Issue, error: String) -> GateDecision {
     // A malformed `## Verify` section cannot be run: leave the issue open
     // with the parse error as its summary rather than close it silently
     // (the gate never saw anything pass). The plan author fixes the section.
@@ -352,7 +356,7 @@ fn invalid_gate(cx: &IssueCtx, issue: &Issue, error: String) -> GateDecision {
 }
 
 /// Post a verify artifact comment on the issue. A failure only warns.
-fn post_verify_artifact(cx: &IssueCtx, issue: &Issue, body: &str) {
+fn post_verify_artifact(cx: &IssueCtx<'_>, issue: &Issue, body: &str) {
     if let Err(e) = cx.tracker.comment(issue.number, body) {
         warn!(number = issue.number, error = %e, "posting verify artifact comment failed");
     }

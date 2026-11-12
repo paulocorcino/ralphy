@@ -108,7 +108,7 @@ mod tests {
             .unwrap()
             .filter_map(Result::ok)
             .map(|e| e.file_name().to_string_lossy().to_string())
-            .filter(|n| n.ends_with(".tmp"))
+            .filter(|n| Path::new(n).extension().is_some_and(|e| e == "tmp"))
             .collect();
         assert!(leftovers.is_empty(), "temp files left: {leftovers:?}");
     }

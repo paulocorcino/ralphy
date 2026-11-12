@@ -2,7 +2,7 @@ use super::super::check::CopyCall;
 use super::super::{rows_of, CopyFns};
 use super::scan;
 
-fn seen_with(js: &str, fns: CopyFns) -> Vec<(&'static str, String)> {
+fn seen_with(js: &str, fns: CopyFns<'_>) -> Vec<(&'static str, String)> {
     rows_of("x.js", js, &[], fns)
         .into_iter()
         .map(|r| (r.kind.label(), r.text))

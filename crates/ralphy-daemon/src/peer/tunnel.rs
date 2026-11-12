@@ -186,6 +186,12 @@ struct State {
 /// process, so every caller on the reactor hands it to `spawn_blocking`.
 pub struct Tunnels(Mutex<State>);
 
+impl std::fmt::Debug for Tunnels {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Tunnels").finish_non_exhaustive()
+    }
+}
+
 impl Default for Tunnels {
     fn default() -> Self {
         Self::new()

@@ -39,6 +39,7 @@ pub fn fits(path: &Path) -> bool {
 /// The socket this process bound. It remembers the file's device and inode,
 /// so that at exit the process removes its own file and never the file of a
 /// daemon that started while this one was stopping.
+#[derive(Debug)]
 pub struct BoundSocket {
     pub listener: tokio::net::UnixListener,
     path: PathBuf,

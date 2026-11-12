@@ -49,7 +49,7 @@ fn app(config: &Path, api: &Api) -> axum::Router {
     let api = api.clone();
     bot_routes(BotShared {
         config: config.to_path_buf(),
-        claim: Default::default(),
+        claim: crate::telegram_state::SharedClaim::default(),
         transport: Arc::new(move |token| {
             AnyTransport(Box::new(Call {
                 api: api.clone(),

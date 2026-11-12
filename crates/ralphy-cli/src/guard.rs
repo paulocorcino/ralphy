@@ -173,7 +173,7 @@ fn evaluate_tool_command(tool_input: &Value, ctx: &GuardContext, shell: Shell) -
 
 /// Judge one command line: the deny rules over its whole text, then each of
 /// its segments.
-fn evaluate_command(cmd: &str, judge: Judge) -> GuardDecision {
+fn evaluate_command(cmd: &str, judge: Judge<'_>) -> GuardDecision {
     if let Some(why) = denied_by_rules(cmd) {
         return GuardDecision::Deny(why);
     }
@@ -200,7 +200,7 @@ fn denied_by_rules(text: &str) -> Option<String> {
 }
 
 /// Judge one segment by what it runs once its wrapper words are skipped.
-fn evaluate_segment(segment: &str, judge: Judge) -> GuardDecision {
+fn evaluate_segment(segment: &str, judge: Judge<'_>) -> GuardDecision {
     let tokens = shell_tokens(segment);
     match wrappers::what_runs(&tokens) {
         Runs::Script(..) if judge.depth >= MAX_NESTING => {
@@ -234,7 +234,7 @@ fn evaluate_from_input(args: &[String], shell: Shell) -> GuardDecision {
 /// Judge a command by its words. When wrapper words were skipped (`words`
 /// is shorter than the segment), the deny rules read the command again: the
 /// `format` rule looks only at the start of a command.
-fn evaluate_words(words: &[String], segment_len: usize, judge: Judge) -> GuardDecision {
+fn evaluate_words(words: &[String], segment_len: usize, judge: Judge<'_>) -> GuardDecision {
     if words.len() < segment_len {
         if let Some(why) = denied_by_rules(&words.join(" ")) {
             return GuardDecision::Deny(why);

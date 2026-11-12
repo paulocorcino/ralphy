@@ -24,7 +24,7 @@ use crate::{InteractiveRecord, OpenCodeScan, Tokens};
 /// drift, corrupt file) yields an empty vec via the single `read_opencode`
 /// error funnel. `since` drops records whose `last_ts` is strictly before it
 /// (§6: an unparseable bound or record keeps the record).
-pub fn scan_opencode(input: &OpenCodeScan) -> Vec<InteractiveRecord> {
+pub fn scan_opencode(input: &OpenCodeScan<'_>) -> Vec<InteractiveRecord> {
     read_opencode(input).unwrap_or_default()
 }
 
@@ -66,7 +66,7 @@ type Attribution = (Option<String>, Option<String>);
 /// `message` rows to their `session.directory`, and aggregates per session ×
 /// model. Falls back to a directory-less query when the `session` table / its
 /// `directory` column is absent (older DBs, ADR-0033 §6).
-fn read_opencode(input: &OpenCodeScan) -> rusqlite::Result<Vec<InteractiveRecord>> {
+fn read_opencode(input: &OpenCodeScan<'_>) -> rusqlite::Result<Vec<InteractiveRecord>> {
     use rusqlite::{Connection, OpenFlags};
 
     // READ-ONLY: this scan is the reader, OpenCode the writer. WAL rows committed
@@ -181,7 +181,7 @@ fn assistant_row(data: &str) -> Option<AssistantRow> {
 /// The repo a session's directory sits in and that repo's git actor email,
 /// looked up once per slug through `email_cache`.
 fn attribute(
-    input: &OpenCodeScan,
+    input: &OpenCodeScan<'_>,
     directory: Option<&str>,
     email_cache: &mut HashMap<String, Option<String>>,
 ) -> Attribution {
@@ -374,12 +374,12 @@ mod tests {
         );
         let db = seed_db(tmp.path(), &[("ses_old", old), ("ses_new", new)], &[]);
         // since between the two created instants.
-        let between = ms_to_rfc3339(Some(1782500000000));
+        let between = ms_to_rfc3339(Some(1_782_500_000_000));
         let records = scan(&db, &[], Some(&between));
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].session_id, "ses_new");
         // The bound is inclusive: a session whose last message is AT it stays.
-        let at = ms_to_rfc3339(Some(1783000000000));
+        let at = ms_to_rfc3339(Some(1_783_000_000_000));
         let records = scan(&db, &[], Some(&at));
         assert_eq!(records.len(), 1, "the bound is inclusive");
         assert_eq!(records[0].session_id, "ses_new");
@@ -470,7 +470,7 @@ mod tests {
             (t.input, t.output, t.cache_read, t.cache_creation),
             (60, 14, 14, 17)
         );
-        assert_eq!(r.first_ts, ms_to_rfc3339(Some(1782000000000)));
-        assert_eq!(r.last_ts, ms_to_rfc3339(Some(1783000000000)));
+        assert_eq!(r.first_ts, ms_to_rfc3339(Some(1_782_000_000_000)));
+        assert_eq!(r.last_ts, ms_to_rfc3339(Some(1_783_000_000_000)));
     }
 }

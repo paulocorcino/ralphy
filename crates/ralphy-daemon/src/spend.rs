@@ -53,6 +53,7 @@ const UNKNOWN_MODEL: &str = "unknown";
 /// Everything the fold reads. Borrowed, so the caller keeps ownership of the
 /// rows it already read for `/api/usage` — the summary is a projection over that
 /// same data, not a second copy of it.
+#[derive(Debug)]
 pub struct SpendInput<'a> {
     /// The ledger's run records, as `/api/usage` serves them.
     pub records: &'a [serde_json::Value],
@@ -114,7 +115,7 @@ pub struct SpendSummary {
 
 /// Fold one project's usage into its priced summary. Pure: same inputs, same
 /// document, always.
-pub fn summarize(input: &SpendInput) -> SpendSummary {
+pub fn summarize(input: &SpendInput<'_>) -> SpendSummary {
     let classified = rows::classify(input);
 
     let mut meter = Counts::default();

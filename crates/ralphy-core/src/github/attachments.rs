@@ -13,6 +13,9 @@ use regex::Regex;
 use crate::github::client::{gh, gh_output};
 use crate::github::comments::{parse_issue_thread, IssueThread};
 
+mod image_gate;
+pub use image_gate::{gated_image_outcome, ImageCapability};
+
 /// Only files a reporter attached through GitHub's own UI are fetchable — this is
 /// what closes SSRF: the model never chooses a fetch target (ADR-0025 §3.1).
 pub const ATTACHMENT_HOST_PREFIX: &str = "https://github.com/user-attachments/";
@@ -104,6 +107,10 @@ pub(crate) fn sniff_image_ext(bytes: &[u8]) -> Option<&'static str> {
 /// punctuation (`)`, `]`, `.`, …) is trimmed so a `[name](url)` link yields the
 /// bare URL. Non-attachment URLs pasted in the prose are never returned — the
 /// host allowlist is applied here, at extraction (ADR-0025 §3.1, §5).
+///
+/// # Panics
+///
+/// Never: each regex is a valid literal.
 pub fn extract_user_attachment_links(body: &str, comments: &[String]) -> Vec<String> {
     let re = Regex::new(r"https?://github\.com/user-attachments/\S+").expect("static regex");
     let mut seen = std::collections::HashSet::new();
@@ -199,6 +206,7 @@ pub fn render_manifest(issue: u64, entries: &[(String, AttachmentOutcome)]) -> S
 /// The fetched attachment directory plus the rendered manifest. The `TempDir` is
 /// owned here so its `Drop` deletes the directory when this value drops — the
 /// caller keeps it alive until after the triage session returns (ADR-0025 §7).
+#[derive(Debug)]
 pub struct TriageAttachments {
     #[expect(
         dead_code,
@@ -255,33 +263,6 @@ fn classify_payload(class: FormatClass, bytes: Vec<u8>) -> Result<Vec<u8>, &'sta
     }
 }
 
-/// Whether the selected adapter can consume image input, named for its manifest
-/// line. A `false` adapter never fetches images — the pixels would have nowhere
-/// to go (ADR-0025 §4).
-#[derive(Clone, Copy)]
-pub struct ImageCapability<'a> {
-    pub accepts: bool,
-    pub adapter_name: &'a str,
-}
-
-/// Gate an image attachment on the selected adapter's capability, BEFORE any
-/// download: an image bound for a no-vision adapter is `not fetched (<adapter>
-/// has no image input)` — never a wasted fetch. Returns `None` (proceed) for a
-/// non-image class or a vision-capable adapter. Pure so the gate is unit-tested
-/// without network.
-pub fn gated_image_outcome(
-    class: FormatClass,
-    images: &ImageCapability,
-) -> Option<AttachmentOutcome> {
-    if class == FormatClass::Image && !images.accepts {
-        Some(AttachmentOutcome::NotFetched {
-            reason: format!("{} has no image input", images.adapter_name),
-        })
-    } else {
-        None
-    }
-}
-
 /// Split deduped links into `(url, within_cap)` preserving order: the first
 /// [`COUNT_CAP`] are within cap, the rest are dropped as `attachment cap reached`
 /// (ADR-0025 §3.4, §5 — the cap drops the *last* in deterministic order). Pure so
@@ -298,7 +279,12 @@ fn count_capped(links: &[String]) -> Vec<(String, bool)> {
 /// credential (`gh api <url>`), apply the login-HTML guard and by-category
 /// truncation, and write it under `dir`. Returns the visible outcome; a `gh`
 /// failure maps to `download failed: <code>` and never propagates (best-effort).
-fn fetch_one(repo: &Path, dir: &Path, url: &str, images: &ImageCapability) -> AttachmentOutcome {
+fn fetch_one(
+    repo: &Path,
+    dir: &Path,
+    url: &str,
+    images: &ImageCapability<'_>,
+) -> AttachmentOutcome {
     let name = filename_from_url(url);
     let (class, provisional_image) = match admitted_class(&name, url, images) {
         Ok(admitted) => admitted,
@@ -327,7 +313,7 @@ fn fetch_one(repo: &Path, dir: &Path, url: &str, images: &ImageCapability) -> At
 fn admitted_class(
     name: &str,
     url: &str,
-    images: &ImageCapability,
+    images: &ImageCapability<'_>,
 ) -> Result<(FormatClass, bool), AttachmentOutcome> {
     let mut class = classify_format(name);
     // An extensionless inline asset enters as a *provisional* image, which must
@@ -432,7 +418,7 @@ fn fetch_issue_entries(
     repo: &Path,
     issue_dir: &Path,
     links: &[String],
-    images: &ImageCapability,
+    images: &ImageCapability<'_>,
     image_paths: &mut Vec<PathBuf>,
 ) -> Vec<(String, AttachmentOutcome)> {
     let mut entries: Vec<(String, AttachmentOutcome)> = Vec::new();
@@ -460,7 +446,7 @@ fn fetch_issue_entries(
 pub fn fetch_triage_attachments(
     repo: &Path,
     issue_numbers: &[u64],
-    images: ImageCapability,
+    images: ImageCapability<'_>,
 ) -> Result<TriageAttachments> {
     let dir = tempfile::TempDir::with_prefix("ralphy-triage-")
         .context("creating triage attachment temp dir")?;

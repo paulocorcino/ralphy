@@ -233,7 +233,7 @@ pub(crate) fn read_routes(s: &RouterShared) -> Router {
     let identity = s.identity.clone();
     let agents_peers = s.peers_dir.clone();
     let agents_daemon_id = s.daemon_id.clone().unwrap_or_default();
-    let roster_locator = s.roster_locator.clone();
+    let roster_locator = std::sync::Arc::clone(&s.roster_locator);
     let bound_port = s.bound_port;
     Router::new()
         .route(
@@ -248,7 +248,7 @@ pub(crate) fn read_routes(s: &RouterShared) -> Router {
                     query,
                     agents_peers.clone(),
                     agents_daemon_id.clone(),
-                    roster_locator.clone(),
+                    std::sync::Arc::clone(&roster_locator),
                     bound_port,
                 )
             }),
@@ -257,7 +257,7 @@ pub(crate) fn read_routes(s: &RouterShared) -> Router {
             "/api/repos",
             get({
                 let p = s.registry_path.clone();
-                let memo = s.heal_memo.clone();
+                let memo = std::sync::Arc::clone(&s.heal_memo);
                 move || repos_route(p, memo)
             }),
         )

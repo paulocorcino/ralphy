@@ -7,7 +7,7 @@ use super::*;
 fn resolve_opencode_model_precedence() {
     // (case, flag, persisted, expected)
     type Row<'a> = (&'a str, Option<&'a str>, Option<&'a str>, Option<&'a str>);
-    let rows: [Row; 4] = [
+    let rows: [Row<'_>; 4] = [
         ("flag wins", Some("flag"), Some("persisted"), Some("flag")),
         (
             "persisted when the flag is absent",
@@ -40,7 +40,7 @@ fn resolve_opencode_model_precedence() {
 fn resolve_str_precedence() {
     // (case, flag, persisted, default, expected)
     type Row<'a> = (&'a str, Option<&'a str>, Option<&'a str>, &'a str, &'a str);
-    let rows: [Row; 5] = [
+    let rows: [Row<'_>; 5] = [
         (
             "flag wins",
             Some("flag"),

@@ -17,7 +17,7 @@ use anyhow::{Context, Result};
 /// subfolders ralphy owns are replaced, and its `.gitignore` is merged. Returns
 /// the exposed skill names.
 pub fn expose_skills(
-    skills: &include_dir::Dir,
+    skills: &include_dir::Dir<'_>,
     ralphy_dir: &Path,
     discovery_dir: &Path,
 ) -> Result<Vec<String>> {

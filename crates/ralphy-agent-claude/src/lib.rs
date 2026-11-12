@@ -104,6 +104,7 @@ fn planning_args(
 /// Drives the `claude` CLI. `plan_model`/`plan_effort` are the planning knobs;
 /// the `exec_*` fields configure the interactive execution session. `run_dir` is
 /// where the settings file, the captured logs, and the per-issue flag file live.
+#[derive(Debug)]
 pub struct ClaudeAgent {
     plan_model: Option<String>,
     plan_effort: Option<String>,
@@ -127,6 +128,7 @@ impl ClaudeAgent {
         clippy::too_many_arguments,
         reason = "public builder called by the composition root with one value per setting"
     )]
+    #[must_use]
     pub fn with_exec_config(
         mut self,
         exec_model: Option<String>,
@@ -156,6 +158,7 @@ impl ClaudeAgent {
     /// (`claude.run_without_guard_proof_i_understand_the_risk`). Call after
     /// [`with_exec_config`](Self::with_exec_config), which resets the whole
     /// exec block.
+    #[must_use]
     pub fn with_guard_proof_waiver(mut self, waiver: bool) -> Self {
         self.exec.run_without_guard_proof = waiver;
         self
@@ -165,6 +168,7 @@ impl ClaudeAgent {
     /// each execution path on its own default; `Some(0)` disables the watchdog.
     /// Call after [`with_exec_config`](Self::with_exec_config), which resets the
     /// whole exec block.
+    #[must_use]
     pub fn with_idle_minutes(mut self, idle_minutes: Option<u64>) -> Self {
         self.exec.idle_minutes = idle_minutes;
         self
@@ -173,6 +177,7 @@ impl ClaudeAgent {
     /// Set the run's global wall-clock deadline (from `--deadline-hours`). Each
     /// issue's execution budget is then clamped to it, so an issue started just
     /// under the global limit can't overrun by a whole per-issue window.
+    #[must_use]
     pub fn with_run_deadline(mut self, run_deadline: Option<Instant>) -> Self {
         self.exec.run_deadline = run_deadline;
         self

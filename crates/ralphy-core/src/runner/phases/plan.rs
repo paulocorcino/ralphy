@@ -84,9 +84,9 @@ pub(crate) enum PlanPhase {
 /// genuine (non-limit) planning failure is an `Err`: the caller restores the branch
 /// and propagates.
 pub(crate) fn plan_phase(
-    cx: &IssueCtx,
+    cx: &IssueCtx<'_>,
     issue: &Issue,
-    ledger: &mut RunLedger,
+    ledger: &mut RunLedger<'_>,
 ) -> Result<PlanPhase> {
     let mut plan_limit_streak = 0u32;
     let plan = loop {
@@ -150,7 +150,7 @@ pub(crate) fn plan_phase(
 /// or `None` after waiting for the reset, so the caller plans again.
 /// `streak` counts the consecutive limits, this one included.
 fn wait_out_plan_limit(
-    cx: &IssueCtx,
+    cx: &IssueCtx<'_>,
     issue: &Issue,
     limit: PlanLimit,
     streak: u32,
@@ -209,7 +209,7 @@ fn emit_plan_written(issue: &Issue, plan: &Plan, plan_md: &str) {
 
 /// Post the planner's reason for an infeasible plan on the issue. Returns
 /// whether the verdict was a bundle, which also gets the `needs-split` label.
-fn post_infeasible_verdict(cx: &IssueCtx, issue: &Issue) -> bool {
+fn post_infeasible_verdict(cx: &IssueCtx<'_>, issue: &Issue) -> bool {
     let Ok(plan_md) = std::fs::read_to_string(cx.ws.plan_path()) else {
         return false;
     };
@@ -230,7 +230,7 @@ fn post_infeasible_verdict(cx: &IssueCtx, issue: &Issue) -> bool {
 }
 
 /// Label a bundle `needs-split` and post the planner's reason on it.
-fn post_bundle_verdict(cx: &IssueCtx, issue: &Issue, reason: &str) {
+fn post_bundle_verdict(cx: &IssueCtx<'_>, issue: &Issue, reason: &str) {
     crate::emit::needs_split(issue.number);
     // Best-effort: a label failure must not stop the run —
     // the comment below still carries the verdict.

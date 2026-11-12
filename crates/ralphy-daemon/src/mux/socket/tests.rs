@@ -238,7 +238,7 @@ async fn a_revoked_login_opens_no_channel() {
         presence_board::Shared::default(),
         shutdown,
     );
-    served.login = Login::of(auth.clone(), Some(login));
+    served.login = Login::of(Arc::clone(&auth), Some(login));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let app = one_page(served, None);
@@ -282,7 +282,7 @@ async fn a_page_report_on_the_presence_socket_sets_presence() {
     let (_sessions_tx, sessions) = broadcast::channel(4);
     let (_pushes_tx, pushes) = broadcast::channel(4);
     let board = presence_board::Shared::default();
-    let (mut ws, _stop) = connect_on(sessions, pushes, board.clone()).await;
+    let (mut ws, _stop) = connect_on(sessions, pushes, Arc::clone(&board)).await;
     let frame = |payload: serde_json::Value| {
         Wire::Binary(
             protocol::encode(&Frame::Command(Command {

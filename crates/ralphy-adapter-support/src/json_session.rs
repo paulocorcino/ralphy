@@ -48,6 +48,17 @@ pub struct JsonSession<'a> {
     pub missing_msg: &'a str,
 }
 
+// The command is left out: its environment can hold a secret for the child.
+impl std::fmt::Debug for JsonSession<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JsonSession")
+            .field("timeout", &self.timeout)
+            .field("log_path", &self.log_path)
+            .field("out_path", &self.out_path)
+            .finish_non_exhaustive()
+    }
+}
+
 /// The vendor-specific inputs to [`run_text_session`]: like [`JsonSession`] but
 /// with **no `out_path`/`missing_msg`** — the session's deliverable is the log
 /// itself, not a separate JSON artifact (Claude's `consolidate_knowledge`).
@@ -67,6 +78,16 @@ pub struct TextSession<'a> {
     /// Message prefix when the session times out, e.g.
     /// "consolidation session hit the wall timeout".
     pub timeout_msg: &'a str,
+}
+
+// The command is left out: its environment can hold a secret for the child.
+impl std::fmt::Debug for TextSession<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TextSession")
+            .field("timeout", &self.timeout)
+            .field("log_path", &self.log_path)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Run a one-shot headless session that is expected to write a JSON artifact, and

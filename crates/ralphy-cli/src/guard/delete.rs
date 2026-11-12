@@ -41,7 +41,7 @@ pub(super) enum DeleteKind {
 /// allowed. A target must stay inside the worktree (`ctx.cwd`), the system
 /// temp dir, or `/tmp`; a relative path (no `..`) resolves under the
 /// worktree; `~`, `$VAR` and `%VAR%` cannot be resolved here.
-pub(super) fn first_disallowed_target(words: &[String], judge: Judge) -> Option<String> {
+pub(super) fn first_disallowed_target(words: &[String], judge: Judge<'_>) -> Option<String> {
     let (kind, args) = classify_delete(words, judge.shell)?;
     args.iter()
         .find(|tok| !is_delete_flag(&kind, tok) && !recursive_delete_target_allowed(tok, judge.ctx))

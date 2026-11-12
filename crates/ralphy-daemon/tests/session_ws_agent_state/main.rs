@@ -120,7 +120,7 @@ async fn start_daemon(dir: &std::path::Path) -> (u16, std::path::PathBuf) {
         .local_addr()
         .expect("read the bound address")
         .port();
-    let (_tx, rx) = tokio::sync::watch::channel(false);
+    let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
         registry_path,
@@ -132,7 +132,7 @@ async fn start_daemon(dir: &std::path::Path) -> (u16, std::path::PathBuf) {
     );
     tokio::spawn(async move {
         // The shutdown sender lives as long as the server.
-        let _keep = _tx;
+        let _keep = tx;
         axum::serve(listener, app)
             .await
             .expect("serve the test app");

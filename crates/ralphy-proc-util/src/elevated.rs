@@ -13,6 +13,10 @@ pub fn runs_elevated() -> bool {
 
 /// An elevated token is what "Run as administrator" gives. A token that cannot
 /// be read counts as not elevated: the answer only chooses a warning.
+///
+/// # Panics
+///
+/// Never: the size of `TOKEN_ELEVATION` fits in a `u32`.
 #[cfg(windows)]
 #[expect(unsafe_code, reason = "FFI: OpenProcessToken and GetTokenInformation")]
 pub fn runs_elevated() -> bool {

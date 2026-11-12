@@ -250,6 +250,7 @@ pub fn repo_from_repos_json(
     }))
 }
 
+#[derive(Debug)]
 pub struct PeerRepoLocation {
     pub path: String,
     pub reachable: bool,

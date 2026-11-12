@@ -33,7 +33,7 @@ async fn image_write_lands_a_png_under_the_clipboard_dir() {
         .expect("the daemon names the file");
     assert!(path.starts_with(".ralphy/clipboard/paste-"), "{path}");
     assert!(
-        path.ends_with(".png"),
+        has_extension(path, "png"),
         "the extension follows the VERIFIED type: {path}"
     );
     assert_eq!(
@@ -73,7 +73,7 @@ async fn image_write_never_overwrites_an_earlier_drop() {
         paths.push(replies[0]["path"].as_str().unwrap().to_owned());
     }
     assert_ne!(paths[0], paths[1]);
-    assert!(paths.iter().all(|p| p.ends_with(".jpg")), "{paths:?}");
+    assert!(paths.iter().all(|p| has_extension(p, "jpg")), "{paths:?}");
     assert_eq!(
         std::fs::read(root.join(&paths[0])).unwrap(),
         b"\xff\xd8\xff\xe0one"
@@ -163,4 +163,11 @@ async fn a_4_mib_image_paste_still_replies() {
     assert_eq!(replies[0]["status"], "ok", "{:?}", replies[0]);
     let path = replies[0]["path"].as_str().unwrap();
     assert_eq!(std::fs::read(root.join(path)).unwrap().len(), png.len());
+}
+
+/// Whether the last `.`-part of `name` is `ext`, compared as written.
+fn has_extension(name: &str, ext: &str) -> bool {
+    std::path::Path::new(name)
+        .extension()
+        .is_some_and(|e| e == ext)
 }

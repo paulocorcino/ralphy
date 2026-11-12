@@ -21,11 +21,12 @@ enum Lang {
 
 impl Lang {
     fn of(name: &str) -> Option<Lang> {
-        if name.ends_with(".rs") {
+        let ext = Path::new(name).extension().and_then(|e| e.to_str());
+        if ext == Some("rs") {
             Some(Lang::Rust)
-        } else if name.ends_with(".ts") {
+        } else if ext == Some("ts") {
             Some(Lang::TypeScript)
-        } else if name.ends_with(".html") {
+        } else if ext == Some("html") {
             Some(Lang::Html)
         } else {
             None

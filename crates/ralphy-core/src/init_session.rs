@@ -79,6 +79,7 @@ impl IssuesMode {
 /// source documents to read, and the triage label every drafted issue carries.
 /// Grouped into a struct so the session entry points stay under the
 /// argument-count lint and the call site reads as named fields.
+#[derive(Debug)]
 pub struct DraftRequest<'a> {
     pub mode: IssuesMode,
     pub source_docs: &'a [String],
@@ -121,6 +122,7 @@ pub fn build_init_issues_prompt(
 /// issue numbers to triage (each carries `triage-agent`) and the queue label a
 /// promote/consolidate verdict swaps in. Grouped so the adapter session entry
 /// points stay under the argument-count lint.
+#[derive(Debug)]
 pub struct TriageRequest<'a> {
     pub issue_numbers: &'a [u64],
     pub queue_label: &'a str,

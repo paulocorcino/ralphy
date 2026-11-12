@@ -140,7 +140,7 @@ mod logins {
 
     fn socket(audit: &Arc<Audit>, login: LoginId, device: Option<DeviceId>) -> SocketAudit {
         SocketAudit {
-            audit: audit.clone(),
+            audit: Arc::clone(audit),
             device,
             login: Some(login),
             actor: Actor::Device,

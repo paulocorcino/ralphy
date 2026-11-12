@@ -18,6 +18,7 @@ mod attachment;
 mod id_seq;
 mod kept;
 mod pump;
+mod query;
 mod record;
 use agent_status::AgentStatus;
 pub use agent_status::TurnEnd;
@@ -132,6 +133,12 @@ pub struct SessionManager {
     records: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
+impl std::fmt::Debug for SessionManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionManager").finish_non_exhaustive()
+    }
+}
+
 /// Capacity of [`SessionManager::subscribe_changes`]. A receiver that lags
 /// reads the list again once, so a small buffer loses nothing.
 const CHANGES_CAP: usize = 32;
@@ -208,6 +215,10 @@ impl SessionManager {
 
     /// [`spawn_attached`](Self::spawn_attached) with an id from
     /// [`reserve_id`](Self::reserve_id).
+    ///
+    /// # Panics
+    ///
+    /// When the sessions lock was poisoned by a panic in another thread.
     #[expect(
         clippy::too_many_arguments,
         reason = "the session's id, labels, record and spec; a public method"
@@ -278,10 +289,10 @@ impl SessionManager {
         self.sessions
             .lock()
             .expect("sessions mutex")
-            .insert(id, managed.clone());
+            .insert(id, Arc::clone(&managed));
         notify(&self.changes);
         start_pump(
-            managed.clone(),
+            Arc::clone(&managed),
             Arc::downgrade(self),
             output,
             self.changes.clone(),
@@ -325,6 +336,10 @@ impl SessionManager {
     /// `since` is the byte count the client's terminal already shows: the
     /// replay is then only the bytes after it, when the ring still has them
     /// all (ADR-0079 D8). See [`Attachment::resume`].
+    ///
+    /// # Panics
+    ///
+    /// When the sessions or writer slot lock was poisoned by a panic in another thread.
     pub fn attach_as(
         self: &Arc<Self>,
         id: SessionId,
@@ -367,7 +382,7 @@ impl SessionManager {
                 existing.token.fire(EndReason::TakenOver);
             }
             *slot = Some(Writer {
-                token: token.clone(),
+                token: Arc::clone(&token),
                 holder: holder.map(str::to_owned),
                 attempt,
             });
@@ -391,6 +406,10 @@ impl SessionManager {
     ///
     /// [`attach`]: SessionManager::attach
     /// [`attach_as`]: SessionManager::attach_as
+    ///
+    /// # Panics
+    ///
+    /// When the sessions lock was poisoned by a panic in another thread.
     pub fn watch(
         self: &Arc<Self>,
         id: SessionId,
@@ -404,7 +423,7 @@ impl SessionManager {
             sess.watchers
                 .lock()
                 .expect("watchers mutex")
-                .push(token.clone());
+                .push(Arc::clone(&token));
             sess
         };
         Ok(Attachment::new(
@@ -415,47 +434,15 @@ impl SessionManager {
         ))
     }
 
-    /// The live sessions, ordered by id (the `BTreeMap` key order).
-    pub fn list(&self) -> Vec<SessionInfo> {
-        self.list_at(SystemTime::now())
-    }
-
-    /// [`list`](Self::list) with the staleness clock supplied (ADR-0059 §6):
-    /// what `/api/sessions` would say if it were asked at `now`.
-    pub fn list_at(&self, now: SystemTime) -> Vec<SessionInfo> {
-        self.sessions
-            .lock()
-            .expect("sessions mutex")
-            .values()
-            .map(|s| s.info_at(now))
-            .collect()
-    }
-
-    /// Whether a live session of `repo` was spawned in the worktree `checkout`
-    /// — the daemon's own `worktree.remove` gate (ADR-0063 §2): the CLI cannot
-    /// see this table. A free console carries `checkout: None` and never matches.
-    pub fn console_in(&self, repo: &str, checkout: &str) -> bool {
-        self.sessions
-            .lock()
-            .expect("sessions mutex")
-            .values()
-            .any(|s| s.info.repo == repo && s.info.checkout.as_deref() == Some(checkout))
-    }
-
-    /// A single session's identity, or `None` if it is not (or no longer) live.
-    pub fn get(&self, id: SessionId) -> Option<SessionInfo> {
-        self.sessions
-            .lock()
-            .expect("sessions mutex")
-            .get(&id)
-            .map(|s| s.info_at(SystemTime::now()))
-    }
-
     /// Close a session: remove it from the map, evict every attached client
     /// (writer AND watchers), and tree-kill the child (the pump then reaches EOF
     /// and self-removes, a no-op). Returns whether the id existed. Idempotent.
     /// The reason is `ChildExited`: the client's vocabulary is fixed at three
     /// (issue #334).
+    ///
+    /// # Panics
+    ///
+    /// When the sessions or session lock was poisoned by a panic in another thread.
     pub fn close(&self, id: SessionId) -> bool {
         let sess = {
             let mut map = self.sessions.lock().expect("sessions mutex");

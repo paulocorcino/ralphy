@@ -175,7 +175,7 @@ fn a_project_with_its_own_codex_hooks_is_seen() {
     // (why, the file under `.codex` and its text, has hooks); `None` is
     // an empty `.codex`, and an empty name is no `.codex` at all.
     type Row<'a> = (&'a str, Option<(&'a str, &'a str)>, bool);
-    let rows: [Row; 6] = [
+    let rows: [Row<'_>; 6] = [
         ("hooks.json", Some(("hooks.json", "{}")), true),
         (
             "config with hooks",

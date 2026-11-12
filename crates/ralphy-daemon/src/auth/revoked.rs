@@ -38,11 +38,15 @@ struct Line {
 /// The live list, shared by the auth state and every session policy built
 /// from it, as the session epoch is: a revoke changes it in place, and the
 /// next cookie check sees the change.
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct RevokedLogins(Arc<RwLock<Vec<Entry>>>);
 
 impl RevokedLogins {
     /// Whether `login` is on the list.
+    ///
+    /// # Panics
+    ///
+    /// When the revoked-login list lock was poisoned by a panic in another thread.
     pub fn contains(&self, login: &LoginId) -> bool {
         self.0
             .read()

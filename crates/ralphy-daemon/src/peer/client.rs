@@ -36,6 +36,7 @@ pub use status::PeerStatus;
 pub type PeerSocket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
+#[derive(Debug)]
 pub enum SocketError {
     Peer(PeerStatus),
     Http { status: u16, body: String },

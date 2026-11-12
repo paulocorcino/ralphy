@@ -189,7 +189,7 @@ pub(crate) mod tests {
             undo_tag: None,
             oneline: Vec::new(),
             run_usage: Usage::default(),
-            run_usage_by_model: Default::default(),
+            run_usage_by_model: std::collections::BTreeMap::new(),
             invocations: 0,
         }
     }

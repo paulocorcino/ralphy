@@ -412,13 +412,13 @@ pub(crate) fn fleet_routes(s: &RouterShared) -> Router {
                     identity: s.identity.clone(),
                     environment: s.environment.clone(),
                 };
-                let cache = s.peer_repo_cache.clone();
+                let cache = Arc::clone(&s.peer_repo_cache);
                 move || {
                     fleet_route(
                         registry.clone(),
                         peers.clone(),
                         this.clone(),
-                        cache.clone(),
+                        Arc::clone(&cache),
                         bound_port,
                     )
                 }

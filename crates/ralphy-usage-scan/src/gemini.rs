@@ -43,7 +43,7 @@ use crate::{since, GeminiScan, InteractiveRecord, Tokens};
 /// errors. Sessions whose id is in `run_session_ids` are Ralphy runs', never
 /// interactive, and are excluded. `since` drops records whose `last_ts` is
 /// strictly before it (§6: an unparseable bound or record keeps the record).
-pub fn scan_gemini(input: &GeminiScan) -> Vec<InteractiveRecord> {
+pub fn scan_gemini(input: &GeminiScan<'_>) -> Vec<InteractiveRecord> {
     let mut out: Vec<InteractiveRecord> = Vec::new();
     // path → resolved git actor email, computed at most once per attributed repo
     // (mirrors `cursor.rs`): the resolver spawns `git`.
@@ -69,7 +69,7 @@ pub fn scan_gemini(input: &GeminiScan) -> Vec<InteractiveRecord> {
 /// The interactive records of one project directory under `tmp/`, attributed
 /// through its `.project_root` sibling.
 fn project_records(
-    input: &GeminiScan,
+    input: &GeminiScan<'_>,
     email_cache: &mut HashMap<String, Option<String>>,
     dir: &Path,
 ) -> Vec<InteractiveRecord> {
@@ -278,7 +278,7 @@ fn earlier(a: &str, b: &str) -> bool {
 /// `(project slug, git actor email)` for the registered repo whose path is
 /// `root`; `(None, None)` when none matches (§6: reported, never dropped).
 fn attribute(
-    input: &GeminiScan,
+    input: &GeminiScan<'_>,
     cache: &mut HashMap<String, Option<String>>,
     root: &str,
 ) -> (Option<String>, Option<String>) {

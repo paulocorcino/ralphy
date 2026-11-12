@@ -302,7 +302,7 @@ fn waiver_events(f: impl FnOnce()) -> Vec<String> {
         }
     }
     let seen = Arc::new(Mutex::new(Vec::new()));
-    let subscriber = tracing_subscriber::registry().with(Causes(seen.clone()));
+    let subscriber = tracing_subscriber::registry().with(Causes(Arc::clone(&seen)));
     tracing::subscriber::with_default(subscriber, f);
     let got = seen.lock().expect("causes").clone();
     got

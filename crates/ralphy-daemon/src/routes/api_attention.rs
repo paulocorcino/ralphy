@@ -215,9 +215,9 @@ async fn dismiss_on_peer(peers_dir: PathBuf, daemon_id: &str, id: &str) -> Respo
 /// with no runtime starts no tick. The dismissals are read once, from the
 /// store of the repo registry.
 pub(crate) fn attention_routes(s: &RouterShared) -> Router {
-    let sessions = s.sessions.clone();
+    let sessions = Arc::clone(&s.sessions);
     let peers = s.peers_dir.clone();
-    let presence = s.presence.clone();
+    let presence = Arc::clone(&s.presence);
     let telegram_config = s.stores.telegram_config.clone();
     let runs = Runs::default();
     let dismissed: Dismissed = Arc::new(Mutex::new(Dismissals::in_store_of(&s.registry_path)));
@@ -225,42 +225,46 @@ pub(crate) fn attention_routes(s: &RouterShared) -> Router {
         let files = DeskFiles {
             desk: s.desk_path.clone(),
             registry: s.registry_path.clone(),
-            peers: s.peer_repo_cache.clone(),
+            peers: Arc::clone(&s.peer_repo_cache),
         };
         let telegram = Notifier::new(
             s.stores.telegram_config.clone(),
-            (s.presence.clone(), s.telegram_claim.clone()),
+            (Arc::clone(&s.presence), Arc::clone(&s.telegram_claim)),
             s.peers_dir.clone(),
             s.daemon_id.clone(),
         );
         runtime.spawn(tick::run(
             files,
-            sessions.clone(),
-            (runs.clone(), dismissed.clone()),
+            Arc::clone(&sessions),
+            (Arc::clone(&runs), Arc::clone(&dismissed)),
             (s.pushes.clone(), telegram),
             s.shutdown.clone(),
         ));
     }
     let read = {
         let (sessions, runs, dismissed, peers) = (
-            sessions.clone(),
-            runs.clone(),
-            dismissed.clone(),
+            Arc::clone(&sessions),
+            Arc::clone(&runs),
+            Arc::clone(&dismissed),
             peers.clone(),
         );
         move |Query(query): Query<AttentionQuery>| {
             attention_route(
-                sessions.clone(),
-                (runs.clone(), dismissed.clone()),
-                (peers.clone(), presence.clone(), telegram_config.clone()),
+                Arc::clone(&sessions),
+                (Arc::clone(&runs), Arc::clone(&dismissed)),
+                (
+                    peers.clone(),
+                    Arc::clone(&presence),
+                    telegram_config.clone(),
+                ),
                 query.local == Some(1),
             )
         }
     };
     let dismiss = move |Json(body): Json<DismissBody>| {
         dismiss_route(
-            sessions.clone(),
-            (runs.clone(), dismissed.clone()),
+            Arc::clone(&sessions),
+            (Arc::clone(&runs), Arc::clone(&dismissed)),
             peers.clone(),
             body,
         )

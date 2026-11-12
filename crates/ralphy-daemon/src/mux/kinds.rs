@@ -147,7 +147,7 @@ pub(crate) struct Ctx {
 impl Ctx {
     fn tree_host(&self) -> TreeHost {
         TreeHost {
-            watchers: self.watchers.clone(),
+            watchers: Arc::clone(&self.watchers),
             registry_path: self.host.registry_path.clone(),
             peers_dir: self.host.peers_dir.clone(),
             daemon_id: self.daemon_id.clone(),
@@ -159,7 +159,7 @@ impl Ctx {
             registry_path: self.host.registry_path.clone(),
             peers_dir: self.host.peers_dir.clone(),
             daemon_id: self.daemon_id.clone(),
-            sessions: self.host.sessions.clone(),
+            sessions: Arc::clone(&self.host.sessions),
             secret_ok: self.secret_ok,
             bound_port: self.host.bound_port,
         }

@@ -124,6 +124,10 @@ fn encode_json<T: Serialize>(tag: u8, value: &T) -> Vec<u8> {
 }
 
 /// Decode a wire byte string back into a [`Frame`].
+///
+/// # Panics
+///
+/// Never: the id is split at 8 bytes, which is the length of a `u64`.
 pub fn decode(bytes: &[u8]) -> Result<Frame, FrameError> {
     let (&tag, rest) = bytes.split_first().ok_or(FrameError::Empty)?;
     match tag {

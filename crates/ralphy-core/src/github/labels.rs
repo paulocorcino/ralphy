@@ -273,19 +273,19 @@ pub fn apply_label_actions(actions: &[LabelAction], repo_root: &Path) -> Result<
         match action {
             LabelAction::Create(spec) => {
                 let argv = label_create_argv(spec);
-                let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+                let arg_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
                 gh_output(&format!("gh label create {}", spec.name), || {
                     let mut cmd = gh(repo_root);
-                    cmd.args(&args);
+                    cmd.args(&arg_refs);
                     cmd
                 })?;
             }
             LabelAction::UpdateColor { name, to, .. } => {
                 let argv = label_edit_argv(name, to);
-                let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+                let arg_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
                 gh_output(&format!("gh label edit {name}"), || {
                     let mut cmd = gh(repo_root);
-                    cmd.args(&args);
+                    cmd.args(&arg_refs);
                     cmd
                 })?;
             }

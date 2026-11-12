@@ -81,6 +81,7 @@ pub struct RegisteredRepo {
 /// Everything the Claude scan reads — the deep-module seam of ADR-0033 §7: the
 /// store root, the run-owned session ids to exclude, the repo registry for
 /// project/actor attribution, and an optional `since` lower bound on `last_ts`.
+#[derive(Debug)]
 pub struct ClaudeScan<'a> {
     pub projects_dir: &'a Path,
     pub run_session_ids: &'a HashSet<String>,
@@ -92,6 +93,7 @@ pub struct ClaudeScan<'a> {
 /// `.codex` base (the scan walks its `sessions/` and `archived_sessions/`
 /// subtrees), plus the run-owned ids to exclude, the repo registry for
 /// attribution, and an optional `since` lower bound on `last_ts` (ADR-0033 §2).
+#[derive(Debug)]
 pub struct CodexScan<'a> {
     pub codex_dir: &'a Path,
     pub run_session_ids: &'a HashSet<String>,
@@ -104,6 +106,7 @@ pub struct CodexScan<'a> {
 /// `message`/`session` tables), plus the run-owned ids to exclude, the repo
 /// registry for attribution, and an optional `since` lower bound on `last_ts`
 /// (ADR-0033 §2).
+#[derive(Debug)]
 pub struct OpenCodeScan<'a> {
     pub db_path: &'a Path,
     pub run_session_ids: &'a HashSet<String>,
@@ -116,6 +119,7 @@ pub struct OpenCodeScan<'a> {
 /// sidecars before reading its `assistant_usage_events`/`sessions` tables — see
 /// `copilot.rs`), plus the run-owned ids to exclude, the repo registry for
 /// attribution, and an optional `since` lower bound on `last_ts` (ADR-0033 §2).
+#[derive(Debug)]
 pub struct CopilotScan<'a> {
     pub db_path: &'a Path,
     pub run_session_ids: &'a HashSet<String>,
@@ -130,6 +134,7 @@ pub struct CopilotScan<'a> {
 /// format is decided by which root a `wire.jsonl` lives under. Plus the run-owned
 /// ids to exclude, the repo registry for attribution, and an optional `since`
 /// lower bound on `last_ts`.
+#[derive(Debug)]
 pub struct KimiScan<'a> {
     pub kimi_dir: &'a Path,
     pub kimi_code_dir: &'a Path,
@@ -145,6 +150,7 @@ pub struct KimiScan<'a> {
 /// (ADR-0042 D11 — neither store alone enumerates every session). Plus the
 /// run-owned ids to exclude, the repo registry for attribution, and an optional
 /// `since` lower bound on `last_ts`.
+#[derive(Debug)]
 pub struct CursorScan<'a> {
     pub cursor_dir: &'a Path,
     pub run_session_ids: &'a HashSet<String>,
@@ -159,6 +165,7 @@ pub struct CursorScan<'a> {
 /// `.project_root` sibling, so no path hash has to be reversed. Plus the
 /// run-owned ids to exclude, the repo registry for attribution, and an optional
 /// `since` lower bound on `last_ts`.
+#[derive(Debug)]
 pub struct GeminiScan<'a> {
     pub gemini_dir: &'a Path,
     pub run_session_ids: &'a HashSet<String>,

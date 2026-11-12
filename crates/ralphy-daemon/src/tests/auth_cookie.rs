@@ -273,7 +273,7 @@ async fn a_revoked_login_is_refused_and_another_is_not() {
     let app = Router::new()
         .route("/api/probe", axum::routing::get(|| async { "in" }))
         .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
+            Arc::clone(&state),
             require_auth,
         ));
     let now = now_unix();

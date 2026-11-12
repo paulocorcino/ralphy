@@ -237,13 +237,13 @@ async fn a_resync_after_a_lag_shows_the_session_screen() {
     let (rows, cols) = *watcher.size.borrow();
     let mut page = Screen::new(rows, cols, screen::SCROLLBACK_LINES);
     page.feed(&watcher.snapshot);
-    let mut live = 0u64;
+    let mut live_bytes = 0u64;
     while let Ok(chunk) = watcher.rx.try_recv() {
-        live += u64::try_from(chunk.len()).expect("a length fits u64");
+        live_bytes += u64::try_from(chunk.len()).expect("a length fits u64");
         page.feed(&chunk);
     }
     assert_eq!(
-        watcher.offset + live,
+        watcher.offset + live_bytes,
         kept.written,
         "no byte is lost or repeated"
     );

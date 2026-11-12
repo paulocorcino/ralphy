@@ -159,7 +159,7 @@ chat_id = 42
     }
     let shared = super::TelegramShared {
         config,
-        claim: Default::default(),
+        claim: crate::telegram_state::SharedClaim::default(),
         peers_dir: dir.path().join("peers"),
         daemon_id: Some(own.to_owned()),
         name: None,
@@ -198,7 +198,7 @@ type MutualRow<'a> = (&'a str, &'a str, bool, &'a [&'a str], &'a str, u16);
 
 #[tokio::test]
 async fn two_daemons_that_are_each_others_peers_do_not_both_refuse() {
-    let rows: [MutualRow; 5] = [
+    let rows: [MutualRow<'_>; 5] = [
         (
             "own id first, claimer is a peer",
             "01B",

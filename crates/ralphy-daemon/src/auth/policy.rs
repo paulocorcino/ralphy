@@ -259,6 +259,28 @@ pub struct Credentials {
     pub password: Option<password::Hash>,
 }
 
+/// Prints the variant only: the cookie and the bearer token are secret.
+impl std::fmt::Debug for LoginOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            LoginOutcome::Ok { .. } => "Ok",
+            LoginOutcome::BadCredential => "BadCredential",
+            LoginOutcome::Replayed => "Replayed",
+        })
+    }
+}
+
+/// Prints the variant only: the bearer token and the session are secret.
+impl std::fmt::Debug for AuthPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            AuthPolicy::Localhost => "Localhost",
+            AuthPolicy::Bearer(_) => "Bearer",
+            AuthPolicy::Session(_) => "Session",
+        })
+    }
+}
+
 impl std::fmt::Debug for Credentials {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Credentials").finish_non_exhaustive()

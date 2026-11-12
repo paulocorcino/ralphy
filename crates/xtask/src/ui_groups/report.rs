@@ -186,10 +186,10 @@ fn render_summary(
         ),
     );
     for b in &mixed_features {
-        let names: Vec<&str> = b.names.iter().map(String::as_str).collect();
+        let listed: Vec<&str> = b.names.iter().map(String::as_str).collect();
         line(
             o,
-            &format!("  index.html:{} [{}]", b.line, names.join(", ")),
+            &format!("  index.html:{} [{}]", b.line, listed.join(", ")),
         );
     }
 }

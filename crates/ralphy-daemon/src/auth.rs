@@ -104,6 +104,16 @@ pub struct AuthState {
     remote_images: AtomicBool,
 }
 
+/// Prints only the addresses: the policy and the boot token hold secrets.
+impl std::fmt::Debug for AuthState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthState")
+            .field("bind_ip", &self.bind_ip)
+            .field("bound_addr", &self.bound_addr)
+            .finish_non_exhaustive()
+    }
+}
+
 impl AuthState {
     /// Boot the auth state for a bind (the composition-root path). Reads the
     /// on-disk seed/password/require-login flag and computes the initial policy;
@@ -276,6 +286,10 @@ impl AuthState {
     }
 
     /// The current policy (cheap clone under a short read lock).
+    ///
+    /// # Panics
+    ///
+    /// When the policy lock was poisoned by a panic in another thread.
     pub fn policy(&self) -> AuthPolicy {
         self.policy
             .read()
@@ -293,6 +307,10 @@ impl AuthState {
     /// list. Called after any security mutation so the gate takes effect
     /// immediately. The signing key is the on-disk token if present (so a
     /// re-mint wins), else the boot token.
+    ///
+    /// # Panics
+    ///
+    /// When the policy lock was poisoned by a panic in another thread.
     pub fn rebuild(&self) -> Result<()> {
         let dir = store_dir()?;
         let token = load_token_from(&token_path_in(&dir))?.or_else(|| self.boot_token.clone());
@@ -341,6 +359,10 @@ impl AuthState {
     /// of it can still be valid, write the list, and refuse that login's
     /// cookies from the next check on. The list is not changed when the write
     /// fails.
+    ///
+    /// # Panics
+    ///
+    /// When the revoke lock was poisoned by a panic in another thread.
     pub fn revoke_login(&self, login: cookie::LoginId, now: u64) -> Result<()> {
         let _held = self.revoke_lock.lock().expect("revoke lock poisoned");
         let entries = revoked::load(&self.revoked_path, now)?;
@@ -364,6 +386,10 @@ impl AuthState {
 
     /// Consult the login throttle: `Err(retry_after_secs)` while locked out,
     /// `Ok(())` when a login attempt may proceed (amendment §D).
+    ///
+    /// # Panics
+    ///
+    /// When the throttle lock was poisoned by a panic in another thread.
     pub fn throttle_check(&self) -> std::result::Result<(), u64> {
         self.throttle
             .lock()
@@ -372,6 +398,10 @@ impl AuthState {
     }
 
     /// Record a failed login (grows the lockout) or a success (clears it).
+    ///
+    /// # Panics
+    ///
+    /// When the throttle lock was poisoned by a panic in another thread.
     pub fn throttle_record(&self, success: bool) {
         let mut t = self.throttle.lock().expect("throttle lock poisoned");
         if success {

@@ -43,7 +43,7 @@ struct Accum {
 }
 
 /// Fold every row carrying volume into one row per engine.
-pub(crate) fn fold(classified: &Classified) -> Vec<ModelRow> {
+pub(crate) fn fold(classified: &Classified<'_>) -> Vec<ModelRow> {
     let mut models: BTreeMap<&str, Accum> = BTreeMap::new();
     for row in &classified.rows {
         if row.tokens.total() == 0 {

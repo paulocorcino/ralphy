@@ -8,7 +8,7 @@ use super::*;
 fn check_manifest(files: &[(String, Vec<u8>)], manifest: &serde_json::Value) -> Vec<String> {
     use sha2::{Digest, Sha256};
     let mut problems = Vec::new();
-    let mut entries: std::collections::BTreeMap<String, String> = Default::default();
+    let mut entries = std::collections::BTreeMap::<String, String>::new();
     let libraries = manifest["libraries"]
         .as_array()
         .cloned()

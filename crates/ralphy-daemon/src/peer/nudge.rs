@@ -136,6 +136,12 @@ fn spawn_detached_child(_argv: &[String]) -> Result<Child> {
 /// process, so every caller on the reactor hands it to `spawn_blocking`.
 pub struct Keepalives(Mutex<HashMap<String, Held>>);
 
+impl std::fmt::Debug for Keepalives {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Keepalives").finish_non_exhaustive()
+    }
+}
+
 /// One distro's keepalive: the child this process spawned, or the pid of one a
 /// previous daemon spawned. An adopted pid is only ever read, never signalled.
 enum Held {

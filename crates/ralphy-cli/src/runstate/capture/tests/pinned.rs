@@ -30,7 +30,7 @@ fn run_finished_triple_is_pinned() {
             output: 40,
             model: None,
         },
-        run_usage_by_model: Default::default(),
+        run_usage_by_model: std::collections::BTreeMap::new(),
         invocations: 0,
     };
 

@@ -264,10 +264,10 @@ fn new_mode_does_not_leak_ralphy_when_base_lacks_ignore() {
 
     // The run branch must carry the work but none of the `.ralphy/` scratch.
     let branch = "afk/run-stamp-noleak";
-    let tracked = git_ls(&repo, branch);
+    let tracked_files = git_ls(&repo, branch);
     assert!(
-        !tracked.iter().any(|f| f.starts_with(".ralphy/")),
-        "run branch must not track .ralphy/ scratch, got: {tracked:?}"
+        !tracked_files.iter().any(|f| f.starts_with(".ralphy/")),
+        "run branch must not track .ralphy/ scratch, got: {tracked_files:?}"
     );
     // And the ensure landed on the run branch: its `.gitignore` now ignores `.ralphy/`.
     let gi = git_show(&repo, branch, ".gitignore");

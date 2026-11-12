@@ -26,7 +26,7 @@ use crate::{failed_run_stop, HeadlessRun, RunFacts, RunStop};
 /// shared plan shell needs to create dirs, write the charter, and phrase the
 /// no-plan bails; the `(see <log>)` / `at <plan>` suffixes are appended by the
 /// runner, so `auth_msg`/`no_plan_msg` carry only the prefix.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct PlanCfg<'a> {
     /// The current issue's number — identity for the finalized-plan trailer. When
     /// `plan_path`'s last line already carries this issue's trailer, the session
@@ -80,7 +80,7 @@ pub(crate) fn remove_stale_file(file: &Path) {
 /// (the auth bail), then the generic `no_plan_msg`. Returns
 /// `Ok(Some((HeadlessRun, P)))` when a fresh plan was produced.
 pub fn run_plan_session<P>(
-    cfg: PlanCfg,
+    cfg: PlanCfg<'_>,
     run: impl FnOnce() -> Result<(HeadlessRun, P)>,
     is_auth_error: impl Fn(&str) -> bool,
     on_missing: impl FnOnce(&str) -> Option<anyhow::Error>,
@@ -159,7 +159,7 @@ fn stamp_plan_trailer(plan_path: &Path, issue_number: u64) {
 
 /// The paths and auth wording for a [`run_exec_session`] call — no plan/charter,
 /// since execute reads the plan the planner already wrote.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct ExecCfg<'a> {
     /// The workspace `.ralphy` dir (created if absent).
     pub ralphy_dir: &'a Path,
@@ -192,7 +192,7 @@ pub struct ExecCfg<'a> {
 /// exiting 0 on an auth failure, the gate in [`failed_run_stop`] is what has to
 /// change — not the detector.
 pub fn run_exec_session<P>(
-    cfg: ExecCfg,
+    cfg: ExecCfg<'_>,
     run: impl FnOnce() -> Result<(HeadlessRun, P)>,
     is_auth_error: impl Fn(&str) -> bool,
 ) -> Result<(HeadlessRun, P)> {

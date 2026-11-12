@@ -33,6 +33,10 @@ pub enum VerifySpec {
 /// backtick-wrapped command) is rejected as [`VerifySpec::Invalid`] rather than
 /// tokenized into a bogus `-`/`` ` `` program that spawn-fails (#181), as is a line
 /// with a backslash-escaped quote (`\"`/`\'`) the tokenizer cannot honor (#268).
+///
+/// # Panics
+///
+/// Never: each regex is a valid literal.
 pub fn parse_verify(md: &str) -> VerifySpec {
     let heading_re = Regex::new(r"(?im)^##\s+Verify\s*$").expect("valid regex");
     let section = crate::markdown::section_after_heading(md, &heading_re);

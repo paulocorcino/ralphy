@@ -173,6 +173,14 @@ pub struct Bot {
     pub(crate) chat_id: i64,
 }
 
+impl std::fmt::Debug for Bot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Bot")
+            .field("chat_id", &self.chat_id)
+            .finish_non_exhaustive()
+    }
+}
+
 /// The bot of the config at `path`, when it can send: a token (the
 /// environment's, or the file's) and a chat. An empty path is no config, so
 /// a daemon built with no config path sends nothing.

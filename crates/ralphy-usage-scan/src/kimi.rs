@@ -34,7 +34,7 @@ use crate::{InteractiveRecord, KimiScan, Tokens};
 /// file merge. A missing store contributes nothing (never an error). `since`
 /// drops records whose `last_ts` is strictly before it (§6: an unparseable bound
 /// or record keeps the record).
-pub fn scan_kimi(input: &KimiScan) -> Vec<InteractiveRecord> {
+pub fn scan_kimi(input: &KimiScan<'_>) -> Vec<InteractiveRecord> {
     let mut out: BTreeMap<(String, String), Agg> = BTreeMap::new();
     scan_legacy(input.kimi_dir, input.run_session_ids, input.repos, &mut out);
     scan_kimi_code(

@@ -247,7 +247,7 @@ async fn a_command_over_the_limit_waits_for_a_slot_within_the_deadline() {
     let slots = Arc::new(Semaphore::new(1));
     let (exit_a, exit) = std::sync::mpsc::channel::<()>();
     let a = one_child(GatedChild { exit, output: None });
-    let got = call_within(a, slots.clone()).await;
+    let got = call_within(a, Arc::clone(&slots)).await;
     assert!(matches!(got, Collected::StillRunning), "A: got {got:?}");
 
     let b = || {
@@ -256,7 +256,7 @@ async fn a_command_over_the_limit_waits_for_a_slot_within_the_deadline() {
             output: Some(b"b".to_vec()),
         })
     };
-    let got = call_within(b(), slots.clone()).await;
+    let got = call_within(b(), Arc::clone(&slots)).await;
     assert!(
         matches!(got, Collected::NoSlot),
         "B must wait while A still runs and holds the one slot, \
@@ -271,7 +271,7 @@ async fn a_command_over_the_limit_waits_for_a_slot_within_the_deadline() {
     })
     .await;
     assert!(freed.is_ok(), "A's slot must come back when A exits");
-    let got = call_within(b(), slots.clone()).await;
+    let got = call_within(b(), Arc::clone(&slots)).await;
     assert!(
         matches!(got, Collected::Done(Some(0), ref out) if out == b"b"),
         "got {got:?}"

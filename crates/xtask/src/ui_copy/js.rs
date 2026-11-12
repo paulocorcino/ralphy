@@ -37,7 +37,7 @@ const HELPER_SUFFIXES: &[&str] = &[
 /// Scan one JavaScript source; `first_line` is the line of its first char.
 /// `fns` names functions that return copy whatever their suffix, and
 /// functions that take copy as an argument (`docs/ui-copy-rules.json`).
-pub(super) fn scan(src: &str, first_line: usize, fns: CopyFns, out: &mut Vec<Found>) {
+pub(super) fn scan(src: &str, first_line: usize, fns: CopyFns<'_>, out: &mut Vec<Found>) {
     let cs: Vec<char> = src.chars().collect();
     let toks = lex(src, first_line);
     let sc = Scan {

@@ -37,7 +37,7 @@ async fn create_emits_and_between_polls_stays_buffered() {
 async fn close_and_sweep_release_every_watch() {
     let dir = tempfile::tempdir().unwrap();
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
-    let subs = WatchSubs::new(watchers.clone());
+    let subs = WatchSubs::new(Arc::clone(&watchers));
     subs.subscribe("close", "owner/repo", dir.path(), &[String::new()])
         .unwrap();
     assert_eq!(watchers.watch_refcount("owner/repo", ""), 1);
@@ -58,7 +58,7 @@ async fn close_and_sweep_release_every_watch() {
 async fn traversal_is_refused_without_creating_a_sub() {
     let dir = tempfile::tempdir().unwrap();
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
-    let subs = WatchSubs::new(watchers.clone());
+    let subs = WatchSubs::new(Arc::clone(&watchers));
     assert!(subs
         .subscribe(
             "escape",
@@ -85,7 +85,7 @@ async fn a_folder_that_links_out_of_the_root_is_not_watched() {
     linked.expect("create a directory symlink");
     std::fs::create_dir(dir.path().join("inside")).unwrap();
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
-    let subs = WatchSubs::new(watchers.clone());
+    let subs = WatchSubs::new(Arc::clone(&watchers));
 
     let paths = ["linked".to_owned(), "inside".to_owned()];
     subs.subscribe("s", "owner/repo", dir.path(), &paths)
@@ -194,7 +194,7 @@ async fn a_missing_dir_is_skipped_and_the_rest_is_watched() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir(dir.path().join("docs")).unwrap();
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
-    let subs = WatchSubs::new(watchers.clone());
+    let subs = WatchSubs::new(Arc::clone(&watchers));
     subs.subscribe(
         "s",
         "owner/repo",
@@ -262,7 +262,7 @@ async fn a_resubscribe_holds_the_set_it_sends_and_keeps_its_repo() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir(dir.path().join("docs")).unwrap();
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
-    let subs = WatchSubs::new(watchers.clone());
+    let subs = WatchSubs::new(Arc::clone(&watchers));
     subs.subscribe("s", "owner/repo", dir.path(), &[String::new()])
         .unwrap();
     subs.subscribe(
@@ -291,7 +291,7 @@ async fn a_set_that_empties_and_grows_again_still_sees_changes() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir(dir.path().join("docs")).unwrap();
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
-    let subs = WatchSubs::new(watchers.clone());
+    let subs = WatchSubs::new(Arc::clone(&watchers));
     subs.subscribe("s", "owner/repo", dir.path(), &[String::new()])
         .unwrap();
     subs.subscribe("s", "owner/repo", dir.path(), &[]).unwrap();
@@ -316,7 +316,7 @@ async fn a_set_emptied_during_a_wait_still_sees_changes_after_it_grows() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir(dir.path().join("docs")).unwrap();
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
-    let subs = WatchSubs::new(watchers.clone());
+    let subs = WatchSubs::new(Arc::clone(&watchers));
     subs.subscribe("s", "owner/repo", dir.path(), &[String::new()])
         .unwrap();
 

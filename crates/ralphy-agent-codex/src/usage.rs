@@ -139,12 +139,12 @@ mod tests {
             "\n",
         );
         let usage = parse_codex_rollout_usage(jsonl, Some("gpt-5-codex".into()));
-        assert_eq!(usage.input, 106341, "input = input_tokens - cached");
+        assert_eq!(usage.input, 106_341, "input = input_tokens - cached");
         assert_eq!(usage.output, 10466, "output excludes reasoning");
-        assert_eq!(usage.cache_read, 735616);
+        assert_eq!(usage.cache_read, 735_616);
         assert_eq!(usage.cache_creation, 0);
         assert_eq!(usage.model.as_deref(), Some("gpt-5-codex"));
-        assert_eq!(usage.total(), 852423, "reconciles with Codex's own total");
+        assert_eq!(usage.total(), 852_423, "reconciles with Codex's own total");
     }
 
     #[test]

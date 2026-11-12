@@ -236,7 +236,7 @@ pub(super) fn console_family() -> String {
 /// `None` for a module outside the family. `wb-consoles-tab.ts` is outside:
 /// the rule needs the hyphen after `wb-console`.
 fn console_family_group(name: &str) -> Option<u8> {
-    if !name.ends_with(".ts") || name.ends_with(".d.ts") {
+    if !has_extension(name, "ts") || name.ends_with(".d.ts") {
         return None;
     }
     if name == "wb-console.ts" {

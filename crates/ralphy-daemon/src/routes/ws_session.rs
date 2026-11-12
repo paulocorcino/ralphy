@@ -179,7 +179,7 @@ impl SessionHost {
             identity: s.identity.clone(),
             environment: s.environment.clone(),
             bound_port: s.bound_port,
-            sessions: s.sessions.clone(),
+            sessions: Arc::clone(&s.sessions),
             registry_path: s.registry_path.clone(),
             shutdown: s.shutdown.clone(),
         }
