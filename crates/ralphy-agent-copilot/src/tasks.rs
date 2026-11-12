@@ -108,15 +108,18 @@ pub fn diagnose_repo(
 /// under `docs/prd/`. The session writes its [`IssuesDraft`] JSON to `out_path`,
 /// which this function reads, validates against the schema, and returns. It NEVER
 /// publishes to GitHub — that is the cli's job after the dev confirms.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public entry point called by the composition root with one value per setting"
+)]
 pub fn draft_issues(
     repo: &Path,
     out_path: &Path,
     req: &DraftRequest,
     model: Option<&str>,
-    effort: Option<&str>,
+    _effort: Option<&str>,
     timeout: Duration,
 ) -> Result<IssuesDraft> {
-    let _: Option<&str> = effort;
     let prompt =
         build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
     let log_path = repo.join(".ralphy").join("init-issues.log");
@@ -217,6 +220,10 @@ pub fn consolidate_knowledge(
 /// the cli to apply after the operator confirms. Never publishes to GitHub.
 /// `req.image_paths` IS forwarded to the child (D12 — Copilot's `ACCEPTS_IMAGES`
 /// is `true`), unlike Kimi's triage which has no image-input channel.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public entry point called by the composition root with one value per setting"
+)]
 pub fn triage_issues(
     repo: &Path,
     out_path: &Path,

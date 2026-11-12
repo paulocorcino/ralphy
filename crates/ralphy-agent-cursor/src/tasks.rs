@@ -120,15 +120,18 @@ pub fn diagnose_repo(
 /// under `docs/prd/`. The session writes its [`IssuesDraft`] JSON to `out_path`,
 /// which this function reads, validates against the schema, and returns. It NEVER
 /// publishes to GitHub — that is the cli's job after the dev confirms.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public entry point called by the composition root with one value per setting"
+)]
 pub fn draft_issues(
     repo: &Path,
     out_path: &Path,
     req: &DraftRequest,
     model: Option<&str>,
-    effort: Option<&str>,
+    _effort: Option<&str>,
     timeout: Duration,
 ) -> Result<IssuesDraft> {
-    let _: Option<&str> = effort;
     let config_dir = repo.join(".ralphy").join(CONFIG_DIR_NAME);
     one_shot_preflight(repo, repo, &config_dir)?;
 
@@ -172,6 +175,10 @@ pub fn draft_issues(
 /// cli to apply after the operator confirms. Never publishes to GitHub.
 /// `req.image_paths` is unused: no attachment channel exists anywhere in this
 /// vendor's headless surface (`ACCEPTS_IMAGES = false`, ADR-0042 D15).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public entry point called by the composition root with one value per setting"
+)]
 pub fn triage_issues(
     repo: &Path,
     out_path: &Path,

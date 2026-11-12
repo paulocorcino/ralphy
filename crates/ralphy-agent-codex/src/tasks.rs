@@ -78,6 +78,10 @@ pub fn diagnose_repo(
 /// under `docs/prd/`. The session writes its [`IssuesDraft`] JSON to `out_path`,
 /// which this function reads, validates against the schema, and returns. It NEVER
 /// publishes to GitHub — that is the cli's job after the dev confirms.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public entry point called by the composition root with one value per setting"
+)]
 pub fn draft_issues(
     repo: &Path,
     out_path: &Path,
@@ -183,6 +187,10 @@ pub fn consolidate_knowledge(
 /// [`draft_issues`] but drives the triage charter over each `triage-agent` issue's
 /// body + full comment thread, writing a [`TriageDraft`] JSON to `out_path` for
 /// the cli to apply after the operator confirms. Never publishes to GitHub.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public entry point called by the composition root with one value per setting"
+)]
 pub fn triage_issues(
     repo: &Path,
     out_path: &Path,

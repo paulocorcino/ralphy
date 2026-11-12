@@ -38,3 +38,6 @@
 {"date": "2026-11-11", "kind": "note", "text": "Phase 3: panic, string_slice, as_conversions, undocumented_unsafe_blocks, cast_possible_truncation, cast_precision_loss, cast_sign_loss and cast_possible_wrap are errors"}
 {"date": "2026-11-11", "kind": "note", "text": "Phase 14: jscpd at minTokens 75 and minLines 5 is an error, with a clone count ratchet (42) and a jscpd ignore marker ratchet (22)"}
 {"date": "2026-11-11", "kind": "note", "text": "Phase 10: no-confusing-void-expression, strict-void-return, consistent-return, require-await, no-promise-executor-return, promise/always-return and promise/no-callback-in-promise are errors in the workbench and the ui-tests"}
+{"date": "2026-11-11", "kind": "note", "text": "Phase 4: clippy::{format_push_string, too_many_arguments (threshold 5), needless_pass_by_value, too_many_lines, items_after_statements, match_same_arms, needless_continue, unused_async} are errors"}
+{"date": "2026-11-11", "kind": "note", "text": "Phase 4: clippy::{unnecessary_wraps, trivially_copy_pass_by_ref, ref_option, assigning_clones, option_option, struct_excessive_bools, format_collect, manual_let_else} are errors"}
+{"date": "2026-11-11", "kind": "note", "text": "Phase 4: clippy::{unused_self, match_wildcard_for_single_variants, needless_for_each, nonminimal_bool, mod_module_files, implicit_hasher, fn_params_excessive_bools} are errors"}

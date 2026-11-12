@@ -340,6 +340,10 @@ pub fn append(rec: &LedgerRecord) -> Result<()> {
 /// fires from the cli after the queue drains, outside any `IssueCtx`. Best-effort
 /// like every ledger write: a `0`-token usage writes nothing (an empty overhead
 /// line would only add noise), and a write failure warns rather than stops (D9).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public entry point called by the composition root with one value per setting"
+)]
 pub fn append_run_phase(
     project: &str,
     actor_email: &str,
