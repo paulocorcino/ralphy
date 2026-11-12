@@ -156,7 +156,7 @@ existence is the check.
 ### 7. Vendors in scope, and why the others are not
 
 | Vendor | Home variable | In this ADR | Reason |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Claude | `CLAUDE_CONFIG_DIR` | **yes** | the vendor honours it for credentials, settings and `projects/`; the three hardcoded `~/.claude` paths are fixed as a prerequisite (§8) |
 | Codex | `CODEX_HOME` | **yes** | already read by the adapter; `auth.json` and `sessions/` live under it |
 | Kimi | `KIMI_CODE_HOME` | **yes** | already read for usage; login state lives under it |

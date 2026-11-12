@@ -376,7 +376,7 @@ fence is focused is born inside it.
 Three kinds of state, three owners:
 
 | state | owner | why |
-|---|---|---|
+| --- | --- | --- |
 | console output | **shared** | it is a broadcast; watching together is the point |
 | who types | **exclusive per session** | the single-writer slot that already exists |
 | viewport offset, open file tabs and the slot beside the active one (ADR-0037 §3c) | **per client** | shared, one client's panning would drag the other's view |

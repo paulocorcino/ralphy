@@ -10,7 +10,7 @@
 `DEFAULT_MAX_MINUTES_PER_ISSUE` changed value four times in ten days:
 
 | Commit | Date | Change |
-|---|---|---|
+| --- | --- | --- |
 | `ec56534` | 2026-07-03 | `90` → `0`, documented as "no per-issue cap by default" |
 | `e273400` | 2026-07-08 | `0` → `60`, resolving #150, plus a test pinning the finite default |
 | `74881b2` | 2026-07-13 | `60` → `0`, a one-line change riding inside a Telegram commit |
@@ -56,7 +56,7 @@ Two defaults, because the two execution paths have different progress signals �
 and the signal, not the threshold, is the load-bearing choice:
 
 | Path | Progress signal | Default |
-|---|---|---|
+| --- | --- | --- |
 | headless | any byte on stdout/stderr | **20 min** |
 | interactive (PTY) | agent transcript growth **only** | **45 min** |
 

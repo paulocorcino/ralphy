@@ -102,7 +102,7 @@ of them undocumented, recovered from the bundled `FatalError` hierarchy (plus th
 non-`FatalError` relaunch sentinel `199`, see D18) and three confirmed live:
 
 | Code | Class | Ralphy's reading |
-|---|---|---|
+| --- | --- | --- |
 | `0` | — | success |
 | `1` | — | generic failure, incl. API errors |
 | `41` | `FatalAuthenticationError` | auth stop (D6) |
@@ -168,7 +168,7 @@ The alternative — driving the CLI against the operator's `~/.gemini` — is
 untenable, because four separate holes open there at once:
 
 | Hole in the default root | Closed by an owned root |
-|---|---|
+| --- | --- |
 | `~/.gemini/policies/*.toml` (user tier, base 4) **outranks `--yolo`** (default tier, 1.998) | not read |
 | `~/.gemini/GEMINI.md` is concatenated into **every prompt**, competing with the charter, with no documented off switch | not read |
 | Hooks fire **only at user scope**, so installing one means mutating the operator's file | Ralphy's root *is* the user scope |
@@ -561,7 +561,7 @@ D5's policy is the real control. Beyond it, the owned root's `settings.json`
 forces:
 
 | Setting | Value | Why |
-|---|---|---|
+| --- | --- | --- |
 | `experimental.enableAgents` | `false` | Set defensively, **but not relied upon** — see the correction below. Remote A2A agents are on by default and are defined by repo-local `.gemini/agents/*.md` with an arbitrary `agent_card_url`, so a cloned repo could aim delegation at a third-party endpoint. |
 | `privacy.usageStatisticsEnabled` | `false` | On by default. Ralphy does not opt the operator's supervised runs into vendor analytics. |
 | `telemetry.enabled` | left `false` | Already the default; if ever enabled, `logPrompts` defaults to `true` and would ship prompt text. |

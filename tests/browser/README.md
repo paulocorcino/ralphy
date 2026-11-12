@@ -19,7 +19,7 @@ A folder holds the scripts for one part of the workbench. Its name matches the
 UI module in `crates/ralphy-daemon/assets/ui/` where one exists.
 
 | Folder | What it checks | UI module |
-|---|---|---|
+| --- | --- | --- |
 | `agents/` | the console menu's agent roster, the agent state dot | `wb-agents.ts` |
 | `board/` | the issue board, the issue drawer, labels, a ready plan | `wb-kanban.ts` |
 | `changes/` | Changes, the diff, sync, push | `wb-changes.ts` |

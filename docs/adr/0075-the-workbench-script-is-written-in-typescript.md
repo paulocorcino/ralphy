@@ -280,7 +280,7 @@ The classic globals a module reads are typed in `globals.d.ts`.
 test. Measured on Windows on 2026-10-06:
 
 | Exit criterion | Result |
-|---|---|
+| --- | --- |
 | Behaviour unchanged | `node --test`: 865 passed. Browser checks: `wb_hosts_497.py` 12/12, `wb_hosts_scroll.py` 6/6, `wb_modals_487.py` 36/36, `wb_security_headers.py` 13/13 (the module loads under the CSP) |
 | `cargo build` with no Node on the path | passes; `build.rs` runs no other program. CI builds and tests on Windows, Linux and macOS |
 | `tsc --noEmit` strict passes, and a name outside `uses` fails it | passes; removing `loadRepos` from `uses` gives two `TS2339` errors |
@@ -433,7 +433,7 @@ phase 5 is the ADR-0073 D7 track (#551 to #555, folded into #576), done
 with plain imports. It made five cuts, in six steps (#576):
 
 | Cut | Target module | What moved |
-|---|---|---|
+| --- | --- | --- |
 | Plane folds | `wb-geometry.ts` (273 to 485 lines) | bring into view, landing, pan, spawn rects, fence holds |
 | Input folds | `wb-console-input.ts` (new, 363 lines) | touch, drag, keys, paste, clipboard, font |
 | Session folds | `wb-console-session.ts` (new, 309 lines) | the wire codec, reconnect, resume, dormancy and peer rules |

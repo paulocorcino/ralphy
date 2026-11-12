@@ -965,7 +965,7 @@ Seven verbs form the **host family** (`Verb::is_host`). Each one runs
 `ralphy host …` on the daemon's own computer:
 
 | Verb | Class | Reply |
-|---|---|---|
+| --- | --- | --- |
 | `host.aliases` | Query | `aliases`: the hosts of the SSH config, resolved by `ssh -G` |
 | `host.key` | Query | `key`: `known`, `unknown` with fingerprints, `unreachable`, or `proxied` |
 | `host.trust` | Mutate | `{status:"ok"}` |
@@ -1006,7 +1006,7 @@ computer, on its WSL distro, or on a remote host (ADR-0067). Two verbs form
 the **registry family**:
 
 | Verb | Class | Payload | Reply |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `dir.list` | Observe | `daemon`, `path` | `entries`, `more`, `start` |
 | `project.add` | Mutate | `daemon`, `path`, `init` | `{status:"ok", slug, path}` |
 
@@ -1305,7 +1305,7 @@ Measured on 2026-10-15 with a throwaway Rust program (rustc 1.98.0, `ignore`
 from all three engines):
 
 | Tree | Entries | `read_dir` stack | `ignore` x4 | `ignore` x8 |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Windows 11, 12 CPUs, `C:\Dev\ralphy` with `target/` | 315,000 | 1,369 ms | 474 ms | 342 ms |
 | WSL 2 ext4, 4 CPUs, a `target/` tree | 13,800 | 44.8 ms | 17.1 ms | 16.5 ms |
 | WSL 2 ext4, `~/.cargo` | 23,000 | 82.6 ms | 34.3 ms | 33.5 ms |

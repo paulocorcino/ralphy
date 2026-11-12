@@ -161,7 +161,7 @@ and this holds in both directions. Probe P6 against `gpt-5-mini`, which supports
 exactly `low, medium, high`:
 
 | requested | recorded in `assistant_usage_events.reasoning_effort` |
-|---|---|
+| --- | --- |
 | `xhigh` — above the ceiling | **`medium`** |
 | `minimal` — below the floor | **`medium`** |
 | `high` — in range | `high` |

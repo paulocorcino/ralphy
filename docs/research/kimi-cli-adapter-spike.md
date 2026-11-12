@@ -37,7 +37,7 @@ Kimi CLI's headless surface is **near-identical to Claude Code and Codex**, whic
 is why the adapter is mostly a clone.
 
 | Flag | Meaning | Adapter use |
-|------|---------|-------------|
+| ------ | --------- | ------------- |
 | `--print` | non-interactive mode; auto-dismiss AskUserQuestion, auto-approve tools **for this run** | **the headless switch** (like `claude -p`) |
 | `-p, --prompt TEXT` | user prompt, doesn't enter interactive mode | pass the charter |
 | `--output-format [text\|stream-json]` | must be used with `--print` | `stream-json` for event/token parsing |
@@ -376,7 +376,7 @@ Not on stdout. In the session's `wire.jsonl`, in `StatusUpdate` events:
 ### 11.5 Exit-code table ✅
 
 | Case | Exit | Signal |
-|------|------|--------|
+| ------ | ------ | -------- |
 | success | **0** | normal JSONL; resume hint on stderr |
 | refusal (won't/can't do it) | **0** | refusal is in assistant `text` — **not** distinguishable by exit code; must judge from content (→ `blocked_reason` sentinel in charter) |
 | **rate-limit 429 / 5xx / timeout** | **75** | `EX_TEMPFAIL`; provider error text on stdout → **`Outcome::Limit`** (§11.9) |
@@ -461,7 +461,7 @@ Headless-only, no PTY, uses the shared scaffold (`run_plan_session` /
 Concrete adapter shape:
 
 | Concern | Kimi mechanism | Source of truth |
-|---------|----------------|-----------------|
+| --------- | ---------------- | ----------------- |
 | Headless plan/exec | `kimi --print --input-format text --output-format stream-json -y -m kimi-code/kimi-for-coding` (prompt on stdin) | §11 |
 | `plan()` | normal `--print` + `prompt.plan.kimi.md` → model writes `.ralphy/plan.md`; success = file on disk (not native `--plan`) | §11.7 |
 | `execute()` | `run_exec_session` loop + `PROMPT_EXECUTE` charter; sentinel in final assistant `text` + exit + HEAD-diff | §11.4 |

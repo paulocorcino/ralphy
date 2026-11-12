@@ -59,7 +59,7 @@ listed under Compliance, next to the premise each one breaks. The largest:
 ### Trust zones
 
 | Zone | Trust | Why |
-|---|---|---|
+| --- | --- | --- |
 | The operator | Full | Ralphy runs as the operator's OS account and acts for them. |
 | Other processes on the operator's machine | Full under the default policy; none with `require-login` or `require-token` | A loopback bind trusts the local machine. This is correct only on a single-user host. |
 | A network client of the daemon | None until it authenticates | It may be anyone who can reach the port or the tunnel. |

@@ -12,7 +12,7 @@ in ONE browser process against ONE daemon, each asserting external behaviour an
 operator can see.
 
 | # | Slice | Criterion it closes | Result | Screenshot |
-|---|-------|---------------------|--------|------------|
+| --- | ------- | --------------------- | -------- | ------------ |
 | 1 | #305 | The canvas tab reads Consoles · `window.WBTranslate` undefined, `GET /wb-translate.js` 404 | PASS | none (tab-strip + absence asserts; the desk shot below shows the strip) |
 | 1b | #305 | No translation affordance is present anywhere (the DOM half — run **after** scenario 6, see below) | PASS | none (selector counts behind two positive controls) |
 | 2 | #303 | Console windows resize from an edge and from a corner, and a top or left edge resize holds the opposite edge | PASS | none (geometry asserted from `offsetLeft/Top/Width/Height`) |

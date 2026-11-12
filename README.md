@@ -355,7 +355,7 @@ ralphy telegram test     # send a ping to confirm it works
 and validation evidence.
 
 | Feature | What it's for | Start here |
-|---|---|---|
+| --- | --- | --- |
 | 🖥️ **The daemon & fleet** | autostart, worktrees, WSL peers, reaching it remotely | [docs/daemon.md](docs/daemon.md) |
 | 🤖 **Choose your agent** | seven vendors — even plan with one and code with another | [docs/agents.md](docs/agents.md) |
 | 🔍 **The verify gate** | why "green" means *the tests actually passed*, not *the agent said so* | [docs/verify-gate.md](docs/verify-gate.md) |

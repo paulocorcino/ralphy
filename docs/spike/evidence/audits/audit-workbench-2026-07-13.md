@@ -33,7 +33,7 @@ A entrega está **~70% real, ~30% encenação**. Os sistemas estruturais funcion
 ### 3.1 Rotas HTTP do daemon (todas em `crates/ralphy-daemon/src/lib.rs`; router em lib.rs:181–369)
 
 | Rota / método | Handler | O que faz de verdade |
-|---|---|---|
+| --- | --- | --- |
 | `GET /api/identity` | `identity_route` (lib.rs:1387) | Identidade do daemon `{name, avatar}`; 404 se não batizado. **Sem consumidor no JS.** |
 | `GET /api/repos` | `repos_route` (lib.rs:1287) | Lê `repos.toml` fresco por request; `[{slug, path, reachable, branch}]`; branch lida ao vivo de `.git/HEAD`. |
 | `GET /api/usage[?since=…]` | `usage_route` (lib.rs:1325) | Ledger de tokens + scan interativo (Claude/Codex/OpenCode/Kimi). **Sem consumidor no JS.** |
@@ -57,7 +57,7 @@ A entrega está **~70% real, ~30% encenação**. Os sistemas estruturais funcion
 Codec de frame binário taggeado (`protocol.rs`, espelhado em `wb-daemon.js:14`): `0x01`=Terminal `[tag][session u64 BE][bytes]`, `0x02`=Command `[tag][JSON {id, verb, payload}]`, `0x03`=Presence.
 
 | Rota WS | Handler | Protocolo |
-|---|---|---|
+| --- | --- | --- |
 | `GET /ws` | `ws_presence_loop` (lib.rs:450) | Push de `Presence{name, avatar, uptime_secs}` a cada 2s. **Sem consumidor no JS** (o `TAG_PRESENCE` é declarado em wb-daemon.js:17 mas nenhum socket abre `/ws`). |
 | `GET /ws/session?…` | `session_ws` (lib.rs:624) | Bridge PTY. Três formas: `?id=<u64>[&takeover=1]` (reattach; 404 desconhecida, 409 ocupada), `?repo=<slug>&agent=<claude\|codex\|opencode>` (launch de agente), `?console=1[&repo=]` (console livre, #167). Replay de scrollback na conexão; input do cliente → stdin do PTY; `Command{verb:"resize"}` → resize. Modelo tmux (`session.rs`): drop do WS **detacha** (o filho sobrevive); só `POST /api/sessions/close` ou exit do filho encerram. |
 | `GET /ws/command` | `command_ws` (lib.rs:763) | Um comando por conexão. Primeiro frame `Command{id, verb, payload}` → despachado por `Verb::from_query` + `effect_class`. Verbo desconhecido / repo não registrado → um frame `{status:"error"}`. |
@@ -68,7 +68,7 @@ Codec de frame binário taggeado (`protocol.rs`, espelhado em `wb-daemon.js:14`)
 `Verb::from_query` (dispatch.rs:173) aceita SOMENTE estas 18 strings; qualquer outra → `{status:"error","unknown verb"}`.
 
 | Verbo | EffectClass | Tratado em (lib.rs) | O que faz |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `run` | Spawn | 990–1126 | Spawna `ralphy run --if-idle --agent … [--plan-agent …] --branch-mode …` destacado (argv por `spawn_argv`, dispatch.rs:248 — parâmetros closed-enum, o cliente nunca compõe linha de comando). Streaming `spawned`/`output`/`exited`. O run sobrevive ao daemon. |
 | `triage` | Spawn | ″ | `ralphy triage --if-idle --yes`. |
 | `push` | Spawn | ″ | `ralphy issues --push`. |
@@ -217,7 +217,7 @@ Severidade: **C**rítico / **A**lto / **M**édio / **B**aixo. "Evidência" = arq
 ## 5. Sintomas relatados pelo operador × diagnóstico
 
 | Sintoma relatado | Diagnóstico | Item |
-|---|---|---|
+| --- | --- | --- |
 | "Kanban não traz visibilidade, tudo vazio" | Erro do `board.list` engolido; empty-state mente | **C2** |
 | "Sem login e validação do TOTP não funciona" | Política `Localhost` nunca vira `Session` em loopback; `/api/login` → 404; UI não avisa e Log off tranca | **C3** |
 | "Console fica acima do kanban, não dentro do canvas" | z-index 60+ (crescente) vs 30/40 do overlay | **A2** |
@@ -273,7 +273,7 @@ Etapa 0 inteira primeiro (destrava o diagnóstico do C2 no ambiente real e elimi
 ## 7. Apêndice — mapa de arquivos do frontend
 
 | Arquivo | Linhas | Papel | Estado |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `index.html` | 1092 | Shell Alpine.js: topbar, rail, sidebar, tabs, kanban, runs, 5 modais, login gate, 4 seed-plans | Real com ilhas fake (seed-plans, uptime, copy) |
 | `app.js` | 1719 | Componente `shell()`: accordion, árvore, tabs, kanban, runs fold, settings, security, login, seam `workbench:action` | Real com fallbacks fake (C1, M4, M5) |
 | `wb-daemon.js` | 156 | Adapter do seam → `/ws/command` (spawn/observe/write) + `/ws/tree` (subscribe) | Real |
