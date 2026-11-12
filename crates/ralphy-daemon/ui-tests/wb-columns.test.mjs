@@ -485,7 +485,7 @@ test("fromRects: stacked windows are rows, windows side by side are columns", ()
   assert.deepEqual(C.fromRects(items), [["a", "b"], ["c"], ["d"]]);
   assert.deepEqual(items[1], win("b", 20, 320), "input untouched");
   // Any input order gives the same grid.
-  assert.deepEqual(C.fromRects([...items].reverse()), [["a", "b"], ["c"], ["d"]]);
+  assert.deepEqual(C.fromRects(items.toReversed()), [["a", "b"], ["c"], ["d"]]);
   // The first console is the top row of the leftmost column, even when a
   // lower window starts further left.
   assert.deepEqual(C.fromRects([win("low", 0, 400), win("high", 50, 0)]), [["high", "low"]]);

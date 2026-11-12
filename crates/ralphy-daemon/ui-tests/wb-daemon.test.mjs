@@ -1,6 +1,7 @@
 // Unit tests for assets/ui/wb-daemon.ts — runs the real module with no DOM.
 // This file lives OUTSIDE assets/ui on purpose: lib.rs embeds all of
 // assets/ui into the daemon binary via include_dir!, so a test there would ship.
+// oxlint-disable-next-line eslint/max-classes-per-file -- a fake class per object the test stands in for
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -182,6 +183,7 @@ test("observe sends its command over HTTP and opens no socket", async () => {
     constructor() {
       sockets += 1;
     }
+    close() {}
   };
   try {
     const reply = await d.observe("tree.list", { repo: "o/r", path: "" });

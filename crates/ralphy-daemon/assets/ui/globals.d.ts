@@ -19,6 +19,7 @@ type CommandPayload = {
 };
 
 // The lib's type for `filter(Boolean)` keeps the falsy members.
+// oxlint-disable-next-line eslint/no-redeclare -- merges into the lib's `Array`
 interface Array<T> {
   filter(predicate: BooleanConstructor): Exclude<T, false | 0 | "" | null | undefined>[];
 }

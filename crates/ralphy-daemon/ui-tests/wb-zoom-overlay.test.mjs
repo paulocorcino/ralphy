@@ -4,6 +4,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { decorateZoomable, openZoom, wireDiagramZoom } from "../assets/ui/wb-zoom-overlay.ts";
 
+// An element, then each of its parents up to the root.
+function* upFrom(el) {
+  for (let at = el; at; at = at.parentElement) yield at;
+}
+
 class FakeEl {
   constructor(doc, tag, props = {}) {
     this.ownerDocument = doc;
@@ -33,7 +38,7 @@ class FakeEl {
     });
   }
   closest(sel) {
-    for (let el = this; el; el = el.parentElement) if (el.matches(sel)) return el;
+    for (const el of upFrom(this)) if (el.matches(sel)) return el;
     return null;
   }
   querySelectorAll(sel) {
@@ -95,7 +100,7 @@ class FakeEl {
     const event = { type, target: this, defaultPrevented: false, stopped: false, ...ev };
     event.preventDefault = () => (event.defaultPrevented = true);
     event.stopPropagation = () => (event.stopped = true);
-    for (let el = this; el; el = el.parentElement) {
+    for (const el of upFrom(this)) {
       for (const fn of el.listeners[type] ?? []) fn(event);
       if (event.stopped) break;
     }

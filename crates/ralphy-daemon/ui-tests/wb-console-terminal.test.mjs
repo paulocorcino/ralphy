@@ -2,6 +2,7 @@
 // its channel on the page socket. `createTerminal` is driven with fake `deps`,
 // a fake channel opener, and fake xterm and observer classes, with no console
 // and no DOM.
+// oxlint-disable-next-line eslint/max-classes-per-file -- a fake class per object the test stands in for
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { gzipSync } from "node:zlib";
@@ -137,7 +138,7 @@ function fakePage() {
   const globals = {
     Terminal: FakeTerminal,
     FitAddon: { FitAddon: class { fit() {} } },
-    WebLinksAddon: { WebLinksAddon: class {} },
+    WebLinksAddon: { WebLinksAddon: class { dispose() {} } },
     Unicode11Addon: {
       Unicode11Addon: class {
         activate(term) {

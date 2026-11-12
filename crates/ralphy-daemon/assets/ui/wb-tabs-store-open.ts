@@ -122,7 +122,7 @@ export function openTab(
   { project, path, title, ftype, content, fragment, find, checkout, encoding, bom }: TabOpen,
 ) {
   const ck =
-    checkout !== undefined ? checkout : window.Alpine.store("checkouts").checkoutOf(project);
+    checkout === undefined ? window.Alpine.store("checkouts").checkoutOf(project) : checkout;
   const id = fileTabId(project, path, ck);
   if (store.tabs.some((t) => t.id === id)) {
     store.activate(id);
@@ -146,9 +146,9 @@ export function openTab(
   void window.Alpine.nextTick(() => {
     // A re-attach passes bytes in; a fresh open reads `file.read`.
     const bytes: Promise<TabBody> =
-      content != null
-        ? Promise.resolve({ content, encoding, bom })
-        : store.fetchContent(project, path, ftype, ck);
+      content == null
+        ? store.fetchContent(project, path, ftype, ck)
+        : Promise.resolve({ content, encoding, bom });
     void bytes.then((body) => {
       if (body == null) return null; // nothing to show: fetchContent closed the tab
       WBViewer.open({

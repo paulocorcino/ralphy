@@ -69,7 +69,7 @@ test("the shortcuts are blocked while the Security, Settings or What's new dialo
 
   assert.equal(modals.consoleShortcutsBlocked(), false, "no modal: not blocked");
   press();
-  let expected = ["files"];
+  const expected = ["files"];
   assert.deepEqual(searches, expected);
 
   for (const flag of [
@@ -92,7 +92,7 @@ test("the shortcuts are blocked while the Security, Settings or What's new dialo
     modals.modalClosed(flag);
     assert.equal(modals.consoleShortcutsBlocked(), false, `${flag} closed: not blocked`);
     press();
-    expected = [...expected, "files"];
+    expected.push("files");
     assert.deepEqual(searches, expected);
   }
 });

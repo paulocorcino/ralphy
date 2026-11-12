@@ -187,9 +187,9 @@ export function tabsStore(deps: TabsStoreDeps) {
       const here = (id: string) => rows.has(id) || window.WBConsole.isRelaunching(id);
       for (const tab of this.consoleTabs()) {
         const grid = tab.grid ?? [];
-        const kept = WBColumns.keep(grid, new Set(WBColumns.flat(grid).filter(here)));
-        if (JSON.stringify(kept) !== JSON.stringify(grid)) this.setTabGrid(tab.id, kept);
-        else this.nameConsoleTab(tab);
+        const kept = WBColumns.keep(grid, new Set(WBColumns.flat(grid).filter((id) => here(id))));
+        if (JSON.stringify(kept) === JSON.stringify(grid)) this.nameConsoleTab(tab);
+        else this.setTabGrid(tab.id, kept);
       }
       this.placeConsoleTabs();
     },

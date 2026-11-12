@@ -32,8 +32,7 @@ export type ViewDeps = {
   window: Window;
   // The page the floor pan and the fullscreen change are heard on.
   document: Document;
-  // The viewport (the scrolling box) and the stage (the plane inside it);
-  // null before the page has them.
+  // The viewport (the scrolling box) and the stage (its plane); null before the page has them.
   workspace: () => HTMLElement | null;
   stage: () => HTMLElement | null;
   // Every console window of the page, also one in a console tab.
@@ -101,7 +100,8 @@ export function createView(deps: ViewDeps) {
     if (!ws || !st) return;
     // A hidden tab measures 0×0: every landing centres on nothing.
     if (!ws.clientWidth || !ws.clientHeight) return;
-    const rects = [...st.querySelectorAll<ConsoleWin>(".session-window")].map(restoreRect);
+    const consoles = st.querySelectorAll<ConsoleWin>(".session-window");
+    const rects = [...consoles].map((w) => restoreRect(w));
     if (landParkedReveal(rects)) return;
     const stored = storedOffset();
     if (landed && !stored) return;

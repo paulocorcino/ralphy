@@ -130,6 +130,7 @@ export function modalsStore(_deps: ModalsStoreDeps) {
       const isOpen = (scope: object) =>
         path.split(".").reduce<unknown>((o, k) => (isRecord(o) ? o[k] : undefined), scope);
       let was = false;
+      // oxlint-disable-next-line unicorn/no-this-assignment -- Alpine binds `this` to its scope
       const self = this;
       return {
         "x-show"(this: object) {

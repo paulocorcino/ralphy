@@ -402,8 +402,8 @@ function readRefLine(st: State, line: string) {
 function readTopLine(st: State, line: string) {
   const m = /^ref\b[^:]*:(.*)$/iu.exec(line);
   const rest = m?.[1];
-  if (rest !== undefined) readRefLine(st, rest);
-  else st.schema.skipped += 1;
+  if (rest === undefined) st.schema.skipped += 1;
+  else readRefLine(st, rest);
 }
 
 function readBlockLine(st: State, block: Block, line: string) {

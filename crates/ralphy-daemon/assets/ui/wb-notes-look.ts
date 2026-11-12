@@ -133,7 +133,7 @@ export function noCredential(input: HTMLInputElement) {
   input.autocomplete = "off";
   input.setAttribute("autocorrect", "off");
   input.setAttribute("autocapitalize", "off");
-  input.setAttribute("data-1p-ignore", "");
-  input.setAttribute("data-lpignore", "true");
-  input.setAttribute("data-form-type", "other");
+  input.dataset["1pIgnore"] = "";
+  input.dataset["lpignore"] = "true";
+  input.dataset["formType"] = "other";
 }

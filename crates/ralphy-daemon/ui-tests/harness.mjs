@@ -284,7 +284,7 @@ export function loadComponent(alpineName, opts = {}) {
   const { state: shellState, window, document } = opts.from || loadShell(opts);
   const factory = MODULE_COMPONENTS[alpineName];
   if (typeof factory !== "function") {
-    throw new Error(`no Alpine component ${alpineName} in MODULE_COMPONENTS`);
+    throw new TypeError(`no Alpine component ${alpineName} in MODULE_COMPONENTS`);
   }
   globalThis.window = window;
   globalThis.document = document;
@@ -408,7 +408,7 @@ function storeView(alpineName, stores) {
         if (d && !d.configurable && !d.writable) return v;
         const at = path ? `${path}.${k}` : k;
         if (depth === 1 && typeof v === "function" && d && "value" in d) {
-          return (...args) => wrap(Reflect.get(target, k).apply(target, args.map(unwrapView)), `${at}()`, 2);
+          return (...args) => wrap(Reflect.get(target, k).apply(target, args.map((a) => unwrapView(a))), `${at}()`, 2);
         }
         return wrap(v, at, depth + 1);
       },
@@ -473,3 +473,10 @@ export function bindingNames(expr) {
   }
   return [...names];
 }
+
+// Run a markup expression the way Alpine does: names resolve on `scope`.
+// `with` needs sloppy mode, which `new Function` gives.
+// oxlint-disable-next-line eslint/no-new-func -- the test runs markup code, as Alpine does
+export const runIn = (scope, expr) => new Function("scope", `with (scope) { ${expr}; }`)(scope);
+// oxlint-disable-next-line eslint/no-new-func -- the test runs markup code, as Alpine does
+export const valueIn = (scope, expr) => new Function("scope", `with (scope) { return ${expr}; }`)(scope);

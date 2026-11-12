@@ -5,7 +5,7 @@
 // security fact is the Alpine store `connection`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, runIn as evalIn, withoutComments } from "./harness.mjs";
 import { WBSecurityDialog } from "../assets/ui/wb-security-dialog.ts";
 
 // The part that holds the dialog's markup.
@@ -39,10 +39,6 @@ async function withFetch(routes, fn) {
     globalThis.fetch = real;
   }
 }
-
-// Evaluate a markup expression the way Alpine does: names resolve on the
-// scope. `with` needs sloppy mode, which `new Function` gives.
-const evalIn = (scope, expr) => new Function("scope", `with (scope) { ${expr}; }`)(scope);
 
 // The element that holds the dialog's component, up to its `>`.
 const wrapperTag = () => {

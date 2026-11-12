@@ -35,8 +35,11 @@ function click(href, { viewer, record = null, outside = false } = {}) {
 
 const VIEWER = { linkTarget };
 
+// oxlint-disable-next-line eslint/no-script-url -- the links the guard under test must stop
+const SCRIPT_LINKS = ["javascript:alert(1)", "JavaScript:alert(1)"];
+
 test("a link with a script scheme is stopped and gets no target", () => {
-  for (const href of ["javascript:alert(1)", "JavaScript:alert(1)", "data:text/html,x", "vbscript:x"]) {
+  for (const href of [...SCRIPT_LINKS, "data:text/html,x", "vbscript:x"]) {
     const done = click(href, { viewer: VIEWER });
     assert.equal(done.stopped, 1, href);
     assert.equal(done.anchor.target, "", href);
@@ -80,7 +83,7 @@ test("a link inside the page is stopped and sends nothing", () => {
 });
 
 test("a page with no viewer reads a scheme link the same way and refuses a path", () => {
-  assert.equal(click("javascript:alert(1)").stopped, 1);
+  assert.equal(click(SCRIPT_LINKS[0]).stopped, 1);
   assert.equal(click("https://example.com").anchor.target, "_blank");
   const relative = click("docs/a.md");
   assert.equal(relative.stopped, 1, "a relative path is not a link without the viewer's rule");
@@ -88,7 +91,7 @@ test("a page with no viewer reads a scheme link the same way and refuses a path"
 });
 
 test("a click on an anchor that is not inside this card is left alone", () => {
-  const done = click("javascript:alert(1)", { viewer: VIEWER, outside: true });
+  const done = click(SCRIPT_LINKS[0], { viewer: VIEWER, outside: true });
   assert.equal(done.stopped, 0);
   assert.deepEqual(done.sent, []);
 });

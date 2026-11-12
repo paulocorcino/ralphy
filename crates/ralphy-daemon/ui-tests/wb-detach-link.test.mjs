@@ -1,6 +1,7 @@
 // Unit tests for assets/ui/wb-detach-link.ts — runs the real source with no DOM.
 // Lives OUTSIDE assets/ui on purpose: lib.rs embeds all of assets/ui into the
 // daemon binary via include_dir!, so a test there would ship.
+// oxlint-disable-next-line eslint/max-classes-per-file -- a fake class per object the test stands in for
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { WBDetachLink, isDetachMessage } from "../assets/ui/wb-detach-link.ts";

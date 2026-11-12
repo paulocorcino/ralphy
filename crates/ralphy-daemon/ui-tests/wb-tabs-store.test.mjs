@@ -369,6 +369,9 @@ test("renderMenu sets a label as text, never as markup", () => {
         this.children.push(...kids);
       },
       addEventListener() {},
+      get innerHTML() {
+        return this.innerHTMLWrites.at(-1) ?? "";
+      },
       set innerHTML(v) {
         this.innerHTMLWrites.push(v);
       },

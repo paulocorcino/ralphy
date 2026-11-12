@@ -82,7 +82,7 @@ function isNoteInNotesDir(rel: string) {
 
 export function underProtectedDir(rel: string) {
   if (isNoteInNotesDir(rel)) return false;
-  return rel.split("/").some(isProtectedDir);
+  return rel.split("/").some((name) => isProtectedDir(name));
 }
 
 // The title of a create gesture, one sentence with its word order kept

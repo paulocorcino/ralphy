@@ -285,7 +285,11 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     // add had to say.
     function actWorktreeCreated(d: ActionOf<"worktree-created">, { repo }: Aim) {
       void window.Alpine.store("checkouts").ensureWorktreeListing(repo, true);
-      if (d.message) flash(d.message.split("\n").map(WBFail.sentence).filter(Boolean).join(" "));
+      if (d.message) {
+        const lines = d.message.split("\n");
+        const sentences = lines.map((line) => WBFail.sentence(line));
+        flash(sentences.filter(Boolean).join(" "));
+      }
     }
 
     // The name of a new entry: the prompt dialog where the page has a shell,

@@ -36,7 +36,7 @@ export function iconDirective(
         // `class` is merged below: `:class` on the same element owns the rest.
         if (key !== "class" && !authored.has(key)) el.setAttribute(key, String(value));
       }
-      el.setAttribute("data-lucide", name);
+      el.dataset["lucide"] = name;
       el.classList.add("lucide", `lucide-${name}`);
       el.replaceChildren(...children.map((child) => window.lucide.createElement(child)));
     });

@@ -16,6 +16,7 @@ const HTML = readFileSync(join(UI, "index.html"), "utf8");
 
 // The part that holds the markup of each component.
 const PARTS = { wbConsoleMenus: "wb-consoles-tab-menus.part.html", wbColumns: "wb-consoles-tab-columns.part.html" };
+const ALT_SHIFT = { altKey: true, shiftKey: true };
 
 // One page with both components and a window and a document that deliver the
 // events they are sent, as the browser does. `init()` adds the listeners, as
@@ -37,7 +38,7 @@ function page() {
   menus.scope.init();
   columns.scope.init();
   const fire = (where, type, detail) => send(where)({ type, detail });
-  const key = (code, mods = { altKey: true, shiftKey: true }) => {
+  const key = (code, mods = ALT_SHIFT) => {
     const e = { type: "keydown", code, ctrlKey: false, metaKey: false, prevented: false, ...mods };
     e.preventDefault = () => (e.prevented = true);
     send("document")(e);

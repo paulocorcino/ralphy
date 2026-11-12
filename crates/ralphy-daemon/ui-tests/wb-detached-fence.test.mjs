@@ -1,5 +1,6 @@
 // Unit tests for assets/ui/wb-detached-fence.ts, the page script of the
 // torn-off fence window, on stub `window` and `document` objects.
+// oxlint-disable-next-line eslint/max-classes-per-file -- a fake class per object the test stands in for
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { isFenceOpen, wireDetachedFence } from "../assets/ui/wb-detached-fence.ts";

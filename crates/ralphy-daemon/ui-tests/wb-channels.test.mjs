@@ -93,7 +93,7 @@ test("cuts a large frame into pieces of 16 KiB", () => {
   const channel = channels.open("console", {});
   const inner = pattern(40 * 1024, 3);
   assert.equal(channel.send(inner), true);
-  const pieces = socket.sent.slice(1).map(readChannelFrame);
+  const pieces = socket.sent.slice(1).map((bytes) => readChannelFrame(bytes));
   assert.equal(pieces.length, 3);
   assert.deepEqual(
     pieces.map((p) => p.flags),
@@ -113,7 +113,7 @@ test("a frame of exactly 16 KiB is one piece, and an empty frame is one empty pi
   const channel = channels.open("console", {});
   channel.send(pattern(16384, 1));
   channel.send(new Uint8Array(0));
-  const pieces = socket.sent.slice(1).map(readChannelFrame);
+  const pieces = socket.sent.slice(1).map((bytes) => readChannelFrame(bytes));
   assert.deepEqual(
     pieces.map((p) => [p.flags, p.piece.length]),
     [

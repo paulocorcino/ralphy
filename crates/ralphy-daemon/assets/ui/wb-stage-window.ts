@@ -318,7 +318,7 @@ export function createStageWindow(deps: StageWindowDeps) {
     // append (before `spawnWindow` registers it) to its removal. Fences count
     // too — ADR-0051 §2 sizes the plane to windows AND fences.
     const rects = [...st.querySelectorAll<HTMLElement>(".session-window, .fence, .note-card")].map(
-      restoreRect,
+      (w) => restoreRect(w),
     );
     const ext = stageExtent(
       rects,

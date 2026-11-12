@@ -1,6 +1,7 @@
 // Unit tests for assets/ui/wb-console-gpu.ts — the console's dormancy watch and
 // GPU budget. `gpuHolders` is pure; `createGpuBudget` is driven with fake
 // `deps` (windows, observer, microtask queue), with no console and no DOM.
+// oxlint-disable-next-line eslint/max-classes-per-file -- a fake class per object the test stands in for
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -210,6 +211,7 @@ test("a budget uses its deps, not the page's IntersectionObserver or queueMicrot
     constructor() {
       globalReads += 1;
     }
+    observe() {}
   };
   globalThis.queueMicrotask = () => {
     globalReads += 1;

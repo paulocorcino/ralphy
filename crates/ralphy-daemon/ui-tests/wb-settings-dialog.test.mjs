@@ -3,19 +3,15 @@
 // when the component reads a shell() name it does not list in `uses`, or
 // assigns a shell() field (ADR-0073 D4). The schema itself (`wb-settings.ts`)
 // is tested in wb-settings.test.mjs.
+// oxlint-disable-next-line eslint/max-classes-per-file -- a fake class per object the test stands in for
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, runIn as evalIn, valueIn, withoutComments } from "./harness.mjs";
 import { WB_SETTINGS } from "../assets/ui/wb-settings.ts";
 import { WBSettingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 
 // The part that holds the dialog's markup, with the Devices section inside it.
 const PART = "wb-settings-dialog.part.html";
-
-// Evaluate a markup expression the way Alpine does: names resolve on the
-// scope. `with` needs sloppy mode, which `new Function` gives.
-const evalIn = (scope, expr) => new Function("scope", `with (scope) { ${expr}; }`)(scope);
-const valueIn = (scope, expr) => new Function("scope", `with (scope) { return ${expr}; }`)(scope);
 
 // The element that holds the dialog's component, up to its `>`.
 const wrapperTag = () => {
@@ -94,11 +90,9 @@ test("the notification switch is saved in this browser, and a refusal turns it o
   const map = new Map();
   globalThis.localStorage = { getItem: (k) => map.get(k) ?? null, setItem: (k, v) => map.set(k, String(v)) };
   let answer = "granted";
-  globalThis.Notification = class {
-    static permission = "default";
-    static requestPermission() {
-      return Promise.resolve(answer);
-    }
+  globalThis.Notification = {
+    permission: "default",
+    requestPermission: () => Promise.resolve(answer),
   };
   const flashed = [];
   const { scope: s, window } = loadComponent("wbSettingsDialog", {

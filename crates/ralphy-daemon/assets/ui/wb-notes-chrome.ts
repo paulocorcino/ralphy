@@ -190,8 +190,8 @@ export function createNoteChrome(deps: NoteChromeDeps) {
       // nothing. The operator asked for the eye to be available on every card
       // (2026-09-22) — a control that appears only once the state is already
       // reached is not a door into it.
-      if (!veiledOf(el._noteMarkdown)) setMarked(el, true);
-      else toggleReveal(el);
+      if (veiledOf(el._noteMarkdown)) toggleReveal(el);
+      else setMarked(el, true);
     });
     // THE FILE'S OWN CONTROL, and it lives with the file: a gear in the
     // footer's left corner, beside the path it acts on (asked 2026-09-22).

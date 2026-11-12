@@ -380,18 +380,18 @@ export function createDetach(deps: DetachDeps) {
     const rec = loadDesk().find((r) => r.id === m.id);
     const name = rec?.consoleName ?? "";
     const member = name ? { ...m, consoleName: name } : m;
-    if (member.session != null) {
+    if (member.session == null) {
+      // The snapshot keeps no session id, so a member relaunched in the
+      // popup comes home as a placeholder. `_revive` attaches it to the
+      // session that runs now and never launches one.
+      void spawnPlaceholder(member)._revive?.();
+    } else {
       spawnWindow(
         { id: member.session, repo: member.repo },
         (member.agent ?? "") || "console",
         member.repo,
         member,
       );
-    } else {
-      // The snapshot keeps no session id, so a member relaunched in the
-      // popup comes home as a placeholder. `_revive` attaches it to the
-      // session that runs now and never launches one.
-      void spawnPlaceholder(member)._revive?.();
     }
   }
 

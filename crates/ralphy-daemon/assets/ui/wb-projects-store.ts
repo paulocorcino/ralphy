@@ -169,8 +169,8 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     // The daemon's adapter roster (#304). A failed fetch leaves the roster
     // EMPTY rather than showing adapters this daemon may not have.
     _agentsSeq: 0,
-    async loadAgents(repo?: string | null) {
-      if (repo === undefined) repo = this.openSlug;
+    async loadAgents(asked?: string | null) {
+      const repo = asked === undefined ? this.openSlug : asked;
       const seq = ++this._agentsSeq;
       try {
         const r = await apiFetch("GET /api/agents", {

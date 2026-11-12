@@ -105,7 +105,10 @@ function parts(reply: Reply): Parts | null {
   if (known !== undefined) return { cause: known, rest: [] };
   if (isSentence(raw) && !raw.startsWith("Error: ")) return { sentence: raw };
   const text = oneLine(raw).replace(/^(cannot|refusing to) [^:]+: /u, "");
-  const [head, ...rest] = text.split(" — ").map(bare).filter(Boolean);
+  const [head, ...rest] = text
+    .split(" — ")
+    .map((s) => bare(s))
+    .filter(Boolean);
   return head === undefined ? null : { cause: head, rest };
 }
 

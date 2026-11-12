@@ -85,7 +85,7 @@ test("the tree icon of a diagram file", () => {
 });
 
 test("the protected directories: .git and .ralphy in any case, and the note in the notes directory", () => {
-  assert.deepEqual([".git", ".GIT", ".ralphy", "src"].map(isProtectedDir), [true, true, true, false]);
+  assert.deepEqual([".git", ".GIT", ".ralphy", "src"].map((d) => isProtectedDir(d)), [true, true, true, false]);
   const rows = [
     [".ralphy/notes/idea.note", false],
     ["src/.git/config", true],
@@ -357,7 +357,8 @@ test("emitCreate sends the directory the create lands in, and only what the list
 // The component's half, driven with `WBDaemon.observe` stubbed and no tree
 // mounted — the folds that decide what is sent and which reply is believed run
 // without Wunderbaum.
-async function withSearchShell(run, reply = { status: "ok", hits: [], truncated: false }) {
+const NO_HITS = { status: "ok", hits: [], truncated: false };
+async function withSearchShell(run, reply = NO_HITS) {
   const { scope: state, window } = loadComponent("wbFiles", { magics: { $refs: {}, $nextTick: (f) => f() } });
   const calls = [];
   let answer = reply;
@@ -591,7 +592,7 @@ test("FILES names the down peer from the fleet, and the read that calls it back 
     { rel: "src", expanded: true },
     { rel: "docs", expanded: false },
   ];
-  state.rawTree = () => ({ root: { visit: (fn) => folders.forEach(fn) } });
+  state.rawTree = () => ({ root: { visit: (fn) => folders.forEach((f) => fn(f)) } });
   state.isFolder = () => true;
   state.relPath = (n) => n.rel;
   state.treeStale = "Could not refresh the file list.";

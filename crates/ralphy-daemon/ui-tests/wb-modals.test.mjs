@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { assembledPage, loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, loadComponent, loadShell, UI, valueIn as evalIn, withoutComments } from "./harness.mjs";
 
 // The whole page with its parts put in: the order of the scrims is document
 // order. Comments dropped first: their prose quotes tags.
@@ -59,10 +59,6 @@ const page = () => {
   }
   return { state: loaded.state, scopeOf: (s) => (s.component ? scopes.get(s.component) : loaded.state) };
 };
-
-// Evaluate a markup expression the way Alpine does: names resolve on the
-// component. `with` needs sloppy mode, which `new Function` gives.
-const evalIn = (state, expr) => new Function("scope", `with (scope) { return ${expr}; }`)(state);
 
 const setPath = (state, path, value) => {
   const keys = path.split(".");

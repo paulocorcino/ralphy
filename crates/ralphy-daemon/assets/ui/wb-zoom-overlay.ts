@@ -102,7 +102,9 @@ export function decorateZoomable(article: Element) {
   article.querySelectorAll<HTMLElement>(".mermaid").forEach((holder) => {
     if (!holder.closest(".zoomable")) wrap(holder, "div");
   });
-  article.querySelectorAll<Picture>("img, svg").forEach(considerPicture);
+  article.querySelectorAll<Picture>("img, svg").forEach((el) => {
+    considerPicture(el);
+  });
 }
 
 /* --- the view ------------------------------------------------------------- */

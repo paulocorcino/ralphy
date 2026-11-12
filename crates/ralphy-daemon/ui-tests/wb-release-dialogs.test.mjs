@@ -6,7 +6,7 @@
 // wb-release-store.test.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, runIn as evalIn, valueIn, withoutComments } from "./harness.mjs";
 import { WBRelease } from "../assets/ui/wb-release.ts";
 import { WBReleaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
 
@@ -20,11 +20,6 @@ function dialogs(opts = {}) {
   const { scope: state, data, shell, window } = loadComponent("wbReleaseDialogs", opts);
   return { state, data, shell, window };
 }
-
-// Evaluate a markup expression the way Alpine does: names resolve on the
-// scope. `with` needs sloppy mode, which `new Function` gives.
-const evalIn = (scope, expr) => new Function("scope", `with (scope) { ${expr}; }`)(scope);
-const valueIn = (scope, expr) => new Function("scope", `with (scope) { return ${expr}; }`)(scope);
 
 // The element that holds the dialogs' component, up to its `>`.
 const wrapperTag = () => {

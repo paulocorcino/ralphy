@@ -387,10 +387,10 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       split.classList.add("editing");
       split.classList.remove("toc-open");
       editor.style.display = "block";
-      if (!rec.ed) {
-        mountEditor(rec, editor, { wordWrap: "on" });
-      } else {
+      if (rec.ed) {
         codeEditor(rec.ed)?.setValue(rec.content);
+      } else {
+        mountEditor(rec, editor, { wordWrap: "on" });
       }
       setCaption(toggle, "bi-eye", "Preview");
       setTimeout(() => rec.ed?.layout(), 0);

@@ -64,7 +64,7 @@ export function createNoteVeil(deps: NoteVeilDeps) {
     const shown = marked && el._noteRevealed;
     const hides = !marked || shown;
     btn.innerHTML = hides ? '<i class="bi bi-eye-slash"></i>' : '<i class="bi bi-eye"></i>';
-    btn.title = !marked ? "Hide this note" : markedTitle(shown);
+    btn.title = marked ? markedTitle(shown) : "Hide this note";
     el.classList.toggle("veiled", veiledNow(el));
   }
 

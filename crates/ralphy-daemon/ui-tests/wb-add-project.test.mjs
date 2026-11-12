@@ -18,8 +18,8 @@ const PEERS = [
 // Send one listing for the current text and feed its reply.
 function listed(P, s, reply) {
   const seq = s.seq + 1;
-  s = P.next(s, { type: "sent", seq });
-  return P.next(s, { type: "reply", seq, reply: Object.assign({ status: "ok", more: 0 }, reply) });
+  const sent = P.next(s, { type: "sent", seq });
+  return P.next(sent, { type: "reply", seq, reply: Object.assign({ status: "ok", more: 0 }, reply) });
 }
 
 function typed(P, s, text) {

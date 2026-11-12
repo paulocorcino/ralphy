@@ -332,11 +332,11 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
     if (m.kind === "note") {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a note member is a note
       window.WBNotes.mountDetached(record as NoteSource);
-    } else if (m.session != null) {
+    } else if (m.session == null) {
+      spawnPlaceholder(record);
+    } else {
       const agent = (m.agent ?? "") || "console";
       spawnWindow({ id: m.session, repo: m.repo ?? null }, agent, m.repo, record);
-    } else {
-      spawnPlaceholder(record);
     }
   }
 

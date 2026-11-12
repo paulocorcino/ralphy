@@ -5,6 +5,7 @@
    directive, and starts Alpine once. A module tag runs after the classic
    vendor scripts, so every vendor name is in place when Alpine starts.
    --------------------------------------------------------------------------- */
+// oxlint-disable-next-line import/no-named-as-default -- one vendor object under both names
 import Alpine from "./vendor/alpine.esm.js";
 // In the order of the page's old module tags. The two bare imports set the
 // `window` names `app.ts` and browser checks read (D9): not dead code.

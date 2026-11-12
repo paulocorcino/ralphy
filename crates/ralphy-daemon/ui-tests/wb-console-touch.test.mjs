@@ -32,8 +32,12 @@ function touchConsole() {
 
 // A touch event with one point per `[x, y]`, that counts its prevents.
 function touchEvent(...points) {
-  const e = { touches: points.map(([clientX, clientY]) => ({ clientX, clientY })), timeStamp: 0, prevented: 0 };
-  e.preventDefault = () => e.prevented++;
+  const e = {
+    touches: points.map(([clientX, clientY]) => ({ clientX, clientY })),
+    timeStamp: 0,
+    prevented: 0,
+    preventDefault: () => e.prevented++,
+  };
   return e;
 }
 
