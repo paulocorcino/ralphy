@@ -210,12 +210,15 @@ pub(crate) enum HookCommand {
         /// still has open steps. Execute sessions only.
         #[arg(long)]
         cost_gate: bool,
+        /// The agent whose hook runs this; `claude` when not given.
+        #[arg(long, value_enum, default_value_t = GuardVendor::Claude)]
+        vendor: GuardVendor,
     },
     /// Record how long each check command took.
     Post,
     /// Record what the agent is doing in `$RALPHY_STATUS_FILE`, so the workbench
-    /// can show it. Prints `{}` for Claude and nothing for the other agents,
-    /// and always exits 0.
+    /// can show it. Prints `{}` for Claude, an allow decision for Antigravity
+    /// and nothing for the other agents, and always exits 0.
     // ADR-0059, ADR-0085 D6.
     Status {
         /// The agent whose hook runs this. Without it, `claude`, so a settings
@@ -234,6 +237,15 @@ pub(crate) enum HookVendor {
     // One word, like `--agent opencode`; clap would derive `open-code`.
     #[value(name = "opencode")]
     OpenCode,
+    Antigravity,
+}
+
+/// The agent a `hook guard` call comes from: it decides how the payload is
+/// read and how the decision is answered.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub(crate) enum GuardVendor {
+    Claude,
+    Antigravity,
 }
 
 #[derive(Args)]

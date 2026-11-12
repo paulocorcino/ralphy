@@ -251,3 +251,43 @@ fn transcript_missing_file_gives_none() {
 fn json_str(s: &str) -> String {
     Value::String(s.to_owned()).to_string()
 }
+
+const AGY_RUN_COMMAND: &str =
+    include_str!("../../tests/fixtures/antigravity-hooks/pretooluse-run-command.json");
+const AGY_SESSION_START: &str =
+    include_str!("../../tests/fixtures/antigravity-hooks/sessionstart.json");
+
+#[test]
+fn the_status_hook_reads_agy_camel_case_fields() {
+    let line = status_line(HookVendor::Antigravity, AGY_RUN_COMMAND, "t");
+    let v: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(v["event"], "PreToolUse");
+    assert_eq!(v["session_id"], "4c9e68ec-9c07-43f0-9292-aa15a321723d");
+    assert_eq!(v["tool_name"], "run_command");
+    assert_eq!(v["tool_use_id"], "call_4566659267947845633");
+    assert!(
+        !line.contains("echo probe"),
+        "no tool input is kept: {line}"
+    );
+
+    let start: Value = serde_json::from_str(&status_line(
+        HookVendor::Antigravity,
+        AGY_SESSION_START,
+        "t",
+    ))
+    .unwrap();
+    assert_eq!(start["event"], "SessionStart");
+    assert_eq!(start["session_id"], "4c9e68ec-9c07-43f0-9292-aa15a321723d");
+    assert_eq!(start["tool_name"], Value::Null);
+}
+
+/// agy runs a `PreToolUse` tool only on `{"decision":"allow"}` or an empty
+/// stdout, and ignores a decision on its other events; the reply is printed
+/// before the payload is read, so it is the same for every event.
+#[test]
+fn the_status_hook_never_denies_an_agy_tool() {
+    let reply: Value = serde_json::from_str(status_reply(HookVendor::Antigravity)).unwrap();
+    assert_eq!(reply, serde_json::json!({ "decision": "allow" }));
+    assert_eq!(status_reply(HookVendor::Claude), "{}");
+    assert_eq!(status_reply(HookVendor::Codex), "");
+}

@@ -5,9 +5,9 @@
 //! hook is the main guardrail against a destructive command — but it is a
 //! best-effort deny-list, not a sandbox: a creative command line can slip past.
 //!
-//! Only the Claude adapter installs this hook; the other vendor CLIs offer no
-//! `PreToolUse` equivalent, so their safety rests on the isolated run branch and
-//! the self-review (see README "Command guardrails").
+//! The Claude and Antigravity adapters install this hook; the other vendor CLIs
+//! offer no `PreToolUse` equivalent, so their safety rests on the isolated run
+//! branch and the self-review (see README "Command guardrails").
 //!
 //! A recursive delete inside the worktree or the system temp dir is allowed
 //! ([`delete`]); a target that escapes both — an absolute path elsewhere, `..`,
@@ -22,7 +22,8 @@
 //! Still not read: `find … -exec`, `$(…)` command substitution, and aliases
 //! or functions the session defines.
 //!
-//! Protocol: exit 2 (reason to stderr) to block; exit 0 to allow.
+//! Protocol: exit 2 (reason to stderr) to block; exit 0 to allow. Antigravity
+//! reads its payload and answers its protocol in [`antigravity`].
 //! [`evaluate_guard`] is pure over the tool call and a [`GuardContext`].
 
 use std::process::ExitCode;
@@ -31,6 +32,9 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde_json::Value;
 
+use crate::cli::GuardVendor;
+
+mod antigravity;
 mod delete;
 mod wrappers;
 
@@ -411,9 +415,9 @@ fn tool_call(payload: &Value) -> (&str, &Value) {
 }
 
 /// Run the `hook guard` subcommand: read the payload from stdin, evaluate it,
-/// and return exit code 0 (allow) or 2 (deny). With `cost_gate`, an allowed Bash
-/// call also passes the verification-cost gate.
-pub(crate) fn run_guard_hook(cost_gate: bool) -> ExitCode {
+/// and return exit code 0 (allow) or 2 (deny); Antigravity's answer is on stdout.
+/// With `cost_gate`, an allowed Bash call also passes the verification-cost gate.
+pub(crate) fn run_guard_hook(vendor: GuardVendor, cost_gate: bool) -> ExitCode {
     use std::io::Read;
 
     let mut raw = String::new();
@@ -427,6 +431,9 @@ pub(crate) fn run_guard_hook(cost_gate: bool) -> ExitCode {
         .unwrap_or_default();
     let process_cwd = std::env::current_dir().ok();
     let temp_dir = normalise_path(&std::env::temp_dir());
+    if vendor == GuardVendor::Antigravity {
+        return antigravity::answer(&raw, process_cwd.as_deref(), tool_dir, temp_dir);
+    }
 
     let reason = match decide_hook_input(&raw, process_cwd.as_deref(), tool_dir, temp_dir) {
         GuardDecision::Allow if cost_gate => cost_gate_reason(&raw),

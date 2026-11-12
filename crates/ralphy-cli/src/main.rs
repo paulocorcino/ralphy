@@ -84,8 +84,8 @@ fn main() -> Result<ExitCode> {
             hook::run_stop_hook();
             Ok(())
         }
-        Command::Hook(HookCommand::Guard { cost_gate }) => {
-            return Ok(guard::run_guard_hook(cost_gate))
+        Command::Hook(HookCommand::Guard { cost_gate, vendor }) => {
+            return Ok(guard::run_guard_hook(vendor, cost_gate))
         }
         Command::Hook(HookCommand::Post) => {
             hook::run_post_hook();

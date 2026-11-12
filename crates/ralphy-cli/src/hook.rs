@@ -165,17 +165,16 @@ pub(crate) fn run_post_hook() {
 /// payload on stdin and append one status line (see [`status_line`]) to the
 /// file named by `$RALPHY_STATUS_FILE`, which the adapter (or the daemon)
 /// tails and folds into an agent state. Three things it must never do: block
-/// the agent, fail it, or print anything the vendor does not expect. Claude
-/// gets `{}` (ADR-0085 D6): a Claude permission hook with an empty stdout
-/// fails CLOSED, so the `{}` is printed FIRST, before any read or write that
-/// could go wrong. Every other vendor gets nothing. A no-op when the
+/// the agent, fail it, or print anything the vendor does not expect. The
+/// [`status_reply`] is printed FIRST, before any read or write that could go
+/// wrong. A no-op when the
 /// variable is unset, like the Stop hook, so a settings file that leaks into
 /// a non-Ralphy session does nothing. A write error goes to stderr; the exit
 /// is still 0.
 pub(crate) fn run_status_hook(vendor: HookVendor) {
-    match vendor {
-        HookVendor::Claude => outln!("{{}}"),
-        HookVendor::Codex | HookVendor::OpenCode => {}
+    let reply = status_reply(vendor);
+    if !reply.is_empty() {
+        outln!("{reply}");
     }
     // Read stdin before every return: a vendor that writes the payload into a
     // hook that already exited gets a broken pipe.
@@ -193,6 +192,19 @@ pub(crate) fn run_status_hook(vendor: HookVendor) {
     }
 }
 
+/// What `hook status` prints so the vendor runs the tool. Claude gets `{}`
+/// (ADR-0085 D6): its permission hook with an empty stdout fails closed.
+/// Antigravity runs a `PreToolUse` tool on `{"decision":"allow"}` and ignores
+/// a decision on its other events (ADR-0086 D9). Every other vendor gets
+/// nothing.
+pub(crate) fn status_reply(vendor: HookVendor) -> &'static str {
+    match vendor {
+        HookVendor::Claude => "{}",
+        HookVendor::Antigravity => r#"{"decision":"allow"}"#,
+        HookVendor::Codex | HookVendor::OpenCode => "",
+    }
+}
+
 /// The one line `hook status` appends, from the vendor's payload (ADR-0085
 /// D8): the hook event name, the session and subagent ids, the tool and its
 /// use id (when any), the question text of the vendor's question tool, the
@@ -203,6 +215,10 @@ pub(crate) fn run_status_hook(vendor: HookVendor) {
 /// fold treats it as noise.
 pub(crate) fn status_line(vendor: HookVendor, payload: &str, ts: &str) -> String {
     let value: Value = serde_json::from_str(payload).unwrap_or(Value::Null);
+    let value = match vendor {
+        HookVendor::Antigravity => antigravity_fields(&value),
+        HookVendor::Claude | HookVendor::Codex | HookVendor::OpenCode => value,
+    };
     let text = |name: &str| value.get(name).and_then(Value::as_str);
     // Not carried: `stop_hook_active`. It means "already continuing because a
     // Stop hook said so" — our own sentinel sets it on every retried turn —
@@ -221,6 +237,18 @@ pub(crate) fn status_line(vendor: HookVendor, payload: &str, ts: &str) -> String
     .to_string()
 }
 
+/// An Antigravity payload under the names the line reads: agy writes its
+/// fields in camelCase and names the tool in `toolCall`.
+fn antigravity_fields(value: &Value) -> Value {
+    let call = |name: &str| value.get("toolCall").and_then(|c| c.get(name));
+    serde_json::json!({
+        "hook_event_name": value.get("hookEventName"),
+        "session_id": value.get("conversationId"),
+        "tool_name": call("name"),
+        "tool_use_id": call("id"),
+    })
+}
+
 /// The question a payload asks the operator, where each vendor puts it: the
 /// first question of the vendor's question tool, or the message of a Claude
 /// MCP elicitation.
@@ -233,6 +261,7 @@ fn question(vendor: HookVendor, value: &Value) -> Option<&str> {
         HookVendor::Claude => "AskUserQuestion",
         HookVendor::Codex => "request_user_input",
         HookVendor::OpenCode => "question",
+        HookVendor::Antigravity => return None,
     };
     if value.get("tool_name").and_then(Value::as_str) != Some(asks) {
         return None;
