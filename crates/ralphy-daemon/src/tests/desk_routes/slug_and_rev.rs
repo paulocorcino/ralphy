@@ -40,12 +40,12 @@ async fn desk_get_serves_a_former_slug_as_its_canonical_key() {
 async fn desk_put_maps_a_former_slug_in_a_change() {
     let dir = tempfile::tempdir().unwrap();
     registry_with_former_slug(dir.path());
-    let mut stale = window_json("w1", serde_json::Value::Null, false);
+    let mut stale = window_json("w1", &serde_json::Value::Null, false);
     stale["repo"] = serde_json::json!("path-abc");
     let res = desk_put(
         dir.path(),
         serde_json::json!([
-            create("window", stale),
+            create("window", &stale),
             { "op": "checkout", "repo": "path-abc", "name": "wt-a" },
         ]),
     )
@@ -76,17 +76,17 @@ async fn rev_rises_only_when_a_write_changes_the_desk() {
         dir.path(),
         serde_json::json!([create(
             "window",
-            window_json("w-1", serde_json::json!(7), false)
+            &window_json("w-1", &serde_json::json!(7), false)
         )]),
     )
     .await;
     assert_eq!(reply_json(res).await["rev"], 1);
-    let noop = serde_json::json!([set("window", "w-1", serde_json::json!({ "max": false }))]);
+    let noop = serde_json::json!([set("window", "w-1", &serde_json::json!({ "max": false }))]);
     let res = desk_put(dir.path(), noop).await;
     assert_eq!(reply_json(res).await["rev"], 1, "a no-op leaves rev");
     let res = desk_put(
         dir.path(),
-        serde_json::json!([set("window", "w-1", serde_json::json!({ "max": true }))]),
+        serde_json::json!([set("window", "w-1", &serde_json::json!({ "max": true }))]),
     )
     .await;
     assert_eq!(reply_json(res).await["rev"], 2);
@@ -103,7 +103,7 @@ async fn a_resend_with_an_old_seq_does_not_undo_a_later_change() {
         dir.path(),
         serde_json::json!([create(
             "window",
-            window_json("w-1", serde_json::json!(7), false)
+            &window_json("w-1", &serde_json::json!(7), false)
         )]),
     )
     .await;
@@ -111,7 +111,7 @@ async fn a_resend_with_an_old_seq_does_not_undo_a_later_change() {
         serde_json::json!([set(
             "window",
             "w-1",
-            serde_json::json!({ "rect": rect_at(left) })
+            &serde_json::json!({ "rect": rect_at(left) })
         )])
     };
     // The phone's batch lands; its reply is lost.

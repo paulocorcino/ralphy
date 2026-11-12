@@ -107,6 +107,10 @@ mod tests {
     /// The exit code is the primary signal, and the sentence is the fallback.
     #[test]
     fn auth_exit_41_is_the_primary_signal() {
+        const VENDOR: &str = "Please set an Auth method in your /root/.gemini/settings.json or \
+             specify one of the following environment variables before running: \
+             GEMINI_API_KEY, GOOGLE_GENAI_USE_VERTEXAI, GOOGLE_GENAI_USE_GCA";
+
         assert_eq!(AUTH_EXIT, 41);
         assert!(!gemini_login_verdict(Some(41), ""));
         assert!(gemini_login_verdict(Some(0), ""));
@@ -114,9 +118,6 @@ mod tests {
         assert!(gemini_login_verdict(Some(999), ""));
         assert!(gemini_login_verdict(None, ""));
 
-        const VENDOR: &str = "Please set an Auth method in your /root/.gemini/settings.json or \
-             specify one of the following environment variables before running: \
-             GEMINI_API_KEY, GOOGLE_GENAI_USE_VERTEXAI, GOOGLE_GENAI_USE_GCA";
         assert!(is_gemini_auth_error(VENDOR));
         assert!(!is_gemini_auth_error("everything is fine"));
     }

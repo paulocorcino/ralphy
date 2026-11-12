@@ -1,4 +1,5 @@
 use super::*;
+use std::fmt::Write as _;
 
 #[test]
 fn parse_blocked_by_reads_the_bullet_refs_of_its_section() {
@@ -247,7 +248,7 @@ fn board_order_matches_shared_fixture() {
     let body_of = |blocked_by: &[u64]| -> String {
         let mut b = String::from("## Blocked by\n");
         for n in blocked_by {
-            b.push_str(&format!("- #{n}\n"));
+            writeln!(b, "- #{n}").expect(crate::WRITE_TO_STRING);
         }
         b
     };

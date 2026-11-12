@@ -77,6 +77,9 @@ pub const ACCEPTS_IMAGES: bool = false;
 /// The Cursor planning prompt, embedded so the binary is self-contained as a
 /// global tool. Assembled from `assets/prompts/plan/template.md` +
 /// `overlay.cursor.md`; the single source of truth lives at `assets/prompts/`.
+// Writing to a String cannot fail, so a failed write is a broken invariant.
+const WRITE_TO_STRING: &str = "a write to a String does not fail";
+
 const PROMPT_PLAN_CURSOR: &str = include_str!("../../../assets/prompts/prompt.plan.cursor.md");
 
 /// The scratch configuration directory's name under the run directory. Under

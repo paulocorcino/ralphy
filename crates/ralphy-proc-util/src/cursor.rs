@@ -29,7 +29,7 @@ pub fn locate_cursor_with(
     localappdata: Option<PathBuf>,
 ) -> Option<PathBuf> {
     crate::locate_program_with(NAMES[0], path_var.clone(), pathext.clone(), home.clone())
-        .or_else(|| localappdata.as_deref().and_then(local_app_data_shim))
+        .or_else(|| localappdata.and_then(|dir| local_app_data_shim(&dir)))
         .or_else(|| home.as_deref().and_then(cursor_home_bin))
         .or_else(|| crate::locate_program_with(NAMES[1], path_var, pathext, home))
 }

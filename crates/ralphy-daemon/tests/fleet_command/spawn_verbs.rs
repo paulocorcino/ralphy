@@ -58,6 +58,18 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
     )
     .await;
 
+    reads_come_from_the_peer(local_port, runid, png, &large_png).await;
+
+    let peer_ref = format!("{B_ID}/{SLUG}");
+    file_writes_land_on_the_peer(local_port, &peer_ref, &peer_repo, &local_repo).await;
+    git_verbs_run_on_the_peer(local_port, &peer_ref, &peer_repo, &local_repo).await;
+    spawn_verbs_stream_from_the_peer(local_port, &peer_store, &peer_repo, &local_repo).await;
+    an_unreachable_peer_is_a_transport_error(local_port).await;
+    a_checkout_is_resolved_on_the_peer(local_port, &peer_ref, &peer_repo).await;
+}
+
+/// The read verbs on a peer ref answer from the peer's repo.
+async fn reads_come_from_the_peer(local_port: u16, runid: &str, png: &[u8], large_png: &[u8]) {
     let read = ask(
         local_port,
         1,
@@ -83,7 +95,7 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
     .await;
     let names: Vec<&str> = tree["entries"]
         .as_array()
-        .unwrap()
+        .expect("the reply has an array")
         .iter()
         .filter_map(|entry| entry["name"].as_str())
         .collect();
@@ -106,8 +118,14 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
     assert_eq!(image["mediaType"], "image/png", "got {image}");
     assert_eq!(
         data_encoding::BASE64
-            .decode(image["base64"].as_str().unwrap().as_bytes())
-            .unwrap(),
+            .decode(
+                image
+                    .get("base64")
+                    .and_then(serde_json::Value::as_str)
+                    .expect("the reply has a string")
+                    .as_bytes()
+            )
+            .expect("the data is base64"),
         png
     );
     let large_image = ask(
@@ -121,8 +139,14 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
     )
     .await;
     let decoded_large = data_encoding::BASE64
-        .decode(large_image["base64"].as_str().unwrap().as_bytes())
-        .unwrap();
+        .decode(
+            large_image
+                .get("base64")
+                .and_then(serde_json::Value::as_str)
+                .expect("the reply has a string")
+                .as_bytes(),
+        )
+        .expect("the data is base64");
     assert_eq!(decoded_large.len(), large_png.len());
     assert_eq!(&decoded_large[..8], b"\x89PNG\r\n\x1a\n");
 
@@ -133,10 +157,24 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
         serde_json::json!({ "repo": format!("{B_ID}/{SLUG}") }),
     )
     .await;
-    assert_eq!(runs["runs"].as_array().unwrap().len(), 1, "got {runs}");
+    assert_eq!(
+        runs.get("runs")
+            .and_then(serde_json::Value::as_array)
+            .expect("the reply has an array")
+            .len(),
+        1,
+        "got {runs}"
+    );
     assert_eq!(runs["runs"][0]["runid"], runid, "got {runs}");
+}
 
-    let peer_ref = format!("{B_ID}/{SLUG}");
+/// The file write verbs on a peer ref change the peer's repo only.
+async fn file_writes_land_on_the_peer(
+    local_port: u16,
+    peer_ref: &str,
+    peer_repo: &tempfile::TempDir,
+    local_repo: &tempfile::TempDir,
+) {
     let created = ask(
         local_port,
         7,
@@ -161,7 +199,7 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
     .await;
     assert_eq!(written["status"], "ok", "got {written}");
     assert_eq!(
-        std::fs::read_to_string(peer_repo.path().join("new.txt")).unwrap(),
+        std::fs::read_to_string(peer_repo.path().join("new.txt")).expect("read the file"),
         "written-through-the-peer"
     );
 
@@ -207,16 +245,24 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
     assert!(!peer_repo
         .path()
         .parent()
-        .unwrap()
+        .expect("a temp folder has a parent")
         .join(&escape_name)
         .exists());
     assert!(!local_repo
         .path()
         .parent()
-        .unwrap()
+        .expect("a temp folder has a parent")
         .join(&escape_name)
         .exists());
+}
 
+/// The git verbs on a peer ref run in the peer's repo, and `config.set` is refused.
+async fn git_verbs_run_on_the_peer(
+    local_port: u16,
+    peer_ref: &str,
+    peer_repo: &tempfile::TempDir,
+    local_repo: &tempfile::TempDir,
+) {
     std::env::set_var(
         "RALPHY_EXE_OVERRIDE",
         env!("CARGO_BIN_EXE_command_test_child"),
@@ -255,9 +301,12 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
         ),
     ] {
         let reply = ask(local_port, id, verb, payload).await;
-        let message = reply["message"]
-            .as_str()
-            .unwrap_or_else(|| panic!("{verb} did not relay child output: {reply}"));
+        let message = reply.get("message").and_then(serde_json::Value::as_str);
+        assert!(
+            message.is_some(),
+            "{verb} did not relay child output: {reply}"
+        );
+        let message = message.expect("checked by the assert above");
         assert!(
             ran_in(message, peer_repo.path()),
             "{verb} must execute in the peer repo: {message}"
@@ -286,7 +335,15 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
         config_refused["message"], "invalid mutation options",
         "the owning daemon must retain the remote config boundary: {config_refused}"
     );
+}
 
+/// The streamed verbs on a peer ref run on the peer, with its identity.
+async fn spawn_verbs_stream_from_the_peer(
+    local_port: u16,
+    peer_store: &tempfile::TempDir,
+    peer_repo: &tempfile::TempDir,
+    local_repo: &tempfile::TempDir,
+) {
     std::env::set_var("RALPHY_TEST_EXIT_CODE", "0");
     let env_dump = peer_store.path().join("peer-command-env.txt");
     std::env::set_var("RALPHY_TEST_ENV_DUMP", &env_dump);
@@ -345,12 +402,16 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
             "{verb} must never execute in the local collision: {output}"
         );
         assert_eq!(
-            replies.last().unwrap().payload["code"],
-            0,
+            replies
+                .last()
+                .expect("there is a last reply")
+                .payload
+                .get("code"),
+            Some(&serde_json::json!(0)),
             "{verb}: {replies:?}"
         );
         assert_eq!(
-            std::fs::read_to_string(&env_dump).unwrap(),
+            std::fs::read_to_string(&env_dump).expect("read the file"),
             format!(
                 "RALPHY_DAEMON_TOKEN=ABSENT\nRALPHY_DAEMON_ID={B_ID}\n\
                  RALPHY_TELEGRAM_TOKEN=ABSENT\nRALPHY_EVENTS_TOKEN=ABSENT"
@@ -359,7 +420,10 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
         );
     }
     std::env::remove_var("RALPHY_TEST_ENV_DUMP");
+}
 
+/// A peer that does not answer is a transport error, not a decoding error.
+async fn an_unreachable_peer_is_a_transport_error(local_port: u16) {
     let unreachable = ask(
         local_port,
         15,
@@ -370,13 +434,23 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
         }),
     )
     .await;
-    let message = unreachable["message"].as_str().unwrap();
+    let message = unreachable
+        .get("message")
+        .and_then(serde_json::Value::as_str)
+        .expect("the reply has a string");
     assert!(message.contains(ENV), "got {unreachable}");
     assert!(
         !message.contains("serde") && !message.contains("decod"),
         "transport failure must not surface as a decoding error: {unreachable}"
     );
+}
 
+/// A checkout named on a peer ref is resolved on the peer's tree.
+async fn a_checkout_is_resolved_on_the_peer(
+    local_port: u16,
+    peer_ref: &str,
+    peer_repo: &tempfile::TempDir,
+) {
     // The switcher's pre-flight (#411/#412): a `tree.list` that names a
     // checkout is proxied with the name INTACT — only `repo` is rewritten to
     // the owner's slug — so the owning daemon resolves the worktree against
@@ -387,9 +461,10 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
         .join(".ralphy")
         .join("worktrees")
         .join("wt-a");
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(wt.join(".git"), "gitdir: elsewhere/.git/worktrees/wt-a\n").unwrap();
-    std::fs::write(wt.join("only-in-wt.txt"), "wt").unwrap();
+    std::fs::create_dir_all(&wt).expect("create the test folder");
+    std::fs::write(wt.join(".git"), "gitdir: elsewhere/.git/worktrees/wt-a\n")
+        .expect("write the test file");
+    std::fs::write(wt.join("only-in-wt.txt"), "wt").expect("write the test file");
     let in_wt = ask(
         local_port,
         16,
@@ -397,9 +472,10 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
         serde_json::json!({ "repo": peer_ref, "path": "", "checkout": "wt-a" }),
     )
     .await;
-    let names: Vec<&str> = in_wt["entries"]
-        .as_array()
-        .unwrap_or_else(|| panic!("got {in_wt}"))
+    let entries = in_wt.get("entries").and_then(serde_json::Value::as_array);
+    assert!(entries.is_some(), "got {in_wt}");
+    let names: Vec<&str> = entries
+        .expect("checked by the assert above")
         .iter()
         .filter_map(|entry| entry["name"].as_str())
         .collect();

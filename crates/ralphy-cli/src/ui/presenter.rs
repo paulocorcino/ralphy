@@ -110,7 +110,7 @@ impl Presenter {
         // `on_event` only hands work here (it never draws), a stalled console write
         // freezes the UI, not the run. The thread ends when the last `Sender` (this
         // `Presenter` and any `PresenterHandle`) drops.
-        std::thread::spawn(move || renderer.run(rx));
+        std::thread::spawn(move || renderer.run(&rx));
         Presenter {
             tx: Mutex::new(tx),
             state,
@@ -143,11 +143,11 @@ impl Renderer {
     /// tick, and answer a [`PresenterMsg::Flush`] once everything already queued is
     /// drained (so teardown clears the region only after the last scroll line is on
     /// screen). Ends when every `Sender` has dropped.
-    fn run(self, rx: Receiver<PresenterMsg>) {
+    fn run(self, rx: &Receiver<PresenterMsg>) {
         loop {
             match rx.recv_timeout(Duration::from_secs(1)) {
-                Ok(PresenterMsg::Event(event)) => self.apply(event),
-                Ok(PresenterMsg::Flush(ack)) => self.flush(&rx, ack),
+                Ok(PresenterMsg::Event(event)) => self.apply(&event),
+                Ok(PresenterMsg::Flush(ack)) => self.flush(rx, &ack),
                 Err(mpsc::RecvTimeoutError::Timeout) => self.tick(),
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
@@ -157,10 +157,10 @@ impl Renderer {
     /// Answer a [`PresenterMsg::Flush`]: drain everything already queued so no
     /// scroll line is lost before the region is cleared, then ack. A superseded
     /// flush just gets acked too.
-    fn flush(&self, rx: &Receiver<PresenterMsg>, ack: SyncSender<()>) {
+    fn flush(&self, rx: &Receiver<PresenterMsg>, ack: &SyncSender<()>) {
         while let Ok(msg) = rx.try_recv() {
             match msg {
-                PresenterMsg::Event(event) => self.apply(event),
+                PresenterMsg::Event(event) => self.apply(&event),
                 PresenterMsg::Flush(prev) => {
                     // the caller waiting for the answer may have stopped waiting
                     match prev.send(()) {
@@ -189,7 +189,7 @@ impl Renderer {
 
     /// Apply one decoded run event: drive the live region + active-issue tracking,
     /// then emit the permanent line (if any).
-    fn apply(&self, event: RunEvent) {
+    fn apply(&self, event: &RunEvent) {
         let ts = Local::now();
         // Recover from poison rather than panic: this runs inside `on_event`, so a
         // panic here would corrupt the run on a tracing call.
@@ -198,14 +198,14 @@ impl Renderer {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-        let extra = self.drive(&mut s, &event);
+        let extra = self.drive(&mut s, event);
 
         // Styled lines on a colour TTY (routed through `MultiProgress` so they
         // never tear the live region); one clean, ANSI-free line per event
         // otherwise (the non-TTY / `NO_COLOR` path, ADR-0006 D3). `render_line`
         // styles per `opts.color`, so both paths share it — the plain path keeps
         // the same model/effort/meter tail.
-        let line = render_line(&event, &ts, &extra, self.opts);
+        let line = render_line(event, &ts, &extra, self.opts);
         if let Some(line) = line {
             if self.opts.color {
                 // the console is the only place to report a failed write to it

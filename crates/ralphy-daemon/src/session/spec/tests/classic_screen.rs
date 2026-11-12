@@ -54,19 +54,19 @@ fn an_unreadable_settings_file_never_sets_the_classic_screen() {
 fn a_claude_console_gets_the_classic_screen_only_when_opted_in() {
     let d = tempfile::tempdir().unwrap();
     let on = repo_with(&d, r#"{"claude":{"console_classic_screen":true}}"#);
-    let spec = spec_for(Agent::Claude, &on, on.clone(), "owner/ralphy", 24, 80);
+    let spec = spec_for(Agent::Claude, &on, on.clone(), "owner/ralphy", (24, 80));
     assert_eq!(classic_env(&spec), vec![&OsString::from("1")]);
     assert!(
         spec.name.is_none(),
         "the classic screen does not name the console"
     );
     for agent in Agent::ALL.iter().filter(|a| **a != Agent::Claude) {
-        let other = spec_for(*agent, &on, on.clone(), "owner/ralphy", 24, 80);
+        let other = spec_for(*agent, &on, on.clone(), "owner/ralphy", (24, 80));
         assert!(classic_env(&other).is_empty(), "{agent:?} must not get it");
     }
 
     let off = repo_with(&d, r#"{"claude":{"console_name":true}}"#);
-    let spec = spec_for(Agent::Claude, &off, off.clone(), "owner/ralphy", 24, 80);
+    let spec = spec_for(Agent::Claude, &off, off.clone(), "owner/ralphy", (24, 80));
     assert!(classic_env(&spec).is_empty(), "off by default");
 }
 

@@ -11,6 +11,7 @@ use super::super::password::add_peer_key;
 use super::super::report::Report;
 use super::super::shell::{keys_path, render, HostOp, HostOs};
 use super::super::ssh::{classify, ssh_error, HostOutput, HostShell, SshError, SshFailure};
+use super::Destination;
 
 pub(super) fn unknown_host(dest: &str) -> String {
     format!(
@@ -93,11 +94,14 @@ fn key_file_refused(dest: &str, key: &Path) -> String {
 pub(crate) fn connect(
     shell: &mut impl HostShell,
     store: &Path,
-    dest: &str,
-    key_file: Option<&Path>,
-    keygen: impl FnOnce(&Path) -> Result<()>,
+    destination: Destination<'_, impl FnOnce(&Path) -> Result<()>>,
     out: &mut Report<impl Write>,
 ) -> Result<(Option<PathBuf>, HostOs)> {
+    let Destination {
+        dest,
+        key_file,
+        keygen,
+    } = destination;
     let uname_cmd = render(None, &HostOp::Uname)?;
     let first = shell.run(key_file, &uname_cmd, b"")?;
     // A key file the operator chose is never swapped for Ralphy's own key.

@@ -259,7 +259,7 @@ fn spine_pushed_event_arrives_as_cloudevents_post() {
         warned: AtomicBool::new(false),
         plan_path: std::env::temp_dir().join("ralphy-nonexistent-plan.md"),
     };
-    crate::delivery::run_delivery_worker(engine, queue, shutdown);
+    crate::delivery::run_delivery_worker(engine, &queue, &shutdown);
 
     let raw = rx.recv().expect("recorded request");
     server.join().expect("the server thread ended");

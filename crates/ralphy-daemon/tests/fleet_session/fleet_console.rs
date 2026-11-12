@@ -225,6 +225,21 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
     .await;
 
     let repo = peer_repo();
+    a_free_console_runs_on_this_daemon(&local, &peer, &repo, &peer_repo_dir).await;
+    an_agent_console_runs_on_the_owner(&local, &peer, &repo).await;
+    the_owner_folds_the_console_name(&local, &repo).await;
+
+    local.task.abort();
+    peer.task.abort();
+}
+
+/// A free console on a peer repo runs here, keeps its launcher argv, and reattaches here.
+async fn a_free_console_runs_on_this_daemon(
+    local: &Daemon,
+    peer: &Daemon,
+    repo: &str,
+    peer_repo_dir: &tempfile::TempDir,
+) {
     let mut console = launch(
         local.port,
         serde_json::json!({ "console": 1, "repo": repo }),
@@ -232,7 +247,10 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
     .await;
     let (_, open) = read_until(&mut console, "READY").await;
     let open = open.expect("free console must announce its effective environment");
-    let console_id = open["session"].as_u64().unwrap();
+    let console_id = open
+        .get("session")
+        .and_then(serde_json::Value::as_u64)
+        .expect("the reply has a number");
     assert_eq!(open["daemon_id"], LOCAL_ID);
     assert_eq!(open["environment"], PEER_ENVIRONMENT);
     send_line(&mut console, "argv").await;
@@ -246,7 +264,7 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
     );
 
     let local_rows = http_json(local.port, "GET", "/api/sessions?local=1", None).await;
-    assert_eq!(local_rows.as_array().unwrap().len(), 1);
+    assert_eq!(local_rows.as_array().expect("a list of rows").len(), 1);
     assert_eq!(local_rows[0]["repo"], peer_repo());
     assert_eq!(local_rows[0]["kind"], "console");
     assert_eq!(local_rows[0]["daemon_id"], LOCAL_ID);
@@ -259,11 +277,11 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
     )
     .await;
     assert!(
-        peer_rows.as_array().unwrap().is_empty(),
+        peer_rows.as_array().expect("a list of rows").is_empty(),
         "peer daemon unexpectedly hosted the free console: {peer_rows}"
     );
 
-    console.close(None).await.unwrap();
+    console.close(None).await.expect("close the console");
     drop(console);
     let mut console = launch(
         local.port,
@@ -272,7 +290,13 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
     .await;
     let (replayed, reopened) = read_until(&mut console, "ARGV:").await;
     assert!(replayed.contains("-d Ubuntu-22.04 --cd"));
-    assert_eq!(reopened.unwrap()["daemon_id"], LOCAL_ID);
+    assert_eq!(
+        reopened
+            .expect("the reattached console announces itself")
+            .get("daemon_id")
+            .and_then(serde_json::Value::as_str),
+        Some(LOCAL_ID)
+    );
     let close = http_json(
         local.port,
         "POST",
@@ -285,7 +309,10 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
     .await;
     assert_eq!(close["closed"], true);
     drop(console);
+}
 
+/// An agent console on a peer repo runs on the peer, named there.
+async fn an_agent_console_runs_on_the_owner(local: &Daemon, peer: &Daemon, repo: &str) {
     let mut agent = launch(
         local.port,
         serde_json::json!({ "repo": repo, "agent": "claude" }),
@@ -330,7 +357,7 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
 
     let local_rows = http_json(local.port, "GET", "/api/sessions?local=1", None).await;
     assert!(
-        local_rows.as_array().unwrap().is_empty(),
+        local_rows.as_array().expect("a list of rows").is_empty(),
         "agent session leaked into local manager: {local_rows}"
     );
     let peer_rows = http_json(
@@ -340,10 +367,13 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
         Some("peer-token"),
     )
     .await;
-    assert_eq!(peer_rows.as_array().unwrap().len(), 1);
+    assert_eq!(peer_rows.as_array().expect("a list of rows").len(), 1);
     assert_eq!(peer_rows[0]["kind"], "agent");
     assert_eq!(peer_rows[0]["daemon_id"], PEER_ID);
+}
 
+/// The owning daemon folds a console name before it reaches argv.
+async fn the_owner_folds_the_console_name(local: &Daemon, repo: &str) {
     // The relay forwards the console name and the OWNING daemon folds it: the
     // raw name, with the characters `cmd.exe` would read again, never reaches
     // argv.
@@ -379,9 +409,6 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
         !argv.contains(['&', '%', '"']),
         "a raw console name reached argv: {named_argv}"
     );
-
-    local.task.abort();
-    peer.task.abort();
 }
 
 /// A peer that advertises no WSL distro is on another machine (ADR-0067 §7):

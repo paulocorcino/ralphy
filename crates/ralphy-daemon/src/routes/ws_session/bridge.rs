@@ -6,14 +6,12 @@ use std::ops::ControlFlow;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use tokio::sync::broadcast::error::RecvError;
-
 // ADR-0082 D4: a console served on a channel of the page socket.
 mod channel;
 
 pub(crate) use channel::{serve_console, ConsoleEnd, PeerRelay};
 
-use super::outbound::{resync, send_output, send_size, Opening, Outbox};
+use super::outbound::{send_size, Outbox};
 use super::traffic::Traffic;
 use crate::protocol::{Command, Frame};
 use crate::{protocol, session};
@@ -72,7 +70,7 @@ impl Liveness {
 type Flow = ControlFlow<Option<session::EndReason>>;
 
 /// A failed send ends the loop without an announcement: the socket is gone.
-fn silent_if_err<T, E>(sent: Result<T, E>) -> Flow {
+fn silent_if_err<T, E>(sent: &Result<T, E>) -> Flow {
     match sent {
         Ok(_) => ControlFlow::Continue(()),
         Err(_) => ControlFlow::Break(None),
@@ -81,7 +79,7 @@ fn silent_if_err<T, E>(sent: Result<T, E>) -> Flow {
 
 /// A new session size goes to the client. A closed size sender stops the arm.
 fn on_size(
-    changed: Result<(), tokio::sync::watch::error::RecvError>,
+    changed: &Result<(), tokio::sync::watch::error::RecvError>,
     outbox: &mut Outbox,
     id: session::SessionId,
     attach: &mut session::Attachment,
@@ -96,32 +94,9 @@ fn on_size(
     ControlFlow::Continue(())
 }
 
-/// One turn of the live output stream. A lag sends the screen again.
-fn on_output(
-    recv: Result<Vec<u8>, RecvError>,
-    outbox: &mut Outbox,
-    id: session::SessionId,
-    opening: &Opening,
-    attach: &mut session::Attachment,
-    traffic: &mut Traffic,
-) -> Flow {
-    match recv {
-        Ok(bytes) => {
-            send_output(outbox, id, bytes, traffic);
-            ControlFlow::Continue(())
-        }
-        Err(RecvError::Lagged(skipped)) => {
-            traffic.lagged(skipped);
-            resync(outbox, id, opening, attach, traffic);
-            ControlFlow::Continue(())
-        }
-        Err(RecvError::Closed) => ControlFlow::Break(Some(session::EndReason::ChildExited)),
-    }
-}
-
 fn on_client_frame(bytes: &[u8], attach: &session::Attachment, traffic: &mut Traffic) -> Flow {
     match protocol::decode(bytes) {
-        Ok(Frame::Terminal { data, .. }) => silent_if_err(attach.write(&data)),
+        Ok(Frame::Terminal { data, .. }) => silent_if_err(&attach.write(&data)),
         Ok(Frame::Command(cmd)) if cmd.verb == "resize" => {
             if let Some((rows, cols)) = resize_of(&cmd) {
                 // A resize fails only once the console has ended, which the loop sees.

@@ -182,9 +182,6 @@ async fn the_desk_history_list_is_the_shared_reply() {
 /// measured Android phone wrote: its device facts, then one change.
 #[tokio::test]
 async fn the_audit_log_reads_are_the_shared_replies() {
-    use http_body_util::BodyExt;
-    use tower::ServiceExt;
-
     let dir = tempfile::tempdir().unwrap();
     let (_tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
@@ -196,99 +193,13 @@ async fn the_audit_log_reads_are_the_shared_replies() {
         rx,
         ralphy_daemon::auth::AuthState::localhost(),
     );
-    let send = |req: axum::http::Request<axum::body::Body>| {
-        let app = app.clone();
-        async move { app.oneshot(req).await.unwrap() }
-    };
-    let json_of = |res: axum::http::Response<axum::body::Body>| async move {
-        let bytes = res.into_body().collect().await.unwrap().to_bytes();
-        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()
-    };
 
-    let first = send(
-        axum::http::Request::builder()
-            .uri("/api/session")
-            .body(axum::body::Body::empty())
-            .unwrap(),
-    )
-    .await;
-    let cookie = first
-        .headers()
-        .get_all("set-cookie")
-        .iter()
-        .filter_map(|v| v.to_str().ok())
-        .find(|v| v.starts_with("ralphy_device="))
-        .expect("a device cookie")
-        .split(';')
-        .next()
-        .unwrap()
-        .to_owned();
-    let device = cookie.split('.').nth(1).unwrap().to_owned();
-
-    let measured: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/fixtures/devices/android-chrome.json"),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    let mut facts = axum::http::Request::builder()
-        .method("POST")
-        .uri("/api/device/facts")
-        .header("content-type", "application/json")
-        .header("cookie", &cookie);
-    for (k, v) in measured["headers"].as_object().unwrap() {
-        if ![
-            "host",
-            "origin",
-            "referer",
-            "content-length",
-            "content-type",
-        ]
-        .contains(&k.as_str())
-        {
-            facts = facts.header(k.as_str(), v.as_str().unwrap());
-        }
-    }
-    let res = send(
-        facts
-            .body(axum::body::Body::from(measured["client"].to_string()))
-            .unwrap(),
-    )
-    .await;
-    assert_eq!(res.status(), axum::http::StatusCode::NO_CONTENT);
-    send(
-        axum::http::Request::builder()
-            .method("POST")
-            .uri("/api/sessions/close?id=7&repo=owner/repo")
-            .header("cookie", &cookie)
-            .header("x-real-ip", "203.0.113.10")
-            .body(axum::body::Body::empty())
-            .unwrap(),
-    )
-    .await;
-    send(
-        axum::http::Request::builder()
-            .method("POST")
-            .uri("/api/peer/command")
-            .header("content-type", "application/json")
-            .header("cookie", &cookie)
-            .header("x-real-ip", "203.0.113.10")
-            .body(axum::body::Body::from(
-                serde_json::json!({
-                    "id": 1,
-                    "verb": "branch.switch",
-                    "payload": {"repo": "nope", "name": "main"},
-                })
-                .to_string(),
-            ))
-            .unwrap(),
-    )
-    .await;
+    let (cookie, device) = a_device_cookie(&app).await;
+    post_measured_facts_and_one_change(&app, &cookie).await;
 
     let devices = json_of(
         send(
+            &app,
             axum::http::Request::builder()
                 .uri("/api/audit/devices")
                 .header("cookie", &cookie)
@@ -311,6 +222,7 @@ async fn the_audit_log_reads_are_the_shared_replies() {
 
     let events = json_of(
         send(
+            &app,
             axum::http::Request::builder()
                 .uri(format!("/api/audit/events?device={device}"))
                 .header("cookie", &cookie)
@@ -332,4 +244,127 @@ async fn the_audit_log_reads_are_the_shared_replies() {
             "/events/2/device",
         ],
     );
+}
+
+/// One request through the router.
+async fn send(
+    app: &axum::Router,
+    req: axum::http::Request<axum::body::Body>,
+) -> axum::http::Response<axum::body::Body> {
+    use tower::ServiceExt;
+    app.clone().oneshot(req).await.expect("the router answers")
+}
+
+/// The JSON body of a reply.
+async fn json_of(res: axum::http::Response<axum::body::Body>) -> serde_json::Value {
+    use http_body_util::BodyExt;
+    let bytes = res
+        .into_body()
+        .collect()
+        .await
+        .expect("read the body")
+        .to_bytes();
+    serde_json::from_slice(&bytes).expect("the body is JSON")
+}
+
+/// A first request mints the device cookie: the cookie and its device id.
+async fn a_device_cookie(app: &axum::Router) -> (String, String) {
+    let first = send(
+        app,
+        axum::http::Request::builder()
+            .uri("/api/session")
+            .body(axum::body::Body::empty())
+            .expect("build the request"),
+    )
+    .await;
+    let cookie = first
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find(|v| v.starts_with("ralphy_device="))
+        .expect("a device cookie")
+        .split(';')
+        .next()
+        .expect("split yields a first part")
+        .to_owned();
+    let device = cookie
+        .split('.')
+        .nth(1)
+        .expect("the cookie names a device")
+        .to_owned();
+    (cookie, device)
+}
+
+/// The measured phone posts its device facts, then makes one change and one
+/// refused peer command.
+async fn post_measured_facts_and_one_change(app: &axum::Router, cookie: &str) {
+    let measured: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/devices/android-chrome.json"),
+        )
+        .expect("read the fixture"),
+    )
+    .expect("the fixture is JSON");
+    let mut facts = axum::http::Request::builder()
+        .method("POST")
+        .uri("/api/device/facts")
+        .header("content-type", "application/json")
+        .header("cookie", cookie);
+    for (k, v) in measured
+        .get("headers")
+        .and_then(serde_json::Value::as_object)
+        .expect("the fixture has headers")
+    {
+        if ![
+            "host",
+            "origin",
+            "referer",
+            "content-length",
+            "content-type",
+        ]
+        .contains(&k.as_str())
+        {
+            facts = facts.header(k.as_str(), v.as_str().expect("a header value is a string"));
+        }
+    }
+    let res = send(
+        app,
+        facts
+            .body(axum::body::Body::from(measured["client"].to_string()))
+            .expect("build the request"),
+    )
+    .await;
+    assert_eq!(res.status(), axum::http::StatusCode::NO_CONTENT);
+    send(
+        app,
+        axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/sessions/close?id=7&repo=owner/repo")
+            .header("cookie", cookie)
+            .header("x-real-ip", "203.0.113.10")
+            .body(axum::body::Body::empty())
+            .expect("build the request"),
+    )
+    .await;
+    send(
+        app,
+        axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/peer/command")
+            .header("content-type", "application/json")
+            .header("cookie", cookie)
+            .header("x-real-ip", "203.0.113.10")
+            .body(axum::body::Body::from(
+                serde_json::json!({
+                    "id": 1,
+                    "verb": "branch.switch",
+                    "payload": {"repo": "nope", "name": "main"},
+                })
+                .to_string(),
+            ))
+            .expect("build the request"),
+    )
+    .await;
 }

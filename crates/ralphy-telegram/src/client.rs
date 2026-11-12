@@ -161,9 +161,9 @@ impl<T: Transport> BotClient<T> {
 /// Unwrap a Bot API envelope (`{ "ok": bool, "result"|"description": ... }`),
 /// returning the `result` on success and an error carrying `description`
 /// otherwise.
-fn result_of(resp: Value, method: &str) -> Result<Value> {
+fn result_of(mut resp: Value, method: &str) -> Result<Value> {
     if resp.get("ok").and_then(Value::as_bool) == Some(true) {
-        return Ok(resp.get("result").cloned().unwrap_or(Value::Null));
+        return Ok(resp.get_mut("result").map_or(Value::Null, Value::take));
     }
     let desc = resp
         .get("description")

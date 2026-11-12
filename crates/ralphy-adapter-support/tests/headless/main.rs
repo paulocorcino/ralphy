@@ -3,6 +3,7 @@
 //! sets for integration tests). A real child process makes the spawn/drain/kill
 //! plumbing observable, portably across Windows and Unix.
 
+use std::fmt::Write as _;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -286,7 +287,8 @@ fn stdin_payload_over_24kb_round_trips() {
     payload.push('\n');
     let mut i = 0usize;
     while payload.len() < 24_576 {
-        payload.push_str(&format!("filler line {i} — padding the charter to size\n"));
+        writeln!(payload, "filler line {i} — padding the charter to size")
+            .expect("a write to a String does not fail");
         i += 1;
     }
     payload.push_str(TAIL);

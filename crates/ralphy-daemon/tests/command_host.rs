@@ -115,6 +115,36 @@ async fn host_verbs_run_locally_with_no_repo() {
         axum::serve(listener, served).await.unwrap();
     });
 
+    a_check_runs_with_no_repo(port).await;
+    an_option_destination_is_refused(port).await;
+    a_mutate_is_ok_and_a_text_query_is_an_error(port).await;
+    a_password_goes_to_stdin_only(port).await;
+
+    // (c) A peer asking this daemon for a host verb is refused.
+    let body = serde_json::json!({"id": 1, "verb": "host.aliases", "payload": {}});
+    let resp = app(registry_path)
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/peer/command")
+                .header(header::HOST, format!("127.0.0.1:{port}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .expect("the router must answer");
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let reply: serde_json::Value = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|e| panic!("{e}: {}", String::from_utf8_lossy(&bytes)));
+    assert_eq!(
+        reply["message"],
+        "a host command runs only on the daemon you are connected to"
+    );
+}
+
+/// (a) A host check streams with no `repo` and no registry.
+async fn a_check_runs_with_no_repo(port: u16) {
     // (a) No `repo`, no registry: the check still runs, streamed.
     let frames = replies(
         port,
@@ -133,12 +163,19 @@ async fn host_verbs_run_locally_with_no_repo() {
         output.contains("dispatch-argv: host check svrapp --json"),
         "{output:?}"
     );
-    assert_eq!(frames.last().unwrap()["code"], 0, "{frames:?}");
+    assert_eq!(
+        frames.last().expect("a last frame")["code"],
+        0,
+        "{frames:?}"
+    );
     assert!(
         !format!("{frames:?}").contains("unknown repo"),
         "{frames:?}"
     );
+}
 
+/// (b) A destination that is an option spawns nothing.
+async fn an_option_destination_is_refused(port: u16) {
     // (b) An option in the destination: refused, nothing spawned.
     let frames = replies(
         port,
@@ -150,7 +187,10 @@ async fn host_verbs_run_locally_with_no_repo() {
         frames,
         [serde_json::json!({"status": "error", "message": "invalid host options"})]
     );
+}
 
+/// (b2) The reply of a Mutate and of a Query with no JSON line.
+async fn a_mutate_is_ok_and_a_text_query_is_an_error(port: u16) {
     // (b2) A Mutate answers ok on exit 0; a Query whose last line is not
     // JSON is an error that carries the output (the test child prints text).
     let frames = replies(
@@ -173,7 +213,10 @@ async fn host_verbs_run_locally_with_no_repo() {
             .contains("dispatch-argv: host aliases"),
         "{frames:?}"
     );
+}
 
+/// (b3) Where a password goes, and where it is refused.
+async fn a_password_goes_to_stdin_only(port: u16) {
     // (b3) A password goes to the child's standard input, never its argv, when
     // the request comes from this computer or over https.
     let with_password = serde_json::json!({"destination": "svrapp", "password": "s3 cret"});
@@ -213,27 +256,5 @@ async fn host_verbs_run_locally_with_no_repo() {
             .unwrap_or("")
             .contains("https"),
         "{frames:?}"
-    );
-
-    // (c) A peer asking this daemon for a host verb is refused.
-    let body = serde_json::json!({"id": 1, "verb": "host.aliases", "payload": {}});
-    let resp = app(registry_path)
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/peer/command")
-                .header(header::HOST, format!("127.0.0.1:{port}"))
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(body.to_string()))
-                .unwrap(),
-        )
-        .await
-        .expect("the router must answer");
-    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
-    let reply: serde_json::Value = serde_json::from_slice(&bytes)
-        .unwrap_or_else(|e| panic!("{e}: {}", String::from_utf8_lossy(&bytes)));
-    assert_eq!(
-        reply["message"],
-        "a host command runs only on the daemon you are connected to"
     );
 }

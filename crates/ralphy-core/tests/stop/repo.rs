@@ -59,6 +59,7 @@ pub(crate) fn remove_scratch(path: &Path) {
 }
 
 pub(crate) fn init_repo(name: &str) -> PathBuf {
+    static N: AtomicU32 = AtomicU32::new(0);
     // The ledger writes under `RALPHY_USAGE_DIR`; point it at a throwaway so the
     // tests never touch the developer's real usage store.
     static USAGE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
@@ -71,7 +72,6 @@ pub(crate) fn init_repo(name: &str) -> PathBuf {
     });
     let _: &PathBuf = usage;
 
-    static N: AtomicU32 = AtomicU32::new(0);
     let dir = std::env::temp_dir().join(format!(
         "ralphy-stop-{}-{}-{}",
         std::process::id(),

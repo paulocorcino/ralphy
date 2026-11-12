@@ -25,12 +25,12 @@ fn of(name: &str) -> Normalized {
     normalize(&client, &server)
 }
 
-fn value<T: Copy>(f: &Option<Field<T>>) -> Option<T> {
-    f.as_ref().map(|f| f.value)
+fn value<T: Copy>(f: Option<&Field<T>>) -> Option<T> {
+    f.map(|f| f.value)
 }
 
-fn text(f: &Option<Field<String>>) -> Option<&str> {
-    f.as_ref().map(|f| f.value.as_str())
+fn text(f: Option<&Field<String>>) -> Option<&str> {
+    f.map(|f| f.value.as_str())
 }
 
 #[test]
@@ -106,12 +106,12 @@ fn each_measured_device_reads_as_what_it_is() {
     for w in wants {
         let n = of(w.name);
         let name = w.name;
-        assert_eq!(value(&n.os), Some(w.os), "{name} os");
-        assert_eq!(text(&n.os_version), w.version, "{name} os version");
-        assert_eq!(value(&n.browser), Some(w.browser), "{name} browser");
-        assert_eq!(value(&n.engine), Some(w.engine), "{name} engine");
-        assert_eq!(value(&n.form), Some(w.form), "{name} form");
-        assert_eq!(text(&n.model_hint), w.model, "{name} model");
+        assert_eq!(value(n.os.as_ref()), Some(w.os), "{name} os");
+        assert_eq!(text(n.os_version.as_ref()), w.version, "{name} os version");
+        assert_eq!(value(n.browser.as_ref()), Some(w.browser), "{name} browser");
+        assert_eq!(value(n.engine.as_ref()), Some(w.engine), "{name} engine");
+        assert_eq!(value(n.form.as_ref()), Some(w.form), "{name} form");
+        assert_eq!(text(n.model_hint.as_ref()), w.model, "{name} model");
         assert_eq!(n.gpu.as_ref().map(|g| g.vendor), Some(w.gpu), "{name} gpu");
         assert_eq!(n.screen.as_deref(), Some(w.screen), "{name} screen");
         assert!(n.conflicts.is_empty(), "{name}: {:?}", n.conflicts);
@@ -177,10 +177,10 @@ fn chrome_on_an_iphone_is_chrome_on_webkit() {
         "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like \
         Gecko) CriOS/148.0.7778.73 Mobile/15E148 Safari/604.1",
     );
-    assert_eq!(value(&n.browser), Some(Browser::Chrome));
+    assert_eq!(value(n.browser.as_ref()), Some(Browser::Chrome));
     assert_eq!(n.browser_version.as_deref(), Some("148"));
-    assert_eq!(value(&n.engine), Some(Engine::Webkit));
-    assert_eq!(text(&n.os_version), Some("18.7"));
+    assert_eq!(value(n.engine.as_ref()), Some(Engine::Webkit));
+    assert_eq!(text(n.os_version.as_ref()), Some("18.7"));
 }
 
 #[test]
@@ -189,17 +189,21 @@ fn an_android_app_view_and_a_frozen_android_version() {
         "Mozilla/5.0 (Linux; Android 10; K; wv) AppleWebKit/537.36 (KHTML, like Gecko) \
         Version/4.0 Chrome/148.0.0.0 Mobile Safari/537.36",
     );
-    assert_eq!(value(&n.browser), Some(Browser::Webview));
-    assert_eq!(value(&n.form), Some(Form::Phone));
+    assert_eq!(value(n.browser.as_ref()), Some(Browser::Webview));
+    assert_eq!(value(n.form.as_ref()), Some(Form::Phone));
     let n = from_ua(
         "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) \
         Chrome/148.0.0.0 Mobile Safari/537.36",
     );
-    assert_eq!(text(&n.os_version), None, "Chrome freezes `Android 10; K`");
+    assert_eq!(
+        text(n.os_version.as_ref()),
+        None,
+        "Chrome freezes `Android 10; K`"
+    );
     let n = from_ua("Mozilla/5.0 (Android 14; Mobile; rv:131.0) Gecko/131.0 Firefox/131.0");
-    assert_eq!(text(&n.os_version), Some("14"));
-    assert_eq!(value(&n.browser), Some(Browser::Firefox));
-    assert_eq!(value(&n.engine), Some(Engine::Gecko));
+    assert_eq!(text(n.os_version.as_ref()), Some("14"));
+    assert_eq!(value(n.browser.as_ref()), Some(Browser::Firefox));
+    assert_eq!(value(n.engine.as_ref()), Some(Engine::Gecko));
 }
 
 #[test]
@@ -214,6 +218,6 @@ fn an_iphone_user_agent_on_chromium_is_a_conflict() {
     .unwrap();
     server.user_agent = None;
     let n = normalize(&client, &server);
-    assert_eq!(value(&n.os), Some(Os::Windows), "the hint wins");
+    assert_eq!(value(n.os.as_ref()), Some(Os::Windows), "the hint wins");
     assert_eq!(n.conflicts, ["os"]);
 }

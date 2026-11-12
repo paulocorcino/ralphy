@@ -149,26 +149,26 @@ fn report(root: &Path) -> Result<Vec<Row>> {
     for (path, lang) in files {
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
-        rows.extend(rows_of(rel_path(root, &path)?, lang, &text));
+        rows.extend(rows_of(&rel_path(root, &path)?, lang, &text));
     }
     rows.sort_by(|a, b| (a.path(), a.line()).cmp(&(b.path(), b.line())));
     Ok(rows)
 }
 
 /// The rows of one file.
-fn rows_of(path: String, lang: Lang, text: &str) -> Vec<Row> {
+fn rows_of(path: &str, lang: Lang, text: &str) -> Vec<Row> {
     let mut rows = Vec::new();
     let lines = text.lines().count();
     if lines > LIMIT {
         rows.push(Row::Size {
-            path: path.clone(),
+            path: path.to_owned(),
             lines,
         });
     }
     if lang.has_width() {
         for (line, width) in wide_line_rows(text) {
             rows.push(Row::Width {
-                path: path.clone(),
+                path: path.to_owned(),
                 line,
                 width,
             });

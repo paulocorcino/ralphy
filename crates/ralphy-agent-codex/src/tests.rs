@@ -192,10 +192,12 @@ fn exec_effort_override_wins_over_the_tier_default() {
     let cmd = build_codex_command(
         CODEX_MODEL_SOL,
         agent.resolved_exec_effort("medium"),
-        std::path::Path::new("/repo"),
-        std::path::Path::new("/repo/out.txt"),
-        std::path::Path::new("/bin/ralphy"),
-        std::path::Path::new("/run/agent-status.jsonl"),
+        Path::new("/repo"),
+        Path::new("/repo/out.txt"),
+        StatusHooks {
+            exe: Path::new("/bin/ralphy"),
+            file: Path::new("/run/agent-status.jsonl"),
+        },
     );
     let args: Vec<String> = cmd
         .get_args()
@@ -218,10 +220,12 @@ fn unset_exec_effort_falls_back_to_the_tier_default() {
     let cmd = build_codex_command(
         model,
         agent.resolved_exec_effort(tier_effort),
-        std::path::Path::new("/repo"),
-        std::path::Path::new("/repo/out.txt"),
-        std::path::Path::new("/bin/ralphy"),
-        std::path::Path::new("/run/agent-status.jsonl"),
+        Path::new("/repo"),
+        Path::new("/repo/out.txt"),
+        StatusHooks {
+            exe: Path::new("/bin/ralphy"),
+            file: Path::new("/run/agent-status.jsonl"),
+        },
     );
     let args: Vec<String> = cmd
         .get_args()
@@ -325,7 +329,8 @@ fn every_session_installs_the_forge_rules() {
         ("lib.rs", include_str!("lib.rs")),
         ("tasks.rs", include_str!("tasks.rs")),
     ] {
-        let builds = src.matches("let cmd = build_codex_").count();
+        let builds = src.matches("let cmd = build_codex_").count()
+            + src.matches("self.watched_command(").count();
         let installs = src.matches("install_forge_rules(").count();
         assert!(builds > 0, "{name}: no session found");
         assert_eq!(

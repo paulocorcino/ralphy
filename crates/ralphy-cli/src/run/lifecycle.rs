@@ -24,10 +24,9 @@ pub(super) fn finish_if_idle(
     notifier: Option<telegram::notifier::NotifierHandle>,
     events: Option<events::sink::EventsHandle>,
     snapshot: Option<crate::delivery::WorkerHandle>,
-) -> Result<()> {
+) {
     ralphy_core::emit::run_skipped(msg);
     finish_border(presenter, notifier, events, snapshot);
-    Ok(())
 }
 
 /// The teardown both no-work borders share (#222), in the ONE order that works:

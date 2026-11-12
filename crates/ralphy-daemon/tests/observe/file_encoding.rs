@@ -220,8 +220,7 @@ async fn write(
     slug: &str,
     path: &str,
     content: &str,
-    encoding: Option<&str>,
-    bom: bool,
+    (encoding, bom): (Option<&str>, bool),
 ) -> serde_json::Value {
     let mut payload =
         serde_json::json!({ "repo": slug, "path": path, "content": content, "bom": bom });
@@ -265,7 +264,7 @@ async fn file_write_encodes_with_the_encoding_it_is_given() {
         ("w5.txt", "\u{a7}", None, false, b"\xC2\xA7"),
     ];
     for (path, text, encoding, bom, bytes) in cases {
-        let reply = write(port, &slug, path, text, encoding, bom).await;
+        let reply = write(port, &slug, path, text, (encoding, bom)).await;
         assert_eq!(reply["status"], "ok", "{path}: {reply}");
         assert_eq!(std::fs::read(root.join(path)).unwrap(), bytes, "{path}");
     }
@@ -279,8 +278,7 @@ async fn file_write_refuses_an_unrepresentable_char_and_writes_nothing() {
         &slug,
         "cp1252.md",
         "ol\u{e1} \u{2192}",
-        Some("windows-1252"),
-        false,
+        (Some("windows-1252"), false),
     )
     .await;
     assert_eq!(reply["status"], "error", "{reply}");
@@ -292,7 +290,7 @@ async fn file_write_refuses_an_unrepresentable_char_and_writes_nothing() {
         "untouched"
     );
 
-    let reply = write(port, &slug, "cp1252.md", "x", Some("klingon"), false).await;
+    let reply = write(port, &slug, "cp1252.md", "x", (Some("klingon"), false)).await;
     assert_eq!(reply["reason"], "unknown encoding");
     assert_eq!(
         std::fs::read(root.join("cp1252.md")).unwrap(),
@@ -318,8 +316,12 @@ async fn every_read_writes_back_byte_for_byte() {
             &slug,
             path,
             read["content"].as_str().unwrap(),
-            read["encoding"].as_str(),
-            read["bom"].as_bool().unwrap(),
+            (
+                read["encoding"].as_str(),
+                read["bom"]
+                    .as_bool()
+                    .expect("a read reply carries a bom flag"),
+            ),
         )
         .await;
         assert_eq!(reply["status"], "ok", "{path}: {reply}");

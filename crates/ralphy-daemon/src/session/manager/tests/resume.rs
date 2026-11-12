@@ -174,7 +174,15 @@ async fn an_attachment_says_its_offset_and_whether_it_resumed() {
     let offset = writer.offset;
     drop(writer);
     let resumed = manager
-        .attach_as(id, false, None, None, Some(offset))
+        .attach_as(
+            id,
+            false,
+            WriterClaim {
+                holder: None,
+                attempt: None,
+            },
+            Some(offset),
+        )
         .expect("a free slot");
     assert!(resumed.resume);
     assert_eq!(

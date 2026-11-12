@@ -53,11 +53,10 @@ async fn the_desk_follows_a_rename_that_happened_on_a_peer() {
     desk::save_to(&stale, &desk_path).unwrap();
 
     let res = desk_get_route(
-        desk_path,
-        dir.path().join("repos.toml"),
-        cache_with_a_renamed_peer_repo(),
-    )
-    .await;
+        &desk_path,
+        &dir.path().join("repos.toml"),
+        &cache_with_a_renamed_peer_repo(),
+    );
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     let body = String::from_utf8(bytes.to_vec()).unwrap();
     assert!(

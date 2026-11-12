@@ -11,6 +11,10 @@ use ralphy_core::{Outcome, ResetAt};
 /// adapter — trustworthiness of `limit` and `exited_ok` are vendor decisions and
 /// stay in extraction.
 #[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independent signal the ladder weighs, not a state"
+)]
 pub struct CompletionSignals {
     /// The `RALPHY_DONE_EXIT` completion sentinel was seen in the agent output.
     pub done: bool,

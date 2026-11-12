@@ -108,7 +108,7 @@ pub(crate) fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<Str
 }
 
 /// `raw` in `style` when colour is on, else `raw` untouched (no ANSI byte).
-fn paint(raw: String, style: Style, color: bool) -> String {
+fn paint(raw: String, style: &Style, color: bool) -> String {
     if color {
         style.apply_to(&raw).to_string()
     } else {
@@ -143,7 +143,7 @@ fn hitl_line(data: &PanelData, opts: RenderOpts) -> Option<String> {
     }
     let hitl_icon = pick("🙋", "[hitl]", opts.emoji);
     let hitl_raw = format!("{hitl_icon} {} waiting on human", data.hitl);
-    Some(paint(hitl_raw, Style::new().yellow(), opts.color))
+    Some(paint(hitl_raw, &Style::new().yellow(), opts.color))
 }
 
 /// Review debt (#313) — an attribute of DONE issues, so it never touches the
@@ -169,12 +169,12 @@ fn review_debt_line(data: &PanelData, opts: RenderOpts) -> Option<String> {
         "{review_icon} {n} {noun} {verb} your eyes: {numbers} \
          — review-only criteria, delivered but not machine-checked"
     );
-    Some(paint(review_raw, Style::new().cyan(), opts.color))
+    Some(paint(review_raw, &Style::new().cyan(), opts.color))
 }
 
 fn commits_line(data: &PanelData, opts: RenderOpts) -> String {
     let commits_raw = format!("{} commit(s) on '{}'", data.commits, data.branch);
-    paint(commits_raw, Style::new().dim(), opts.color)
+    paint(commits_raw, &Style::new().dim(), opts.color)
 }
 
 /// Stop-reason line (reuses wording from the old main.rs match arms).
@@ -224,7 +224,7 @@ fn stop_line(stop: &PanelStop, opts: RenderOpts) -> String {
             "Stopped: you stopped the run between issues. Branch handed back.".to_owned()
         }
     };
-    paint(stop_raw, Style::new().yellow(), opts.color)
+    paint(stop_raw, &Style::new().yellow(), opts.color)
 }
 
 /// Per-mode/dry-run closing-state line.
@@ -259,7 +259,7 @@ fn closing_line(data: &PanelData, opts: RenderOpts) -> String {
             }
         }
     };
-    paint(closing_raw, Style::new().dim(), opts.color)
+    paint(closing_raw, &Style::new().dim(), opts.color)
 }
 
 /// Undo line: only when the run left commits behind and the pre-run tag
@@ -282,7 +282,7 @@ fn undo_line(data: &PanelData, opts: RenderOpts) -> Option<String> {
         PanelBranchMode::New => format!("git branch -D {}", data.branch),
     };
     let undo_raw = format!("{undo_icon}  undo (pre-run tag '{tag}'): {cmd}");
-    Some(paint(undo_raw, Style::new().dim(), opts.color))
+    Some(paint(undo_raw, &Style::new().dim(), opts.color))
 }
 
 /// Next-step line: New mode only, absent when dry-run + zero commits.
@@ -291,7 +291,7 @@ fn next_step_line(data: &PanelData, opts: RenderOpts) -> Option<String> {
         return None;
     }
     let next_raw = format!("➜  git merge {}", data.branch);
-    Some(paint(next_raw, Style::new().cyan(), opts.color))
+    Some(paint(next_raw, &Style::new().cyan(), opts.color))
 }
 
 /// Token-usage footer (ADR-0008 D11): the run total and the project's
@@ -327,7 +327,7 @@ fn footer_line(data: &PanelData, opts: RenderOpts) -> String {
             opts.emoji
         ),
     );
-    paint(footer_raw, Style::new().dim(), opts.color)
+    paint(footer_raw, &Style::new().dim(), opts.color)
 }
 
 /// Format a footer breakdown meter — `↑X ⚡X ❄X ↓X · $Y` — reusing the inline meter

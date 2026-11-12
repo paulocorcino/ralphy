@@ -29,6 +29,7 @@ fn ctx(dir: &Path) -> CommandCtx {
         daemon_id: Some("here".to_owned()),
         sessions: Arc::new(session::SessionManager::new()),
         secret_ok: true,
+        bound_port: 0,
     }
 }
 

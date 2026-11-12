@@ -76,12 +76,14 @@ async fn fleet(dir: &Path, cache: &PeerRepoCache) -> serde_json::Value {
     let resp = fleet_route(
         dir.join("repos.toml"),
         dir.join("peers"),
-        Some(identity::Identity {
-            id: ulid::Ulid::nil(),
-            name: "anvil".into(),
-            avatar: "🐙".into(),
-        }),
-        "Windows".into(),
+        ThisDaemon {
+            identity: Some(identity::Identity {
+                id: ulid::Ulid::nil(),
+                name: "anvil".into(),
+                avatar: "🐙".into(),
+            }),
+            environment: "Windows".into(),
+        },
         cache.clone(),
         1,
     )

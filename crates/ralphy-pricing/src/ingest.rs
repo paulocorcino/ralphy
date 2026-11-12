@@ -77,7 +77,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn fixture(cost: Value) -> Value {
+    fn fixture(cost: &Value) -> Value {
         json!({
             "anthropic": {
                 "models": {
@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn cache_write_renames_to_cache_creation() {
-        let map = ingest_models_dev(&fixture(json!({
+        let map = ingest_models_dev(&fixture(&json!({
             "input": 15.0,
             "output": 75.0,
             "cache_read": 1.5,
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn null_or_absent_cache_becomes_zero_not_input() {
-        let null_cache = ingest_models_dev(&fixture(json!({
+        let null_cache = ingest_models_dev(&fixture(&json!({
             "input": 15.0,
             "output": 75.0,
             "cache_read": null
@@ -137,7 +137,7 @@ mod tests {
         assert_eq!(price.cache_creation, 0.0);
         assert_ne!(price.cache_read, price.input);
 
-        let absent = ingest_models_dev(&fixture(json!({
+        let absent = ingest_models_dev(&fixture(&json!({
             "input": 15.0,
             "output": 75.0
         })));
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn zero_input_and_output_row_is_dropped() {
-        let map = ingest_models_dev(&fixture(json!({
+        let map = ingest_models_dev(&fixture(&json!({
             "input": 0,
             "output": 0,
             "cache_read": 0,

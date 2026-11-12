@@ -83,17 +83,13 @@ fn kimi_sessions_dir_from(
 /// `before` and `after`, parse its summed usage and fold into one `Usage` (the
 /// model carried from the resolved invocation model). Mirrors Codex's
 /// `fold_rollout_usage`.
-pub(crate) fn fold_wire_usage(
-    before: &[PathBuf],
-    after: &[PathBuf],
-    model: Option<String>,
-) -> Usage {
+pub(crate) fn fold_wire_usage(before: &[PathBuf], after: &[PathBuf], model: Option<&str>) -> Usage {
     let parsed: Vec<Usage> = session_files_appeared(before, after)
         .iter()
         .filter_map(|p| std::fs::read_to_string(p).ok())
-        .map(|t| parse_kimi_wire_usage(&t, model.clone()))
+        .map(|t| parse_kimi_wire_usage(&t, model.map(str::to_owned)))
         .collect();
-    Usage::fold_usage(&parsed, model.as_deref())
+    Usage::fold_usage(&parsed, model)
 }
 
 /// The vendor session identity of a Kimi run (ADR-0033 §5): the `session_id` on

@@ -82,13 +82,21 @@ pub(crate) fn is_limit_text(text: &str) -> bool {
 /// The reset hint is parsed from that error line's own text via
 /// [`parse_reset_hhmm`] (e.g. `"You've hit your session limit · resets 8:10am"`
 /// → `Some("08:10")`).
-pub(crate) fn transcript_limit(jsonl: &str) -> Option<Option<ResetAt>> {
+pub(crate) fn transcript_limit(jsonl: &str) -> Option<TranscriptLimit> {
     // Shares the line-delimited-JSON scan scaffold with OpenCode's limit parser
     // (`scan_json_lines`); the rate-limit *predicate* and reset-hint *format* stay
     // Claude-specific.
     ralphy_adapter_support::scan_json_lines(jsonl, |v| {
-        line_is_rate_limit_error(v).then(|| limit_line_text(v).as_deref().and_then(claude_reset))
+        line_is_rate_limit_error(v).then(|| TranscriptLimit {
+            reset: limit_line_text(v).as_deref().and_then(claude_reset),
+        })
     })
+}
+
+/// A usage limit found in a transcript, with the reset its error line names.
+#[derive(Debug, PartialEq)]
+pub(crate) struct TranscriptLimit {
+    pub(crate) reset: Option<ResetAt>,
 }
 
 /// Whether a parsed transcript line is Claude's own rate-limit error — either an
@@ -259,6 +267,7 @@ mod tests {
         // The instant comes from the clock, so only its presence is asserted.
         let reset = transcript_limit(&t)
             .expect("the transcript holds a limit")
+            .reset
             .expect("the limit text names a reset");
         assert_eq!(reset.text, "08:10");
         assert!(reset.at.is_some(), "the reset names an instant");
@@ -320,7 +329,7 @@ mod tests {
     #[test]
     fn transcript_limit_detects_rejected_rate_limit_event() {
         let t = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected"}}"#;
-        assert_eq!(transcript_limit(t), Some(None));
+        assert_eq!(transcript_limit(t), Some(TranscriptLimit { reset: None }));
     }
 
     #[test]

@@ -189,6 +189,18 @@ async fn registry_verbs_route_by_daemon_and_refuse_before_spawning() {
     )
     .await;
 
+    dir_list_routes_by_daemon(port, &local_disk, &peer_disk).await;
+    a_bad_path_spawns_nothing(port, &local_repo, &argv_file).await;
+    a_valid_path_spawns_daemon_add(port, &local_repo, &local_registry, &argv_file).await;
+    project_add_runs_on_the_peer(port, &peer_repo).await;
+}
+
+/// (a)-(c) `dir.list` answers from the daemon its id names.
+async fn dir_list_routes_by_daemon(
+    port: u16,
+    local_disk: &tempfile::TempDir,
+    peer_disk: &tempfile::TempDir,
+) {
     // (a) `dir.list` with no repo and no daemon: this daemon's disk.
     let reply = ask_one(
         port,
@@ -231,11 +243,18 @@ async fn registry_verbs_route_by_daemon_and_refuse_before_spawning() {
         .await;
         assert_eq!(reply["status"], "error", "{verb}: {reply}");
         assert!(
-            reply["message"].as_str().unwrap().contains(UNKNOWN_ID),
+            reply
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .expect("an error has a message")
+                .contains(UNKNOWN_ID),
             "{verb}: {reply}"
         );
     }
+}
 
+/// (d) A bad path is one error frame, and nothing spawns.
+async fn a_bad_path_spawns_nothing(port: u16, local_repo: &Path, argv_file: &Path) {
     // (d) A bad path: one error frame, and nothing spawns.
     let control = format!("{}\u{7}", local_repo.display());
     for path in [
@@ -257,12 +276,20 @@ async fn registry_verbs_route_by_daemon_and_refuse_before_spawning() {
     };
     let reply = page::post_command(port, &long).await;
     assert_eq!(reply["status"], "error", "a path over the limit: {reply}");
-    assert!(argv_lines(&argv_file).is_empty(), "nothing spawned");
+    assert!(argv_lines(argv_file).is_empty(), "nothing spawned");
+}
 
+/// (e)-(f) A valid path spawns `daemon add`; its refusal is relayed.
+async fn a_valid_path_spawns_daemon_add(
+    port: u16,
+    local_repo: &Path,
+    local_registry: &Path,
+    argv_file: &Path,
+) {
     // (e) A valid path spawns `daemon add`, `--init` only when asked and `--`
     // before the path. The child does not write the registry, so the entry
     // the real CLI would write is seeded first.
-    save_registry(&local_registry, &[("o/alpha", &local_repo)]);
+    save_registry(local_registry, &[("o/alpha", local_repo)]);
     let path = local_repo.to_string_lossy().into_owned();
     let reply = ask_one(
         port,
@@ -276,7 +303,7 @@ async fn registry_verbs_route_by_daemon_and_refuse_before_spawning() {
     let reply = ask_one(port, "project.add", serde_json::json!({ "path": path })).await;
     assert_eq!(reply["status"], "ok", "{reply}");
     assert_eq!(
-        argv_lines(&argv_file),
+        argv_lines(argv_file),
         [
             format!("daemon add --init -- {path}"),
             format!("daemon add -- {path}"),
@@ -291,11 +318,14 @@ async fn registry_verbs_route_by_daemon_and_refuse_before_spawning() {
     assert!(
         reply["message"]
             .as_str()
-            .unwrap()
+            .expect("an error has a message")
             .contains("command_test_child exiting 1"),
         "{reply}"
     );
+}
 
+/// (g) `project.add` with the peer's id runs on the peer.
+async fn project_add_runs_on_the_peer(port: u16, peer_repo: &Path) {
     // (g) `project.add` with the peer's id runs on the peer, against the
     // peer's registry.
     let peer_path = peer_repo.to_string_lossy().into_owned();

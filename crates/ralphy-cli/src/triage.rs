@@ -80,10 +80,11 @@ pub(crate) struct TriageLabels {
     pub promote_marker: String,
 }
 
-/// The model and the effort the operator chose for one triage session
-/// (`None` = the adapter's default).
+/// The agent, the model and the effort the operator chose for one triage
+/// session (`None` = the adapter's default).
 #[derive(Clone, Copy)]
-struct ModelAndEffort<'a> {
+struct AgentChoice<'a> {
+    agent: Agent,
     model: Option<&'a str>,
     effort: Option<&'a str>,
 }
@@ -91,14 +92,17 @@ struct ModelAndEffort<'a> {
 /// Dispatch the triage session to the selected agent's adapter. The charter is
 /// shared ([`ralphy_core::build_triage_prompt`]); only the invocation differs.
 fn triage_with_agent(
-    agent: Agent,
     repo: &Path,
     out_path: &Path,
     req: &TriageRequest,
-    chosen: ModelAndEffort<'_>,
+    chosen: AgentChoice<'_>,
     timeout: Duration,
 ) -> Result<TriageDraft> {
-    let ModelAndEffort { model, effort } = chosen;
+    let AgentChoice {
+        agent,
+        model,
+        effort,
+    } = chosen;
     match agent {
         Agent::Claude => ralphy_agent_claude::triage_issues(
             repo,
@@ -138,8 +142,8 @@ fn select_triage_agent(requested: Option<Agent>) -> Result<Agent> {
     // absent binary is pure wall-clock.
     let logged_in: Vec<Agent> = Agent::ALL
         .into_iter()
-        .filter(|a| crate::doctor::agent_program(a).is_some())
-        .filter(agent_logged_in)
+        .filter(|a| crate::doctor::agent_program(*a).is_some())
+        .filter(|a| agent_logged_in(*a))
         .collect();
     match requested {
         Some(a) if logged_in.contains(&a) => Ok(a),
@@ -362,11 +366,11 @@ pub(crate) fn run(args: &TriageArgs) -> Result<()> {
         image_paths: &attachments.image_paths,
     };
     let mut draft = triage_with_agent(
-        agent,
         &repo,
         &out_path,
         &req,
-        ModelAndEffort {
+        AgentChoice {
+            agent,
             model: args.model.as_deref(),
             effort: Some(&args.effort),
         },

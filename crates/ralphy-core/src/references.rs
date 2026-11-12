@@ -16,6 +16,8 @@
 //! are not followed; their comment threads are not downloaded (open the URL on
 //! demand).
 
+use std::fmt::Write as _;
+
 /// One referenced issue, fetched from source: its number, lifecycle state
 /// (`OPEN`/`CLOSED`, verbatim from `gh`), title, body, and the issue URL. The
 /// `url` is the handle the planner follows to pull what this file deliberately
@@ -48,14 +50,16 @@ pub fn render_references_file(refs: &[Reference]) -> Option<String> {
          `gh issue view <n>`.\n",
     );
     for r in refs {
-        out.push_str(&format!(
-            "\n---\n\n## #{} ({}) — {}\n{}\n\n{}\n",
+        writeln!(
+            out,
+            "\n---\n\n## #{} ({}) — {}\n{}\n\n{}",
             r.number,
             r.state,
             r.title.trim(),
             r.url.trim(),
             r.body.trim(),
-        ));
+        )
+        .expect(crate::WRITE_TO_STRING);
     }
     Some(out)
 }

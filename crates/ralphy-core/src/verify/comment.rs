@@ -3,6 +3,7 @@
 //! repair brief the executor is handed.
 
 use super::{CommandOutcome, VerifyReport};
+use std::fmt::Write as _;
 
 /// One command's status line in an honesty artifact: a ✓/✗ marker, the argv, and
 /// why it failed. A spawn failure ("could not spawn — program not found") reads
@@ -118,7 +119,8 @@ pub fn spawn_failure_comment(stamp: &str, report: &VerifyReport) -> String {
 /// (ADR-0002) so the brief speaks the agent's own protocol.
 pub fn repair_brief(stamp: &str, report: &VerifyReport, done_signal: &str) -> String {
     let mut out = format!("# Verify gate failed — repair required (Ralphy run {stamp})\n\n");
-    out.push_str(&format!(
+    writeln!(
+        out,
         "A previous session emitted `{done_signal}`, but the runner re-ran the \
          plan's `## Verify` commands over your committed work and the gate did NOT \
          pass. The repo is handed back to you to REPAIR.\n\n\
@@ -126,8 +128,9 @@ pub fn repair_brief(stamp: &str, report: &VerifyReport, done_signal: &str) -> St
          `{done_signal}` again so the runner re-checks the gate. Do NOT make the \
          gate pass by weakening, deleting, or skipping a verify command or by \
          editing the plan's `## Verify` section — the runner re-runs the SAME \
-         commands and the gate is the authority.\n\n",
-    ));
+         commands and the gate is the authority.\n",
+    )
+    .expect(crate::WRITE_TO_STRING);
 
     out.push_str("Gate commands (✗ marks where it failed):\n\n```\n");
     for cmd in &report.commands {

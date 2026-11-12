@@ -161,6 +161,7 @@ impl Ctx {
             daemon_id: self.daemon_id.clone(),
             sessions: self.host.sessions.clone(),
             secret_ok: self.secret_ok,
+            bound_port: self.host.bound_port,
         }
     }
 }
@@ -312,15 +313,18 @@ impl Drop for Channel {
 pub(crate) fn open(kind: ChannelKind, opening: Opening, ctx: &Ctx) -> Result<Channel, CloseReason> {
     match kind {
         ChannelKind::Console => console::open(opening, ctx.host.clone(), ctx.who.clone()),
-        ChannelKind::Tree => tree::open(opening, ctx.tree_host(), ctx.run_exits.clone()),
-        ChannelKind::Runs => tree::open_runs(opening, ctx.tree_host(), ctx.run_exits.clone()),
-        ChannelKind::Changes => changes::open(opening, ctx.run_exits.subscribe()),
+        ChannelKind::Tree => Ok(tree::open(opening, ctx.tree_host(), ctx.run_exits.clone())),
+        ChannelKind::Runs => Ok(tree::open_runs(
+            opening,
+            ctx.tree_host(),
+            ctx.run_exits.clone(),
+        )),
+        ChannelKind::Changes => Ok(changes::open(opening, ctx.run_exits.subscribe())),
         ChannelKind::Spawn => spawn::open(
             opening,
             ctx.command_ctx(),
             ctx.who.clone(),
             ctx.run_exits.clone(),
-            ctx.host.bound_port,
         ),
     }
 }

@@ -57,7 +57,9 @@ async fn get(store: &Path, uri: &str, bearer: Option<&str>) -> (u16, String) {
     let path = socket::socket_path(store);
     let mut request = format!("GET {uri} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n");
     if let Some(token) = bearer {
-        request.push_str(&format!("Authorization: Bearer {token}\r\n"));
+        request.push_str("Authorization: Bearer ");
+        request.push_str(token);
+        request.push_str("\r\n");
     }
     request.push_str("\r\n");
     let response = tokio::task::spawn_blocking(move || {

@@ -8,7 +8,7 @@
 
 use tokio::sync::{broadcast, mpsc};
 
-use super::{Channel, CloseReason, Opening};
+use super::{Channel, Opening};
 use crate::mux::ChannelSender;
 use crate::routes::{TreeConn, TreeHost};
 
@@ -17,8 +17,8 @@ pub(super) fn open(
     opening: Opening,
     host: TreeHost,
     _run_exits: broadcast::Sender<String>,
-) -> Result<Channel, CloseReason> {
-    Ok(serve_channel(opening, host))
+) -> Channel {
+    serve_channel(opening, host)
 }
 
 /// Serve a `runs` channel.
@@ -26,8 +26,8 @@ pub(super) fn open_runs(
     opening: Opening,
     host: TreeHost,
     _run_exits: broadcast::Sender<String>,
-) -> Result<Channel, CloseReason> {
-    Ok(serve_channel(opening, host))
+) -> Channel {
+    serve_channel(opening, host)
 }
 
 fn serve_channel(opening: Opening, host: TreeHost) -> Channel {

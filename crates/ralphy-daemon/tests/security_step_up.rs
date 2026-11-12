@@ -139,18 +139,29 @@ async fn posture_downgrades_cost_a_fresh_factor_once_one_is_armed() {
     std::env::set_var("RALPHY_DAEMON_DIR", dir.path());
     let state = AuthState::localhost();
 
+    nothing_armed_every_downgrade_is_free(&state, &dir).await;
+    a_password_change_costs_the_current_one(&state, &dir).await;
+    an_armed_seed_costs_a_fresh_code(&state, &dir).await;
+    lowering_the_gate_costs_the_next_code(&state, &dir).await;
+    failures_lock_the_step_up_out(&state, &dir).await;
+
+    std::env::remove_var("RALPHY_DAEMON_DIR");
+}
+
+/// With nothing armed, every downgrade is free.
+async fn nothing_armed_every_downgrade_is_free(state: &Arc<AuthState>, dir: &tempfile::TempDir) {
     // ── nothing armed: every downgrade is free (bootstrap) ────────────────
-    let resp = app(&state)
+    let resp = app(state)
         .oneshot(post_form("/api/security/token/remint", String::new()))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK, "remint with no seed is free");
-    let resp = app(&state)
+    let resp = app(state)
         .oneshot(post_form("/api/security/totp/revoke", String::new()))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK, "revoke with no seed is free");
-    let resp = app(&state)
+    let resp = app(state)
         .oneshot(post_form("/api/security/password", "password=first".into()))
         .await
         .unwrap();
@@ -159,11 +170,14 @@ async fn posture_downgrades_cost_a_fresh_factor_once_one_is_armed() {
         password_record(dir.path()).is_some(),
         "a record was written"
     );
+}
 
+/// With a password enrolled, a change or a clear costs the current one.
+async fn a_password_change_costs_the_current_one(state: &Arc<AuthState>, dir: &tempfile::TempDir) {
     // ── password enrolled: changing or clearing costs the current one ─────
     enrol_cheap_password(dir.path(), "first");
     let enrolled = password_record(dir.path());
-    let resp = app(&state)
+    let resp = app(state)
         .oneshot(post_form(
             "/api/security/password",
             "password=second".into(),
@@ -176,7 +190,7 @@ async fn posture_downgrades_cost_a_fresh_factor_once_one_is_armed() {
         "change without `current` is refused"
     );
     assert_eq!(password_record(dir.path()), enrolled, "the old hash stands");
-    let resp = app(&state)
+    let resp = app(state)
         .oneshot(post_form(
             "/api/security/password",
             "password=second&current=wrong".into(),
@@ -187,7 +201,7 @@ async fn posture_downgrades_cost_a_fresh_factor_once_one_is_armed() {
     assert_eq!(password_record(dir.path()), enrolled);
     // A body with NO password field is the clear-by-omission the audit found:
     // it is a 400 now, and the factor survives it.
-    let resp = app(&state)
+    let resp = app(state)
         .oneshot(post_form("/api/security/password", "current=first".into()))
         .await
         .unwrap();
@@ -197,7 +211,7 @@ async fn posture_downgrades_cost_a_fresh_factor_once_one_is_armed() {
         "absent field is not a clear"
     );
     assert_eq!(password_record(dir.path()), enrolled);
-    let resp = app(&state)
+    let resp = app(state)
         .oneshot(post_form(
             "/api/security/password",
             "password=second&current=first".into(),
@@ -210,7 +224,7 @@ async fn posture_downgrades_cost_a_fresh_factor_once_one_is_armed() {
     // Cheap again for the clear's verify — same password, low count.
     enrol_cheap_password(dir.path(), "second");
     // An EMPTY password with the current one is the explicit clear.
-    let resp = app(&state)
+    let resp = app(state)
         .oneshot(post_form(
             "/api/security/password",
             "password=&current=second".into(),
@@ -223,7 +237,10 @@ async fn posture_downgrades_cost_a_fresh_factor_once_one_is_armed() {
         "explicit clear with the current password"
     );
     assert_eq!(password_record(dir.path()), None, "the record is gone");
+}
 
+/// With a seed armed, remint and revoke cost a fresh code, used once.
+async fn an_armed_seed_costs_a_fresh_code(state: &Arc<AuthState>, dir: &tempfile::TempDir) {
     // ── seed armed: remint / require-login off / revoke cost a code ───────
     // The require-login flag stays OFF on disk until the disable case: every
     // successful mutation rebuilds the live policy from disk (amendment §A),
@@ -231,7 +248,7 @@ async fn posture_downgrades_cost_a_fresh_factor_once_one_is_armed() {
     // requests would hit — the guard, not the step-up under test.
     arm_seed(dir.path());
 
-    let resp = app(&state)
+    let resp = app(state)
         .oneshot(post_form("/api/security/token/remint", String::new()))
         .await
         .unwrap();
@@ -240,7 +257,7 @@ async fn posture_downgrades_cost_a_fresh_factor_once_one_is_armed() {
         StatusCode::UNAUTHORIZED,
         "remint without a code"
     );
-    let resp = app(&state)
+    let resp = app(state)
         .oneshot(post_form(
             "/api/security/token/remint",
             "code=000000".into(),
@@ -252,7 +269,7 @@ async fn posture_downgrades_cost_a_fresh_factor_once_one_is_armed() {
         StatusCode::UNAUTHORIZED,
         "remint with a wrong code"
     );
-    let resp = app(&state)
+    let resp = app(state)
         .oneshot(post_form("/api/security/totp/revoke", String::new()))
         .await
         .unwrap();
@@ -265,7 +282,7 @@ async fn posture_downgrades_cost_a_fresh_factor_once_one_is_armed() {
 
     // A fresh code passes, and the SAME code is a replay right after.
     let fresh = code(0);
-    let resp = app(&state)
+    let resp = app(state)
         .oneshot(post_form(
             "/api/security/token/remint",
             format!("code={fresh}"),
@@ -278,7 +295,7 @@ async fn posture_downgrades_cost_a_fresh_factor_once_one_is_armed() {
         "remint with the current code"
     );
     assert!(body_string(resp).await.contains("\"reminted\":true"));
-    let resp = app(&state)
+    let resp = app(state)
         .oneshot(post_form(
             "/api/security/totp/revoke",
             format!("code={fresh}"),
@@ -291,13 +308,16 @@ async fn posture_downgrades_cost_a_fresh_factor_once_one_is_armed() {
         "a consumed step is a replay (amendment §D), on step-up as on login"
     );
     assert!(seed_armed(dir.path()), "the seed survives the replay");
+}
 
+/// Turning require-login off costs a code newer than the last one.
+async fn lowering_the_gate_costs_the_next_code(state: &Arc<AuthState>, dir: &tempfile::TempDir) {
     // Lowering the gate: the flag goes on (disk only — no rebuild happened, the
     // live policy is still open), a code-less disable leaves it on, and the
     // NEXT step lifts it — the anti-replay is strictly-newer, not
     // one-per-window.
-    ralphy_daemon::auth::set_require_login_in(dir.path(), true).unwrap();
-    let resp = app(&state)
+    ralphy_daemon::auth::set_require_login_in(dir.path(), true).expect("turn require-login on");
+    let resp = app(state)
         .oneshot(post_form(
             "/api/security/require-login",
             "enable=false".into(),
@@ -314,7 +334,7 @@ async fn posture_downgrades_cost_a_fresh_factor_once_one_is_armed() {
         "the gate stays on"
     );
     let next = code(1);
-    let resp = app(&state)
+    let resp = app(state)
         .oneshot(post_form(
             "/api/security/require-login",
             format!("enable=false&code={next}"),
@@ -323,19 +343,22 @@ async fn posture_downgrades_cost_a_fresh_factor_once_one_is_armed() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK, "disable with a fresh code");
     assert!(!ralphy_daemon::auth::require_login_enabled_in(dir.path()));
+}
 
+/// Five failed codes lock the step-up out; turning the gate on stays free.
+async fn failures_lock_the_step_up_out(state: &Arc<AuthState>, dir: &tempfile::TempDir) {
     // ── the throttle: a stolen session cannot brute-force the six digits ──
     // A success resets the counter (the disable above did), so five fresh
     // failures reach the threshold and the next attempt — even with a valid
     // code — is 429 with Retry-After.
     for _ in 0..5 {
-        let resp = app(&state)
+        let resp = app(state)
             .oneshot(post_form("/api/security/totp/revoke", "code=000000".into()))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
-    let resp = app(&state)
+    let resp = app(state)
         .oneshot(post_form(
             "/api/security/totp/revoke",
             format!("code={}", code(2)),
@@ -352,7 +375,7 @@ async fn posture_downgrades_cost_a_fresh_factor_once_one_is_armed() {
     // Turning the gate ON never costs a code — not a downgrade, and it is how
     // the operator bootstraps — so the lockout does not touch it either. Last,
     // because it flips the live policy to `Session`.
-    let resp = app(&state)
+    let resp = app(state)
         .oneshot(post_form(
             "/api/security/require-login",
             "enable=true".into(),
@@ -361,6 +384,4 @@ async fn posture_downgrades_cost_a_fresh_factor_once_one_is_armed() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK, "enable stays free");
     assert!(ralphy_daemon::auth::require_login_enabled_in(dir.path()));
-
-    std::env::remove_var("RALPHY_DAEMON_DIR");
 }

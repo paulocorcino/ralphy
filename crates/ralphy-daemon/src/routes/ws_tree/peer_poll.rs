@@ -296,14 +296,21 @@ async fn poll_until_set_moves(
     }
 }
 
+/// The repo a peer poller watches: the reference the browser names it by, and
+/// the slug the peer knows it by.
+pub(crate) struct PolledRepo {
+    pub(crate) repo_ref: String,
+    pub(crate) slug: String,
+}
+
 pub(crate) fn spawn_peer_tree_poller(
     peer: peer::PeerDescriptor,
-    repo_ref: String,
-    slug: String,
+    repo: PolledRepo,
     sub: String,
     set: PeerWatchSet,
     nudge_tx: tokio::sync::mpsc::UnboundedSender<(String, String)>,
 ) -> tokio::task::JoinHandle<()> {
+    let PolledRepo { repo_ref, slug } = repo;
     tokio::spawn(async move {
         // Counted so a peer that is simply down is reported ONCE rather than
         // every three seconds for as long as the workbench stays open.
@@ -321,9 +328,10 @@ pub(crate) fn spawn_peer_tree_poller(
                 pause(PollCycle::Restarted).await;
                 continue;
             };
-            let PollReply { cycle, dirty } = read_poll_reply(answer, &repo_ref, failures);
+            let reply = read_poll_reply(answer, &repo_ref, failures);
+            let cycle = reply.cycle;
             failures = next_failures(failures, cycle);
-            if !deliver(&nudge_tx, &repo_ref, dirty, cycle, &mut catch_up, &set) {
+            if !deliver(&nudge_tx, &repo_ref, reply, &mut catch_up, &set) {
                 return;
             }
             tracing::debug!(
@@ -352,11 +360,11 @@ fn next_failures(failures: u32, cycle: PollCycle) -> u32 {
 fn deliver(
     nudge_tx: &tokio::sync::mpsc::UnboundedSender<(String, String)>,
     repo_ref: &str,
-    dirty: Vec<String>,
-    cycle: PollCycle,
+    reply: PollReply,
     catch_up: &mut CatchUp,
     set: &PeerWatchSet,
 ) -> bool {
+    let PollReply { cycle, dirty } = reply;
     if !send_nudges(nudge_tx, repo_ref, dirty) {
         return false;
     }

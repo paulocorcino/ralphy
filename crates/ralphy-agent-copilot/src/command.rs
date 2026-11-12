@@ -71,12 +71,18 @@ pub(crate) fn mint_session_id() -> String {
 /// `git -C . push`; `gh pr view` and `git status` keep running. CLI 1.0.75
 /// honours the `git push` rule and ignores every `gh pr` rule.
 ///
+/// The model and effort a run asks for; `None` leaves the vendor's default.
+#[derive(Clone, Copy)]
+pub(crate) struct ModelChoice<'a> {
+    pub(crate) model: Option<&'a str>,
+    pub(crate) effort: Option<&'a str>,
+}
+
 /// `images` (D12): one `--attachment <path>` per entry, valid only in
 /// non-interactive mode (which is Ralphy's mode); an empty slice emits nothing.
 pub(crate) fn build_copilot_command(
     session_id: &str,
-    model: Option<&str>,
-    effort: Option<&str>,
+    choice: ModelChoice<'_>,
     work_dir: &Path,
     allow_builtin_mcps: bool,
     images: &[PathBuf],
@@ -98,10 +104,10 @@ pub(crate) fn build_copilot_command(
     for words in DENIED_FORGE_WRITES {
         cmd.arg(format!("--deny-tool=shell({}:*)", words.join(" ")));
     }
-    if let Some(m) = model {
+    if let Some(m) = choice.model {
         cmd.arg("--model").arg(m);
     }
-    if let Some(e) = effort {
+    if let Some(e) = choice.effort {
         cmd.arg("--effort").arg(e);
     }
     for p in images {
@@ -145,7 +151,16 @@ pub(crate) fn build_copilot_init_command(
     cwd: &Path,
     images: &[PathBuf],
 ) -> Command {
-    build_copilot_command(&mint_session_id(), model, None, cwd, false, images)
+    build_copilot_command(
+        &mint_session_id(),
+        ModelChoice {
+            model,
+            effort: None,
+        },
+        cwd,
+        false,
+        images,
+    )
 }
 
 #[cfg(test)]
@@ -171,7 +186,16 @@ mod tests {
     #[test]
     fn defaults_are_unchanged_from_229() {
         let id = mint_session_id();
-        let cmd = build_copilot_command(&id, None, None, Path::new("/repo"), false, &[]);
+        let cmd = build_copilot_command(
+            &id,
+            ModelChoice {
+                model: None,
+                effort: None,
+            },
+            Path::new("/repo"),
+            false,
+            &[],
+        );
         assert_eq!(stem(&cmd), "copilot");
 
         let args = argv(&cmd);
@@ -228,7 +252,16 @@ mod tests {
     /// the prefix form the CLI matches, and denies nothing else.
     #[test]
     fn every_session_denies_the_forge_writes() {
-        let run = build_copilot_command("id", None, None, Path::new("/repo"), true, &[]);
+        let run = build_copilot_command(
+            "id",
+            ModelChoice {
+                model: None,
+                effort: None,
+            },
+            Path::new("/repo"),
+            true,
+            &[],
+        );
         let one_shot = build_copilot_init_command(None, Path::new("/repo"), &[]);
         for cmd in [run, one_shot] {
             let denies: Vec<String> = argv(&cmd)
@@ -249,8 +282,10 @@ mod tests {
     fn build_command_passes_model_when_some() {
         let cmd = build_copilot_command(
             "s1",
-            Some("claude-sonnet-5"),
-            None,
+            ModelChoice {
+                model: Some("claude-sonnet-5"),
+                effort: None,
+            },
             Path::new("/repo"),
             false,
             &[],
@@ -272,8 +307,10 @@ mod tests {
     fn build_command_passes_effort_when_some() {
         let cmd = build_copilot_command(
             "s1",
-            Some("gpt-5-mini"),
-            Some("high"),
+            ModelChoice {
+                model: Some("gpt-5-mini"),
+                effort: Some("high"),
+            },
             Path::new("/repo"),
             false,
             &[],
@@ -291,7 +328,16 @@ mod tests {
     /// flags are not negotiable.
     #[test]
     fn escape_hatch_drops_disable_builtin_mcps_from_argv() {
-        let cmd = build_copilot_command("s1", None, None, Path::new("/repo"), true, &[]);
+        let cmd = build_copilot_command(
+            "s1",
+            ModelChoice {
+                model: None,
+                effort: None,
+            },
+            Path::new("/repo"),
+            true,
+            &[],
+        );
         let args = argv(&cmd);
         assert!(
             !args.iter().any(|a| a == "--disable-builtin-mcps"),
@@ -315,28 +361,34 @@ mod tests {
     #[test]
     fn build_command_attaches_each_image() {
         let images = [PathBuf::from("/t/a.png"), PathBuf::from("/t/b.png")];
-        let cmd = build_copilot_command("s1", None, None, Path::new("/repo"), false, &images);
-        let args = argv(&cmd);
-        assert_eq!(
-            args.iter().filter(|a| *a == "--attachment").count(),
-            2,
-            "argv: {args:?}"
+        let cmd = build_copilot_command(
+            "s1",
+            ModelChoice {
+                model: None,
+                effort: None,
+            },
+            Path::new("/repo"),
+            false,
+            &images,
         );
-        let positions: Vec<usize> = args
-            .iter()
-            .enumerate()
-            .filter(|(_, a)| *a == "--attachment")
-            .map(|(i, _)| i)
-            .collect();
-        assert_eq!(args[positions[0] + 1], "/t/a.png", "argv: {args:?}");
-        assert_eq!(args[positions[1] + 1], "/t/b.png", "argv: {args:?}");
+        let args = argv(&cmd);
+        assert_attaches_both_images(&args);
         assert!(args.iter().any(|a| a == "--no-ask-user"), "argv: {args:?}");
     }
 
     /// D12: an empty slice emits no `--attachment` at all.
     #[test]
     fn build_command_no_images_emits_no_attachment_flag() {
-        let cmd = build_copilot_command("s1", None, None, Path::new("/repo"), false, &[]);
+        let cmd = build_copilot_command(
+            "s1",
+            ModelChoice {
+                model: None,
+                effort: None,
+            },
+            Path::new("/repo"),
+            false,
+            &[],
+        );
         let args = argv(&cmd);
         assert!(!args.iter().any(|a| a == "--attachment"), "argv: {args:?}");
     }
@@ -378,25 +430,29 @@ mod tests {
         assert!(!args.iter().any(|a| a == "--effort"), "argv: {args:?}");
     }
 
+    /// Each of the two test images rides its own `--attachment`, in order.
+    fn assert_attaches_both_images(args: &[String]) {
+        assert_eq!(
+            args.iter().filter(|a| *a == "--attachment").count(),
+            2,
+            "argv: {args:?}"
+        );
+        let attached: Vec<&str> = args
+            .iter()
+            .zip(args.iter().skip(1))
+            .filter(|(flag, _)| *flag == "--attachment")
+            .map(|(_, path)| path.as_str())
+            .collect();
+        assert_eq!(attached, ["/t/a.png", "/t/b.png"], "argv: {args:?}");
+    }
+
     /// D12: the one-shot builder forwards images just like the run builder.
     #[test]
     fn init_command_attaches_each_image() {
         let images = [PathBuf::from("/t/a.png"), PathBuf::from("/t/b.png")];
         let cmd = build_copilot_init_command(None, Path::new("/repo"), &images);
         let args = argv(&cmd);
-        assert_eq!(
-            args.iter().filter(|a| *a == "--attachment").count(),
-            2,
-            "argv: {args:?}"
-        );
-        let positions: Vec<usize> = args
-            .iter()
-            .enumerate()
-            .filter(|(_, a)| *a == "--attachment")
-            .map(|(i, _)| i)
-            .collect();
-        assert_eq!(args[positions[0] + 1], "/t/a.png", "argv: {args:?}");
-        assert_eq!(args[positions[1] + 1], "/t/b.png", "argv: {args:?}");
+        assert_attaches_both_images(&args);
     }
 
     /// ADR-0040 C1: the binary is resolved through `resolve_program`, which honours

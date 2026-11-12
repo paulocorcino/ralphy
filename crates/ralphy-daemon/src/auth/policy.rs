@@ -244,31 +244,39 @@ pub struct Requirements {
 /// with `require_token` and no token.
 pub fn compute_policy(
     bind_ip: IpAddr,
-    token: Option<String>,
-    seed: Option<totp::Seed>,
-    password: Option<password::Hash>,
+    credentials: Credentials,
     require: Requirements,
     epoch: epoch::SessionEpoch,
 ) -> Result<AuthPolicy> {
-    compute_policy_with(
-        bind_ip,
-        token,
-        seed,
-        password,
-        require,
-        Shared::with_epoch(epoch),
-    )
+    compute_policy_with(bind_ip, credentials, require, Shared::with_epoch(epoch))
+}
+
+/// The credentials a policy is computed from, each as the store holds it:
+/// the access token, the TOTP seed and the password hash.
+pub struct Credentials {
+    pub token: Option<String>,
+    pub totp: Option<totp::Seed>,
+    pub password: Option<password::Hash>,
+}
+
+impl std::fmt::Debug for Credentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Credentials").finish_non_exhaustive()
+    }
 }
 
 /// [`compute_policy`], with what a `Session` policy shares.
 pub(super) fn compute_policy_with(
     bind_ip: IpAddr,
-    token: Option<String>,
-    seed: Option<totp::Seed>,
-    password: Option<password::Hash>,
+    credentials: Credentials,
     require: Requirements,
     shared: Shared,
 ) -> Result<AuthPolicy> {
+    let Credentials {
+        token,
+        totp: seed,
+        password,
+    } = credentials;
     match AuthPolicy::for_bind(bind_ip, token.clone())? {
         AuthPolicy::Localhost if require.token => match token.filter(|t| !t.is_empty()) {
             Some(key) => Ok(upgrade_with(

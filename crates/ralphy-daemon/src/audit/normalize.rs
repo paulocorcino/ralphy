@@ -102,6 +102,10 @@ pub(crate) struct Field<T> {
     pub source: Source,
 }
 
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "every reader returns an `Option<Field>`, and this names the case that found one"
+)]
 fn field<T>(value: T, source: Source) -> Option<Field<T>> {
     Some(Field { value, source })
 }
@@ -293,15 +297,18 @@ fn shown_screen(
 /// reads. `other` when only a fact outside these fields changed (cores,
 /// memory, touch points, languages).
 pub(crate) fn changed_fields(prev: &Normalized, next: &Normalized) -> Vec<&'static str> {
-    fn same<T: PartialEq>(a: &Option<Field<T>>, b: &Option<Field<T>>) -> bool {
-        a.as_ref().map(|f| &f.value) == b.as_ref().map(|f| &f.value)
+    fn same<T: PartialEq>(a: Option<&Field<T>>, b: Option<&Field<T>>) -> bool {
+        a.map(|f| &f.value) == b.map(|f| &f.value)
     }
     let mut changed = Vec::new();
     for (name, differs) in [
-        ("os", !same(&prev.os, &next.os)),
-        ("browser", !same(&prev.browser, &next.browser)),
-        ("engine", !same(&prev.engine, &next.engine)),
-        ("form", !same(&prev.form, &next.form)),
+        ("os", !same(prev.os.as_ref(), next.os.as_ref())),
+        (
+            "browser",
+            !same(prev.browser.as_ref(), next.browser.as_ref()),
+        ),
+        ("engine", !same(prev.engine.as_ref(), next.engine.as_ref())),
+        ("form", !same(prev.form.as_ref(), next.form.as_ref())),
         ("gpu", prev.gpu != next.gpu),
         ("screen", prev.screen != next.screen),
         ("time_zone", prev.time_zone != next.time_zone),
@@ -322,10 +329,7 @@ fn profile(parts: &[&str]) -> String {
         hash.update(p.as_bytes());
         hash.update([0u8]);
     }
-    hash.finalize()[..16]
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    crate::lower_hex(hash.finalize().iter().take(16))
 }
 
 #[cfg(test)]

@@ -122,7 +122,7 @@ pub(crate) fn set_cookie_value(value: &str, secure: bool) -> String {
 }
 
 fn to_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    crate::lower_hex(bytes)
 }
 
 fn from_hex(text: &str) -> Option<Vec<u8>> {

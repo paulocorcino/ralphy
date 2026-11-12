@@ -34,6 +34,10 @@ pub struct CopilotSettings {
     pub allow_builtin_mcp_servers_i_understand_the_risk: bool,
 }
 
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if calls it with a reference to the field"
+)]
 fn is_false(b: &bool) -> bool {
     !*b
 }

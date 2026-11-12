@@ -11,6 +11,7 @@
 mod rules;
 
 use std::collections::{BTreeMap, HashSet};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -270,7 +271,8 @@ fn to_markdown(findings: &[Finding]) -> String {
             Some(l) => format!("`{}:{l}`", f.path),
             None => format!("`{}`", f.path),
         };
-        out.push_str(&format!("| {} | {place} | {} |\n", f.cap.label(), f.detail));
+        writeln!(out, "| {} | {place} | {} |", f.cap.label(), f.detail)
+            .expect(crate::WRITE_TO_STRING);
     }
     out
 }

@@ -202,12 +202,15 @@ fn try_again_phrase(msg: &str, lower: &str) -> Option<String> {
     None
 }
 
+/// A usage limit `OpenCode` reported, with the reset hint when one was found.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct OpencodeLimit {
+    pub(crate) reset: Option<String>,
+}
+
 // Scan the line-delimited JSON event stream for a usage-limit signal (ADR-0005 D9).
 ///
-/// Returns:
-/// - `Some(Some(hint))` — a limit event was seen and carries a reset hint.
-/// - `Some(None)` — a limit event was seen but no reset hint was found.
-/// - `None` — no limit event was seen.
+/// Returns `None` when no limit event was seen.
 ///
 /// Detects three documented shapes:
 /// 1. `name:"APIError"` + `statusCode:429` (the SDK's rate-limit error).
@@ -215,7 +218,7 @@ fn try_again_phrase(msg: &str, lower: &str) -> Option<String> {
 ///    (`retry.ts`): "`rate_limit_error`", "rate limit exceeded", "too many requests",
 ///    "quota exceeded".
 /// 3. Zen provider `*UsageLimitError` name suffix.
-pub(crate) fn parse_opencode_limit(stdout: &str) -> Option<Option<String>> {
+pub(crate) fn parse_opencode_limit(stdout: &str) -> Option<OpencodeLimit> {
     // Shares the line-delimited-JSON scan scaffold with the Claude adapter's
     // transcript limit scan (`scan_json_lines`); the error-shape decoding and the
     // limit predicate below stay OpenCode-specific.
@@ -246,7 +249,9 @@ pub(crate) fn parse_opencode_limit(stdout: &str) -> Option<Option<String>> {
             || name.ends_with("UsageLimitError")
             || usage_limit_regex().is_match(&msg);
 
-        is_limit.then(|| parse_opencode_reset_hint(detail))
+        is_limit.then(|| OpencodeLimit {
+            reset: parse_opencode_reset_hint(detail),
+        })
     })
 }
 
@@ -258,14 +263,15 @@ pub(crate) fn parse_opencode_limit(stdout: &str) -> Option<Option<String>> {
 /// reached` as a retryable stream error and loops on backoff, logging it only here
 /// (observed live 2026-07-11, `FinCal` #71, glm-5.2). Uses the same model-agnostic
 /// [`usage_limit_regex`] as the JSON path so a new provider's wording is caught
-/// without a per-model change. Same contract as [`parse_opencode_limit`]:
-/// `Some(Some(hint))` when a limit is seen with a reset hint, `Some(None)` when
-/// seen without one, `None` otherwise (ADR-0005 D9).
-pub(crate) fn parse_opencode_log_limit(log: &str) -> Option<Option<String>> {
+/// without a per-model change. Same contract as [`parse_opencode_limit`]
+/// (ADR-0005 D9).
+pub(crate) fn parse_opencode_log_limit(log: &str) -> Option<OpencodeLimit> {
     let re = usage_limit_regex();
     log.lines()
         .find(|line| re.is_match(line))
-        .map(parse_reset_hint_from_text)
+        .map(|line| OpencodeLimit {
+            reset: parse_reset_hint_from_text(line),
+        })
 }
 
 /// Best-effort reset-time extraction from a raw log line (the logfmt path, where

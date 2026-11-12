@@ -26,6 +26,52 @@ use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
 
+/// Send one `run` command on a fresh command socket: the output it streams
+/// and its `exited` frame, if one came.
+async fn run_once(
+    port: u16,
+    id: u64,
+    payload: serde_json::Value,
+) -> (String, Option<serde_json::Value>) {
+    let mut ws = page::command(port).await;
+    ws.send(Message::Binary(
+        protocol::encode(&Frame::Command(Command {
+            id,
+            verb: "run".to_owned(),
+            payload,
+        }))
+        .into(),
+    ))
+    .await
+    .expect("send the run command");
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let mut output = String::new();
+        while let Some(msg) = ws.next().await {
+            let Message::Binary(bytes) = msg.expect("read the next frame") else {
+                continue;
+            };
+            let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) else {
+                continue;
+            };
+            match cmd.payload.get("status").and_then(|s| s.as_str()) {
+                Some("output") => {
+                    output.push_str(
+                        cmd.payload
+                            .get("chunk")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default(),
+                    );
+                }
+                Some("exited") => return (output, Some(cmd.payload)),
+                _ => {}
+            }
+        }
+        (output, None)
+    })
+    .await
+    .expect("the run's output + exit must arrive within 10s")
+}
+
 #[tokio::test]
 async fn run_command_argv_reaches_the_child() {
     let dir = tempfile::tempdir().unwrap();
@@ -58,49 +104,13 @@ async fn run_command_argv_reaches_the_child() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    let mut ws = page::command(port).await;
-
     // The modal's chosen params ride the payload; the daemon composes the argv.
-    ws.send(Message::Binary(
-        protocol::encode(&Frame::Command(Command {
-            id: 1,
-            verb: "run".to_owned(),
-            payload: serde_json::json!({ "repo": slug, "agent": "claude", "branchMode": "new" }),
-        }))
-        .into(),
-    ))
-    .await
-    .unwrap();
-
-    let (output, exited) = tokio::time::timeout(Duration::from_secs(10), async {
-        let mut exited: Option<serde_json::Value> = None;
-        let mut output = String::new();
-        while let Some(msg) = ws.next().await {
-            let bytes = match msg.unwrap() {
-                Message::Binary(b) => b,
-                Message::Close(_)
-                | Message::Text(_)
-                | Message::Ping(_)
-                | Message::Pong(_)
-                | Message::Frame(_) => continue,
-            };
-            if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
-                match cmd.payload.get("status").and_then(|s| s.as_str()) {
-                    Some("output") => {
-                        output.push_str(cmd.payload["chunk"].as_str().unwrap_or_default());
-                    }
-                    Some("exited") => {
-                        exited = Some(cmd.payload);
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-        }
-        (output, exited)
-    })
-    .await
-    .expect("output + exit must arrive within 10s");
+    let (output, exited) = run_once(
+        port,
+        1,
+        serde_json::json!({ "repo": slug, "agent": "claude", "branchMode": "new" }),
+    )
+    .await;
 
     // The composed flags reached the child (echoed by `command_test_child`).
     assert!(
@@ -125,52 +135,17 @@ async fn run_command_argv_reaches_the_child() {
     // nothing. Only a real child echoing its argv proves the vendor survived the
     // whole path — `spawn_argv`'s unit test alone cannot, since the enum it is
     // exhaustive over is the very thing that was missing the variant.
-    let mut ws = page::command(port).await;
-    ws.send(Message::Binary(
-        protocol::encode(&Frame::Command(Command {
-            id: 2,
-            verb: "run".to_owned(),
-            payload: serde_json::json!({
-                "repo": slug,
-                "agent": "kimi",
-                "planAgent": "kimi",
-                "branchMode": "current"
-            }),
-        }))
-        .into(),
-    ))
-    .await
-    .unwrap();
-
-    let (output, exited) = tokio::time::timeout(Duration::from_secs(10), async {
-        let mut exited: Option<serde_json::Value> = None;
-        let mut output = String::new();
-        while let Some(msg) = ws.next().await {
-            let bytes = match msg.unwrap() {
-                Message::Binary(b) => b,
-                Message::Close(_)
-                | Message::Text(_)
-                | Message::Ping(_)
-                | Message::Pong(_)
-                | Message::Frame(_) => continue,
-            };
-            if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
-                match cmd.payload.get("status").and_then(|s| s.as_str()) {
-                    Some("output") => {
-                        output.push_str(cmd.payload["chunk"].as_str().unwrap_or_default());
-                    }
-                    Some("exited") => {
-                        exited = Some(cmd.payload);
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-        }
-        (output, exited)
-    })
-    .await
-    .expect("the kimi run's output + exit must arrive within 10s");
+    let (output, exited) = run_once(
+        port,
+        2,
+        serde_json::json!({
+            "repo": slug,
+            "agent": "kimi",
+            "planAgent": "kimi",
+            "branchMode": "current"
+        }),
+    )
+    .await;
 
     assert!(
         output.contains("--agent kimi"),

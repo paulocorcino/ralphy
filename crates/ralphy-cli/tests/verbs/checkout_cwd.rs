@@ -72,6 +72,33 @@ fn init_repo() -> (TempDir, PathBuf) {
     (dir, wt)
 }
 
+/// The `a.txt` blob at HEAD, as `ralphy blob read` run in `cwd` returns it.
+fn blob_at(cwd: &Path) -> String {
+    let out = ralphy_in(
+        cwd,
+        &[
+            "blob",
+            "read",
+            "--revision",
+            "head",
+            "--path",
+            "a.txt",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "blob read in {}: {}",
+        cwd.display(),
+        stderr(&out)
+    );
+    let v: serde_json::Value = serde_json::from_str(&stdout(&out)).expect("json reply");
+    let content = v.get("content").and_then(serde_json::Value::as_str);
+    assert!(content.is_some(), "a content string; got {v}");
+    content.unwrap_or_default().to_owned()
+}
+
 #[test]
 fn git_backed_verbs_run_in_the_worktree_cwd_act_on_the_worktree_only() {
     let (dir, wt) = init_repo();
@@ -113,31 +140,6 @@ fn git_backed_verbs_run_in_the_worktree_cwd_act_on_the_worktree_only() {
     assert_eq!(head_branch(&wt), "wt-a");
 
     // (3) blob read: each tree's OWN HEAD blob.
-    let blob_at = |cwd: &Path| -> String {
-        let out = ralphy_in(
-            cwd,
-            &[
-                "blob",
-                "read",
-                "--revision",
-                "head",
-                "--path",
-                "a.txt",
-                "--format",
-                "json",
-            ],
-        );
-        assert!(
-            out.status.success(),
-            "blob read in {cwd:?}: {}",
-            stderr(&out)
-        );
-        let v: serde_json::Value = serde_json::from_str(&stdout(&out)).expect("json reply");
-        v["content"]
-            .as_str()
-            .unwrap_or_else(|| panic!("a content string; got {v}"))
-            .to_owned()
-    };
     assert_eq!(
         blob_at(&wt),
         "two\n",

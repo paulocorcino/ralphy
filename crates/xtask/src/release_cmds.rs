@@ -5,6 +5,7 @@
 //! `CHANGELOG.md`, `changelog.json` and the crate manifests' version lines are
 //! this tool's.
 
+use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -218,7 +219,7 @@ fn pending_report(entries: &[Entry]) -> String {
     fold(&mut history, "(pending)", "(unreleased)", entries.to_vec());
     let record = &history.releases[0];
     let mut out = render_notes(record);
-    out.push_str(&format!("\nannounce: {}\n", record.announce));
+    write!(out, "\nannounce: {}\n", record.announce).expect(crate::WRITE_TO_STRING);
     out
 }
 

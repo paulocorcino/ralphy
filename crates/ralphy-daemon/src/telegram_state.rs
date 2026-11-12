@@ -100,8 +100,9 @@ impl TelegramState {
     pub fn is_fault(&self) -> bool {
         match self {
             TelegramState::Off { why: Some(why) } => why.is_fault(),
-            TelegramState::Off { why: None } => false,
-            TelegramState::Sends | TelegramState::ThroughMain { .. } => false,
+            TelegramState::Off { why: None }
+            | TelegramState::Sends
+            | TelegramState::ThroughMain { .. } => false,
         }
     }
 }
@@ -229,6 +230,10 @@ fn token_of(stored: &str) -> Option<String> {
 
 /// [`token_of`] in a unit test: the file's token only.
 #[cfg(test)]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "it stands in for the production `token_of`, which can find no token"
+)]
 fn token_of(stored: &str) -> Option<String> {
     Some(stored.to_owned())
 }

@@ -229,7 +229,7 @@ impl Spawner for ProcessSpawner {
         cwd: &Path,
         daemon_id: Option<&str>,
     ) -> Result<Box<dyn Child>> {
-        self.start(program, args, cwd, daemon_id, None)
+        Self::start(program, args, cwd, daemon_id, None)
     }
 }
 
@@ -238,18 +238,16 @@ impl ProcessSpawner {
     /// which is then closed. `input` is small (a password), so it fits in the
     /// pipe and the write does not wait for the child.
     pub fn spawn_with_input(
-        &self,
         program: &OsStr,
         args: &[&str],
         cwd: &Path,
         daemon_id: Option<&str>,
         input: &[u8],
     ) -> Result<Box<dyn Child>> {
-        self.start(program, args, cwd, daemon_id, Some(input))
+        Self::start(program, args, cwd, daemon_id, Some(input))
     }
 
     fn start(
-        &self,
         program: &OsStr,
         args: &[&str],
         cwd: &Path,

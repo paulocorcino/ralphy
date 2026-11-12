@@ -144,7 +144,7 @@ pub(crate) fn print_gate_report(f: &EnvFindings, fails: &[HardFail]) {
     println!("  {}", dim("agents"));
     for agent in &Agent::ALL {
         let name = agent.cli_name();
-        let (glyph, status) = agent_status(f, agent);
+        let (glyph, status) = agent_status(f, *agent);
         println!("    {glyph} {name:<9} {}", dim(status));
     }
 
@@ -178,9 +178,9 @@ fn dim(s: &str) -> String {
 }
 
 /// The glyph and the status word of one agent in the gate checklist.
-fn agent_status(f: &EnvFindings, agent: &Agent) -> (String, &'static str) {
-    let present = f.agents_present.contains(agent);
-    let logged = present && f.agents_logged_in.contains(agent);
+fn agent_status(f: &EnvFindings, agent: Agent) -> (String, &'static str) {
+    let present = f.agents_present.contains(&agent);
+    let logged = present && f.agents_logged_in.contains(&agent);
     if logged {
         (check_mark(true), "logged in")
     } else if present {

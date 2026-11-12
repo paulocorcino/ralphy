@@ -317,7 +317,7 @@ fn a_cause() -> ralphy_core::HooksUnproven {
 #[test]
 fn the_waiver_lets_an_unproven_session_go_on_with_one_warning() {
     let mut got = None;
-    let causes = waiver_events(|| got = Some(refuse_or_go_on(a_cause(), true)));
+    let causes = waiver_events(|| got = Some(refuse_or_go_on(&a_cause(), true)));
     let got = got.expect("ran");
     assert!(got.is_ok(), "{got:?}");
     assert_eq!(causes, vec!["no SessionStart hook event came in 30 s"]);
@@ -326,7 +326,7 @@ fn the_waiver_lets_an_unproven_session_go_on_with_one_warning() {
 #[test]
 fn without_the_waiver_the_refusal_names_the_way_out() {
     let mut got = None;
-    let causes = waiver_events(|| got = Some(refuse_or_go_on(a_cause(), false)));
+    let causes = waiver_events(|| got = Some(refuse_or_go_on(&a_cause(), false)));
     let err = got.expect("ran").expect_err("refused");
     let refusal = err
         .downcast_ref::<ralphy_core::HooksUnproven>()

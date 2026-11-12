@@ -1,6 +1,8 @@
 //! The text and JSON a `ralphy issues` view prints.
 
+use crate::WRITE_TO_STRING;
 use std::borrow::Cow;
+use std::fmt::Write as _;
 
 use anyhow::Result;
 use serde_json::{Map, Value};
@@ -159,13 +161,13 @@ fn truncate(s: &str, max: usize) -> String {
 
 /// Render the judged queue as an aligned text table matching the ADR-0020 sample.
 pub(super) fn render_text(view: &QueueView, assignee: Option<&str>) -> String {
+    const TITLE_MAX: usize = 40;
     if view.issues.is_empty() {
         return match assignee {
             Some(a) => format!("No open issues in the queue assigned to {a}."),
             None => "No open issues in the queue.".to_owned(),
         };
     }
-    const TITLE_MAX: usize = 40;
     let rows: Vec<(String, String, String, &'static str, String)> = view
         .issues
         .iter()
@@ -184,9 +186,11 @@ pub(super) fn render_text(view: &QueueView, assignee: Option<&str>) -> String {
     let labels_w = rows.iter().map(|r| r.2.chars().count()).max().unwrap_or(0);
     let mut out = String::new();
     for (num, title, labels, status, extra) in &rows {
-        out.push_str(&format!(
-            "{num:<num_w$}  {title:<title_w$}  {labels:<labels_w$}  {status:<11}  {extra}\n"
-        ));
+        writeln!(
+            out,
+            "{num:<num_w$}  {title:<title_w$}  {labels:<labels_w$}  {status:<11}  {extra}"
+        )
+        .expect(WRITE_TO_STRING);
     }
     out.trim_end().to_owned()
 }
@@ -194,8 +198,8 @@ pub(super) fn render_text(view: &QueueView, assignee: Option<&str>) -> String {
 /// Render the `show` detail view as a readable text block.
 pub(super) fn render_show_text(view: &ShowView) -> String {
     let mut out = String::new();
-    out.push_str(&format!("#{}  {}\n", view.number, view.title));
-    out.push_str(&format!("labels: {}\n", labels_cell(&view.labels)));
+    writeln!(out, "#{}  {}", view.number, view.title).expect(WRITE_TO_STRING);
+    writeln!(out, "labels: {}", labels_cell(&view.labels)).expect(WRITE_TO_STRING);
     let judgment = match view.queue_status {
         // A detail view has no list to rank against, so `eligible` carries no
         // position (position is a list-relative concept — see `IssueView`).
@@ -214,7 +218,7 @@ pub(super) fn render_show_text(view: &ShowView) -> String {
         ),
         QueueStatus::StopBefore => "stop_before (run halts here)".to_owned(),
     };
-    out.push_str(&format!("queue: {judgment}\n"));
+    writeln!(out, "queue: {judgment}").expect(WRITE_TO_STRING);
     if let Some(spec) = &view.consolidated_spec {
         out.push_str("\n--- consolidated spec ---\n");
         out.push_str(spec);
@@ -227,16 +231,18 @@ pub(super) fn render_show_text(view: &ShowView) -> String {
     if !view.history.is_empty() {
         out.push_str("\n--- history ---\n");
         for h in &view.history {
-            out.push_str(&format!(
-                "{}  {}  {}  {}  {} tok\n",
+            writeln!(
+                out,
+                "{}  {}  {}  {}  {} tok",
                 h.ts, h.phase, h.outcome, h.model, h.tokens
-            ));
+            )
+            .expect(WRITE_TO_STRING);
         }
     }
     if !view.comments.is_empty() {
-        out.push_str(&format!("\n--- comments ({}) ---\n", view.comments.len()));
+        writeln!(out, "\n--- comments ({}) ---", view.comments.len()).expect(WRITE_TO_STRING);
         for c in &view.comments {
-            out.push_str(&format!("{}  {}\n", c.author, c.at));
+            writeln!(out, "{}  {}", c.author, c.at).expect(WRITE_TO_STRING);
             out.push_str(&c.body);
             out.push('\n');
         }

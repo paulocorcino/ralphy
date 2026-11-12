@@ -236,10 +236,10 @@ fn prompt_example_verdicts() -> Vec<Verdict> {
 }
 
 /// The first verdict of `kind` in the example.
-fn first(verdicts: &[Verdict], kind: VerdictKind) -> &Verdict {
+fn first<'a>(verdicts: &'a [Verdict], kind: &VerdictKind) -> &'a Verdict {
     verdicts
         .iter()
-        .find(|v| v.kind == kind)
+        .find(|v| v.kind == *kind)
         .ok_or_else(|| format!("the prompt ledger example must carry a {kind:?} line"))
         .expect("this test needs the value")
 }
@@ -249,13 +249,13 @@ fn first(verdicts: &[Verdict], kind: VerdictKind) -> &Verdict {
 #[test]
 fn prompt_plan_ledger_example_parses_into_typed_verdicts() {
     let verdicts = prompt_example_verdicts();
-    let verified = first(&verdicts, VerdictKind::Verified);
+    let verified = first(&verdicts, &VerdictKind::Verified);
     assert!(!verified.criterion.is_empty(), "{verified:?}");
     assert!(
         !verified.evidence.is_empty(),
         "verified verdict must have non-empty evidence text: {verified:?}"
     );
-    let review_only = first(&verdicts, VerdictKind::ReviewOnly);
+    let review_only = first(&verdicts, &VerdictKind::ReviewOnly);
     assert!(!review_only.criterion.is_empty(), "{review_only:?}");
 }
 
@@ -264,8 +264,8 @@ fn prompt_plan_ledger_example_parses_into_typed_verdicts() {
 #[test]
 fn prompt_plan_verified_example_ticks_matching_issue_body_line() {
     let verdicts = prompt_example_verdicts();
-    let verified = first(&verdicts, VerdictKind::Verified).criterion.clone();
-    let review_only = first(&verdicts, VerdictKind::ReviewOnly).criterion.clone();
+    let verified = first(&verdicts, &VerdictKind::Verified).criterion.clone();
+    let review_only = first(&verdicts, &VerdictKind::ReviewOnly).criterion.clone();
     let body = format!("- [ ] {verified}\n- [ ] {review_only}\n");
 
     let result = apply_ledger(&body, &verdicts);

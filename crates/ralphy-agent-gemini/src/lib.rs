@@ -69,7 +69,7 @@ pub use console::prepare_console_root;
 /// through this.
 pub use command::locate_gemini;
 
-use command::{build_gemini_command, check_stdin_ceiling, mint_session_id};
+use command::{build_gemini_command, check_stdin_ceiling, mint_session_id, RootArgs};
 use outcome::{classify_gemini_outcome, fold_gemini_stream};
 
 /// `true` (ADR-0043 D14): the headless surface accepts image attachments via the
@@ -235,14 +235,37 @@ pub(crate) fn prepare_root(base: &Path) -> Result<PreparedRoot> {
 /// (D13). Advisory only — a spawn failure, timeout or missing name logs and
 /// never fails the run (a diagnostic that can abort a run is worse than the
 /// setup problem it reports).
+/// Prepare Ralphy's root under `ralphy_dir`, report its skills, and build the
+/// child that runs in `work_dir`.
+fn prepared_command(
+    session_id: &str,
+    model: Option<&str>,
+    work_dir: &Path,
+    ralphy_dir: &Path,
+) -> Result<std::process::Command> {
+    let PreparedRoot {
+        root,
+        policy_path,
+        auth_type,
+        skills,
+    } = prepare_root(ralphy_dir)?;
+    report_skill_discovery(&root, auth_type.as_deref(), &skills);
+    let args = RootArgs {
+        home: &root.home,
+        policy: &policy_path,
+        auth_type: auth_type.as_deref(),
+    };
+    Ok(build_gemini_command(session_id, model, work_dir, args))
+}
+
 fn report_skill_discovery(
     root: &root::GeminiRoot,
     auth_type: Option<&str>,
     materialized: &[String],
 ) {
     // Bound, not passed inline: `command.rs`'s D4 pin counts the borrows of the
-    // root's home in this file to prove the only ones handed to a CHILD are the
-    // two the run path just ensured, and this receipt is not one of them.
+    // root's home in this file to prove the only one handed to a CHILD is
+    // `prepared_command`'s, and this receipt is not one of them.
     let owned_home = &root.home;
     match skills::probe_skill_discovery(owned_home, auth_type, materialized) {
         Some(found) => {
@@ -279,21 +302,7 @@ impl Agent for GeminiAgent {
         check_stdin_ceiling(PLAN_CHARTER)?;
 
         let run = || {
-            let PreparedRoot {
-                root,
-                policy_path,
-                auth_type,
-                skills,
-            } = prepare_root(&ralphy_dir)?;
-            report_skill_discovery(&root, auth_type.as_deref(), &skills);
-            let cmd = build_gemini_command(
-                &session_id,
-                model,
-                ws.repo_root(),
-                &root.home,
-                &policy_path,
-                auth_type.as_deref(),
-            );
+            let cmd = prepared_command(&session_id, model, ws.repo_root(), &ralphy_dir)?;
             // ADR-0044 D4 No-op: resolved `--plan-effort` accepted at the CLI,
             // discarded here — must not alter argv; emit effort "". Numeric
             // `thinkingBudget` mapping deliberately deferred.
@@ -388,21 +397,7 @@ impl Agent for GeminiAgent {
         check_stdin_ceiling(&exec_prompt)?;
 
         let run = || {
-            let PreparedRoot {
-                root,
-                policy_path,
-                auth_type,
-                skills,
-            } = prepare_root(&ralphy_dir)?;
-            report_skill_discovery(&root, auth_type.as_deref(), &skills);
-            let cmd = build_gemini_command(
-                &session_id,
-                model,
-                ws.repo_root(),
-                &root.home,
-                &policy_path,
-                auth_type.as_deref(),
-            );
+            let cmd = prepared_command(&session_id, model, ws.repo_root(), &ralphy_dir)?;
             // ADR-0044 D4 No-op: resolved `--exec-effort` accepted at the CLI,
             // discarded here — must not alter argv; emit effort "". Numeric
             // `thinkingBudget` mapping deliberately deferred.

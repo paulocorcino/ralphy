@@ -3,17 +3,14 @@
 
 use tokio::sync::{broadcast, mpsc};
 
-use super::{Channel, CloseReason, Opening};
+use super::{Channel, Opening};
 use crate::mux::ChannelSender;
 use crate::routes::relay_run_exit;
 
 /// Serve a `changes` channel from the run exits `run_exits` hears.
-pub(super) fn open(
-    opening: Opening,
-    run_exits: broadcast::Receiver<String>,
-) -> Result<Channel, CloseReason> {
+pub(super) fn open(opening: Opening, run_exits: broadcast::Receiver<String>) -> Channel {
     let out = opening.out;
-    Ok(Channel::spawn(move |frames| serve(frames, run_exits, out)))
+    Channel::spawn(move |frames| serve(frames, run_exits, out))
 }
 
 async fn serve(

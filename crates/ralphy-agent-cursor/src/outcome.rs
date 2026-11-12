@@ -7,6 +7,7 @@
 //! record count and the presence of the envelope discriminate a preflight
 //! rejection from a truncation from a clean run (ADR-0042 D3).
 
+use std::fmt::Write as _;
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
@@ -301,10 +302,12 @@ pub(crate) fn limit_stop_note(fold: &CursorFold, committed_range: Option<&str>) 
     let msg = cursor_limit_note(fold)?;
     let mut note = format!("cursor stopped on a usage limit: {msg}");
     if let Some(range) = committed_range {
-        note.push_str(&format!(
+        write!(
+            note,
             " — work already committed ({range}) is kept on the branch for \
              inspection; the issue stays open"
-        ));
+        )
+        .expect(crate::WRITE_TO_STRING);
     }
     Some(note)
 }

@@ -71,6 +71,10 @@ pub struct TunnelSpec {
     pub identity_file: Option<String>,
 }
 
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if calls it with a reference to the field"
+)]
 fn is_zero(n: &u16) -> bool {
     *n == 0
 }

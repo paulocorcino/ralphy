@@ -1,7 +1,7 @@
 //! `/api/release*`: where this build stands against what has been published
 //! (ADR-0056), and the routes of the release area.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use axum::extract::Form;
@@ -37,8 +37,8 @@ pub(crate) fn poll_releases(store: &Path) {
 /// load never waits on the network and never triggers a request of its own.
 /// A store the daemon could not resolve answers the same shape with nothing in
 /// it, because "we do not know" is a normal state, not an error.
-pub(crate) async fn release_route(store: Option<PathBuf>) -> Response {
-    let (releases, disabled) = match store.as_deref() {
+pub(crate) fn release_route(store: Option<&Path>) -> Response {
+    let (releases, disabled) = match store {
         Some(dir) => (
             ralphy_release::fetch::load(&release::cache_path_in(dir)),
             release::watch_disabled_in(dir),
@@ -71,7 +71,7 @@ pub(crate) fn release_routes(s: &RouterShared) -> Router {
             "/api/release",
             get({
                 let store = s.release_store.clone();
-                move || release_route(store.clone())
+                move || std::future::ready(release_route(store.as_deref()))
             }),
         )
         .route(

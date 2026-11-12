@@ -6,6 +6,8 @@
 //! A running shell cannot be changed from a child process, so the caller still
 //! tells the operator to open a new terminal.
 
+#[cfg(any(unix, test))]
+use std::io::Write;
 use std::path::Path;
 #[cfg(any(unix, test))]
 use std::path::PathBuf;
@@ -180,7 +182,6 @@ fn append_once(file: &Path, block: &str) -> Result<bool> {
     }
     text.push_str(block);
 
-    use std::io::Write;
     let mut out = std::fs::OpenOptions::new()
         .create(true)
         .append(true)

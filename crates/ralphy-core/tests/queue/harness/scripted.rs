@@ -18,11 +18,11 @@ pub(crate) enum PlanScript {
 
 /// A limit's reset with the vendor's `text` and no instant. The scripted
 /// clock records only the text, so no test here needs the instant.
-pub(crate) fn reset_text(text: &str) -> Option<ResetAt> {
-    Some(ResetAt {
+pub(crate) fn reset_text(text: &str) -> ResetAt {
+    ResetAt {
         text: text.to_owned(),
         at: None,
-    })
+    }
 }
 
 /// Where a scripted agent refuses with `HooksUnproven`.
@@ -36,6 +36,10 @@ pub(crate) enum Refusal {
 /// issue numbers it was asked to plan and to execute — so a test can assert that
 /// issues past a stop were never touched. Each executed issue makes one real
 /// commit, so the run branch is non-empty (and is handed back, not dropped).
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool scripts one independent behavior of the fake agent, not a state"
+)]
 pub(crate) struct ScriptedAgent {
     /// Each entry is `(outcome, commits)`: when `commits` is false the execute
     /// makes no commit, leaving `HEAD` unchanged (used to drive the

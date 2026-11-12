@@ -147,27 +147,24 @@ impl Scan<'_> {
         self.asset = Some(named);
     }
 
-    fn push(
-        &mut self,
-        idx: usize,
-        shape: Shape,
-        asset: Option<String>,
-        needles: Vec<String>,
-        text: String,
-    ) {
+    fn push(&mut self, idx: usize, shape: Shape, asset: Option<String>, claim: Claim) {
         self.out.push(Pin {
             file: self.file.to_owned(),
             line: idx + 1,
             shape,
             asset,
-            needles,
-            text,
+            needles: claim.needles,
+            text: claim.text,
         });
     }
 
     /// One claim per literal: its text and its only needle are the literal.
-    fn push_literal(&mut self, idx: usize, shape: Shape, asset: &Option<String>, literal: String) {
-        self.push(idx, shape, asset.clone(), vec![literal.clone()], literal);
+    fn push_literal(&mut self, idx: usize, shape: Shape, asset: Option<&String>, literal: String) {
+        let claim = Claim {
+            needles: vec![literal.clone()],
+            text: literal,
+        };
+        self.push(idx, shape, asset.cloned(), claim);
     }
 
     /// The dominant idiom in these tests is a LIST of pinned strings driven
@@ -190,7 +187,7 @@ impl Scan<'_> {
         let (block, next) = balanced(&self.lines, idx, '[', ']');
         let (body, after) = balanced(&self.lines, next.saturating_sub(1), '{', '}');
         let shape = self.loop_shape(&body);
-        let about = attribute(&body, &self.bindings, &self.asset);
+        let about = attribute(&body, &self.bindings, self.asset.as_ref());
         // Where the pins are depends on which kind of table this is. An
         // ordinary `for pin in ["a(", "b("]` carries them in the TABLE. A
         // label table carries documents in the table and the claim in the
@@ -203,7 +200,7 @@ impl Scan<'_> {
         };
         for literal in string_literals(source) {
             if !is_asset_name(&literal) {
-                self.push_literal(idx, shape, &about, literal);
+                self.push_literal(idx, shape, about.as_ref(), literal);
             }
         }
         Some(after.max(idx + 1))
@@ -232,7 +229,7 @@ impl Scan<'_> {
         let (block, after) = balanced(&self.lines, idx, '[', ']');
         let asset = self.asset.clone();
         for literal in string_literals(&block) {
-            self.push_literal(idx, Shape::Identifier, &asset, literal);
+            self.push_literal(idx, Shape::Identifier, asset.as_ref(), literal);
         }
         Some(after.max(idx + 1))
     }
@@ -248,8 +245,16 @@ impl Scan<'_> {
             } else {
                 shape
             };
-            let asset = attribute(&stmt, &self.bindings, &self.asset);
-            self.push(idx, shape, asset, raw_literals(&stmt), squeeze(&stmt));
+            let asset = attribute(&stmt, &self.bindings, self.asset.as_ref());
+            self.push(
+                idx,
+                shape,
+                asset,
+                Claim {
+                    needles: raw_literals(&stmt),
+                    text: squeeze(&stmt),
+                },
+            );
         }
         Some(after.max(idx + 1))
     }
@@ -265,11 +270,19 @@ impl Scan<'_> {
                 idx,
                 Shape::ScopedSlice,
                 asset,
-                raw_literals(trimmed),
-                squeeze(trimmed),
+                Claim {
+                    needles: raw_literals(trimmed),
+                    text: squeeze(trimmed),
+                },
             );
         }
     }
+}
+
+/// What one pin claims about its asset: the literals it needs, and its text.
+struct Claim {
+    needles: Vec<String>,
+    text: String,
 }
 
 /// The asset a line names after `marker`, if it names one.

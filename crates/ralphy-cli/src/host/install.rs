@@ -253,13 +253,12 @@ fn printed_hash(stdout: &str) -> Option<String> {
 pub(crate) fn install(
     shell: &mut impl HostShell,
     local: &Local<'_>,
-    destination: Destination<'_>,
-    keygen: impl FnOnce(&Path) -> Result<()>,
+    destination: Destination<'_, impl FnOnce(&Path) -> Result<()>>,
     fetch: &mut impl Fetch,
     out: &mut Report<impl Write>,
 ) -> Result<()> {
-    let Destination { dest, key_file } = destination;
-    let (identity, os) = connect(shell, local.store, dest, key_file, keygen, out)?;
+    let dest = destination.dest;
+    let (identity, os) = connect(shell, local.store, destination, out)?;
     out.connected(os)?;
     let mut s = Session {
         shell,

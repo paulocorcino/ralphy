@@ -2,6 +2,8 @@
 //! the disposable pushes (ADR-0007 D3, D6).
 
 use crate::runstate::{IssueEntry, IssueStatus, RunState, SkipKind, SleepState};
+use crate::WRITE_TO_STRING;
+use std::fmt::Write as _;
 
 /// Telegram's hard per-message character limit.
 const TELEGRAM_LIMIT: usize = 4096;
@@ -60,18 +62,18 @@ fn counters_line(state: &RunState) -> String {
         state.total, c.done, c.skipped, c.blocked, c.infeasible, c.non_green
     );
     if c.needs_split > 0 {
-        line.push_str(&format!(" · 🧩 {}", c.needs_split));
+        write!(line, " · 🧩 {}", c.needs_split).expect(WRITE_TO_STRING);
     }
     // A `📝 N` counter appears only on a plan-only (dry-run) pass, so the common
     // card stays unchanged but a dry run is visibly not a stalled one.
     if c.planned > 0 {
-        line.push_str(&format!(" · 📝 {}", c.planned));
+        write!(line, " · 📝 {}", c.planned).expect(WRITE_TO_STRING);
     }
     // A `🙋 N` counter appears only when a chain is parked on a human gate
     // (ADR-0014) — the common card stays unchanged, but a run waiting on a
     // person is visibly different.
     if c.hitl > 0 {
-        line.push_str(&format!(" · 🙋 {}", c.hitl));
+        write!(line, " · 🙋 {}", c.hitl).expect(WRITE_TO_STRING);
     }
     line
 }

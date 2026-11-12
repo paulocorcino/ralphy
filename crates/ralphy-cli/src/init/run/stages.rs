@@ -12,7 +12,8 @@ use super::decisions::{
     branch_decision, commit_decision, labels_decision, BranchDecision, CommitDecision,
 };
 use super::{diagnose_with_agent, diagnosis_cwd};
-use crate::init::gate::{evaluate_gate, findings_from, Agent, EnvFindings};
+use crate::init::gate::{evaluate_gate, findings_from, EnvFindings};
+use crate::init::issues::ChosenAgent;
 use crate::init::render::{
     ask_yes_no, print_bullet, print_captured_config, print_gate_report, print_note, print_ok,
     print_section, run_qa, with_spinner,
@@ -67,14 +68,13 @@ pub(super) fn capture_config(
     repo: &Path,
     ws: &Workspace,
     state: &mut InitState,
-    agent: Agent,
-    model: Option<&str>,
+    chosen: ChosenAgent<'_>,
 ) -> Result<InitConfig> {
     let cfg = if let Some(cfg) = state.config.clone() {
         print_note("Resuming: diagnosis + Q&A already captured — skipping.");
         cfg
     } else {
-        let report = load_or_run_diagnosis(repo, ws, agent, model)?;
+        let report = load_or_run_diagnosis(repo, ws, chosen)?;
         let cfg = confirm_diagnosis(&report)?;
         state.config = Some(cfg.clone());
         state.mark(Stage::Diagnose);
@@ -94,8 +94,7 @@ pub(super) fn capture_config(
 fn load_or_run_diagnosis(
     repo: &Path,
     ws: &Workspace,
-    agent: Agent,
-    model: Option<&str>,
+    chosen: ChosenAgent<'_>,
 ) -> Result<DiagnosisReport> {
     if ws.diagnosis_path().exists() {
         print_note(&format!(
@@ -111,14 +110,7 @@ fn load_or_run_diagnosis(
     let stamp = format!("{}", std::process::id());
     let cwd = diagnosis_cwd(repo, &stamp);
     let report = with_spinner("Scanning your repo (read-only)…", || {
-        diagnose_with_agent(
-            agent,
-            repo,
-            &cwd,
-            model,
-            Some("medium"),
-            Duration::from_secs(300),
-        )
+        diagnose_with_agent(chosen, repo, &cwd, Some("medium"), Duration::from_secs(300))
     })?;
     persist_report(ws, &report)?;
     print_note(&format!(
@@ -277,10 +269,11 @@ fn offer_skills(repo: &Path, cfg: &InitConfig) -> Result<()> {
         print_note("Skipped — no skills installed.");
         return Ok(());
     }
-    install_skills(&skills_dst)
+    install_skills(&skills_dst);
+    Ok(())
 }
 
-fn install_skills(skills_dst: &Path) -> Result<()> {
+fn install_skills(skills_dst: &Path) {
     let fetch_ref = SKILLS_REF.to_owned();
     let subtree = SKILLS_SUBTREE.to_owned();
     let fetch = |scratch: &Path| -> Result<PathBuf> {
@@ -303,7 +296,6 @@ fn install_skills(skills_dst: &Path) -> Result<()> {
             ));
         }
     }
-    Ok(())
 }
 
 /// Stage 7: create GitHub label vocabulary.

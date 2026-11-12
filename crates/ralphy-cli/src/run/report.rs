@@ -41,7 +41,7 @@ pub(crate) fn maybe_consolidate_knowledge(
     ws: &Workspace,
     stamp: &str,
 ) -> ralphy_core::Usage {
-    if !(run_ok && !dry_run) {
+    if !run_ok || dry_run {
         return ralphy_core::Usage::default();
     }
     let notes = ralphy_core::knowledge::loose_notes(ws);
@@ -51,7 +51,12 @@ pub(crate) fn maybe_consolidate_knowledge(
     ralphy_core::emit::knowledge_consolidating(u64::try_from(notes.len()).unwrap_or(u64::MAX));
     let run_dir = ws.run_dir(stamp);
     let (model, effort) = crate::consolidate_defaults(agent);
-    match crate::run_consolidation(agent, ws, &run_dir, model, effort, 30, &notes) {
+    let consolidator = crate::Consolidator {
+        agent,
+        model,
+        effort,
+    };
+    match crate::run_consolidation(consolidator, ws, &run_dir, 30, &notes) {
         Ok((archived, usage)) => {
             ralphy_core::emit::knowledge_consolidated(u64::try_from(archived).unwrap_or(u64::MAX));
             // Record the invocation as a run-level ledger line (best-effort, and a
@@ -269,13 +274,12 @@ pub(crate) fn render_final_panel(
 /// usage limit does) because it is the one outcome no consumer can infer from
 /// the run: nothing about the queue, the tree or the agent explains it. A new
 /// enum value is additive under docs/events.md evolution rule 2.
-pub(crate) fn outcome_of(stop: &Option<StopReason>) -> &'static str {
+pub(crate) fn outcome_of(stop: Option<&StopReason>) -> &'static str {
     match stop {
         None => "completed",
-        Some(StopReason::NonGreen { .. }) => "non_green",
+        Some(StopReason::NonGreen { .. } | StopReason::Limit { .. }) => "non_green",
         Some(StopReason::Deadline) => "deadline",
         Some(StopReason::StopBefore { .. }) => "stop_before",
-        Some(StopReason::Limit { .. }) => "non_green",
         Some(StopReason::Stopped { .. }) => "stopped",
     }
 }
@@ -318,23 +322,23 @@ mod tests {
 
     #[test]
     fn outcome_of_maps_every_stop_reason() {
-        assert_eq!(outcome_of(&None), "completed");
+        assert_eq!(outcome_of(None), "completed");
         assert_eq!(
-            outcome_of(&Some(StopReason::NonGreen {
+            outcome_of(Some(&StopReason::NonGreen {
                 number: 1,
                 outcome: Outcome::Stuck,
             })),
             "non_green"
         );
-        assert_eq!(outcome_of(&Some(StopReason::Deadline)), "deadline");
+        assert_eq!(outcome_of(Some(&StopReason::Deadline)), "deadline");
         assert_eq!(
-            outcome_of(&Some(StopReason::StopBefore { number: 2 })),
+            outcome_of(Some(&StopReason::StopBefore { number: 2 })),
             "stop_before"
         );
         // A usage-limit stop has no `outcome` value in the contract enum, so it
         // collapses to non_green (a non-clean completion).
         assert_eq!(
-            outcome_of(&Some(StopReason::Limit {
+            outcome_of(Some(&StopReason::Limit {
                 number: 3,
                 reset: Some(ralphy_core::ResetAt {
                     text: "14:30".into(),

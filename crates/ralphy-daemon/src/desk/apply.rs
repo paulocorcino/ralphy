@@ -76,6 +76,10 @@ impl<'de> Deserialize<'de> for DeskBody {
 
 /// `Some(value)` for a key that is present, `null` included, so a `set` can
 /// say "the primary tree" (`checkout: null`) and an absent key says nothing.
+#[expect(
+    clippy::option_option,
+    reason = "serde's deserialize_with returns the field's type, which tells absent from null"
+)]
 fn present<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
 where
     D: serde::Deserializer<'de>,

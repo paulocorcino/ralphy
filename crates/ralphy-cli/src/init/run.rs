@@ -6,6 +6,7 @@ use clap::Args;
 use ralphy_core::{git, github, gitignore, DiagnosisReport, Workspace};
 
 use super::gate::Agent;
+use super::issues::ChosenAgent;
 use super::render::{ask_yes_no, print_note, print_ok, print_section, with_spinner};
 use super::verify::finalize;
 use super::wizard::InitState;
@@ -35,13 +36,13 @@ pub(crate) struct InitArgs {
 /// Each adapter drives the same core charter ([`ralphy_core::build_diagnose_prompt`]);
 /// only the CLI invocation differs.
 fn diagnose_with_agent(
-    agent: Agent,
+    chosen: ChosenAgent<'_>,
     repo: &Path,
     neutral_cwd: &Path,
-    model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<DiagnosisReport> {
+    let ChosenAgent { agent, model } = chosen;
     match agent {
         Agent::Claude => ralphy_agent_claude::diagnose_repo(
             repo,
@@ -196,12 +197,16 @@ pub(crate) fn run(args: &InitArgs) -> Result<()> {
     let ws = Workspace::new(&repo);
     let mut state = InitState::load(&ws)?;
 
-    let cfg = stages::capture_config(&repo, &ws, &mut state, selected_agent, init_model)?;
+    let chosen = ChosenAgent {
+        agent: selected_agent,
+        model: init_model,
+    };
+    let cfg = stages::capture_config(&repo, &ws, &mut state, chosen)?;
     stages::git_stage(&repo, &ws, &mut state)?;
     stages::scaffold_stage(&repo, &ws, &mut state, &cfg)?;
     stages::skills_stage(&repo, &ws, &mut state, &cfg)?;
     stages::labels_stage(&repo, &ws, &mut state)?;
-    stages::issues_stage(&repo, &ws, &mut state, &cfg, selected_agent, init_model)?;
+    stages::issues_stage(&repo, &ws, &mut state, &cfg, chosen)?;
 
     finalize(&repo, &cfg, &findings.agents_logged_in, selected_agent)
 }

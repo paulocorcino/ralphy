@@ -103,8 +103,7 @@ impl WatchSubs {
         }
 
         let mut held = BTreeSet::new();
-        let mut rx = None;
-        arm(&self.watchers, repo, root, normalized, &mut held, &mut rx);
+        let rx = arm(&self.watchers, repo, root, normalized, &mut held);
         subs.insert(
             sub_id.to_owned(),
             Sub {
@@ -282,28 +281,29 @@ fn escapes_root(paths: &BTreeSet<String>) -> bool {
         .any(|path| path.split('/').any(|part| part == ".."))
 }
 
-/// Watch each of `paths`, adding the ones that armed to `held`. The first
-/// receiver armed becomes `rx` when `rx` holds none yet; a path that cannot be
-/// armed is skipped (see [`WatchSubs::subscribe`]).
+/// Watch each of `paths`, adding the ones that armed to `held`, and return
+/// the first receiver armed; a path that cannot be armed is skipped (see
+/// [`WatchSubs::subscribe`]).
 fn arm(
     watchers: &watch::WatcherManager,
     repo: &str,
     root: &Path,
     paths: impl IntoIterator<Item = String>,
     held: &mut BTreeSet<String>,
-    rx: &mut Option<watch::DirtyRx>,
-) {
+) -> Option<watch::DirtyRx> {
+    let mut rx = None;
     for path in paths {
         match watchers.watch(repo, root, &path) {
             Ok(new_rx) => {
                 if rx.is_none() {
-                    *rx = Some(new_rx);
+                    rx = Some(new_rx);
                 }
                 held.insert(path);
             }
             Err(error) => skipped(repo, &path, &error),
         }
     }
+    rx
 }
 
 /// Make an existing subscription hold `paths`, the whole set the caller
@@ -317,14 +317,10 @@ fn extend(sub: &mut Sub, repo: &str, root: &Path, paths: &BTreeSet<String>) -> R
     let dropped: Vec<String> = sub.paths.difference(paths).cloned().collect();
     // Armed before the release, so a repo watcher both sets use stays up and
     // the receiver stays open.
-    arm(
-        &sub.watchers,
-        repo,
-        root,
-        added,
-        &mut sub.paths,
-        &mut sub.rx,
-    );
+    let armed = arm(&sub.watchers, repo, root, added, &mut sub.paths);
+    if sub.rx.is_none() {
+        sub.rx = armed;
+    }
     for rel in &dropped {
         sub.paths.remove(rel);
         sub.watchers.unwatch(repo, rel);
@@ -356,8 +352,7 @@ fn drain(rx: &mut watch::DirtyRx, paths: &BTreeSet<String>) -> Vec<(String, Stri
     loop {
         match rx.try_recv() {
             Ok(item) if paths.contains(&item.1) => dirty.push(item),
-            Ok(_) => {}
-            Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => continue,
+            Ok(_) | Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {}
             Err(_) => break,
         }
     }

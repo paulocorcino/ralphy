@@ -100,7 +100,12 @@ fn scan_workspace(
         let Ok(text) = fs::read_to_string(&transcript) else {
             continue;
         };
-        records.extend(parse_transcript(&text, &session_id, &project, &actor_email));
+        records.extend(parse_transcript(
+            &text,
+            &session_id,
+            project.as_deref(),
+            actor_email.as_deref(),
+        ));
     }
     records
 }
@@ -217,8 +222,8 @@ impl Group {
 fn parse_transcript(
     jsonl: &str,
     session_id: &str,
-    project: &Option<String>,
-    actor_email: &Option<String>,
+    project: Option<&str>,
+    actor_email: Option<&str>,
 ) -> Vec<InteractiveRecord> {
     let mut groups: BTreeMap<String, Group> = BTreeMap::new();
     for line in jsonl.lines().filter_map(read_usage_line) {
@@ -233,8 +238,8 @@ fn parse_transcript(
                 agent: "claude".to_owned(),
                 model,
                 session_id: session_id.to_owned(),
-                project: project.clone(),
-                actor_email: actor_email.clone(),
+                project: project.map(str::to_owned),
+                actor_email: actor_email.map(str::to_owned),
                 tokens: Some(Tokens {
                     input: total[0],
                     output: total[1],

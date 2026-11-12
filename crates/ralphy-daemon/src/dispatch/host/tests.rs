@@ -12,32 +12,32 @@ fn key_file() -> &'static str {
     }
 }
 
-fn argv(verb: Verb, payload: serde_json::Value) -> Vec<String> {
-    host_argv(verb, &payload).unwrap_or_else(|e| panic!("{verb:?} {payload}: {e}"))
+fn argv(verb: Verb, payload: &serde_json::Value) -> Vec<String> {
+    host_argv(verb, payload).unwrap_or_else(|e| panic!("{verb:?} {payload}: {e}"))
 }
 
 #[test]
 fn host_argv_composes_each_verb() {
-    assert_eq!(argv(Verb::HostAliases, json!({})), ["host", "aliases"]);
+    assert_eq!(argv(Verb::HostAliases, &json!({})), ["host", "aliases"]);
     assert_eq!(
-        argv(Verb::HostKey, json!({"destination": "svrapp"})),
+        argv(Verb::HostKey, &json!({"destination": "svrapp"})),
         ["host", "key", "svrapp"]
     );
     assert_eq!(
         argv(
             Verb::HostTrust,
-            json!({"destination": "me@10.0.0.5", "fingerprint": FP})
+            &json!({"destination": "me@10.0.0.5", "fingerprint": FP})
         ),
         ["host", "trust", "me@10.0.0.5", "--fingerprint", FP]
     );
     assert_eq!(
-        argv(Verb::HostCheck, json!({"destination": "svrapp"})),
+        argv(Verb::HostCheck, &json!({"destination": "svrapp"})),
         ["host", "check", "svrapp", "--json"]
     );
     assert_eq!(
         argv(
             Verb::HostAdd,
-            json!({"destination": "ssh://me@10.0.0.5:2222", "identity": key_file(), "name": "vps"})
+            &json!({"destination": "ssh://me@10.0.0.5:2222", "identity": key_file(), "name": "vps"})
         ),
         [
             "host",
@@ -53,7 +53,7 @@ fn host_argv_composes_each_verb() {
     assert_eq!(
         argv(
             Verb::HostInstall,
-            json!({"destination": "svrapp", "identity": key_file(), "name": "vps"})
+            &json!({"destination": "svrapp", "identity": key_file(), "name": "vps"})
         ),
         [
             "host",
@@ -68,7 +68,7 @@ fn host_argv_composes_each_verb() {
     assert_eq!(
         argv(
             Verb::HostCheck,
-            json!({"destination": "svrapp", "identity": "", "name": null})
+            &json!({"destination": "svrapp", "identity": "", "name": null})
         ),
         ["host", "check", "svrapp", "--json"],
         "an empty or null optional is not given"
@@ -79,7 +79,7 @@ fn host_argv_composes_each_verb() {
 fn a_password_adds_the_stdin_flag_and_never_enters_the_argv() {
     for verb in [Verb::HostCheck, Verb::HostAdd, Verb::HostInstall] {
         let payload = json!({"destination": "svrapp", "password": "hunter2"});
-        let composed = argv(verb, payload.clone());
+        let composed = argv(verb, &payload);
         assert_eq!(
             composed.last().map(String::as_str),
             Some("--password-stdin")
@@ -93,7 +93,7 @@ fn a_password_adds_the_stdin_flag_and_never_enters_the_argv() {
     }
     let empty = json!({"destination": "svrapp", "password": ""});
     assert!(host_password(Verb::HostAdd, &empty).unwrap().is_none());
-    assert!(!argv(Verb::HostAdd, empty).contains(&"--password-stdin".to_owned()));
+    assert!(!argv(Verb::HostAdd, &empty).contains(&"--password-stdin".to_owned()));
 }
 
 #[test]
@@ -111,14 +111,14 @@ fn a_password_is_refused_where_it_does_not_belong() {
 fn host_argv_remove_rotates_only_when_asked() {
     let id = "01ARZ3NDEKTSV4RRFFQ69G5FC0";
     assert_eq!(
-        argv(Verb::HostRemove, json!({"host": id, "rotate_token": true})),
+        argv(Verb::HostRemove, &json!({"host": id, "rotate_token": true})),
         ["host", "remove", id, "--json", "--rotate-token"]
     );
     for payload in [
         json!({"host": id, "rotate_token": false}),
         json!({"host": id}),
     ] {
-        assert!(!argv(Verb::HostRemove, payload).contains(&"--rotate-token".to_owned()));
+        assert!(!argv(Verb::HostRemove, &payload).contains(&"--rotate-token".to_owned()));
     }
     assert_eq!(
         host_argv(

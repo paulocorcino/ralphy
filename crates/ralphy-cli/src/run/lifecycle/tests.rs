@@ -53,17 +53,19 @@ fn envelopes_delivered_by(f: impl FnOnce(Option<events::sink::EventsHandle>)) ->
 #[test]
 fn if_idle_edge_returns_ok() {
     let presenter = ui::PresenterHandle::plain();
-    let mut out = None;
+    // The border returns no error: the type has no failure for `run_cmd` to exit non-zero on.
+    let mut ran = false;
     let types = envelopes_delivered_by(|events| {
-        out = Some(finish_if_idle(
+        finish_if_idle(
             &presenter,
             "skipped: run in progress since 2026-07-19 10:00:00, pid 4242",
             None,
             events,
             None,
-        ));
+        );
+        ran = true;
     });
-    assert!(out.expect("the border ran").is_ok(), "a deferral exits 0");
+    assert!(ran, "the border ran");
     assert_eq!(types, vec!["dev.ralphy.run.skipped"]);
 }
 

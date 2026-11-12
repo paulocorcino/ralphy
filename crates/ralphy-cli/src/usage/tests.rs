@@ -1,6 +1,8 @@
 use super::*;
 
-fn row(model: &str, phase: &str, actor: &str, version: &str, ts: &str, tok: Usage) -> UsageRow {
+/// One ledger row; `who` is the actor's email and the Ralphy version it ran.
+fn row(model: &str, phase: &str, who: (&str, &str), ts: &str, tok: Usage) -> UsageRow {
+    let (actor, version) = who;
     UsageRow {
         project: "owner/repo".into(),
         actor_email: actor.into(),
@@ -32,24 +34,21 @@ fn two_model_fixture() -> Vec<UsageRow> {
         row(
             "claude-opus-4-8",
             "plan",
-            "a@x.io",
-            "rc5",
+            ("a@x.io", "rc5"),
             "2026-06-15T10:00:00+00:00",
             tok(100, 10),
         ),
         row(
             "claude-opus-4-8",
             "execute",
-            "a@x.io",
-            "rc5",
+            ("a@x.io", "rc5"),
             "2026-06-15T11:00:00+00:00",
             tok(200, 20),
         ),
         row(
             "claude-sonnet-4-6",
             "execute",
-            "b@x.io",
-            "rc4",
+            ("b@x.io", "rc4"),
             "2026-06-15T12:00:00+00:00",
             tok(50, 5),
         ),
@@ -119,16 +118,14 @@ fn filter_since_drops_an_older_dated_row() {
         row(
             "claude-opus-4-8",
             "plan",
-            "a@x.io",
-            "rc5",
+            ("a@x.io", "rc5"),
             "2026-06-14T23:59:00+00:00",
             tok(1, 1),
         ),
         row(
             "claude-opus-4-8",
             "plan",
-            "a@x.io",
-            "rc5",
+            ("a@x.io", "rc5"),
             "2026-06-15T00:01:00+00:00",
             tok(2, 2),
         ),
@@ -146,16 +143,14 @@ fn render_table_balance_carries_tokens_and_usd() {
         row(
             "claude-opus-4-8",
             "plan",
-            "a@x.io",
-            "rc5",
+            ("a@x.io", "rc5"),
             "2026-06-15T10:00:00+00:00",
             tok(1_000_000, 100_000),
         ),
         row(
             "claude-sonnet-4-6",
             "execute",
-            "b@x.io",
-            "rc4",
+            ("b@x.io", "rc4"),
             "2026-06-15T12:00:00+00:00",
             tok(1_000_000, 0),
         ),
@@ -200,8 +195,7 @@ fn export_json_is_an_array_with_numeric_usd_for_priced_and_null_for_unpriced() {
     rows.push(row(
         "big-pickle",
         "execute",
-        "c@x.io",
-        "rc5",
+        ("c@x.io", "rc5"),
         "2026-06-15T13:00:00+00:00",
         tok(99, 9),
     ));

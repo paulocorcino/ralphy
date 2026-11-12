@@ -58,13 +58,6 @@ pub(crate) async fn repos_route(registry_path: PathBuf, memo: rekey::HealMemo) -
         #[serde(skip_serializing_if = "Vec::is_empty")]
         former_slugs: Vec<String>,
     }
-    let store = match registry::load_from(&registry_path) {
-        Ok(store) => store,
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to load repo registry; serving empty list");
-            registry::RegistryStore::default()
-        }
-    };
     fn build_views(store: &registry::RegistryStore) -> Vec<RepoView> {
         store
             .repos
@@ -89,6 +82,13 @@ pub(crate) async fn repos_route(registry_path: PathBuf, memo: rekey::HealMemo) -
             })
             .collect()
     }
+    let store = match registry::load_from(&registry_path) {
+        Ok(store) => store,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load repo registry; serving empty list");
+            registry::RegistryStore::default()
+        }
+    };
     // `head`/`dirty`/`remote` each spawn `git` per repo — that must not
     // block the async reactor, so the whole map runs on a blocking thread.
     let views = tokio::task::spawn_blocking(move || {
@@ -121,7 +121,7 @@ pub(crate) async fn repos_route(registry_path: PathBuf, memo: rekey::HealMemo) -
 
 /// `GET /api/identity`: the loaded identity's `name`/`avatar` as JSON, or 404
 /// when the daemon has not been baptized yet.
-pub(crate) async fn identity_route(identity: Option<identity::Identity>) -> Response {
+pub(crate) fn identity_route(identity: Option<identity::Identity>) -> Response {
     #[derive(serde::Serialize)]
     struct IdentityView {
         name: String,
@@ -236,7 +236,10 @@ pub(crate) fn read_routes(s: &RouterShared) -> Router {
     let roster_locator = s.roster_locator.clone();
     let bound_port = s.bound_port;
     Router::new()
-        .route("/api/identity", get(move || identity_route(identity)))
+        .route(
+            "/api/identity",
+            get(move || std::future::ready(identity_route(identity))),
+        )
         .route("/api/about", get(about_route))
         .route(
             "/api/agents",

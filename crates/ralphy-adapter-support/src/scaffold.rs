@@ -26,6 +26,7 @@ use crate::{failed_run_stop, HeadlessRun, RunFacts, RunStop};
 /// shared plan shell needs to create dirs, write the charter, and phrase the
 /// no-plan bails; the `(see <log>)` / `at <plan>` suffixes are appended by the
 /// runner, so `auth_msg`/`no_plan_msg` carry only the prefix.
+#[derive(Clone, Copy)]
 pub struct PlanCfg<'a> {
     /// The current issue's number — identity for the finalized-plan trailer. When
     /// `plan_path`'s last line already carries this issue's trailer, the session
@@ -158,6 +159,7 @@ fn stamp_plan_trailer(plan_path: &Path, issue_number: u64) {
 
 /// The paths and auth wording for a [`run_exec_session`] call — no plan/charter,
 /// since execute reads the plan the planner already wrote.
+#[derive(Clone, Copy)]
 pub struct ExecCfg<'a> {
     /// The workspace `.ralphy` dir (created if absent).
     pub ralphy_dir: &'a Path,

@@ -36,6 +36,9 @@ use serde_json::Value;
 /// resolver's provider-prefix synthesis (`claude-*`→anthropic, `gpt-*`→openai,
 /// `gemini-*`→google, `kimi-*`→moonshotai). The seed holds only these; the
 /// refresh never widens it.
+// Writing to a String cannot fail, so a failed write is a broken invariant.
+const WRITE_TO_STRING: &str = "a write to a String does not fail";
+
 const DRIVEN_PROVIDERS: &[&str] = &["anthropic", "openai", "google", "moonshotai"];
 
 /// Official models.dev catalog endpoint. Mirrors `ralphy-pricing`'s

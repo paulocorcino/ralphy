@@ -84,7 +84,7 @@ pub struct ClaudeSettings {
     /// Read by the daemon's launch path, which cannot import this crate
     /// (ADR-0032 §10) and so reparses the file; `crates/ralphy-daemon/src/session.rs`
     /// pins the section and key against this schema.
-    #[serde(default, skip_serializing_if = "is_false")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub console_name: bool,
     /// Opt-in: start a workbench-opened Claude console in Claude Code's classic
     /// renderer (`CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1`), so the conversation
@@ -95,21 +95,15 @@ pub struct ClaudeSettings {
     /// A plain `bool` for the reason `console_name` gives. Read by the daemon's
     /// launch path, which reparses the file; `crates/ralphy-daemon/src/session/spec.rs`
     /// pins the key against this schema.
-    #[serde(default, skip_serializing_if = "is_false")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub console_classic_screen: bool,
     /// Local-only opt-in: a session whose hooks did not prove they run goes
     /// on instead of being refused, with one warning event per session. It
     /// removes only the refusal: every hook is still written. Set only with
     /// `ralphy config set` on this machine; the daemon refuses to set it.
     // ADR-0072 D6: the escape of the hook proof.
-    #[serde(default, skip_serializing_if = "is_false")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub run_without_guard_proof_i_understand_the_risk: bool,
-}
-
-/// `skip_serializing_if` for a `false` flag: an un-opted repo writes no key, so
-/// an existing `settings.json` is unchanged by this field's arrival.
-fn is_false(b: &bool) -> bool {
-    !*b
 }
 
 impl ClaudeSettings {

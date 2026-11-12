@@ -18,9 +18,13 @@
 //! bundle, not from the documentation — the docs state the yolo/trust interaction
 //! differently from the code that enforces it.
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+
+// Writing to a String cannot fail, so a failed write is a broken invariant.
+const WRITE_TO_STRING: &str = "a write to a String does not fail";
 
 /// A control the vendor announced in-flight, in the order [`detect_revocation`]
 /// resolves them: a hard stop must never be reported as the milder demotion that
@@ -207,10 +211,10 @@ impl Revocation {
         // would suppress a true `exit 5` against a hard-coded `exit 55`, and tell
         // the operator the wrong number.
         if let Some(c) = exit_code.or_else(|| self.canonical_exit()) {
-            msg.push_str(&format!(" (exit {c})"));
+            write!(msg, " (exit {c})").expect(WRITE_TO_STRING);
         }
         if let Some(line) = self.vendor_sentence(log) {
-            msg.push_str(&format!(" — gemini said: {line}"));
+            write!(msg, " — gemini said: {line}").expect(WRITE_TO_STRING);
         }
         msg
     }
@@ -316,37 +320,37 @@ fn push_settings_controls(v: &Value, out: &mut Vec<AdminControl>) {
 /// [`crate::command::scrubbed_names`] strips every `GEMINI_`-prefixed variable
 /// from the child, so an inherited override would reach Ralphy but never the
 /// vendor — and the two would then disagree about which file governs the run.
-pub(crate) fn system_settings_path() -> Option<PathBuf> {
-    system_dir().map(|d| d.join("settings.json"))
+pub(crate) fn system_settings_path() -> PathBuf {
+    system_dir().join("settings.json")
 }
 
 /// The administrator's policy directory, beside the settings file.
-pub(crate) fn admin_policy_dir() -> Option<PathBuf> {
-    system_dir().map(|d| d.join("policies"))
+pub(crate) fn admin_policy_dir() -> PathBuf {
+    system_dir().join("policies")
 }
 
 /// The vendor's own system-wide configuration directory, per
 /// `bundle/docs/cli/enterprise.md` and `bundle/docs/reference/policy-engine.md`.
-fn system_dir() -> Option<PathBuf> {
+fn system_dir() -> PathBuf {
     #[cfg(windows)]
     {
         let base = std::env::var_os("ProgramData").unwrap_or_else(|| r"C:\ProgramData".into());
-        Some(PathBuf::from(base).join("gemini-cli"))
+        PathBuf::from(base).join("gemini-cli")
     }
     #[cfg(target_os = "macos")]
     {
-        Some(PathBuf::from("/Library/Application Support/GeminiCli"))
+        PathBuf::from("/Library/Application Support/GeminiCli")
     }
     #[cfg(all(not(windows), not(target_os = "macos")))]
     {
-        Some(PathBuf::from("/etc/gemini-cli"))
+        PathBuf::from("/etc/gemini-cli")
     }
 }
 
 /// The pre-spawn tier against the real filesystem.
 pub(crate) fn read_admin_tier() -> Vec<AdminControl> {
-    let settings = system_settings_path().and_then(|p| std::fs::read_to_string(p).ok());
-    inspect_admin_tier(settings.as_deref(), admin_policy_dir().as_deref())
+    let settings = std::fs::read_to_string(system_settings_path()).ok();
+    inspect_admin_tier(settings.as_deref(), Some(&admin_policy_dir()))
 }
 
 #[cfg(test)]

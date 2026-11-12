@@ -74,6 +74,10 @@ pub fn diagnose_repo(
 /// under `docs/prd/`. The session writes its [`IssuesDraft`] JSON to `out_path`,
 /// which this function reads, validates against the schema, and returns. It NEVER
 /// publishes to GitHub — that is the cli's job after the dev confirms.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public entry point called by the composition root with one value per setting"
+)]
 pub fn draft_issues(
     repo: &Path,
     out_path: &Path,
@@ -166,7 +170,7 @@ pub fn consolidate_knowledge(
         is_kimi_auth_error,
     )?;
     let after = snapshot();
-    Ok(fold_wire_usage(&before, &after, Some(model)))
+    Ok(fold_wire_usage(&before, &after, Some(&model)))
 }
 
 /// Write the triage thread block to `triage-threads.md` beside `out_path`, and
@@ -194,6 +198,10 @@ fn thread_file_pointer(out_path: &Path, block: &str) -> Result<String> {
 /// the cli to apply after the operator confirms. Never publishes to GitHub.
 /// `req.image_paths` is unused: Kimi has no image-input channel in this slice
 /// (`ACCEPTS_IMAGES = false`).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public entry point called by the composition root with one value per setting"
+)]
 pub fn triage_issues(
     repo: &Path,
     out_path: &Path,

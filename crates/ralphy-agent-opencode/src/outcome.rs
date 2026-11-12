@@ -9,7 +9,17 @@ use anyhow::{Context, Result};
 use ralphy_adapter_support::{CompletionSignals, HeadlessCall, HeadlessRun};
 use ralphy_core::{Outcome, ResetAt};
 
+use crate::events::OpencodeLimit;
 use crate::OpenCodeAgent;
+
+/// What one `opencode run` call reported in its output: the final text, whether
+/// an error event was seen, and the usage limit it hit, if any.
+#[derive(Clone, Copy)]
+pub(crate) struct Reported<'a> {
+    pub(crate) text: &'a str,
+    pub(crate) saw_error: bool,
+    pub(crate) limit: Option<&'a OpencodeLimit>,
+}
 
 /// Extract `OpenCode`'s [`CompletionSignals`] from a call's raw end state and delegate
 /// the precedence ordering to the shared [`classify`](ralphy_adapter_support::classify)
@@ -23,14 +33,17 @@ pub(crate) fn classify_opencode_outcome(
     exited_cleanly: bool,
     timed_out: bool,
     committed: bool,
-    text: &str,
-    saw_error: bool,
-    limit: Option<Option<ResetAt>>,
+    reported: Reported<'_>,
 ) -> Outcome {
+    let Reported {
+        text,
+        saw_error,
+        limit,
+    } = reported;
     ralphy_adapter_support::classify(CompletionSignals {
         done: ralphy_adapter_support::done_sentinel(text),
         blocked: ralphy_adapter_support::blocked_reason(text),
-        limit,
+        limit: unschedulable_opencode_limit(limit),
         committed,
         timed_out,
         exited_ok: exited_cleanly,
@@ -46,8 +59,12 @@ pub(crate) fn classify_opencode_outcome(
 /// one; a `Limit(None)` routes it to the ~30-min synthetic cadence (ADR-0030 D1).
 /// Trustworthiness is a per-vendor extraction decision (the `classify` seam,
 /// ADR-0023); Claude/Codex are stable and keep their hints.
+#[expect(
+    clippy::option_option,
+    reason = "the return is the shape of CompletionSignals::limit, the shared ladder's input"
+)]
 pub(crate) fn unschedulable_opencode_limit(
-    detected: Option<Option<String>>,
+    detected: Option<&OpencodeLimit>,
 ) -> Option<Option<ResetAt>> {
     detected.map(|_| None)
 }
@@ -100,11 +117,16 @@ mod tests {
         // resets are not scheduled on (FinCal #73 — a "5 hour" limit resetting ~12h
         // out). Detection is preserved, so the runner still parks and retries.
         assert_eq!(
-            unschedulable_opencode_limit(Some(Some("2026-07-13 17:50:11".into()))),
+            unschedulable_opencode_limit(Some(&OpencodeLimit {
+                reset: Some("2026-07-13 17:50:11".into())
+            })),
             Some(None)
         );
         // A limit already carrying no hint is unchanged.
-        assert_eq!(unschedulable_opencode_limit(Some(None)), Some(None));
+        assert_eq!(
+            unschedulable_opencode_limit(Some(&OpencodeLimit { reset: None })),
+            Some(None)
+        );
         // No limit stays no limit (never fabricates one).
         assert_eq!(unschedulable_opencode_limit(None), None);
     }
@@ -116,7 +138,16 @@ mod tests {
         // A non-zero exit is Stuck even when the output carries a DONE sentinel.
         let text = "RALPHY_DONE_EXIT\n";
         assert_eq!(
-            classify_opencode_outcome(false, false, true, text, false, None),
+            classify_opencode_outcome(
+                false,
+                false,
+                true,
+                Reported {
+                    text,
+                    saw_error: false,
+                    limit: None
+                }
+            ),
             Outcome::Stuck
         );
     }
@@ -126,7 +157,16 @@ mod tests {
         // A JSON `error` event downgrades an otherwise-clean DONE claim to Stuck.
         let text = "RALPHY_DONE_EXIT\n";
         assert_eq!(
-            classify_opencode_outcome(true, false, true, text, true, None),
+            classify_opencode_outcome(
+                true,
+                false,
+                true,
+                Reported {
+                    text,
+                    saw_error: true,
+                    limit: None
+                }
+            ),
             Outcome::Stuck
         );
     }

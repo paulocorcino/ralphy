@@ -121,7 +121,7 @@ async fn session_ws_round_trips_keystrokes_and_tears_down_on_close() {
         while let Some(msg) = ws.next().await {
             match msg {
                 Ok(Message::Close(_)) | Err(_) => break,
-                Ok(_) => continue,
+                Ok(_) => {}
             }
         }
     })

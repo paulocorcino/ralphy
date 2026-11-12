@@ -171,7 +171,7 @@ async fn attach(port: u16, id: u64) -> Option<Ws> {
             match ws.next().await {
                 Some(Ok(Message::Binary(_))) => return Ok(true),
                 Some(Ok(Message::Close(_))) | None => return Ok(false),
-                Some(Ok(_)) => continue,
+                Some(Ok(_)) => {}
                 Some(Err(error)) => {
                     return Err(format!("the reattach failed on the socket: {error:?}"))
                 }

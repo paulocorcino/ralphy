@@ -135,17 +135,13 @@ impl<'a> Walk<'a> {
     }
 
     /// Emit one expression and book `before` as the source text ahead of it.
-    fn emit_anchored(
-        &mut self,
-        range: (usize, usize),
-        kind: Kind,
-        strip_html: bool,
-        before: String,
-    ) {
+    fn emit_anchored(&mut self, range: (usize, usize), kind: Kind, strip_html: bool, before: &str) {
         let from = self.out.len();
         self.sc
             .emit(range.0, range.1, kind, strip_html, false, self.out);
-        anchor(&mut self.out[from..], before);
+        if let Some(found) = self.out.get_mut(from..) {
+            anchor(found, before);
+        }
     }
 
     fn is_shown_key(&self, site: &Site<'_>, key: &str) -> bool {
@@ -163,7 +159,7 @@ impl<'a> Walk<'a> {
             _ => Kind::Property,
         };
         let end = self.sc.expr_end(site.i + 2, true);
-        self.emit_anchored((site.i + 2, end), kind, false, format!("{key}: "));
+        self.emit_anchored((site.i + 2, end), kind, false, &format!("{key}: "));
     }
 
     fn is_dialog_call(&self, site: &Site<'_>) -> bool {
@@ -189,7 +185,7 @@ impl<'a> Walk<'a> {
         };
         let end = self.sc.expr_end(site.i + 2, false);
         let html = site.name == "innerHTML";
-        self.emit_anchored((site.i + 2, end), kind, html, format!("{} = ", site.name));
+        self.emit_anchored((site.i + 2, end), kind, html, &format!("{} = ", site.name));
     }
 
     fn set_attribute(&mut self, site: &Site<'_>) {
@@ -202,7 +198,7 @@ impl<'a> Walk<'a> {
             return;
         };
         if b0 == a0 + 1 && matches!(attr.as_str(), "title" | "aria-label" | "placeholder") {
-            self.emit_anchored((a1, b1), Kind::Attribute, false, format!("\"{attr}\", "));
+            self.emit_anchored((a1, b1), Kind::Attribute, false, &format!("\"{attr}\", "));
         }
     }
 
@@ -257,7 +253,9 @@ impl<'a> Walk<'a> {
                 .filter(|f| !f.text.starts_with(['(', '['])),
         );
         let named = sc.ident_at(i + 1).unwrap_or_default();
-        anchor(&mut self.out[from..], format!("{named} = "));
+        if let Some(found) = self.out.get_mut(from..) {
+            anchor(found, &format!("{named} = "));
+        }
     }
 
     fn is_listed_call(&self, site: &Site<'_>, call: &str) -> bool {

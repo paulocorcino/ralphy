@@ -25,6 +25,11 @@ use crate::idle::IdleWatch;
 /// flag (`!timed_out`), which the Claude adapter still recovers itself from
 /// `timed_out`.
 #[derive(Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "idle_killed and stopped are diagnostics beside timed_out, which every \
+              classifier reads alone"
+)]
 pub struct HeadlessRun {
     /// Everything the child wrote to stdout, captured complete (no truncation).
     pub stdout: String,

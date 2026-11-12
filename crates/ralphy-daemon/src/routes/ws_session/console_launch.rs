@@ -30,38 +30,26 @@ impl Open {
                 slug,
                 repo_ref,
             }) => {
-                self.peer_console(&peer, &slug, &repo_ref, command, agent_label)
-                    .await
+                PeerConsole {
+                    sessions: self.sessions,
+                    query: &self.query,
+                    peer: &peer,
+                    slug: &slug,
+                    repo_ref: &repo_ref,
+                    command,
+                    agent_label,
+                    daemon_id: self.daemon_id,
+                    environment: self.environment,
+                    bound_port: self.bound_port,
+                    tab: self.tab,
+                    who: self.who,
+                    record: self.record,
+                }
+                .launch()
+                .await
             }
             Some(Placement::UnknownDaemon(why)) => Opened::refused(StatusCode::BAD_GATEWAY, why),
         }
-    }
-
-    async fn peer_console(
-        self,
-        peer: &crate::peer::PeerDescriptor,
-        slug: &str,
-        repo_ref: &str,
-        command: Option<String>,
-        agent_label: String,
-    ) -> Opened {
-        PeerConsole {
-            sessions: self.sessions,
-            query: &self.query,
-            peer,
-            slug,
-            repo_ref,
-            command,
-            agent_label,
-            daemon_id: self.daemon_id,
-            environment: self.environment,
-            bound_port: self.bound_port,
-            tab: self.tab,
-            who: self.who,
-            record: self.record,
-        }
-        .launch()
-        .await
     }
 
     async fn spawn_console(self, command: Option<String>, agent_label: String) -> Opened {

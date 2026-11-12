@@ -2,14 +2,13 @@ use super::*;
 
 #[test]
 fn the_interactive_argv_carries_no_prompt() {
-    for remote_control in [false, true] {
+    for remote_control in [None, Some("ralphy-1")] {
         let args = interactive_args(
             Path::new("settings.json"),
             Path::new("plugin"),
             "sonnet",
             Some("high"),
             remote_control,
-            "ralphy-1",
         );
         assert!(!args.iter().any(|arg| arg == EXEC_CHARTER));
     }
@@ -84,7 +83,12 @@ fn an_unproven_interactive_session_types_nothing() {
     let agent = ClaudeAgent::new(None, None, dir.path().to_path_buf());
     let (_tx, rx) = mpsc::channel();
     let flag = dir.path().join("status.flag");
-    let mut pump = SessionPump::new(&agent, rx, &flag, None, SystemTime::now(), proof);
+    let files = SessionFiles {
+        flag_file: &flag,
+        transcript_dir: None,
+        transcript_since: SystemTime::now(),
+    };
+    let mut pump = SessionPump::new(&agent, rx, files, proof);
     let mut typed: Vec<u8> = Vec::new();
     let give_up = Instant::now() + Duration::from_secs(10);
     let err = loop {

@@ -86,12 +86,7 @@ fn prepare(contents: &[u8], compressible: bool) -> Prepared {
     let digest = Sha256::digest(contents);
     // Sixteen bytes of the digest: a collision needs 2^64 assets, and the tag
     // stays short enough to read in a devtools column.
-    let mut etag = String::with_capacity(34);
-    etag.push('"');
-    for byte in &digest[..16] {
-        etag.push_str(&format!("{byte:02x}"));
-    }
-    etag.push('"');
+    let etag = format!("\"{}\"", crate::lower_hex(digest.iter().take(16)));
 
     let gzip = if compressible {
         let mut enc = GzEncoder::new(
@@ -165,7 +160,7 @@ pub fn build_id() -> &'static str {
             hash.update(contents);
         }
         let digest = hash.finalize();
-        let hex: String = digest[..6].iter().map(|b| format!("{b:02x}")).collect();
+        let hex = crate::lower_hex(digest.iter().take(6));
         format!("{}+{hex}", env!("RALPHY_VERSION"))
     })
 }

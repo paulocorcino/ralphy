@@ -4,7 +4,6 @@ use std::time::Duration;
 use anyhow::{bail, Result};
 use ralphy_core::{DraftRequest, IssuesMode, Workspace};
 
-use crate::init::gate::Agent;
 use crate::init::issues::{
     decide_issues_path, draft_decision, draft_with_agent, format_draft_summary, load_issues_draft,
     publish_decision, publish_draft, resolve_triage_label, ChosenAgent, IssuesPath,
@@ -20,8 +19,7 @@ pub(in crate::init::run) fn issues_stage(
     ws: &Workspace,
     state: &mut InitState,
     cfg: &InitConfig,
-    agent: Agent,
-    model: Option<&str>,
+    chosen: ChosenAgent<'_>,
 ) -> Result<()> {
     if state.is_done(Stage::Issues) {
         note_issues_done(state);
@@ -41,7 +39,7 @@ pub(in crate::init::run) fn issues_stage(
         return publish_remaining(repo, ws, state);
     }
 
-    match decide_issues_path(cfg) {
+    let source = match decide_issues_path(cfg) {
         IssuesPath::Skip => {
             print_section(
                 "First tasks",
@@ -50,13 +48,15 @@ pub(in crate::init::run) fn issues_stage(
             // Nothing to publish — the stage completed; record it so a re-run
             // doesn't reconsider an empty backlog.
             state.mark(Stage::Issues);
-            state.save(ws)
+            return state.save(ws);
         }
-
-        path @ (IssuesPath::Milestone | IssuesPath::LooseBacklog) => {
-            draft_and_publish(repo, ws, state, cfg, path, ChosenAgent { agent, model })
-        }
-    }
+        IssuesPath::Milestone => (IssuesMode::Milestone, cfg.milestone_docs.clone()),
+        IssuesPath::LooseBacklog => (
+            IssuesMode::LooseBacklog,
+            cfg.backlog_location.iter().cloned().collect(),
+        ),
+    };
+    draft_and_publish(repo, ws, state, source, chosen)
 }
 
 fn note_issues_done(state: &InitState) {
@@ -123,18 +123,9 @@ fn draft_and_publish(
     repo: &Path,
     ws: &Workspace,
     state: &mut InitState,
-    cfg: &InitConfig,
-    path: IssuesPath,
+    (mode, source_docs): (IssuesMode, Vec<String>),
     chosen: ChosenAgent<'_>,
 ) -> Result<()> {
-    let (mode, source_docs) = match path {
-        IssuesPath::Milestone => (IssuesMode::Milestone, cfg.milestone_docs.clone()),
-        IssuesPath::LooseBacklog => (
-            IssuesMode::LooseBacklog,
-            cfg.backlog_location.iter().cloned().collect(),
-        ),
-        IssuesPath::Skip => unreachable!("Skip handled above"),
-    };
     print_section(
         "First tasks",
         Some("Ralphy can read your docs to draft a first set of tasks (nothing is published yet)."),
@@ -155,14 +146,7 @@ fn draft_and_publish(
         triage_label: &triage_label,
     };
     let draft = with_spinner("Drafting tasks…", || {
-        draft_with_agent(
-            chosen,
-            repo,
-            &draft_path,
-            &req,
-            Some("medium"),
-            Duration::from_secs(600),
-        )
+        draft_with_agent(chosen, repo, &draft_path, &req, Duration::from_secs(600))
     })?;
     print_note(&format!("Draft written to {}", draft_path.display()));
 

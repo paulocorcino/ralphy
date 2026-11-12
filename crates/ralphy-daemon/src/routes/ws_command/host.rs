@@ -79,7 +79,7 @@ pub(super) async fn spawn_host(wire: &mut Wire, cmd: &Command, verb: Verb, ctx: 
     };
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
     let spawned = match &password {
-        Some(password) => dispatch::ProcessSpawner.spawn_with_input(
+        Some(password) => dispatch::ProcessSpawner::spawn_with_input(
             &dispatch::ralphy_exe(),
             &argv_refs,
             store_dir,

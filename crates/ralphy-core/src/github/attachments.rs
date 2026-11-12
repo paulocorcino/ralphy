@@ -4,6 +4,7 @@
 //! [`fetch_triage_attachments`] touches `gh`, best-effort; images are fetched only
 //! for a vision-capable adapter ([`gated_image_outcome`]).
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -185,10 +186,10 @@ pub fn render_manifest(issue: u64, entries: &[(String, AttachmentOutcome)]) -> S
     for (name, outcome) in entries {
         match outcome {
             AttachmentOutcome::Fetched { path } => {
-                s.push_str(&format!("{name} → {} (fetched)\n", path.display()));
+                writeln!(s, "{name} → {} (fetched)", path.display()).expect(crate::WRITE_TO_STRING);
             }
             AttachmentOutcome::NotFetched { reason } => {
-                s.push_str(&format!("{name} → not fetched ({reason})\n"));
+                writeln!(s, "{name} → not fetched ({reason})").expect(crate::WRITE_TO_STRING);
             }
         }
     }
@@ -248,9 +249,8 @@ fn classify_payload(class: FormatClass, bytes: Vec<u8>) -> Result<Vec<u8>, &'sta
     match class {
         FormatClass::FreeText => Ok(truncate_free_text(&bytes, TEXT_CAP)),
         FormatClass::Structured if bytes.len() > STRUCTURED_CAP => Err("too large"),
-        FormatClass::Structured => Ok(bytes),
         FormatClass::Image if bytes.len() > IMAGE_CAP => Err("too large"),
-        FormatClass::Image => Ok(bytes),
+        FormatClass::Structured | FormatClass::Image => Ok(bytes),
         FormatClass::Denied => Err("denied format"),
     }
 }
@@ -258,6 +258,7 @@ fn classify_payload(class: FormatClass, bytes: Vec<u8>) -> Result<Vec<u8>, &'sta
 /// Whether the selected adapter can consume image input, named for its manifest
 /// line. A `false` adapter never fetches images — the pixels would have nowhere
 /// to go (ADR-0025 §4).
+#[derive(Clone, Copy)]
 pub struct ImageCapability<'a> {
     pub accepts: bool,
     pub adapter_name: &'a str,

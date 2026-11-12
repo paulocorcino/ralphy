@@ -9,20 +9,16 @@ use std::time::{Duration, SystemTime};
 
 use ralphy_core::{Usage, Workspace};
 
-use crate::ClaudeAgent;
-
-impl ClaudeAgent {
-    /// `~/.claude/projects/<dashed-cwd>` for the repo this run operates on — the
-    /// directory Claude writes the session transcript JSONL into (ADR-0008 D10).
-    /// Derived from the byte-exact cwd passed to `claude` (the repo root).
-    pub(crate) fn transcript_dir(&self, ws: &Workspace) -> Option<PathBuf> {
-        let cwd = ws.repo_root().to_string_lossy();
-        ralphy_adapter_support::home_scoped_path(
-            None,
-            Path::new(".claude/projects"),
-            &PathBuf::from(dashed_cwd(&cwd)),
-        )
-    }
+/// `~/.claude/projects/<dashed-cwd>` for the repo this run operates on — the
+/// directory Claude writes the session transcript JSONL into (ADR-0008 D10).
+/// Derived from the byte-exact cwd passed to `claude` (the repo root).
+pub(crate) fn transcript_dir(ws: &Workspace) -> Option<PathBuf> {
+    let cwd = ws.repo_root().to_string_lossy();
+    ralphy_adapter_support::home_scoped_path(
+        None,
+        Path::new(".claude/projects"),
+        &PathBuf::from(dashed_cwd(&cwd)),
+    )
 }
 
 /// Parse the token usage off a headless `claude -p --output-format stream-json`

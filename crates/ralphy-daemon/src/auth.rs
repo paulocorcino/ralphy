@@ -38,11 +38,11 @@ use host::{allowed_host_set, declared_host_set, host_eq, origin_host};
 pub use policy::{
     compute_policy, remote_images_enabled_in, remote_images_path_in, require_login_enabled_in,
     require_login_path_in, require_token_enabled_in, require_token_path_in, set_remote_images_in,
-    set_require_login_in, set_require_token_in, upgrade_with_session, AuthPolicy, LoginOutcome,
-    Requirements,
+    set_require_login_in, set_require_token_in, upgrade_with_session, AuthPolicy, Credentials,
+    LoginOutcome, Requirements,
 };
 pub use revoked::{revoked_logins_path_in, RevokedLogins};
-pub use session::SessionAuth;
+pub use session::{LoginAttempt, SessionAuth};
 use throttle::LoginThrottle;
 pub use token::{
     effective_token, effective_token_from, ensure_token_at, env_token, generate_token, load_token,
@@ -302,9 +302,11 @@ impl AuthState {
         self.reload_revoked()?;
         let next = policy::compute_policy_with(
             self.bind_ip,
-            token,
-            seed,
-            pw,
+            Credentials {
+                token,
+                totp: seed,
+                password: pw,
+            },
             Requirements {
                 login: require_login,
                 token: require_token_enabled_in(&dir)?,

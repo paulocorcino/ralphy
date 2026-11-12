@@ -222,7 +222,7 @@ mod tests {
     }
 
     /// Build a fixed `DateTime<Local>` for the deterministic parse tests.
-    fn local(y: i32, mo: u32, d: u32, h: u32, mi: u32, sec: u32) -> DateTime<Local> {
+    fn local((y, mo, d): (i32, u32, u32), (h, mi, sec): (u32, u32, u32)) -> DateTime<Local> {
         use chrono::TimeZone;
         Local
             .with_ymd_and_hms(y, mo, d, h, mi, sec)
@@ -238,29 +238,37 @@ mod tests {
 
     #[test]
     fn reset_hint_parses_each_codex_form() {
-        let now = local(2026, 6, 9, 15, 20, 0);
+        let now = local((2026, 6, 9), (15, 20, 0));
         let cases = [
             // (hint, now, expected instant)
-            ("6:13 PM", now, local(2026, 6, 9, 18, 13, 0)),
-            ("18:13", now, local(2026, 6, 9, 18, 13, 0)),
+            ("6:13 PM", now, local((2026, 6, 9), (18, 13, 0))),
+            ("18:13", now, local((2026, 6, 9), (18, 13, 0))),
             (
                 "18:13",
-                local(2026, 6, 9, 19, 0, 0),
-                local(2026, 6, 10, 18, 13, 0),
+                local((2026, 6, 9), (19, 0, 0)),
+                local((2026, 6, 10), (18, 13, 0)),
             ),
             (
                 "6:13 PM",
-                local(2026, 6, 9, 19, 0, 0),
-                local(2026, 6, 10, 18, 13, 0),
+                local((2026, 6, 9), (19, 0, 0)),
+                local((2026, 6, 10), (18, 13, 0)),
             ),
             (
                 "12:23 AM",
-                local(2026, 6, 9, 23, 0, 0),
-                local(2026, 6, 10, 0, 23, 0),
+                local((2026, 6, 9), (23, 0, 0)),
+                local((2026, 6, 10), (0, 23, 0)),
             ),
-            ("Jun 10th, 2026 12:23 AM", now, local(2026, 6, 10, 0, 23, 0)),
-            ("2026-07-12 11:11:48", now, local(2026, 7, 12, 11, 11, 48)),
-            ("2026-07-12T09:00", now, local(2026, 7, 12, 9, 0, 0)),
+            (
+                "Jun 10th, 2026 12:23 AM",
+                now,
+                local((2026, 6, 10), (0, 23, 0)),
+            ),
+            (
+                "2026-07-12 11:11:48",
+                now,
+                local((2026, 7, 12), (11, 11, 48)),
+            ),
+            ("2026-07-12T09:00", now, local((2026, 7, 12), (9, 0, 0))),
         ];
         for (hint, now, expected) in cases {
             assert_eq!(reset_instant(hint, now), Some(expected), "hint {hint:?}");

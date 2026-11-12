@@ -30,9 +30,9 @@ fn checks_of(fake: &mut FakeHost) -> Vec<HostCheck> {
         Destination {
             dest: "svrapp",
             key_file: None,
+            keygen: no_keygen,
         },
         None,
-        no_keygen,
         &mut Report::text(Vec::new()),
     )
     .unwrap()

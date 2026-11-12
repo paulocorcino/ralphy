@@ -33,10 +33,12 @@ fn check_manifest(files: &[(String, Vec<u8>)], manifest: &serde_json::Value) -> 
         }
     }
     for (path, bytes) in files {
-        let actual: String = Sha256::digest(bytes)
+        let actual = Sha256::digest(bytes)
             .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
+            .fold(String::new(), |mut hex, b| {
+                write!(hex, "{b:02x}").expect(WRITE_TO_STRING);
+                hex
+            });
         match entries.remove(path) {
             None => problems.push(format!("{path}: not in the manifest")),
             Some(sha) if sha != actual => problems.push(format!(

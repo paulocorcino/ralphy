@@ -134,13 +134,13 @@ fn an_edited_host_gets_a_new_tunnel() {
     let now = Instant::now();
     assert_eq!(
         tunnels
-            .ensure_with("mac", &before, now, false, stand_in)
+            .ensure_with("mac", &before, (now, false), stand_in)
             .unwrap(),
         Ensured::Started
     );
     assert_eq!(
         tunnels
-            .ensure_with("mac", &before, now, false, stand_in)
+            .ensure_with("mac", &before, (now, false), stand_in)
             .unwrap(),
         Ensured::Running,
         "a running tunnel with the same spec is kept"
@@ -152,7 +152,7 @@ fn an_edited_host_gets_a_new_tunnel() {
     let old_pid = tunnels.0.lock().unwrap().held["mac"].child.id();
     assert_eq!(
         tunnels
-            .ensure_with("mac", &edited, now, false, stand_in)
+            .ensure_with("mac", &edited, (now, false), stand_in)
             .unwrap(),
         Ensured::Started
     );
@@ -163,7 +163,7 @@ fn an_edited_host_gets_a_new_tunnel() {
     };
     assert_eq!(
         tunnels
-            .ensure_with("mac", &to_socket, now, false, stand_in)
+            .ensure_with("mac", &to_socket, (now, false), stand_in)
             .unwrap(),
         Ensured::Started,
         "a spec that changes from a port to a socket replaces the tunnel"
@@ -203,7 +203,7 @@ fn wait_exited(tunnels: &Tunnels, id: &str) {
 fn start_and_exit(tunnels: &Tunnels, spec: &TunnelSpec, now: Instant) {
     assert_eq!(
         tunnels
-            .ensure_with("mac", spec, now, false, exits_at_once)
+            .ensure_with("mac", spec, (now, false), exits_at_once)
             .unwrap(),
         Ensured::Started
     );
@@ -227,7 +227,7 @@ fn an_unreachable_peer_waits_longer_after_each_exit_up_to_ten_minutes() {
     for secs in [30, 60, 120, 240, 480, 600, 600] {
         assert_eq!(
             tunnels
-                .ensure_with("mac", &spec, now, false, || panic!("it waits"))
+                .ensure_with("mac", &spec, (now, false), || panic!("it waits"))
                 .unwrap(),
             waiting(secs)
         );
@@ -245,7 +245,7 @@ fn an_edited_host_does_not_wait() {
     start_and_exit(&tunnels, &before, now);
     assert_eq!(
         tunnels
-            .ensure_with("mac", &before, now, false, || panic!("it waits"))
+            .ensure_with("mac", &before, (now, false), || panic!("it waits"))
             .unwrap(),
         waiting(30)
     );
@@ -265,7 +265,7 @@ fn a_peer_that_answered_does_not_wait() {
     let now = Instant::now();
     let waits = || {
         tunnels
-            .ensure_with("mac", &spec, now, false, || panic!("it waits"))
+            .ensure_with("mac", &spec, (now, false), || panic!("it waits"))
             .unwrap()
     };
     start_and_exit(&tunnels, &spec, now);
@@ -288,14 +288,14 @@ fn a_wake_does_not_wait_even_for_the_exit_it_sees() {
     start_and_exit(&tunnels, &spec, now);
     assert_eq!(
         tunnels
-            .ensure_with("mac", &spec, now, true, exits_at_once)
+            .ensure_with("mac", &spec, (now, true), exits_at_once)
             .unwrap(),
         Ensured::Started
     );
     wait_exited(&tunnels, "mac");
     assert_eq!(
         tunnels
-            .ensure_with("mac", &spec, now, false, || panic!("it waits"))
+            .ensure_with("mac", &spec, (now, false), || panic!("it waits"))
             .unwrap(),
         waiting(60),
         "the exits before the wake still count"
@@ -335,7 +335,9 @@ fn a_tunnel_keeps_the_last_words_of_the_ssh_before_it() {
     let now = Instant::now();
     // A wake never waits, so every ensure here starts an `ssh`.
     let ensure = |spec: &TunnelSpec, spawn: fn() -> Result<Child>| {
-        tunnels.ensure_with("mac", spec, now, true, spawn).unwrap()
+        tunnels
+            .ensure_with("mac", spec, (now, true), spawn)
+            .unwrap()
     };
     assert_eq!(ensure(&before, says_why_and_exits), Ensured::Started);
     wait_exited(&tunnels, "mac");

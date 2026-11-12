@@ -51,7 +51,7 @@ pub(crate) struct ResolvedEffort {
 /// `with_plan_effort` / `with_exec_effort`. Vendor-neutral (ADR-0044 D5): every
 /// adapter receives the word so a documented discard site is real, not "never
 /// received".
-fn effort_strings(effort: &ResolvedEffort) -> (Option<String>, Option<String>) {
+fn effort_strings(effort: ResolvedEffort) -> (Option<String>, Option<String>) {
     (
         effort.plan.map(|value| value.to_string()),
         effort.exec.map(|value| value.to_string()),
@@ -255,7 +255,7 @@ pub(crate) fn build_agent(
     run_deadline: Option<std::time::Instant>,
     persisted_opencode_model: Option<String>,
     claude: &ResolvedClaude,
-    effort: &ResolvedEffort,
+    effort: ResolvedEffort,
     copilot: &ResolvedCopilot,
     cursor: &ResolvedCursor,
     gemini: &ResolvedGemini,
