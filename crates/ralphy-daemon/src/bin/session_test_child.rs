@@ -40,6 +40,10 @@ pub const ARGV_MARKER: &str = "ARGV:";
 /// Prefix of the line reporting the current terminal size (`SIZE <cols>x<rows>`).
 pub const SIZE_MARKER: &str = "SIZE";
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one arm per command a test types; the arms share the read loop"
+)]
 fn main() {
     let mode = std::env::args().nth(1).unwrap_or_default();
     // Answered like Claude Code, so a daemon that reads the version of the
@@ -85,9 +89,8 @@ fn main() {
     let stdin = std::io::stdin();
     let mut line = Vec::new();
     for byte in stdin.lock().bytes() {
-        let byte = match byte {
-            Ok(byte) => byte,
-            Err(_) => break,
+        let Ok(byte) = byte else {
+            break;
         };
         if byte == 0x03 {
             println!("INTERRUPTED:ETX");

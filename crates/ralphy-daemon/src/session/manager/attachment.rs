@@ -23,6 +23,14 @@ pub enum AttachError {
     Superseded,
 }
 
+/// Who claims a session's writer slot: the holder (a browser tab), and the
+/// attempt that orders the claims of one holder.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WriterClaim<'a> {
+    pub holder: Option<&'a str>,
+    pub attempt: Option<u64>,
+}
+
 /// A live attachment to a session: the replay `snapshot` to send first (the
 /// screen snapshot, or the raw ring once the screen is broken), a `rx`
 /// for the live stream, a `size` receiver that holds the session size `(rows,

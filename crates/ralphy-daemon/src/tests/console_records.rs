@@ -125,6 +125,79 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
     // `ui-tests/wb-notes-folds.test.mjs` (`withStyle`).
 }
 
+/// The modules besides the console family that write the desk.
+const DESK_WRITERS: &[(&str, &str)] = &[
+    ("wb-notes.ts", include_str!("../../assets/ui/wb-notes.ts")),
+    (
+        "wb-notes-folds.ts",
+        include_str!("../../assets/ui/wb-notes-folds.ts"),
+    ),
+    (
+        "wb-notes-chrome.ts",
+        include_str!("../../assets/ui/wb-notes-chrome.ts"),
+    ),
+    (
+        "wb-notes-stage.ts",
+        include_str!("../../assets/ui/wb-notes-stage.ts"),
+    ),
+    (
+        "wb-notes-editor.ts",
+        include_str!("../../assets/ui/wb-notes-editor.ts"),
+    ),
+    (
+        "wb-notes-save.ts",
+        include_str!("../../assets/ui/wb-notes-save.ts"),
+    ),
+    (
+        "wb-notes-build.ts",
+        include_str!("../../assets/ui/wb-notes-build.ts"),
+    ),
+    (
+        "wb-notes-look.ts",
+        include_str!("../../assets/ui/wb-notes-look.ts"),
+    ),
+    (
+        "wb-notes-header.ts",
+        include_str!("../../assets/ui/wb-notes-header.ts"),
+    ),
+    (
+        "wb-notes-on-top.ts",
+        include_str!("../../assets/ui/wb-notes-on-top.ts"),
+    ),
+    (
+        "wb-notes-veil.ts",
+        include_str!("../../assets/ui/wb-notes-veil.ts"),
+    ),
+    (
+        "wb-notes-map.ts",
+        include_str!("../../assets/ui/wb-notes-map.ts"),
+    ),
+    (
+        "wb-notes-dormancy.ts",
+        include_str!("../../assets/ui/wb-notes-dormancy.ts"),
+    ),
+    (
+        "wb-notes-file.ts",
+        include_str!("../../assets/ui/wb-notes-file.ts"),
+    ),
+    (
+        "wb-notes-open.ts",
+        include_str!("../../assets/ui/wb-notes-open.ts"),
+    ),
+    (
+        "wb-notes-menus.ts",
+        include_str!("../../assets/ui/wb-notes-menus.ts"),
+    ),
+    (
+        "wb-notes-palette.ts",
+        include_str!("../../assets/ui/wb-notes-palette.ts"),
+    ),
+    (
+        "wb-messages.ts",
+        include_str!("../../assets/ui/wb-messages.ts"),
+    ),
+];
+
 /// A page writes the desk only as desk changes, each with the fields its act
 /// changed (ADR-0050 amendment 2026-10-04, changes, not the desk). The old
 /// writer built a whole record from the screen with a fresh clock, and seven of
@@ -136,79 +209,8 @@ fn the_shell_writes_the_desk_only_as_changes() {
     let console = include_str!("../../assets/ui/wb-console.ts");
     let desk = include_str!("../../assets/ui/wb-desk.ts");
     let records = include_str!("../../assets/ui/wb-desk-records.ts");
-    let notes = include_str!("../../assets/ui/wb-notes.ts");
-    let folds = include_str!("../../assets/ui/wb-notes-folds.ts");
     let sync = include_str!("../../assets/ui/wb-desk-sync.ts");
-    // The whole console family, and the other modules that write the desk.
-    let others = [
-        ("wb-notes.ts", notes),
-        ("wb-notes-folds.ts", folds),
-        (
-            "wb-notes-chrome.ts",
-            include_str!("../../assets/ui/wb-notes-chrome.ts"),
-        ),
-        (
-            "wb-notes-stage.ts",
-            include_str!("../../assets/ui/wb-notes-stage.ts"),
-        ),
-        (
-            "wb-notes-editor.ts",
-            include_str!("../../assets/ui/wb-notes-editor.ts"),
-        ),
-        (
-            "wb-notes-save.ts",
-            include_str!("../../assets/ui/wb-notes-save.ts"),
-        ),
-        (
-            "wb-notes-build.ts",
-            include_str!("../../assets/ui/wb-notes-build.ts"),
-        ),
-        (
-            "wb-notes-look.ts",
-            include_str!("../../assets/ui/wb-notes-look.ts"),
-        ),
-        (
-            "wb-notes-header.ts",
-            include_str!("../../assets/ui/wb-notes-header.ts"),
-        ),
-        (
-            "wb-notes-on-top.ts",
-            include_str!("../../assets/ui/wb-notes-on-top.ts"),
-        ),
-        (
-            "wb-notes-veil.ts",
-            include_str!("../../assets/ui/wb-notes-veil.ts"),
-        ),
-        (
-            "wb-notes-map.ts",
-            include_str!("../../assets/ui/wb-notes-map.ts"),
-        ),
-        (
-            "wb-notes-dormancy.ts",
-            include_str!("../../assets/ui/wb-notes-dormancy.ts"),
-        ),
-        (
-            "wb-notes-file.ts",
-            include_str!("../../assets/ui/wb-notes-file.ts"),
-        ),
-        (
-            "wb-notes-open.ts",
-            include_str!("../../assets/ui/wb-notes-open.ts"),
-        ),
-        (
-            "wb-notes-menus.ts",
-            include_str!("../../assets/ui/wb-notes-menus.ts"),
-        ),
-        (
-            "wb-notes-palette.ts",
-            include_str!("../../assets/ui/wb-notes-palette.ts"),
-        ),
-        (
-            "wb-messages.ts",
-            include_str!("../../assets/ui/wb-messages.ts"),
-        ),
-    ];
-    for (name, js) in [CONSOLE_FAMILY, &others].concat() {
+    for (name, js) in [CONSOLE_FAMILY, DESK_WRITERS].concat() {
         for banned in [
             "persistWin(",
             "deskBody(",

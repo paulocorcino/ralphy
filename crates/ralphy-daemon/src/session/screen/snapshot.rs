@@ -7,6 +7,7 @@ use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::{Cell, Flags, Hyperlink};
 use alacritty_terminal::term::{Term, TermMode};
 use alacritty_terminal::vte::ansi::{Color, CursorShape, CursorStyle, NamedColor};
+use std::fmt::Write as _;
 
 use super::{with_primary, Listener};
 
@@ -77,7 +78,7 @@ pub(super) fn write(
     // before the cursor.
     let region = region.filter(|(top, bottom)| top < bottom);
     if let Some((top, bottom)) = region {
-        out.push_str(&format!("\x1b[{top};{bottom}r"));
+        write!(out, "\x1b[{top};{bottom}r").expect(crate::WRITE_TO_STRING);
     }
 
     // 4. The input modes.
@@ -96,13 +97,13 @@ pub(super) fn write(
         out.push_str("\x1b[?25l");
     }
     if let Some(shape) = cursor_shape_code(term.cursor_style()) {
-        out.push_str(&format!("\x1b[{shape} q"));
+        write!(out, "\x1b[{shape} q").expect(crate::WRITE_TO_STRING);
     }
 
     // 6. The title, without control characters.
     if let Some(title) = title {
         let clean: String = title.chars().filter(|c| !c.is_control()).collect();
-        out.push_str(&format!("\x1b]2;{clean}\x07"));
+        write!(out, "\x1b]2;{clean}\x07").expect(crate::WRITE_TO_STRING);
     }
     out.into_bytes()
 }
@@ -118,11 +119,13 @@ fn write_screens(term: &mut Term<Listener>, out: &mut String, pen: &mut Pen) {
     // 2. The alternate screen over it, with the primary cursor saved by 1049.
     if alternate {
         let primary_cursor = with_primary(term, |grid| grid.cursor.point);
-        out.push_str(&format!(
+        write!(
+            out,
             "\x1b[0m\x1b[{};{}H\x1b[?1049h",
             primary_cursor.line.0.saturating_add(1),
             primary_cursor.column.0.saturating_add(1)
-        ));
+        )
+        .expect(crate::WRITE_TO_STRING);
         *pen = Pen::default();
         write_rows(term.grid(), false, out, pen);
     }
@@ -146,7 +149,7 @@ fn write_input_modes(mode: TermMode, out: &mut String) -> bool {
         .filter(|(_, flag)| mode.contains(**flag))
         .fold(0u32, |flags, (bit, _)| flags | (1 << bit));
     if kitty != 0 {
-        out.push_str(&format!("\x1b[>{kitty}u"));
+        write!(out, "\x1b[>{kitty}u").expect(crate::WRITE_TO_STRING);
     }
     let origin = mode.contains(TermMode::ORIGIN);
     if origin {
@@ -206,7 +209,7 @@ fn write_cursor(grid: &Grid<Cell>, origin_top: usize, out: &mut String, pen: &mu
         }
         cell = Some(&grid[point.line][Column(column)]);
     }
-    out.push_str(&format!("\x1b[{};{}H", row + 1, column + 1));
+    write!(out, "\x1b[{};{}H", row + 1, column + 1).expect(crate::WRITE_TO_STRING);
     if let Some(cell) = cell {
         pen.apply(cell, out);
         write_cell(cell, out);
@@ -360,7 +363,8 @@ impl Pen {
             return;
         }
         match &link {
-            Some(link) => out.push_str(&format!("\x1b]8;id={};{}\x1b\\", link.id(), link.uri())),
+            Some(link) => write!(out, "\x1b]8;id={};{}\x1b\\", link.id(), link.uri())
+                .expect(crate::WRITE_TO_STRING),
             None => out.push_str("\x1b]8;;\x1b\\"),
         }
         self.link = link;
@@ -404,10 +408,15 @@ fn write_color(color: Color, base: u32, out: &mut String) {
                 // The default color, and the colors only a renderer uses.
                 _ => base + 9,
             };
-            out.push_str(&format!(";{code}"));
+            write!(out, ";{code}").expect(crate::WRITE_TO_STRING);
         }
-        Color::Indexed(index) => out.push_str(&format!(";{};5;{index}", base + 8)),
-        Color::Spec(rgb) => out.push_str(&format!(";{};2;{};{};{}", base + 8, rgb.r, rgb.g, rgb.b)),
+        Color::Indexed(index) => {
+            write!(out, ";{};5;{index}", base + 8).expect(crate::WRITE_TO_STRING);
+        }
+        Color::Spec(rgb) => {
+            write!(out, ";{};2;{};{};{}", base + 8, rgb.r, rgb.g, rgb.b)
+                .expect(crate::WRITE_TO_STRING);
+        }
     }
 }
 
@@ -420,11 +429,15 @@ fn write_color(color: Color, base: u32, out: &mut String) {
 fn write_underline_color(color: Color, out: &mut String) {
     match color {
         Color::Named(name) if (name as u32) < 16 => {
-            out.push_str(&format!(";58;5;{}", name as u32));
+            write!(out, ";58;5;{}", name as u32).expect(crate::WRITE_TO_STRING);
         }
         Color::Named(_) => {}
-        Color::Indexed(index) => out.push_str(&format!(";58;5;{index}")),
-        Color::Spec(rgb) => out.push_str(&format!(";58;2;{};{};{}", rgb.r, rgb.g, rgb.b)),
+        Color::Indexed(index) => {
+            write!(out, ";58;5;{index}").expect(crate::WRITE_TO_STRING);
+        }
+        Color::Spec(rgb) => {
+            write!(out, ";58;2;{};{};{}", rgb.r, rgb.g, rgb.b).expect(crate::WRITE_TO_STRING);
+        }
     }
 }
 

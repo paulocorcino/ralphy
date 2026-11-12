@@ -13,7 +13,7 @@ use super::frame::{
 };
 use super::{
     close_peer_tree_poller, push_command, spawn_nudge_forwarder, spawn_peer_tree_poller,
-    PeerTreePoller, PeerWatchSet, TreeHost,
+    PeerTreePoller, PeerWatchSet, PolledRepo, TreeHost,
 };
 use crate::mux::ChannelSender;
 use crate::peer::read_peer_store;
@@ -281,10 +281,13 @@ fn start_peer_poller(
 ) -> PeerTreePoller {
     let set = PeerWatchSet::new(&req.rel, req.verb.runs());
     let sub = format!("{}-{}", daemon_id.unwrap_or("daemon"), ulid::Ulid::new());
+    let repo = PolledRepo {
+        repo_ref: req.repo_ref.clone(),
+        slug: slug.to_owned(),
+    };
     let task = spawn_peer_tree_poller(
         peer.clone(),
-        req.repo_ref.clone(),
-        slug.to_owned(),
+        repo,
         sub.clone(),
         set.clone(),
         nudge_tx.clone(),

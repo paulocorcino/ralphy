@@ -30,12 +30,12 @@ fn write_owner_only_probed(
     bytes: &[u8],
     after_create: impl FnOnce(&Path),
 ) -> Result<()> {
-    let name = path
-        .file_name()
-        .with_context(|| format!("{} names no file", path.display()))?;
     // The counter keeps two writers in one process (the daemon's threads) off
     // each other's temporary file; the pid keeps processes apart.
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let name = path
+        .file_name()
+        .with_context(|| format!("{} names no file", path.display()))?;
     let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut tmp_name = name.to_os_string();
     tmp_name.push(format!(".tmp-{}-{n}", std::process::id()));

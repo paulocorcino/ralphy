@@ -176,6 +176,10 @@ async fn flush_and_report(
 /// Read `reader` to EOF and send it on `tx` as text. A send waits while the
 /// channel is full; once the receiver is gone the rest is read and discarded,
 /// so the child never stalls on a full pipe.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "the drain owns the sender, so the channel closes when the drain ends"
+)]
 fn drain(mut reader: impl Read, tx: mpsc::Sender<String>) {
     let mut buf = [0u8; 8192];
     let mut carry = Vec::new();

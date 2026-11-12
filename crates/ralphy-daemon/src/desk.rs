@@ -182,6 +182,10 @@ pub struct DeskStore {
     pub checkouts: BTreeMap<String, String>,
 }
 
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if calls it with a reference to the field"
+)]
 fn is_zero(n: &u64) -> bool {
     *n == 0
 }
@@ -242,9 +246,9 @@ fn keep_newest_by_ts<T>(items: Vec<T>, max: usize, ts: impl Fn(&T) -> i64) -> Ve
 /// running console, and the next load adopts it at the cascade position. When
 /// `live` alone is over the cap, all of it stays. Only a restore prunes: it
 /// builds a whole desk, and a desk change never deletes a record by age.
-pub fn prune(
+pub fn prune<S: std::hash::BuildHasher>(
     records: Vec<DeskRecord>,
-    live: &std::collections::HashSet<String>,
+    live: &std::collections::HashSet<String, S>,
 ) -> Vec<DeskRecord> {
     if records.len() <= DESK_MAX {
         return records;

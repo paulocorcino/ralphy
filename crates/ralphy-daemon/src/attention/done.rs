@@ -15,7 +15,8 @@ use tokio::sync::broadcast;
 
 use super::{AttentionRequest, Kind};
 use crate::desk;
-use crate::routes::{desk_put_route, PeerRepoCache, Push};
+pub(crate) use crate::routes::DeskFiles;
+use crate::routes::{desk_put_route, Push};
 use crate::session::{SessionId, SessionInfo, TurnEnd};
 
 /// A finished turn of a console that had the mark: one open request.
@@ -70,13 +71,6 @@ impl Marks {
     }
 }
 
-/// Where the tick finds the desk and writes it back.
-pub(crate) struct DeskFiles {
-    pub(crate) desk: std::path::PathBuf,
-    pub(crate) registry: std::path::PathBuf,
-    pub(crate) peers: PeerRepoCache,
-}
-
 /// Open a request for each of the `fresh` turn ends whose window record has
 /// the mark, then clear those marks through the desk's own write path, which
 /// pushes `desk.dirty`. A request is opened even when the mark cannot be
@@ -128,15 +122,7 @@ async fn clear(
         .collect();
     let body = serde_json::json!({ "seq": 0, "generation": generation, "changes": changes });
     let raw = body.to_string();
-    let reply = desk_put_route(
-        files.desk.clone(),
-        files.registry.clone(),
-        files.peers.clone(),
-        pushes.clone(),
-        None,
-        raw.as_bytes(),
-    )
-    .await;
+    let reply = desk_put_route(files, pushes, None, raw.as_bytes()).await;
     if !reply.status().is_success() {
         tracing::warn!(status = %reply.status(), "the done mark could not be cleared");
     }

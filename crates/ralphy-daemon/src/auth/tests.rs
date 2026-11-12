@@ -263,7 +263,15 @@ fn login_checked_rejects_a_replayed_step() {
         revoked: RevokedLogins::default(),
     };
     // T=59 → step 1 (59/30), RFC code 287082.
-    let out = s.login_checked("287082", None, cookie::SessionKind::Standard, 59, None);
+    let out = s.login_checked(
+        LoginAttempt {
+            code: "287082",
+            password: None,
+        },
+        cookie::SessionKind::Standard,
+        59,
+        None,
+    );
     let step = match out {
         LoginOutcome::Ok { step, .. } => step,
         LoginOutcome::BadCredential | LoginOutcome::Replayed => {
@@ -275,8 +283,10 @@ fn login_checked_rejects_a_replayed_step() {
     assert!(
         matches!(
             s.login_checked(
-                "287082",
-                None,
+                LoginAttempt {
+                    code: "287082",
+                    password: None,
+                },
                 cookie::SessionKind::Standard,
                 59,
                 Some(step)
@@ -287,7 +297,15 @@ fn login_checked_rejects_a_replayed_step() {
     );
     // An older last-step still lets the newer step through.
     assert!(matches!(
-        s.login_checked("287082", None, cookie::SessionKind::Standard, 59, Some(0)),
+        s.login_checked(
+            LoginAttempt {
+                code: "287082",
+                password: None,
+            },
+            cookie::SessionKind::Standard,
+            59,
+            Some(0)
+        ),
         LoginOutcome::Ok { .. }
     ));
 }
@@ -326,7 +344,15 @@ fn a_remembered_login_mints_a_remembered_cookie_with_its_own_hysteresis() {
         epoch: test_epoch(),
         revoked: RevokedLogins::default(),
     };
-    let out = s.login_checked("287082", None, cookie::SessionKind::Remembered, 59, None);
+    let out = s.login_checked(
+        LoginAttempt {
+            code: "287082",
+            password: None,
+        },
+        cookie::SessionKind::Remembered,
+        59,
+        None,
+    );
     let (cookie, kind) = match out {
         LoginOutcome::Ok { cookie, kind, .. } => (cookie, kind),
         LoginOutcome::BadCredential | LoginOutcome::Replayed => panic!("login must succeed"),
@@ -370,7 +396,15 @@ fn rfc_session() -> SessionAuth {
 
 /// The cookie and login ID of a login that must succeed.
 fn login_ok(s: &SessionAuth) -> (String, cookie::LoginId) {
-    match s.login_checked("287082", None, cookie::SessionKind::Standard, 59, None) {
+    match s.login_checked(
+        LoginAttempt {
+            code: "287082",
+            password: None,
+        },
+        cookie::SessionKind::Standard,
+        59,
+        None,
+    ) {
         LoginOutcome::Ok { cookie, login, .. } => (cookie, login),
         LoginOutcome::BadCredential | LoginOutcome::Replayed => panic!("login must succeed"),
     }

@@ -12,7 +12,7 @@ use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
 
-use super::execute_oneshot;
+use super::{execute_oneshot, OneshotRepo};
 use super::{usage_local_route, RouterShared, UsageQuery};
 use crate::{dispatch, fleet, identity, peer, protocol, registry, session, watch};
 
@@ -23,7 +23,7 @@ use crate::{dispatch, fleet, identity, peer, protocol, registry, session, watch}
 ///
 /// 404 when un-baptized, matching `/api/identity`: a daemon with no identity has
 /// nothing a peer could key on.
-pub(crate) async fn peer_hello_route(
+pub(crate) fn peer_hello_route(
     identity: Option<identity::Identity>,
     environment: String,
 ) -> Response {
@@ -111,9 +111,11 @@ pub(crate) async fn peer_command_route(
     let payload = execute_oneshot(
         verb,
         &cmd,
-        Path::new(&entry.path),
+        OneshotRepo {
+            slug,
+            path: Path::new(&entry.path),
+        },
         daemon_id.as_deref(),
-        slug,
         &sessions,
     )
     .await
@@ -243,8 +245,8 @@ async fn subscribe_off_reactor(
         .context("the tree subscription did not finish")?
 }
 
-pub(crate) async fn peer_tree_close_route(
-    subs: Arc<fleet::watchsub::WatchSubs>,
+pub(crate) fn peer_tree_close_route(
+    subs: &fleet::watchsub::WatchSubs,
     Json(close): Json<PeerTreeClose>,
 ) -> Response {
     subs.close(&close.sub);
@@ -259,7 +261,7 @@ pub(crate) fn peer_routes(s: &RouterShared) -> Router {
             get({
                 let id = s.identity.clone();
                 let env = s.environment.clone();
-                move || peer_hello_route(id.clone(), env.clone())
+                move || std::future::ready(peer_hello_route(id.clone(), env.clone()))
             }),
         )
         .route(
@@ -318,7 +320,9 @@ pub(crate) fn peer_routes(s: &RouterShared) -> Router {
             "/api/peer/tree/close",
             post({
                 let subs = s.peer_watch_subs.clone();
-                move |body: Json<PeerTreeClose>| peer_tree_close_route(subs.clone(), body)
+                move |body: Json<PeerTreeClose>| {
+                    std::future::ready(peer_tree_close_route(&subs, body))
+                }
             }),
         )
 }

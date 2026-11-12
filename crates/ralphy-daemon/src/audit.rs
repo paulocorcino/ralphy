@@ -411,11 +411,11 @@ impl Writer {
             return Ok(false);
         }
         let mut notice = Event::new(EventKind::LoginOtherDevice, None, event.actor);
-        notice.device = event.device.clone();
+        notice.device.clone_from(&event.device);
         notice.login = Some(login.to_owned());
         notice.did = Some(did.to_owned());
-        notice.ip = event.ip.clone();
-        notice.holder = event.holder.clone();
+        notice.ip.clone_from(&event.ip);
+        notice.holder.clone_from(&event.holder);
         if let Err(e) = self.append(path, &notice) {
             // The book already marked the pair as reported. Read it again
             // from the log, which has no line for it.

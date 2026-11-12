@@ -25,6 +25,7 @@
     reason = "each platform's build leaves the helpers of the other platforms unused"
 )]
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 mod executor;
@@ -282,10 +283,11 @@ fn render_launchctl(verb: LaunchctlVerb, spec: &AutostartSpec) -> Vec<String> {
 pub fn systemd_unit(spec: &AutostartSpec) -> String {
     let mut environment = String::new();
     if let Some(distro) = spec.wsl_distro.as_deref().filter(|d| unit_safe(d)) {
-        environment.push_str(&format!("Environment=\"WSL_DISTRO_NAME={distro}\"\n"));
+        writeln!(environment, "Environment=\"WSL_DISTRO_NAME={distro}\"")
+            .expect(crate::WRITE_TO_STRING);
     }
     if let Some(path) = spec.path.as_deref().filter(|p| unit_safe(p)) {
-        environment.push_str(&format!("Environment=\"PATH={path}\"\n"));
+        writeln!(environment, "Environment=\"PATH={path}\"").expect(crate::WRITE_TO_STRING);
     }
     format!(
         "[Unit]\nDescription=Ralphy daemon\nAfter=default.target\n\n\

@@ -165,11 +165,10 @@ mod tests {
     #[test]
     fn rfc6070_pbkdf2_vector() {
         let dk = derive("password", b"salt", 1);
-        let mut hex = String::new();
-        for b in dk {
-            hex.push_str(&format!("{b:02x}"));
-        }
-        assert_eq!(hex, "0c60c80f961f0e71f3a9b524af6012062fe037a6");
+        assert_eq!(
+            crate::lower_hex(&dk),
+            "0c60c80f961f0e71f3a9b524af6012062fe037a6"
+        );
     }
 
     #[test]

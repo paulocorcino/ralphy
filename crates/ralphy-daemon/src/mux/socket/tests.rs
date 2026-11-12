@@ -109,9 +109,8 @@ async fn read_for(ws: &mut Ws, within: Duration) -> (Vec<Command>, usize, bool) 
     let mut beats = 0;
     let deadline = Instant::now() + within;
     loop {
-        let msg = match tokio::time::timeout_at(deadline, ws.next()).await {
-            Err(_) => return (commands, beats, false),
-            Ok(msg) => msg,
+        let Ok(msg) = tokio::time::timeout_at(deadline, ws.next()).await else {
+            return (commands, beats, false);
         };
         match msg {
             Some(Ok(Wire::Binary(bytes))) => match protocol::decode(&bytes).unwrap() {

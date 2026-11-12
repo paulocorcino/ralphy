@@ -88,7 +88,10 @@ fn a_console_can_take_the_whole_screen() {
         !body.contains("bi-fullscreen-exit"),
         "toggleFull must not write the control's icon — syncFullState derives it"
     );
+}
 
+#[test]
+fn a_fullscreen_console_fits_a_tablet() {
     let css = served_css();
     let rule = |head: &str| -> String {
         let after = css
@@ -112,7 +115,10 @@ fn a_console_can_take_the_whole_screen() {
         rule("\n.session-window:fullscreen {").contains("env(safe-area-inset-bottom"),
         "a fullscreen console must inset for the home indicator"
     );
+}
 
+#[test]
+fn the_shell_installs_to_the_home_screen() {
     // The iPad's OTHER answer, which needs no fullscreen state at all:
     // installed to the home screen the shell runs chrome-less for good.
     let html = INDEX_HTML;

@@ -44,7 +44,7 @@ fn window(id: &str) -> serde_json::Value {
     })
 }
 
-fn create(kind: &str, record: serde_json::Value) -> serde_json::Value {
+fn create(kind: &str, record: &serde_json::Value) -> serde_json::Value {
     json!({ "op": "create", "type": kind, "record": record })
 }
 
@@ -57,8 +57,8 @@ fn a_refused_change_is_named_and_the_others_still_apply() {
     let mut off = window("w-off");
     off["rect"]["left"] = json!(-1.0);
     let changes = [
-        create("window", window("w-1")),
-        create("window", off),
+        create("window", &window("w-1")),
+        create("window", &off),
         json!({ "op": "set", "type": "window", "id": "w-1", "fields": { "ts": 9 } }),
         json!({ "op": "teleport", "id": "w-1" }),
         json!({ "op": "set", "type": "window", "id": "w-1", "fields": { "checkout": "../up" } }),
@@ -94,8 +94,8 @@ fn a_refused_change_is_named_and_the_others_still_apply() {
 #[test]
 fn a_change_stamps_the_server_time_and_a_no_op_does_not() {
     let desk = desk_of(&[
-        create("window", window("w-1")),
-        create("window", window("w-2")),
+        create("window", &window("w-1")),
+        create("window", &window("w-2")),
     ]);
     let out = apply(
         desk,
@@ -116,7 +116,7 @@ fn a_change_stamps_the_server_time_and_a_no_op_does_not() {
 #[test]
 fn a_window_create_past_the_cap_and_its_slack_is_refused() {
     let windows: Vec<serde_json::Value> = (0..=(DESK_MAX + DESK_CREATE_SLACK))
-        .map(|n| create("window", window(&format!("w-{n}"))))
+        .map(|n| create("window", &window(&format!("w-{n}"))))
         .collect();
     let out = apply(DeskStore::default(), &windows, &BTreeMap::new(), NOW);
     assert_eq!(out.desk.windows.len(), DESK_MAX + DESK_CREATE_SLACK);
@@ -139,7 +139,7 @@ fn a_change_names_its_project_by_the_canonical_key() {
     let out = apply(
         desk,
         &[
-            create("window", stale),
+            create("window", &stale),
             json!({ "op": "checkout-clear", "repo": "path-abc", "ifName": "wt-a" }),
             json!({ "op": "checkout", "repo": "path-abc", "name": "wt-b" }),
             json!({
@@ -164,7 +164,7 @@ fn a_change_names_its_project_by_the_canonical_key() {
 fn a_create_cuts_a_long_console_name_by_char() {
     let mut long = window("w-1");
     long["consoleName"] = json!("é".repeat(CONSOLE_NAME_MAX + 5));
-    let desk = desk_of(&[create("window", long)]);
+    let desk = desk_of(&[create("window", &long)]);
     let name = desk.windows[0].console_name.clone().expect("a name");
     assert_eq!(name.chars().count(), CONSOLE_NAME_MAX);
     let out = apply(
@@ -184,7 +184,7 @@ fn a_create_cuts_a_long_console_name_by_char() {
 
 #[test]
 fn the_done_mark_round_trips_on_the_desk_record() {
-    let desk = desk_of(&[create("window", window("w-1"))]);
+    let desk = desk_of(&[create("window", &window("w-1"))]);
     assert!(!desk.windows[0].done_mark, "a new record has no mark");
     let wire = serde_json::to_string(&desk.windows[0]).expect("a record serializes");
     assert!(!wire.contains("doneMark"), "no mark, no key: {wire}");
@@ -232,12 +232,12 @@ fn note(id: &str) -> serde_json::Value {
 fn a_fence_or_note_with_a_bad_rect_or_checkout_is_refused_by_kind() {
     let out_of_frame = json!({ "left": -1.0, "top": 0.0, "width": 10.0, "height": 10.0 });
     let changes = [
-        create("fence", fence("f-1")),
-        create("note", note("n-1")),
-        create("fence", json!({ "id": "f-2", "rect": out_of_frame })),
+        create("fence", &fence("f-1")),
+        create("note", &note("n-1")),
+        create("fence", &json!({ "id": "f-2", "rect": out_of_frame })),
         create(
             "note",
-            json!({ "id": "n-2", "repo": "o/r", "path": "b.note", "rect": out_of_frame }),
+            &json!({ "id": "n-2", "repo": "o/r", "path": "b.note", "rect": out_of_frame }),
         ),
         json!({ "op": "set", "type": "fence", "id": "f-1", "fields": { "rect": out_of_frame } }),
         json!({ "op": "set", "type": "note", "id": "n-1", "fields": { "rect": out_of_frame } }),
@@ -276,8 +276,8 @@ fn a_remove_drops_only_the_named_record_of_its_kind() {
     let kinds: [(&str, Make); 3] = [("window", window), ("fence", fence), ("note", note)];
     for (kind, record) in kinds {
         let out = desk_of(&[
-            create(kind, record("r-1")),
-            create(kind, record("r-2")),
+            create(kind, &record("r-1")),
+            create(kind, &record("r-2")),
             json!({ "op": "remove", "type": kind, "id": "r-1" }),
         ]);
         let ids: Vec<&str> = match kind {

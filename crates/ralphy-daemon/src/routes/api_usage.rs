@@ -2,7 +2,7 @@
 //! interactive records, the Spend tab's summary, and this daemon's own
 //! contribution that a peer reads.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use axum::extract::Query;
 use axum::http::StatusCode;
@@ -85,9 +85,9 @@ pub(crate) async fn usage_route(
         },
     };
     let local = local_usage_contribution(
-        usage_dir.clone(),
-        stores,
-        registry_path,
+        &usage_dir,
+        &stores,
+        &registry_path,
         daemon_id,
         since.as_deref(),
     );
@@ -210,7 +210,7 @@ pub(crate) async fn spend_route(
         // period. Two filters that disagree about a row is worse than one pass
         // over a file this route already reads whole for `all`.
         let contribution =
-            local_usage_contribution(usage_dir.clone(), stores, registry_path, None, None);
+            local_usage_contribution(&usage_dir, &stores, &registry_path, None, None);
         let recovered = usage::recovered_models(&usage_dir);
         let prices = ralphy_pricing::PriceTable::load();
         spend::summarize(&spend::SpendInput {
@@ -247,9 +247,9 @@ pub(crate) async fn usage_local_route(
     since: Option<String>,
 ) -> Response {
     Json(local_usage_contribution(
-        usage_dir,
-        stores,
-        registry_path,
+        &usage_dir,
+        &stores,
+        &registry_path,
         daemon_id,
         since.as_deref(),
     ))
@@ -257,15 +257,15 @@ pub(crate) async fn usage_local_route(
 }
 
 pub(crate) fn local_usage_contribution(
-    usage_dir: PathBuf,
-    stores: StorePaths,
-    registry_path: PathBuf,
+    usage_dir: &Path,
+    stores: &StorePaths,
+    registry_path: &Path,
     daemon_id: Option<String>,
     since: Option<&str>,
 ) -> usage::UsageContribution {
     // A registry load error must not fail the page — serve interactive records
     // with no project/actor attribution, like `repos_route` (logged).
-    let store = match registry::load_from(&registry_path) {
+    let store = match registry::load_from(registry_path) {
         Ok(store) => store,
         Err(e) => {
             tracing::warn!(
@@ -275,7 +275,7 @@ pub(crate) fn local_usage_contribution(
             registry::RegistryStore::default()
         }
     };
-    usage::local_contribution(&usage_dir, &stores, &store, daemon_id, since)
+    usage::local_contribution(usage_dir, stores, &store, daemon_id, since)
 }
 
 /// The usage routes of the workbench: usage and spend.

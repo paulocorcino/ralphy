@@ -75,17 +75,17 @@ impl Refuser {
     /// Log the decided `refusal`, and decide how its client is told.
     pub(crate) fn tell(&self, refusal: Refusal) -> Told {
         match refusal {
-            Refusal::Refuse { status, message } => self.refuse(status, message),
+            Refusal::Refuse { status, message } => self.refuse(status, &message),
             Refusal::Supersede { attempt } => self.supersede(attempt),
         }
     }
 
     /// Refuse with `message`. A reattach is told nothing more; a new launch
     /// announces `message`.
-    fn refuse(&self, status: StatusCode, message: String) -> Told {
+    fn refuse(&self, status: StatusCode, message: &str) -> Told {
         tracing::info!(
             status = status.as_u16(),
-            reason = message.as_str(),
+            reason = message,
             launch = self.session.is_none(),
             session = self.session,
             holder = self.tab.holder.as_deref(),
@@ -112,12 +112,12 @@ impl Refuser {
         );
         Told::End(self.end(
             SUPERSEDED,
-            "a newer connection from this tab has the console".to_owned(),
+            "a newer connection from this tab has the console",
         ))
     }
 
     /// The payload of the `session-end` that names a refusal.
-    fn end(&self, reason: &'static str, message: String) -> serde_json::Value {
+    fn end(&self, reason: &'static str, message: &str) -> serde_json::Value {
         serde_json::json!({
             "reason": reason,
             "message": message,

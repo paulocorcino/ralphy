@@ -6,15 +6,18 @@
 use std::ops::ControlFlow;
 use std::time::Instant;
 
+use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc;
 
-use super::super::outbound::{announce_end, hand_on, open, Opening, Outbox};
+use super::super::outbound::{
+    announce_end, hand_on, open, resync, send_output, Ending, Opening, Outbox,
+};
 use super::super::refuse::{Refusal, Refuser, Told};
 use super::super::traffic::Traffic;
 use super::super::upgrade::{Decided, Opened};
 use super::super::PendingRecord;
 use super::super::{SessionHost, SessionQuery};
-use super::{on_client_frame, on_output, on_size, silent_if_err, Flow};
+use super::{on_client_frame, on_size, silent_if_err, Flow};
 use crate::mux::ChannelSender;
 use crate::routes::audit_layer::SocketAudit;
 use crate::routes::send_command_on;
@@ -79,28 +82,24 @@ pub(crate) async fn serve_console(
     }
 }
 
-/// Run the bridge of an attached session on the channel whose queue is
-/// `out`, as [`serve_console`] runs it once the open is decided. The session
-/// has no name and no checkout, and its daemon is `daemon` in `test`.
+/// An attached session whose bridge runs as [`serve_console`] runs it once
+/// the open is decided. The session has no name and no checkout, and its
+/// daemon is `daemon` in `test`.
 #[cfg(test)]
-pub(super) async fn bridge_attached(
+pub(super) fn attached(
     attach: session::Attachment,
     id: session::SessionId,
     tab: super::super::traffic::Tab,
-    out: &ChannelSender,
-    frames: &mut mpsc::Receiver<Vec<u8>>,
-    shutdown: tokio::sync::watch::Receiver<bool>,
-) {
+) -> Attached {
     let labels = super::super::SessionLabels::default();
     let (daemon, environment) = ("daemon".to_owned(), "test".to_owned());
     let opening = Opening::new(id, daemon, environment, &labels, tab.gzip);
-    let attached = Attached {
+    Attached {
         attach,
         id,
         traffic: Logged::new(Traffic::local(id, tab, Instant::now())),
         opening,
-    };
-    attached.bridge(out, frames, shutdown).await;
+    }
 }
 
 /// Tell the page why its open was refused, when its shape says so.
@@ -135,7 +134,7 @@ impl Drop for Logged {
 }
 
 /// A session attached to a console channel.
-struct Attached {
+pub(super) struct Attached {
     attach: session::Attachment,
     id: session::SessionId,
     traffic: Logged,
@@ -143,6 +142,23 @@ struct Attached {
 }
 
 impl Attached {
+    /// One turn of the live output stream. A lag sends the screen again.
+    fn on_output(&mut self, recv: Result<Vec<u8>, RecvError>, outbox: &mut Outbox) -> Flow {
+        let traffic = &mut self.traffic.traffic;
+        match recv {
+            Ok(bytes) => {
+                send_output(outbox, self.id, bytes, traffic);
+                ControlFlow::Continue(())
+            }
+            Err(RecvError::Lagged(skipped)) => {
+                traffic.lagged(skipped);
+                resync(outbox, self.id, &self.opening, &mut self.attach, traffic);
+                ControlFlow::Continue(())
+            }
+            Err(RecvError::Closed) => ControlFlow::Break(Some(session::EndReason::ChildExited)),
+        }
+    }
+
     /// Bridge the channel to the session until a deliberate end, which is
     /// named in `session-end`, or until the socket is gone.
     ///
@@ -157,7 +173,7 @@ impl Attached {
     /// room, so the loop keeps reading the page while a slow link takes the
     /// output. The session's output is read only once the outbox is empty,
     /// so a slow page still slows the reading of output.
-    async fn bridge(
+    pub(super) async fn bridge(
         mut self,
         out: &ChannelSender,
         frames: &mut mpsc::Receiver<Vec<u8>>,
@@ -194,18 +210,13 @@ impl Attached {
                     evict.reason().unwrap_or(session::EndReason::ChildExited),
                 )),
                 changed = self.attach.size.changed(), if sizes => {
-                    on_size(changed, &mut outbox, self.id, &mut self.attach, &mut sizes)
+                    on_size(&changed, &mut outbox, self.id, &mut self.attach, &mut sizes)
                 }
-                recv = self.attach.rx.recv(), if outbox.queued.is_empty() => on_output(
-                    recv,
-                    &mut outbox,
-                    self.id,
-                    &self.opening,
-                    &mut self.attach,
-                    &mut self.traffic.traffic,
-                ),
+                recv = self.attach.rx.recv(), if outbox.queued.is_empty() => {
+                    self.on_output(recv, &mut outbox)
+                }
                 permit = outbox.out.reserve(), if !outbox.queued.is_empty() => {
-                    silent_if_err(hand_on(permit, &mut outbox.queued))
+                    silent_if_err(&hand_on(permit, &mut outbox.queued))
                 }
                 frame = frames.recv() => self.on_frame(frame),
             };
@@ -215,15 +226,13 @@ impl Attached {
         };
         if let Some(reason) = end {
             self.traffic.end = Some(reason.as_wire());
-            announce_end(
-                &mut outbox,
-                self.id,
-                &self.opening,
-                &mut self.attach,
-                &mut self.traffic.traffic,
-                reason,
-            )
-            .await;
+            let ending = Ending {
+                id: self.id,
+                opening: &self.opening,
+                attach: &mut self.attach,
+                traffic: &mut self.traffic.traffic,
+            };
+            announce_end(&mut outbox, ending, reason).await;
         }
     }
 

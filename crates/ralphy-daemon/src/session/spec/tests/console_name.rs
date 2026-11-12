@@ -47,8 +47,7 @@ fn a_claude_console_is_named_in_argv_and_on_the_spec() {
         &repo,
         repo.clone(),
         "paulocorcino/ralphy",
-        24,
-        80,
+        (24, 80),
     );
     let name = spec.name.expect("a Claude launch must carry a name");
     assert_eq!(
@@ -71,7 +70,7 @@ fn a_claude_console_is_named_in_argv_and_on_the_spec() {
     // and the console would open dead. The opt-in is Claude's own key, so an
     // opted-in repo is exactly where a leak would show.
     for agent in Agent::ALL.iter().filter(|a| **a != Agent::Claude) {
-        let other = spec_for(*agent, &repo, repo.clone(), "owner/ralphy", 24, 80);
+        let other = spec_for(*agent, &repo, repo.clone(), "owner/ralphy", (24, 80));
         assert!(
             other.name.is_none() && !other.args.contains(&OsString::from("--name")),
             "{agent:?} must not be named"
@@ -104,8 +103,7 @@ fn a_claude_console_is_unnamed_until_the_repo_opts_in() {
             &root,
             root.clone(),
             "paulocorcino/ralphy",
-            24,
-            80,
+            (24, 80),
         );
         assert!(
             spec.args.is_empty(),

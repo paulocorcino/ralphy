@@ -169,11 +169,10 @@ impl Notifier {
             daemon_id: self.daemon_id.clone(),
             origin,
             runs_of: peers.bot_less,
+            unanswered: peers.unanswered,
         };
         let all: Vec<AttentionRequest> = requests.iter().cloned().chain(peers.requests).collect();
-        let messages = self
-            .sender
-            .next_with(&all, &peers.unanswered, present, now, &ctx);
+        let messages = self.sender.next(&all, present, now, &ctx);
         if messages.is_empty() {
             return;
         }

@@ -15,6 +15,7 @@
 //! (`telegram_state::Claim`) sends nothing: its main sends for it.
 
 use std::collections::HashSet;
+use std::fmt::Write as _;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
@@ -36,12 +37,13 @@ pub(crate) struct Message {
 
 /// What a message names besides the request: this daemon's id, the origin
 /// of the operator's last page (the link), and the peers whose runs this
-/// daemon sends.
+/// daemon sends. `unanswered` names the peers that did not answer this tick.
 #[derive(Debug, Default)]
 pub(crate) struct Context {
     pub(crate) daemon_id: Option<String>,
     pub(crate) origin: Option<String>,
     pub(crate) runs_of: HashSet<String>,
+    pub(crate) unanswered: Vec<String>,
 }
 
 /// What a request says it is, or `None` for a request that is not sent: a
@@ -104,7 +106,7 @@ fn subject_of(request: &AttentionRequest) -> String {
 fn text_of(request: &AttentionRequest, what: &str, ctx: &Context) -> String {
     let mut text = subject_of(request);
     if let Some(repo) = &request.repo {
-        text.push_str(&format!(" in {repo}"));
+        write!(text, " in {repo}").expect(crate::WRITE_TO_STRING);
     }
     text.push(' ');
     text.push_str(what);
@@ -227,8 +229,10 @@ pub(crate) struct Sender {
 }
 
 impl Sender {
-    /// [`Sender::next_with`], with every peer answered.
-    #[cfg(test)]
+    /// The messages due now. An id no longer in `requests` is forgotten, so
+    /// a console that waits again later is sent again; the ids of a peer in
+    /// `ctx.unanswered` are kept, so a peer that misses one tick is not sent
+    /// again.
     pub(crate) fn next(
         &mut self,
         requests: &[AttentionRequest],
@@ -236,25 +240,10 @@ impl Sender {
         now: SystemTime,
         ctx: &Context,
     ) -> Vec<Message> {
-        self.next_with(requests, &[], present, now, ctx)
-    }
-
-    /// The messages due now. An id no longer in `requests` is forgotten, so
-    /// a console that waits again later is sent again; the ids of a peer in
-    /// `unanswered` are kept, so a peer that misses one tick is not sent
-    /// again.
-    pub(crate) fn next_with(
-        &mut self,
-        requests: &[AttentionRequest],
-        unanswered: &[String],
-        present: bool,
-        now: SystemTime,
-        ctx: &Context,
-    ) -> Vec<Message> {
         let open: HashSet<&str> = requests.iter().map(|r| r.id.as_str()).collect();
         let keep = |id: &String| {
             open.contains(id.as_str())
-                || unanswered.iter().any(|peer| {
+                || ctx.unanswered.iter().any(|peer| {
                     id.strip_prefix(peer.as_str())
                         .is_some_and(|rest| rest.starts_with('/'))
                 })

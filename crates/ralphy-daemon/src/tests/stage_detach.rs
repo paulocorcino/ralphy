@@ -46,18 +46,7 @@ fn shell_detaches_a_fence() {
     // one text: the detach lives in the fences, the popup's mount and the
     // upload in the desk, the re-attach and the lifecycle channel in the
     // opener's side of the detach, the refused remove in the fence list.
-    let js = &[
-        include_str!("../../assets/ui/wb-console.ts"),
-        include_str!("../../assets/ui/wb-stage-fence-list.ts"),
-        include_str!("../../assets/ui/wb-stage-fences.ts"),
-        include_str!("../../assets/ui/wb-stage-fence-tile.ts"),
-        include_str!("../../assets/ui/wb-stage-fence-gestures.ts"),
-        include_str!("../../assets/ui/wb-desk.ts"),
-        include_str!("../../assets/ui/wb-desk-restore.ts"),
-        include_str!("../../assets/ui/wb-desk-flush.ts"),
-        include_str!("../../assets/ui/wb-desk-detach.ts"),
-    ]
-    .concat();
+    let js = &fence_detach_js();
     for pin in [
         "function detachFence(",
         "function reattachFence(",
@@ -70,17 +59,7 @@ fn shell_detaches_a_fence() {
             "wb-console.ts must keep the #346 pin {pin}"
         );
     }
-    let body = |name: &str| -> String {
-        let after = js
-            .split_once(name)
-            .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
-            .1;
-        after
-            .split_once("\n  }")
-            .expect("the function must close")
-            .0
-            .to_owned()
-    };
+    let body = |name: &str| function_body(js, name);
     // THE SINK SEAM. The persistence call sites must reach the desk through
     // the injected sink and carry NO `detached` branch of their own —
     // "incapable of writing", not "careful not to".
@@ -141,6 +120,11 @@ fn shell_detaches_a_fence() {
         !js.contains("reattachFence(m.fenceId"),
         "the re-attach message must use the proven owner, never its payload (#346)"
     );
+}
+
+#[test]
+fn detaching_a_fence_opens_the_popup_before_any_teardown() {
+    let body = |name: &str| function_body(&fence_detach_js(), name);
     // The INVARIANT: either the popup exists and the members are torn down,
     // or neither. `window.open` must therefore be reached before a single
     // window is touched, and a null handle must bail.
@@ -174,6 +158,11 @@ fn shell_detaches_a_fence() {
         !teardown.contains("forgetRecord") && !teardown.contains("sessions/close"),
         "a detached member must keep its desk record and its daemon session (#346)"
     );
+}
+
+#[test]
+fn the_detached_fence_popup_is_denied_the_desk() {
+    let body = |name: &str| function_body(&fence_detach_js(), name);
     // THE POPUP'S DENIED CAPABILITIES. Each is what stops a window holding a
     // FRAGMENT of the plane from writing the whole desk or the shell's view.
     // The options are built by the page's entry module,
@@ -243,6 +232,10 @@ fn shell_detaches_a_fence() {
             && !entry.contains("sessionStorage"),
         "the popup must store nothing in the browser (#346)"
     );
+}
+
+#[test]
+fn the_fence_detach_controls_take_pointer_events() {
     // `.fence-tools` and `.fence` are transparent to pointer events, so a
     // control that does not opt back IN is drawn and unclickable — while
     // every source-text pin above stays green. Measured in #342.
@@ -277,33 +270,8 @@ fn shell_survives_a_reload_with_its_detach() {
     // as one text: the registry write lives in the registry, the detach in
     // the fences, the restore in the desk, and the lifecycle channel in the
     // opener's side of the detach.
-    let js = &[
-        include_str!("../../assets/ui/wb-console.ts"),
-        include_str!("../../assets/ui/wb-desk-popups.ts"),
-        include_str!("../../assets/ui/wb-stage-fences.ts"),
-        include_str!("../../assets/ui/wb-stage-fence-tile.ts"),
-        include_str!("../../assets/ui/wb-stage-fence-gestures.ts"),
-        include_str!("../../assets/ui/wb-desk.ts"),
-        include_str!("../../assets/ui/wb-desk-restore.ts"),
-        include_str!("../../assets/ui/wb-desk-flush.ts"),
-        include_str!("../../assets/ui/wb-desk-detach.ts"),
-    ]
-    .concat();
+    let js = &reload_detach_js();
     let link = include_str!("../../assets/ui/wb-detach-link.ts");
-    let html = DETACHED_FENCE_HTML;
-    let entry = include_str!("../../assets/ui/detached-fence-main.ts");
-    let page = include_str!("../../assets/ui/wb-detached-fence.ts");
-    let body = |name: &str| -> String {
-        let after = js
-            .split_once(name)
-            .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
-            .1;
-        after
-            .split_once("\n  }")
-            .expect("the function must close")
-            .0
-            .to_owned()
-    };
 
     // The shell reaches storage and channel only through the injected link.
     for pin in ["link.readRegistry()", "link.writeRegistry("] {
@@ -337,6 +305,13 @@ fn shell_survives_a_reload_with_its_detach() {
             && link.contains(r#"const CHANNEL = "wb.detach.v1""#),
         "wb-detach-link.ts must keep the one registry key and channel name (#347)"
     );
+}
+
+#[test]
+fn a_reload_keeps_a_detached_fence_off_the_plane() {
+    let js = &reload_detach_js();
+    let link = include_str!("../../assets/ui/wb-detach-link.ts");
+    let body = |name: &str| function_body(js, name);
     // The boot-ordering INVARIANT: a fence detached before the reload must
     // never have its members put back on the plane, for ANY verdict —
     // `relaunch` would spawn a SECOND PTY against a console the popup drives.
@@ -373,6 +348,15 @@ fn shell_survives_a_reload_with_its_detach() {
             && !console_family().contains("detached = out.registry"),
         "no caller may assign the registry behind commitDetached's back (#347)"
     );
+}
+
+#[test]
+fn a_reload_does_not_close_the_detached_popup() {
+    let js = &reload_detach_js();
+    let html = DETACHED_FENCE_HTML;
+    let entry = include_str!("../../assets/ui/detached-fence-main.ts");
+    let page = include_str!("../../assets/ui/wb-detached-fence.ts");
+    let body = |name: &str| function_body(js, name);
     // THE F5 RULE: `pagehide` fires on a reload exactly as on a close, so it
     // must no longer close a popup. The `putSync` pin is the NEGATIVE
     // CONTROL that the listener itself was not simply deleted.
@@ -457,4 +441,51 @@ fn a_quiet_detach_peer_is_challenged_before_it_is_buried() {
         popup.contains("out.effects.length>0)silent();"),
         "a lost peer must reach `silent`, which probes, and never `lost` directly"
     );
+}
+
+/// The opener's side of a fence detach, as one text: the console, its fence
+/// list, its fences, its desk and its detach.
+fn fence_detach_js() -> String {
+    [
+        include_str!("../../assets/ui/wb-console.ts"),
+        include_str!("../../assets/ui/wb-stage-fence-list.ts"),
+        include_str!("../../assets/ui/wb-stage-fences.ts"),
+        include_str!("../../assets/ui/wb-stage-fence-tile.ts"),
+        include_str!("../../assets/ui/wb-stage-fence-gestures.ts"),
+        include_str!("../../assets/ui/wb-desk.ts"),
+        include_str!("../../assets/ui/wb-desk-restore.ts"),
+        include_str!("../../assets/ui/wb-desk-flush.ts"),
+        include_str!("../../assets/ui/wb-desk-detach.ts"),
+    ]
+    .concat()
+}
+
+/// The opener's side of a detach that survives a reload, as one text: the
+/// console, its popup registry, its fences, its desk and its detach.
+fn reload_detach_js() -> String {
+    [
+        include_str!("../../assets/ui/wb-console.ts"),
+        include_str!("../../assets/ui/wb-desk-popups.ts"),
+        include_str!("../../assets/ui/wb-stage-fences.ts"),
+        include_str!("../../assets/ui/wb-stage-fence-tile.ts"),
+        include_str!("../../assets/ui/wb-stage-fence-gestures.ts"),
+        include_str!("../../assets/ui/wb-desk.ts"),
+        include_str!("../../assets/ui/wb-desk-restore.ts"),
+        include_str!("../../assets/ui/wb-desk-flush.ts"),
+        include_str!("../../assets/ui/wb-desk-detach.ts"),
+    ]
+    .concat()
+}
+
+/// The text of the function `name` opens in `js`, up to its closing brace.
+fn function_body(js: &str, name: &str) -> String {
+    let after = js
+        .split_once(name)
+        .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
+        .1;
+    after
+        .split_once("\n  }")
+        .expect("the function must close")
+        .0
+        .to_owned()
 }

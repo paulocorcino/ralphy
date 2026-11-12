@@ -62,7 +62,7 @@ async fn reply_json(res: Response) -> serde_json::Value {
     serde_json::from_str(&body_text(res).await).expect("a JSON reply")
 }
 
-fn window_json(id: &str, session_id: serde_json::Value, max: bool) -> serde_json::Value {
+fn window_json(id: &str, session_id: &serde_json::Value, max: bool) -> serde_json::Value {
     serde_json::json!({
         "id": id,
         "repo": "owner/repo",
@@ -95,11 +95,11 @@ fn note_json(id: &str, path: &str) -> serde_json::Value {
     })
 }
 
-fn create(kind: &str, record: serde_json::Value) -> serde_json::Value {
+fn create(kind: &str, record: &serde_json::Value) -> serde_json::Value {
     serde_json::json!({ "op": "create", "type": kind, "record": record })
 }
 
-fn set(kind: &str, id: &str, fields: serde_json::Value) -> serde_json::Value {
+fn set(kind: &str, id: &str, fields: &serde_json::Value) -> serde_json::Value {
     serde_json::json!({ "op": "set", "type": kind, "id": id, "fields": fields })
 }
 

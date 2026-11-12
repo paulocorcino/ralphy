@@ -4,7 +4,6 @@
 //! factor checks in [`step_up`].
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use axum::extract::Form;
 use axum::http::StatusCode;
@@ -62,15 +61,15 @@ pub(crate) struct ConfirmForm {
 /// `confirmed:false` (not an error) so the UI can prompt a retry. On a successful
 /// arm the live policy is rebuilt (a promotion takes effect if require-login is
 /// already on).
-pub(crate) async fn security_totp_confirm_route(
-    state: Arc<auth::AuthState>,
+pub(crate) fn security_totp_confirm_route(
+    state: &auth::AuthState,
     Form(form): Form<ConfirmForm>,
 ) -> Response {
     let now = now_unix();
     match auth::store_dir().and_then(|dir| confirm_totp_at(&dir, &form.code, now)) {
         Ok(confirmed) => {
             if confirmed {
-                apply_auth_change(&state, false);
+                apply_auth_change(state, false);
             }
             Json(serde_json::json!({ "confirmed": confirmed })).into_response()
         }
@@ -96,22 +95,17 @@ pub(crate) struct RevokeForm {
 /// (`compute_policy` falls back to `Localhost` without a seed), so it costs a
 /// fresh code. Lost the authenticator? Delete `daemon-totp` in the store on
 /// the host — the operator's own machine is the recovery path, not this route.
-pub(crate) async fn security_totp_revoke_route(
-    state: Arc<auth::AuthState>,
+pub(crate) fn security_totp_revoke_route(
+    state: &auth::AuthState,
     Form(form): Form<RevokeForm>,
 ) -> Response {
-    let dir = match auth::store_dir() {
+    let dir = match store_with_fresh_code(state, form.code.as_deref()) {
         Ok(dir) => dir,
-        Err(e) => return store_unavailable(e),
+        Err(refused) => return *refused,
     };
-    if let Err(refused) =
-        step_up::require_fresh_totp(&state, &dir, form.code.as_deref(), now_unix())
-    {
-        return refused.into_response();
-    }
     match revoke_totp_at(&dir) {
         Ok(()) => {
-            apply_auth_change(&state, true);
+            apply_auth_change(state, true);
             Json(serde_json::json!({ "revoked": true })).into_response()
         }
         Err(e) => {
@@ -137,8 +131,8 @@ pub(crate) struct PasswordForm {
 /// invalidates live sessions so they re-authenticate under the changed factor.
 /// Changing or clearing an enrolled password costs the current one; the
 /// first-time set is free (bootstrap).
-pub(crate) async fn security_password_route(
-    state: Arc<auth::AuthState>,
+pub(crate) fn security_password_route(
+    state: &auth::AuthState,
     Form(form): Form<PasswordForm>,
 ) -> Response {
     let Some(password) = form.password.as_deref() else {
@@ -146,14 +140,14 @@ pub(crate) async fn security_password_route(
     };
     let dir = match auth::store_dir() {
         Ok(dir) => dir,
-        Err(e) => return store_unavailable(e),
+        Err(e) => return store_unavailable(&e),
     };
-    if let Err(refused) = step_up::require_current_password(&state, &dir, form.current.as_deref()) {
+    if let Err(refused) = step_up::require_current_password(state, &dir, form.current.as_deref()) {
         return refused.into_response();
     }
     match set_password_at(&dir, Some(password)) {
         Ok(password_set) => {
-            apply_auth_change(&state, true);
+            apply_auth_change(state, true);
             Json(serde_json::json!({ "password_set": password_set })).into_response()
         }
         Err(e) => {
@@ -175,22 +169,17 @@ pub(crate) struct RemintForm {
 /// and invalidate live sessions — a re-mint logs everyone out (amendment §B),
 /// now IMMEDIATELY rather than at next restart. Costs a fresh code when TOTP is
 /// armed: an ambient session must not be able to rotate the key it rides on.
-pub(crate) async fn security_token_remint_route(
-    state: Arc<auth::AuthState>,
+pub(crate) fn security_token_remint_route(
+    state: &auth::AuthState,
     Form(form): Form<RemintForm>,
 ) -> Response {
-    let dir = match auth::store_dir() {
+    let dir = match store_with_fresh_code(state, form.code.as_deref()) {
         Ok(dir) => dir,
-        Err(e) => return store_unavailable(e),
+        Err(refused) => return *refused,
     };
-    if let Err(refused) =
-        step_up::require_fresh_totp(&state, &dir, form.code.as_deref(), now_unix())
-    {
-        return refused.into_response();
-    }
     match remint_token_at(&dir) {
         Ok(()) => {
-            apply_auth_change(&state, true);
+            apply_auth_change(state, true);
             Json(serde_json::json!({ "reminted": true })).into_response()
         }
         Err(e) => {
@@ -246,24 +235,24 @@ pub(crate) struct RequireLoginForm {
 /// the gate on logs the browser off; turning it off re-issues cleanly). Turning
 /// it OFF costs a fresh code — that is the gate itself being lowered; turning it
 /// on stays free.
-pub(crate) async fn security_require_login_route(
-    state: Arc<auth::AuthState>,
+pub(crate) fn security_require_login_route(
+    state: &auth::AuthState,
     Form(form): Form<RequireLoginForm>,
 ) -> Response {
     let dir = match auth::store_dir() {
         Ok(dir) => dir,
-        Err(e) => return store_unavailable(e),
+        Err(e) => return store_unavailable(&e),
     };
     if !form.enable {
         if let Err(refused) =
-            step_up::require_fresh_totp(&state, &dir, form.code.as_deref(), now_unix())
+            step_up::require_fresh_totp(state, &dir, form.code.as_deref(), now_unix())
         {
             return refused.into_response();
         }
     }
     match require_login_at(&dir, form.enable) {
         Ok(()) => {
-            apply_auth_change(&state, true);
+            apply_auth_change(state, true);
             Json(serde_json::json!({ "ok": true })).into_response()
         }
         Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
@@ -284,24 +273,24 @@ pub(crate) struct RemoteImagesForm {
 /// no credential changed. Turning it ON loosens the CSP, so it costs a fresh
 /// code; turning it off stays free. An open page keeps the CSP it loaded with
 /// until it reloads.
-pub(crate) async fn security_remote_images_route(
-    state: Arc<auth::AuthState>,
+pub(crate) fn security_remote_images_route(
+    state: &auth::AuthState,
     Form(form): Form<RemoteImagesForm>,
 ) -> Response {
     let dir = match auth::store_dir() {
         Ok(dir) => dir,
-        Err(e) => return store_unavailable(e),
+        Err(e) => return store_unavailable(&e),
     };
     if form.enable {
         if let Err(refused) =
-            step_up::require_fresh_totp(&state, &dir, form.code.as_deref(), now_unix())
+            step_up::require_fresh_totp(state, &dir, form.code.as_deref(), now_unix())
         {
             return refused.into_response();
         }
     }
     match auth::set_remote_images_in(&dir, form.enable) {
         Ok(()) => {
-            apply_auth_change(&state, false);
+            apply_auth_change(state, false);
             Json(serde_json::json!({ "ok": true })).into_response()
         }
         Err(e) => {
@@ -326,9 +315,9 @@ pub(crate) struct RevokeLoginForm {
 /// `logins.dirty`. A malformed ID is a `400`; a failed write is a `500` and
 /// changes nothing. No step-up: a revoke only takes access away. A login may
 /// revoke itself.
-pub(crate) async fn security_logins_revoke_route(
-    state: Arc<auth::AuthState>,
-    pushes: tokio::sync::broadcast::Sender<super::Push>,
+pub(crate) fn security_logins_revoke_route(
+    state: &auth::AuthState,
+    pushes: &tokio::sync::broadcast::Sender<super::Push>,
     Form(form): Form<RevokeLoginForm>,
 ) -> Response {
     let Some(login) = cookie::LoginId::parse(&form.login) else {
@@ -336,7 +325,7 @@ pub(crate) async fn security_logins_revoke_route(
     };
     match state.revoke_login(login, now_unix()) {
         Ok(()) => {
-            super::push(&pushes, super::Push::Logins);
+            super::push(pushes, super::Push::Logins);
             Json(serde_json::json!({ "revoked": true })).into_response()
         }
         Err(e) => {
@@ -346,9 +335,21 @@ pub(crate) async fn security_logins_revoke_route(
     }
 }
 
+/// The store directory, once the caller proved a fresh TOTP code; the reply
+/// that refuses, when the store cannot be resolved or the code is not fresh.
+fn store_with_fresh_code(
+    state: &auth::AuthState,
+    code: Option<&str>,
+) -> Result<PathBuf, Box<Response>> {
+    let dir = auth::store_dir().map_err(|e| Box::new(store_unavailable(&e)))?;
+    step_up::require_fresh_totp(state, &dir, code, now_unix())
+        .map_err(|refused| Box::new(refused.into_response()))?;
+    Ok(dir)
+}
+
 /// The one answer to a store that cannot be resolved, shared by every mutation
 /// that needs the directory BEFORE it can decide anything.
-fn store_unavailable(e: anyhow::Error) -> Response {
+fn store_unavailable(e: &anyhow::Error) -> Response {
     tracing::warn!(error = %e, "failed to resolve the daemon store");
     (StatusCode::INTERNAL_SERVER_ERROR, "store unavailable").into_response()
 }
@@ -383,8 +384,7 @@ pub(crate) fn security_routes(s: &RouterShared) -> Router {
             post({
                 let auth = auth.clone();
                 move |headers: axum::http::HeaderMap, form: Form<LoginForm>| {
-                    let auth = auth.clone();
-                    async move { login_submit(auth, headers, form).await }
+                    std::future::ready(login_submit(&auth, &headers, form))
                 }
             }),
         )
@@ -394,9 +394,7 @@ pub(crate) fn security_routes(s: &RouterShared) -> Router {
                 let auth = auth.clone();
                 let avatar = session_avatar.clone();
                 move |headers: axum::http::HeaderMap| {
-                    let auth = auth.clone();
-                    let avatar = avatar.clone();
-                    async move { session_state_route(auth, avatar, headers).await }
+                    std::future::ready(session_state_route(&auth, avatar.clone(), &headers))
                 }
             }),
         )
@@ -404,7 +402,9 @@ pub(crate) fn security_routes(s: &RouterShared) -> Router {
             "/api/logout",
             post({
                 let auth = auth.clone();
-                move |headers: axum::http::HeaderMap| logout_route(auth.clone(), headers)
+                move |headers: axum::http::HeaderMap| {
+                    std::future::ready(logout_route(&auth, &headers))
+                }
             }),
         )
         .route("/api/security/state", get(security_state_route))
@@ -416,42 +416,54 @@ pub(crate) fn security_routes(s: &RouterShared) -> Router {
             "/api/security/totp/confirm",
             post({
                 let auth = auth.clone();
-                move |form: Form<ConfirmForm>| security_totp_confirm_route(auth.clone(), form)
+                move |form: Form<ConfirmForm>| {
+                    std::future::ready(security_totp_confirm_route(&auth, form))
+                }
             }),
         )
         .route(
             "/api/security/totp/revoke",
             post({
                 let auth = auth.clone();
-                move |form: Form<RevokeForm>| security_totp_revoke_route(auth.clone(), form)
+                move |form: Form<RevokeForm>| {
+                    std::future::ready(security_totp_revoke_route(&auth, form))
+                }
             }),
         )
         .route(
             "/api/security/password",
             post({
                 let auth = auth.clone();
-                move |form: Form<PasswordForm>| security_password_route(auth.clone(), form)
+                move |form: Form<PasswordForm>| {
+                    std::future::ready(security_password_route(&auth, form))
+                }
             }),
         )
         .route(
             "/api/security/token/remint",
             post({
                 let auth = auth.clone();
-                move |form: Form<RemintForm>| security_token_remint_route(auth.clone(), form)
+                move |form: Form<RemintForm>| {
+                    std::future::ready(security_token_remint_route(&auth, form))
+                }
             }),
         )
         .route(
             "/api/security/require-login",
             post({
                 let auth = auth.clone();
-                move |form: Form<RequireLoginForm>| security_require_login_route(auth.clone(), form)
+                move |form: Form<RequireLoginForm>| {
+                    std::future::ready(security_require_login_route(&auth, form))
+                }
             }),
         )
         .route(
             "/api/security/remote-images",
             post({
                 let auth = auth.clone();
-                move |form: Form<RemoteImagesForm>| security_remote_images_route(auth.clone(), form)
+                move |form: Form<RemoteImagesForm>| {
+                    std::future::ready(security_remote_images_route(&auth, form))
+                }
             }),
         )
         .route(
@@ -460,7 +472,7 @@ pub(crate) fn security_routes(s: &RouterShared) -> Router {
                 let auth = auth.clone();
                 let pushes = s.pushes.clone();
                 move |form: Form<RevokeLoginForm>| {
-                    security_logins_revoke_route(auth.clone(), pushes.clone(), form)
+                    std::future::ready(security_logins_revoke_route(&auth, &pushes, form))
                 }
             }),
         )

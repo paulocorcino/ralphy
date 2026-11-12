@@ -1,5 +1,6 @@
 use super::*;
 use alacritty_terminal::vte::ansi::CursorShape;
+use std::fmt::Write as _;
 
 mod emulation;
 
@@ -20,9 +21,10 @@ fn dump(screen: &mut Screen) -> String {
     out.push_str(&dump_grid(screen.term.grid()));
     let grid = screen.term.grid();
     let template = &grid.cursor.template;
-    out.push_str(&format!(
+    writeln!(
+        out,
         "cursor {:?} wrap={} pen={:?}/{:?}/{:?} mode={:?} style={:?} region={:?} \
-         title={:?} history={}\n",
+         title={:?} history={}",
         grid.cursor.point,
         grid.cursor.input_needs_wrap,
         template.fg,
@@ -37,7 +39,8 @@ fn dump(screen: &mut Screen) -> String {
             .lock()
             .unwrap_or_else(PoisonError::into_inner),
         grid.history_size(),
-    ));
+    )
+    .expect(crate::WRITE_TO_STRING);
     out
 }
 
@@ -47,7 +50,8 @@ fn dump_grid(grid: &Grid<Cell>) -> String {
         let row = &grid[Line(l)];
         for c in 0..grid.columns() {
             let cell = &row[Column(c)];
-            out.push_str(&format!(
+            write!(
+                out,
                 "{}{:?}{:?}{:x}{:?}{:?}{:?}|",
                 cell.c,
                 cell.fg,
@@ -56,7 +60,8 @@ fn dump_grid(grid: &Grid<Cell>) -> String {
                 cell.underline_color(),
                 cell.zerowidth(),
                 cell.hyperlink().map(|link| link.uri().to_owned()),
-            ));
+            )
+            .expect(crate::WRITE_TO_STRING);
         }
         out.push('\n');
     }
@@ -114,11 +119,13 @@ fn a_snapshot_rebuilds_the_screen_after_a_width_change() {
     let mut a = Screen::new(ROWS_40, COLS_120, SCROLLBACK_LINES);
     let mut stream = String::new();
     for n in 0..80 {
-        stream.push_str(&format!(
+        write!(
+            stream,
             "\x1b[3{}mline {n}\x1b[0m \x1b[1;3;4mbold\x1b[0m \x1b[2;7;9mdim\x1b[0m \
              \x1b[38;5;{n}mindexed\x1b[0m \x1b[48;2;10;20;{n}mrgb\x1b[0m\r\n",
             n % 7 + 1
-        ));
+        )
+        .expect(crate::WRITE_TO_STRING);
     }
     a.feed(stream.as_bytes());
     a.resize(ROWS_40, 60);
@@ -283,11 +290,12 @@ fn a_pending_wrap_survives_a_snapshot() {
 fn the_alternate_screen_keeps_the_primary_screen_under_it() {
     let mut stream = String::new();
     for n in 0..60 {
-        stream.push_str(&format!("primary {n}\r\n"));
+        write!(stream, "primary {n}\r\n").expect(crate::WRITE_TO_STRING);
     }
     stream.push_str("cursor here\x1b[?1049h\x1b[H");
     for n in 0..10 {
-        stream.push_str(&format!("\x1b[{};5H\x1b[44malt row {n}\x1b[0m", n + 1));
+        write!(stream, "\x1b[{};5H\x1b[44malt row {n}\x1b[0m", n + 1)
+            .expect(crate::WRITE_TO_STRING);
     }
     let mut a = Screen::new(ROWS_40, COLS_120, SCROLLBACK_LINES);
     a.feed(stream.as_bytes());

@@ -92,10 +92,10 @@ pub(crate) fn failed(kind: WriteError, what: &str, cause: &std::io::Error) -> Wr
     clippy::wildcard_enum_match_arm,
     reason = "ErrorKind is non_exhaustive, so a match needs a catch-all"
 )]
-fn create_new_failed(e: std::io::Error) -> WriteError {
+fn create_new_failed(e: &std::io::Error) -> WriteError {
     match e.kind() {
         std::io::ErrorKind::AlreadyExists => WriteError::Conflict,
-        _ => failed(WriteError::Io, "creating the file", &e),
+        _ => failed(WriteError::Io, "creating the file", e),
     }
 }
 
@@ -301,7 +301,7 @@ pub fn create(root: &Path, rel: &str, dir: bool) -> Result<(), WriteError> {
             .create_new(true)
             .open(&path)
             .map(|_| ())
-            .map_err(create_new_failed)
+            .map_err(|e| create_new_failed(&e))
     }
 }
 
@@ -347,7 +347,7 @@ pub fn copy(root: &Path, from_rel: &str, to_rel: &str) -> Result<(), WriteError>
         .write(true)
         .create_new(true)
         .open(&to)
-        .map_err(create_new_failed)?;
+        .map_err(|e| create_new_failed(&e))?;
     std::io::copy(&mut src, &mut dst)
         .map(|_| ())
         .map_err(|e| failed(WriteError::Io, "copying the file", &e))

@@ -13,7 +13,7 @@ use crate::session;
 /// or `None` for a launch that named no record.
 pub(super) async fn claim_for(
     sessions: &Arc<session::SessionManager>,
-    record: &Option<String>,
+    record: Option<&str>,
 ) -> Option<session::RecordClaim> {
     match record {
         Some(record) => Some(sessions.claim_record(record).await),
@@ -45,14 +45,15 @@ pub(super) fn join(
     let id = claim?.live()?;
     let info = sessions.get(id)?;
     // A launch opens a new terminal, so it has no byte count to resume at.
-    let (att, watching) = match sessions.attach_as(id, false, holder, attempt, None) {
-        Ok(att) => (att, false),
-        Err(session::AttachError::Busy) => (sessions.watch(id, None).ok()?, true),
-        Err(session::AttachError::Superseded) => {
-            return Some(Opened::Refused(Refusal::Supersede { attempt }))
-        }
-        Err(session::AttachError::Unknown) => return None,
-    };
+    let (att, watching) =
+        match sessions.attach_as(id, false, session::WriterClaim { holder, attempt }, None) {
+            Ok(att) => (att, false),
+            Err(session::AttachError::Busy) => (sessions.watch(id, None).ok()?, true),
+            Err(session::AttachError::Superseded) => {
+                return Some(Opened::Refused(Refusal::Supersede { attempt }))
+            }
+            Err(session::AttachError::Unknown) => return None,
+        };
     Some(Opened::Session {
         att,
         id,

@@ -60,8 +60,10 @@ impl Open {
         let attached = self.sessions.attach_as(
             id,
             takeover,
-            self.query.holder(),
-            self.query.attempt,
+            session::WriterClaim {
+                holder: self.query.holder(),
+                attempt: self.query.attempt,
+            },
             self.query.since,
         );
         match attached {
