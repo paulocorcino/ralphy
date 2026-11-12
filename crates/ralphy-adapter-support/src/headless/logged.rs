@@ -70,6 +70,7 @@ pub struct HeadlessCall<'a> {
     kill_on_stderr_line: Option<LinePredicate>,
     idle: IdleWatch,
     degraded_line: Option<LinePredicate>,
+    preamble: Option<&'a str>,
     gate: Option<PromptGate<'a>>,
 }
 
@@ -95,8 +96,19 @@ impl<'a> HeadlessCall<'a> {
             kill_on_stderr_line: None,
             idle: IdleWatch::default(),
             degraded_line: None,
+            preamble: None,
             gate: None,
         }
+    }
+
+    /// Write `preamble` to the child's stdin before the gate of
+    /// [`hold_prompt`](Self::hold_prompt) runs, and keep stdin open: the
+    /// prompt follows only once the gate returns `Ok`. A gate error still sends
+    /// no prompt, but the preamble was already sent.
+    #[must_use]
+    pub fn preamble(mut self, preamble: &'a str) -> Self {
+        self.preamble = Some(preamble);
+        self
     }
 
     /// Hold the prompt behind `gate`: the child is spawned and its output is
@@ -201,6 +213,7 @@ fn run_headless_logged_impl(call: HeadlessCall<'_>) -> Result<HeadlessRun> {
         kill_on_stderr_line,
         idle,
         degraded_line,
+        preamble,
         gate,
     } = call;
     // Open the log up front so both streams can be teed to it as they arrive: the
@@ -226,6 +239,7 @@ fn run_headless_logged_impl(call: HeadlessCall<'_>) -> Result<HeadlessRun> {
     });
 
     let guards = Guards {
+        preamble,
         log: sink,
         switch,
         idle,

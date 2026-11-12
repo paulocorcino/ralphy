@@ -62,6 +62,9 @@
 //! - `artifact-then-auth <path>` — write [`ARTIFACT_TEXT`] to the file `<path>`,
 //!   write [`AUTH_TEXT`] to stdout, then exit 0: a session that did its work and
 //!   whose log quotes a login error.
+//! - `stream-stdin` — append each stdin line to the file named by
+//!   [`STDIN_LINES_ENV`] as it arrives, then [`STDIN_EOF_MARKER`] at EOF, and exit
+//!   0. A test reads the file while stdin is still open.
 //!
 //! The stdout/stderr marker lines and the large-output byte count are kept in sync
 //! with the assertions in `tests/headless/main.rs` via the shared constants below.
@@ -109,6 +112,11 @@ pub const ARTIFACT_TEXT: &str = "the-artifact";
 /// How long `session-start-then-record` waits before it writes its `SessionStart` line.
 pub const SESSION_START_DELAY: Duration = Duration::from_millis(500);
 
+/// The variable that names the file the `stream-stdin` child appends to.
+pub const STDIN_LINES_ENV: &str = "RALPHY_STDIN_LINES_FILE";
+/// What the `stream-stdin` child appends once stdin reached EOF.
+pub const STDIN_EOF_MARKER: &str = "<stdin-eof>";
+
 /// Read stdin to EOF and write what came to the file named by the second argument.
 fn record_stdin() {
     let path = std::env::args().nth(2).unwrap_or_default();
@@ -132,17 +140,36 @@ fn print_auth_text() {
 /// Append the `SessionStart` hook line to `$RALPHY_STATUS_FILE`.
 fn announce_session_start() {
     let path = std::env::var("RALPHY_STATUS_FILE").unwrap_or_default();
-    let line = "{\"event\":\"SessionStart\",\"ts\":\"t\"}
-";
+    append_or_exit(&path, b"{\"event\":\"SessionStart\",\"ts\":\"t\"}\n");
+}
+
+/// Append `bytes` to the file at `path`, or exit 3 when that fails.
+fn append_or_exit(path: &str, bytes: &[u8]) {
     let written = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&path)
-        .and_then(|mut f| f.write_all(line.as_bytes()));
+        .open(path)
+        .and_then(|mut f| f.write_all(bytes));
     if let Err(e) = written {
-        eprintln!("failed to write the SessionStart line to {path}: {e}");
+        eprintln!("failed to append to {path}: {e}");
         std::process::exit(3);
     }
+}
+
+/// Append each stdin line to `$RALPHY_STDIN_LINES_FILE` as it arrives, then
+/// [`STDIN_EOF_MARKER`] once stdin reached EOF.
+fn stream_stdin() {
+    let path = std::env::var(STDIN_LINES_ENV).unwrap_or_default();
+    let mut input = std::io::stdin().lock();
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        match std::io::BufRead::read_until(&mut input, b'\n', &mut line) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => append_or_exit(&path, &line),
+        }
+    }
+    append_or_exit(&path, STDIN_EOF_MARKER.as_bytes());
 }
 
 /// Append `<label> tick\n` to the heartbeat file every [`CHATTY_TICK`] for ~60s.
@@ -262,6 +289,7 @@ fn main() {
             best_effort(std::io::stdout().flush());
         }
         "record-stdin" => record_stdin(),
+        "stream-stdin" => stream_stdin(),
         "session-start-then-record" => {
             std::thread::sleep(SESSION_START_DELAY);
             announce_session_start();
