@@ -176,7 +176,7 @@ impl Notifier {
         if messages.is_empty() {
             return;
         }
-        let (config, transport) = (self.config.clone(), self.transport.clone());
+        let (config, transport) = (self.config.clone(), Arc::clone(&self.transport));
         self.flight = Some(tokio::task::spawn_blocking(move || {
             deliver(&config, |token| transport(token), messages)
         }));

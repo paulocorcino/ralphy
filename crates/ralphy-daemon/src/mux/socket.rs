@@ -66,7 +66,7 @@ pub(crate) struct Login {
     auth: Arc<auth::AuthState>,
     epoch: u64,
     policy: &'static str,
-    login: Option<crate::cookie::LoginId>,
+    id: Option<crate::cookie::LoginId>,
 }
 
 impl Login {
@@ -78,7 +78,7 @@ impl Login {
             auth,
             epoch,
             policy,
-            login: None,
+            id: None,
         }
     }
 
@@ -86,7 +86,7 @@ impl Login {
     /// `login` (`None` when no cookie let it in).
     pub(crate) fn of(auth: Arc<auth::AuthState>, login: Option<crate::cookie::LoginId>) -> Login {
         Login {
-            login,
+            id: login,
             ..Login::now(auth)
         }
     }
@@ -96,7 +96,7 @@ impl Login {
     fn changed(&self) -> bool {
         self.auth.epoch().get() != self.epoch
             || self.auth.policy().name() != self.policy
-            || self.login.is_some_and(|id| self.auth.login_revoked(&id))
+            || self.id.is_some_and(|id| self.auth.login_revoked(&id))
     }
 }
 

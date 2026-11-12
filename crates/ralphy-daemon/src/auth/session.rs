@@ -32,6 +32,13 @@ pub struct LoginAttempt<'a> {
     pub password: Option<&'a str>,
 }
 
+/// Prints no field: the token, the seed and the password hash are secret.
+impl std::fmt::Debug for SessionAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionAuth").finish_non_exhaustive()
+    }
+}
+
 impl std::fmt::Debug for LoginAttempt<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LoginAttempt").finish_non_exhaustive()

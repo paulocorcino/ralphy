@@ -254,16 +254,19 @@ mod tests {
         DeskFiles {
             desk: dir.path().join("desk.toml"),
             registry: registry_path.to_path_buf(),
-            peers: Default::default(),
+            peers: crate::routes::PeerRepoCache::default(),
         }
     }
 
     /// A sender with no config: it sends nothing.
     fn no_telegram() -> Notifier {
         Notifier::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
+            PathBuf::default(),
+            (
+                crate::presence_board::Shared::default(),
+                crate::telegram_state::SharedClaim::default(),
+            ),
+            PathBuf::default(),
             None,
         )
     }

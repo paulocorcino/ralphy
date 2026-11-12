@@ -124,6 +124,10 @@ pub struct LoginId([u8; 16]);
 
 impl LoginId {
     /// A new random ID.
+    ///
+    /// # Panics
+    ///
+    /// When the OS random source is not available.
     pub fn mint() -> LoginId {
         let mut bytes = [0u8; 16];
         getrandom::fill(&mut bytes).expect("the OS CSPRNG must be available to mint a login ID");
@@ -209,6 +213,7 @@ fn from_base64url(text: &str) -> Option<[u8; 16]> {
 /// the anchor for the absolute cap), when it currently expires (`exp`, slid by
 /// activity within the cap), which length preset governs the slide, and the
 /// login the cookie belongs to.
+#[derive(Debug)]
 pub struct Claims {
     pub iat: u64,
     pub exp: u64,

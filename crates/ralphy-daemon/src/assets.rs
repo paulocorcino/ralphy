@@ -25,6 +25,7 @@ use sha2::{Digest, Sha256};
 
 /// What one embedded asset needs to be served: its validator, and its gzip
 /// body when compressing it was worth it.
+#[derive(Debug)]
 pub struct Prepared {
     /// A strong validator over the raw bytes, quoted (`"…"`), ready for the
     /// `ETag` header and for the `If-None-Match` compare.
@@ -46,6 +47,10 @@ fn cache() -> &'static Mutex<HashMap<String, Arc<Prepared>>> {
 /// The prepared form of `path`, computed on first request. `compressible`
 /// decides whether a gzip body is attempted at all; the caller derives it from
 /// the content type so a binary asset costs a hash and nothing more.
+///
+/// # Panics
+///
+/// Only when `prepare` panics on the blocking pool, which is a bug.
 pub async fn prepared(path: &str, contents: &'static [u8], compressible: bool) -> Arc<Prepared> {
     if let Some(hit) = lookup(path) {
         return hit;

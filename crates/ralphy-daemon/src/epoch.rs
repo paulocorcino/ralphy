@@ -50,7 +50,7 @@ pub fn save_epoch_to(epoch: u64, path: &Path) -> Result<()> {
 /// A live, shared session epoch: an in-memory atomic backed by a store file.
 /// Cheap to clone (an `Arc` + a `PathBuf`); every [`SessionAuth`](crate::auth::SessionAuth)
 /// holds one and reads it on each cookie verify.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SessionEpoch {
     current: Arc<AtomicU64>,
     path: PathBuf,

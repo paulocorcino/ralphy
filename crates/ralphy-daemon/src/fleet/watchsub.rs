@@ -50,6 +50,13 @@ pub struct WatchSubs {
     watchers: Arc<watch::WatcherManager>,
 }
 
+/// Prints no field: the watcher manager has no `Debug`.
+impl std::fmt::Debug for WatchSubs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WatchSubs").finish_non_exhaustive()
+    }
+}
+
 struct Sub {
     repo: String,
     paths: BTreeSet<String>,
@@ -111,7 +118,7 @@ impl WatchSubs {
                 paths: held,
                 rx,
                 last_poll: Instant::now(),
-                watchers: self.watchers.clone(),
+                watchers: Arc::clone(&self.watchers),
             },
         );
         Ok(())
@@ -147,6 +154,10 @@ impl WatchSubs {
     /// The returned [`WaitOutcome`] is why it came back, for the caller's log —
     /// from outside, a fast empty answer and a settled one look identical, which
     /// is what made that triage reach for `tcpdump`.
+    ///
+    /// # Panics
+    ///
+    /// Never: the receiver it reads was set to `Some` just before.
     pub async fn wait(
         &self,
         sub_id: &str,

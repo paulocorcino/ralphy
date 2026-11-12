@@ -77,7 +77,7 @@ pub(super) fn main_daemon(with_bot: bool) -> Main {
     let texts = Texts::default();
     let mut notifier = Notifier::new(
         config.clone(),
-        (board, claim.clone()),
+        (board, Arc::clone(&claim)),
         peers_dir.clone(),
         Some(MAIN.to_owned()),
     );
@@ -268,7 +268,7 @@ async fn the_main_sends_a_peer_console_request_once() {
         "requests": [waiting(121)],
         "present": false,
     }))));
-    let port = fake_peer(list.clone(), false).await;
+    let port = fake_peer(Arc::clone(&list), false).await;
     let mut main = main_daemon(true);
     main.announce(port);
     assert_eq!(

@@ -89,6 +89,7 @@ pub(crate) enum LoginFailure {
 pub(crate) struct Event {
     /// RFC 3339, UTC.
     pub at: String,
+    #[expect(clippy::struct_field_names, reason = "`event` is the JSON key")]
     pub event: EventKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device: Option<String>,

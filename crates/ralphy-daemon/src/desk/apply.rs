@@ -53,7 +53,7 @@ impl<'de> Deserialize<'de> for DeskBody {
         impl<'de> serde::de::Visitor<'de> for MapOnly {
             type Value = DeskBody;
 
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.write_str("a desk upload object with `seq` and `changes`")
             }
 
@@ -308,18 +308,18 @@ pub fn apply(
     aliases: &BTreeMap<String, String>,
     now: i64,
 ) -> Applied {
-    let mut changed = false;
+    let mut any_applied = false;
     let mut refused = Vec::new();
     for (index, raw) in changes.iter().enumerate() {
         let outcome = parse(raw).and_then(|c| apply_one(&mut desk, rekey(c, aliases), now));
         match outcome {
-            Ok(did) => changed |= did,
+            Ok(did) => any_applied |= did,
             Err(error) => refused.push(Refusal { index, error }),
         }
     }
     Applied {
         desk,
-        changed,
+        changed: any_applied,
         refused,
     }
 }

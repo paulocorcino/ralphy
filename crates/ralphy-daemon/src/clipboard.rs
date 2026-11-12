@@ -119,7 +119,7 @@ fn utc_stamp(now: SystemTime) -> String {
     let millis = since.subsec_millis();
     let days = (secs / 86_400).cast_signed();
     let rem = secs % 86_400;
-    let (h, m, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+    let (hour, minute, second) = (rem / 3600, (rem % 3600) / 60, rem % 60);
 
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
@@ -132,7 +132,7 @@ fn utc_stamp(now: SystemTime) -> String {
     let mo = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if mo <= 2 { y + 1 } else { y };
 
-    format!("{y:04}{mo:02}{d:02}-{h:02}{m:02}{s:02}-{millis:03}")
+    format!("{y:04}{mo:02}{d:02}-{hour:02}{minute:02}{second:02}-{millis:03}")
 }
 
 #[cfg(test)]
@@ -199,7 +199,10 @@ mod tests {
         assert!(!root.path().join(DIR).exists());
         let rel = write_image(root.path(), ImageType::Png, PNG).unwrap();
         assert!(rel.starts_with(".ralphy/clipboard/paste-"), "{rel}");
-        assert!(rel.ends_with(".png"), "{rel}");
+        assert!(
+            Path::new(&rel).extension().is_some_and(|e| e == "png"),
+            "{rel}"
+        );
         assert!(!rel.contains('\\'), "forward slashes on every host: {rel}");
         assert_eq!(fs::read(root.path().join(&rel)).unwrap(), PNG);
     }
@@ -219,7 +222,8 @@ mod tests {
             fs::read(root.path().join(&b)).unwrap(),
             b"\xff\xd8\xff\xe0b"
         );
-        assert!(a.ends_with(".jpg") && b.ends_with(".jpg"));
+        let is_jpg = |rel: &str| Path::new(rel).extension().is_some_and(|e| e == "jpg");
+        assert!(is_jpg(&a) && is_jpg(&b));
     }
 
     #[test]

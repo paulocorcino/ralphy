@@ -209,6 +209,7 @@ pub struct Polled {
 
 /// The reader of a status file: the complete lines appended since its last
 /// read. It folds nothing, so it can read while no lock on the state is held.
+#[derive(Debug)]
 pub struct Tail {
     path: PathBuf,
     offset: u64,
@@ -412,6 +413,10 @@ const CONSOLE_HOOK_EVENTS: [(&str, &str); 9] = [
 /// The console's settings document: the hook set on every event, each
 /// running `hook` (built by the caller from the Claude Code version, so the
 /// entry has the form that version runs).
+///
+/// # Panics
+///
+/// Never: a JSON value of string keys always serializes.
 pub fn console_settings_json(hook: &HookCommand) -> String {
     let command = hook.entry();
     let hooks: serde_json::Map<String, Value> = CONSOLE_HOOK_EVENTS

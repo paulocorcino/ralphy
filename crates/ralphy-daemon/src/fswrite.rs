@@ -144,7 +144,8 @@ fn is_note_in_notes_dir(path: &Path) -> bool {
         && sub == OsStr::new("notes")
         && name
             .to_str()
-            .is_some_and(|n| n.len() > ".note".len() && n.ends_with(".note"))
+            .and_then(|n| n.strip_suffix(".note"))
+            .is_some_and(|stem| !stem.is_empty())
 }
 
 /// Refuse a target that traverses or names a protected directory, as SPELLED by

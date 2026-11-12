@@ -108,6 +108,7 @@ pub const DEFAULT_PORT: u16 = 7257;
 pub(crate) static UI: Dir<'_> = include_dir!("$OUT_DIR/ui");
 
 /// What the composition root decides; everything else is the daemon's.
+#[derive(Debug)]
 pub struct DaemonConfig {
     /// TCP port for the listener.
     pub port: u16,
@@ -172,7 +173,7 @@ pub fn run(config: DaemonConfig) -> Result<()> {
 /// transposition-prone (the compiler can't catch two swapped stores). `Default`
 /// yields empty paths — a "no store" set the scans tolerate (ADR-0040 C6) — which
 /// the daemon's tests use as their all-missing base.
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct StorePaths {
     pub claude_projects_dir: PathBuf,
     pub codex_dir: PathBuf,

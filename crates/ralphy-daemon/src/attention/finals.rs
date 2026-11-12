@@ -29,7 +29,12 @@ impl Finals {
     /// directory (`Workspace::runs_dir` in ralphy-core, which the daemon
     /// does not import). A folder with no final snapshot this build reads is
     /// not a finished run.
-    pub(crate) fn of_repo(&mut self, root: &Path, slug: &str, read: ReadFinal) -> Vec<FinishedRun> {
+    pub(crate) fn of_repo(
+        &mut self,
+        root: &Path,
+        slug: &str,
+        read: ReadFinal<'_>,
+    ) -> Vec<FinishedRun> {
         let Ok(entries) = std::fs::read_dir(root.join(".ralphy").join("runs")) else {
             return Vec::new();
         };
@@ -52,7 +57,7 @@ impl Finals {
         dir: &Path,
         slug: &str,
         stamp: String,
-        read: ReadFinal,
+        read: ReadFinal<'_>,
     ) -> Option<FinishedRun> {
         let written = std::fs::metadata(ralphy_run_snapshot::final_snapshot_path(dir))
             .and_then(|m| m.modified())
