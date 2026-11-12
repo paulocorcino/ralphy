@@ -72,8 +72,8 @@ fn setup(token_arg: Option<String>) -> Result<()> {
         .get("username")
         .and_then(|v| v.as_str())
         .unwrap_or("your bot");
-    println!("Token accepted for @{bot}.");
-    println!("Now open Telegram and send /start to @{bot}. Waiting…");
+    outln!("Token accepted for @{bot}.");
+    outln!("Now open Telegram and send /start to @{bot}. Waiting…");
 
     let mut chat_id = None;
     for _ in 0..SETUP_POLL_ATTEMPTS {
@@ -92,7 +92,7 @@ fn setup(token_arg: Option<String>) -> Result<()> {
         token,
         chat_id: Some(chat_id),
     })?;
-    println!("Captured chat {chat_id}. Telegram notifications are configured.");
+    outln!("Captured chat {chat_id}. Telegram notifications are configured.");
     Ok(())
 }
 
@@ -106,20 +106,20 @@ fn test() -> Result<()> {
     client
         .send_message(chat_id, "Ralphy test message ✓")
         .context("sendMessage failed")?;
-    println!("Sent a test message to chat {chat_id}.");
+    outln!("Sent a test message to chat {chat_id}.");
     Ok(())
 }
 
 fn status() -> Result<()> {
-    println!("Config file: {}", config::path()?.display());
+    outln!("Config file: {}", config::path()?.display());
     match config::load()? {
         None => {
-            println!("Telegram: not configured. Run `telegram setup`.");
+            outln!("Telegram: not configured. Run `telegram setup`.");
         }
         Some(cfg) => {
             let token = effective_token(Some(&cfg.token)).unwrap_or_default();
             match cfg.chat_id {
-                Some(id) => println!("Telegram: configured (chat {id}, notifications on)."),
+                Some(id) => outln!("Telegram: configured (chat {id}, notifications on)."),
                 None => {
                     writeln!(
                         std::io::stdout(),
@@ -128,7 +128,7 @@ fn status() -> Result<()> {
                     .expect("the report goes to stdout, as println! sent it");
                 }
             }
-            println!("Token: {}", masked_token(&token));
+            outln!("Token: {}", masked_token(&token));
         }
     }
     Ok(())
@@ -136,10 +136,10 @@ fn status() -> Result<()> {
 
 fn disable() -> Result<()> {
     if config::load()?.is_none() {
-        println!("Telegram was not configured; nothing to remove.");
+        outln!("Telegram was not configured; nothing to remove.");
         return Ok(());
     }
     config::delete()?;
-    println!("Telegram config removed.");
+    outln!("Telegram config removed.");
     Ok(())
 }

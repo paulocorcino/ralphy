@@ -143,7 +143,7 @@ pub(crate) fn confirm_with_daemon(store: &Path, port: u16, yes: bool) -> Result<
         &mut std::io::stdout(),
     )?;
     if !go_on {
-        println!("nothing changed");
+        outln!("nothing changed");
     }
     Ok(go_on)
 }

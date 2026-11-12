@@ -17,6 +17,10 @@ use super::support::{self, LockRow};
 struct Holder(std::process::Child);
 
 impl Drop for Holder {
+    #[expect(
+        clippy::print_stderr,
+        reason = "a test helper reports a failed cleanup of its child"
+    )]
     fn drop(&mut self) {
         if let Err(e) = self.0.kill() {
             eprintln!("killing the lock holder: {e}");

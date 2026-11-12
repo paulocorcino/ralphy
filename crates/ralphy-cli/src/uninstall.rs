@@ -45,7 +45,7 @@ pub(crate) fn run(args: &UninstallArgs) -> Result<()> {
     }
     remove_from_path(&dir);
     keep_or_purge(&store, args.purge, args.yes)?;
-    println!("Project `.ralphy/` folders and GitHub labels were not changed.");
+    outln!("Project `.ralphy/` folders and GitHub labels were not changed.");
     Ok(())
 }
 
@@ -53,7 +53,7 @@ fn keep_or_purge(store: &Path, purge_it: bool, yes: bool) -> Result<()> {
     if purge_it {
         return purge(store, yes);
     }
-    println!(
+    outln!(
         "Kept Ralphy's folder {}. Delete it to remove the daemon settings and logs too.",
         store.display()
     );
@@ -63,12 +63,12 @@ fn keep_or_purge(store: &Path, purge_it: bool, yes: bool) -> Result<()> {
 /// Remove the autostart, then end the daemon, so nothing starts it again.
 fn stop_daemon(store: &Path) -> Result<()> {
     match ralphy_daemon::autostart::uninstall() {
-        Ok(()) => println!("Removed the daemon autostart."),
-        Err(e) => eprintln!("warning: could not remove the daemon autostart: {e:#}"),
+        Ok(()) => outln!("Removed the daemon autostart."),
+        Err(e) => eoutln!("warning: could not remove the daemon autostart: {e:#}"),
     }
     stop_unit();
     if crate::daemon::restart::stop(store)? {
-        println!("Stopped the daemon.");
+        outln!("Stopped the daemon.");
     }
     Ok(())
 }
@@ -103,7 +103,7 @@ fn remove_binary(entry: &Path) -> Result<()> {
         removed |= remove_file(&file)?;
     }
     if removed {
-        println!("Removed {}.", entry.display());
+        outln!("Removed {}.", entry.display());
     }
     Ok(())
 }
@@ -185,7 +185,7 @@ fn remove_running(file: &Path) -> Result<bool> {
     // A locked file, or a temp folder on another drive, refuses the rename.
     // The file then stays, and the operator is told so.
     if let Err(e) = std::fs::rename(file, &aside) {
-        eprintln!(
+        eoutln!(
             "warning: {} is in use and could not be moved ({e}); delete it when nothing runs it",
             file.display()
         );
@@ -218,12 +218,12 @@ fn remove_from_path(dir: &Path) {
     match crate::install::remove_from_user_path(dir) {
         Ok(places) if places.is_empty() => {}
         Ok(places) => {
-            println!("Took ralphy off your PATH in:");
+            outln!("Took ralphy off your PATH in:");
             for place in places {
-                println!("  {place}");
+                outln!("  {place}");
             }
         }
-        Err(e) => eprintln!(
+        Err(e) => eoutln!(
             "warning: could not take {} off your PATH ({e:#}); remove it by hand",
             dir.display()
         ),
@@ -297,7 +297,7 @@ fn purge_refusal(
 
 fn purge(store: &Path, yes: bool) -> Result<()> {
     if !store.exists() {
-        println!("Ralphy's folder {} does not exist.", store.display());
+        outln!("Ralphy's folder {} does not exist.", store.display());
         return Ok(());
     }
     let canonical = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
@@ -307,18 +307,18 @@ fn purge(store: &Path, yes: bool) -> Result<()> {
     if let Some(why) = refusal {
         bail!("will not delete {}: {why}", store.display());
     }
-    println!(
+    outln!(
         "This deletes {} ({}): the daemon settings, its access token, the peers and the logs.",
         store.display(),
         readable_size(folder_size(store))
     );
     if !yes && !confirmed()? {
-        println!("Kept {}.", store.display());
+        outln!("Kept {}.", store.display());
         return Ok(());
     }
     remove_old_telegram_config(store)?;
     std::fs::remove_dir_all(store).with_context(|| format!("deleting {}", store.display()))?;
-    println!("Deleted {}.", store.display());
+    outln!("Deleted {}.", store.display());
     Ok(())
 }
 
@@ -329,7 +329,7 @@ fn remove_old_telegram_config(store: &Path) -> Result<()> {
     let operator_store = ralphy_daemon::auth::os_default_store();
     if ralphy_daemon::telegram_state::legacy::remove_legacy(store, &old, operator_store.as_deref())?
     {
-        println!("Deleted the old Telegram settings {}.", old.display());
+        outln!("Deleted the old Telegram settings {}.", old.display());
     }
     Ok(())
 }
@@ -338,7 +338,7 @@ fn confirmed() -> Result<bool> {
     if !std::io::stdin().is_terminal() {
         bail!("there is no terminal to ask in: run `ralphy uninstall --purge --yes` to delete it");
     }
-    print!("Delete it? [y/N] ");
+    out!("Delete it? [y/N] ");
     std::io::stdout().flush().context("writing the question")?;
     let mut line = String::new();
     std::io::stdin()

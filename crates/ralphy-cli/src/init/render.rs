@@ -100,12 +100,12 @@ fn render_question(q: &Question, idx: usize, total: usize, color: bool, width: u
 /// mirror the friendly Q&A wording so the summary reads as a recap of the answers.
 pub(crate) fn print_captured_config(cfg: &InitConfig) {
     if !qa_color() {
-        print!("{}", format_config_echo(cfg));
+        out!("{}", format_config_echo(cfg));
         return;
     }
 
     let row = |label: &str, value: String| {
-        println!(
+        outln!(
             "  {} {}",
             forced(Style::new().dim()).apply_to(format!("{label:<18}")),
             forced(Style::new().green()).apply_to(value)
@@ -129,33 +129,33 @@ pub(crate) fn print_captured_config(cfg: &InitConfig) {
 /// text the unit tests and non-TTY consumers depend on.
 pub(crate) fn print_gate_report(f: &EnvFindings, fails: &[HardFail]) {
     if !qa_color() {
-        print!("{}", format_report(f, fails));
+        out!("{}", format_report(f, fails));
         return;
     }
 
-    println!(
+    outln!(
         "\n{}",
         forced(Style::new().cyan().bold()).apply_to("Environment")
     );
-    println!("  {} git", check_mark(f.git));
-    println!("  {} python", check_mark(f.python));
-    println!("  {} gh auth", check_mark(f.gh_authenticated));
-    println!("  {} GitHub remote", check_mark(f.github_remote));
-    println!("  {}", dim("agents"));
+    outln!("  {} git", check_mark(f.git));
+    outln!("  {} python", check_mark(f.python));
+    outln!("  {} gh auth", check_mark(f.gh_authenticated));
+    outln!("  {} GitHub remote", check_mark(f.github_remote));
+    outln!("  {}", dim("agents"));
     for agent in &Agent::ALL {
         let name = agent.cli_name();
         let (glyph, status) = agent_status(f, *agent);
-        println!("    {glyph} {name:<9} {}", dim(status));
+        outln!("    {glyph} {name:<9} {}", dim(status));
     }
 
     if fails.is_empty() {
-        println!(
+        outln!(
             "  {} {}",
             check_mark(true),
             forced(Style::new().green()).apply_to("all checks passed")
         );
     } else {
-        println!("  {} {} blocker(s)", check_mark(false), fails.len());
+        outln!("  {} {} blocker(s)", check_mark(false), fails.len());
     }
 }
 
@@ -194,9 +194,9 @@ fn agent_status(f: &EnvFindings, agent: Agent) -> (String, &'static str) {
 /// running commentary recedes behind the headers and prompts.
 pub(crate) fn print_note(text: &str) {
     if qa_color() {
-        println!("{}", forced(Style::new().dim()).apply_to(text));
+        outln!("{}", forced(Style::new().dim()).apply_to(text));
     } else {
-        println!("{text}");
+        outln!("{text}");
     }
 }
 
@@ -204,12 +204,12 @@ pub(crate) fn print_note(text: &str) {
 /// glance the same way the gate's checklist does. Plain (`✓ text`) off a TTY.
 pub(crate) fn print_ok(text: &str) {
     if qa_color() {
-        println!(
+        outln!(
             "  {} {text}",
             forced(Style::new().green().bold()).apply_to("✓")
         );
     } else {
-        println!("  {text}");
+        outln!("  {text}");
     }
 }
 
@@ -217,9 +217,9 @@ pub(crate) fn print_ok(text: &str) {
 /// lists and plans the stages emit (scaffold files, label actions, …).
 pub(crate) fn print_bullet(text: &str) {
     if qa_color() {
-        println!("  {} {text}", forced(Style::new().dim()).apply_to("·"));
+        outln!("  {} {text}", forced(Style::new().dim()).apply_to("·"));
     } else {
-        println!("  - {text}");
+        outln!("  - {text}");
     }
 }
 
@@ -230,13 +230,13 @@ pub(crate) fn print_bullet(text: &str) {
 pub(crate) fn ask_yes_no(question: &str, default_yes: bool) -> Result<String> {
     let hint = if default_yes { "[Y/n]" } else { "[y/N]" };
     if qa_color() {
-        print!(
+        out!(
             "\n  {} {question} {} ",
             forced(Style::new().cyan().bold()).apply_to("›"),
             forced(Style::new().dim()).apply_to(hint)
         );
     } else {
-        print!("\n  > {question} {hint} ");
+        out!("\n  > {question} {hint} ");
     }
 
     std::io::stdout()
@@ -277,14 +277,14 @@ pub(crate) fn with_spinner<T>(message: &str, f: impl FnOnce() -> T) -> T {
 /// `println!`s.
 pub(crate) fn print_section(title: &str, subtitle: Option<&str>) {
     if qa_color() {
-        println!("\n{}", forced(Style::new().cyan().bold()).apply_to(title));
+        outln!("\n{}", forced(Style::new().cyan().bold()).apply_to(title));
         if let Some(s) = subtitle {
-            println!("{}", forced(Style::new().dim()).apply_to(s));
+            outln!("{}", forced(Style::new().dim()).apply_to(s));
         }
     } else {
-        println!("\n{title}");
+        outln!("\n{title}");
         if let Some(s) = subtitle {
-            println!("{s}");
+            outln!("{s}");
         }
     }
 }
@@ -298,7 +298,7 @@ pub(crate) fn run_qa(report: &DiagnosisReport) -> Result<InitConfig> {
     let width = qa_width();
     let total = questions.len();
     let read_line = |i: usize| -> Result<String> {
-        print!(
+        out!(
             "{}",
             render_question(&questions[i], i + 1, total, color, width)
         );

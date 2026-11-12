@@ -25,6 +25,7 @@
 //! Protocol: exit 2 (reason to stderr) to block; exit 0 to allow.
 //! [`evaluate_guard`] is pure over the tool call and a [`GuardContext`].
 
+use std::process::ExitCode;
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -410,14 +411,9 @@ fn tool_call(payload: &Value) -> (&str, &Value) {
 }
 
 /// Run the `hook guard` subcommand: read the payload from stdin, evaluate it,
-/// and exit 0 (allow) or exit 2 (deny). With `cost_gate`, an allowed Bash call
-/// also passes the verification-cost gate. Never returns — always calls
-/// `std::process::exit`.
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the hook guard reports its decision by its exit code, so it must exit"
-)]
-pub(crate) fn run_guard_hook(cost_gate: bool) -> ! {
+/// and return exit code 0 (allow) or 2 (deny). With `cost_gate`, an allowed Bash
+/// call also passes the verification-cost gate.
+pub(crate) fn run_guard_hook(cost_gate: bool) -> ExitCode {
     use std::io::Read;
 
     let mut raw = String::new();
@@ -439,10 +435,10 @@ pub(crate) fn run_guard_hook(cost_gate: bool) -> ! {
     };
     match reason {
         Some(reason) => {
-            eprintln!("BLOCKED by Ralphy guard: {reason}");
-            std::process::exit(2);
+            eoutln!("BLOCKED by Ralphy guard: {reason}");
+            ExitCode::from(2)
         }
-        None => std::process::exit(0),
+        None => ExitCode::SUCCESS,
     }
 }
 

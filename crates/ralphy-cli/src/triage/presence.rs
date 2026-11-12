@@ -61,12 +61,12 @@ pub(super) fn presence_gate(
 pub(super) fn pass_presence_gate(lock_path: &Path, if_idle: bool) -> bool {
     match presence_gate(lock_path, if_idle, runlock::pid_is_alive) {
         PresenceGate::Defer(msg) => {
-            println!("{msg}");
+            outln!("{msg}");
             false
         }
         PresenceGate::Proceed { warn } => {
             if let Some(w) = warn {
-                eprintln!("{w}");
+                eoutln!("{w}");
             }
             true
         }

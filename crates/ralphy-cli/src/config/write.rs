@@ -63,7 +63,7 @@ pub(crate) fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
     set_core_key(&mut s, key, value)?;
     s.save(ws)?;
     gitignore::ensure_ralphy_ignored(ws.repo_root())?;
-    println!("{key} = {value}");
+    outln!("{key} = {value}");
     Ok(())
 }
 
@@ -78,7 +78,7 @@ fn set_events_key(ws: &Workspace, key: &str, value: &str) -> Result<()> {
                 // TLS-enforcing (ADR-0032 amendment, audit F6/F14) — an
                 // `http://` sink on a LAN is the operator's call, and this
                 // line is what makes it an informed one.
-                println!(
+                outln!(
                     "warning: events.url is plain http — the events bearer will travel \
                      in cleartext to {host}"
                 );
@@ -91,9 +91,9 @@ fn set_events_key(ws: &Workspace, key: &str, value: &str) -> Result<()> {
     store.save()?;
     // Never echo the secret token back to stdout — mask it like `config get`.
     if key == "events.token" {
-        println!("{key} = {}", crate::telegram::config::masked_token(value));
+        outln!("{key} = {}", crate::telegram::config::masked_token(value));
     } else {
-        println!("{key} = {value}");
+        outln!("{key} = {value}");
     }
     Ok(())
 }
@@ -293,7 +293,7 @@ pub(crate) fn unset(ws: &Workspace, key: &str) -> Result<()> {
         // The field name is the key's suffix (`url` / `token`).
         store.clear(&slug, key.split_at("events.".len()).1);
         store.save()?;
-        println!("{key}: unset");
+        outln!("{key}: unset");
         return Ok(());
     }
     let mut s = Settings::load(ws)?;
@@ -336,7 +336,7 @@ pub(crate) fn unset(ws: &Workspace, key: &str) -> Result<()> {
         _ => unreachable!(),
     }
     s.save(ws)?;
-    println!("{key}: unset");
+    outln!("{key}: unset");
     Ok(())
 }
 

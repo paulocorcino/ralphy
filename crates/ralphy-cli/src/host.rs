@@ -209,14 +209,14 @@ pub(crate) fn run(cmd: &HostCommand) -> Result<()> {
         }),
         HostCommand::Aliases => {
             let list = aliases::list(&ssh_program()?)?;
-            println!("{list}");
+            outln!("{list}");
             Ok(())
         }
         HostCommand::Key { destination } => {
             let ssh = ssh_program()?;
             let keygen = ssh_keygen(&ssh).context("no ssh-keygen program found")?;
             let state = known::key(&ssh, &keygen, destination)?;
-            println!("{state}");
+            outln!("{state}");
             Ok(())
         }
         HostCommand::Trust {
@@ -224,7 +224,7 @@ pub(crate) fn run(cmd: &HostCommand) -> Result<()> {
             fingerprint,
         } => {
             known::trust(&ssh_program()?, destination, fingerprint)?;
-            println!("Trusted the host key of {destination}.");
+            outln!("Trusted the host key of {destination}.");
             Ok(())
         }
     }
@@ -259,7 +259,7 @@ fn paired(
     let result = flow(&local, &mut out);
     if let Err(e) = &result {
         if let Err(w) = out.failed(e) {
-            eprintln!("could not print the failure as JSON: {w:#}");
+            eoutln!("could not print the failure as JSON: {w:#}");
         }
     }
     result

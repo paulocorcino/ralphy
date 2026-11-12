@@ -152,10 +152,10 @@ pub(crate) fn branch(cmd: BranchCommand) -> anyhow::Result<()> {
 
     if is_create {
         ralphy_core::git::checkout_new_branch(&repo_root, &args.name, "HEAD")?;
-        println!("Created and switched to branch '{}'.", args.name);
+        outln!("Created and switched to branch '{}'.", args.name);
     } else {
         ralphy_core::git::checkout(&repo_root, &args.name)?;
-        println!("Switched to branch '{}'.", args.name);
+        outln!("Switched to branch '{}'.", args.name);
     }
     Ok(())
 }
@@ -178,13 +178,13 @@ fn branch_list(args: &BranchListArgs) -> anyhow::Result<()> {
             "branches": branches,
             "worktrees": worktrees,
         });
-        println!("{out}");
+        outln!("{out}");
     } else {
         for b in &branches {
             if *b == current.as_str() {
-                println!("* {b}");
+                outln!("* {b}");
             } else {
-                println!("  {b}");
+                outln!("  {b}");
             }
         }
     }
@@ -211,9 +211,10 @@ fn worktree_remove(args: &WorktreeRemoveArgs) -> anyhow::Result<()> {
     let ws = ralphy_core::Workspace::new(&primary);
     guard_run_lock(&ws, "worktree remove", runlock::pid_is_alive)?;
     ralphy_core::checkouts::remove(&primary, &args.name)?;
-    println!(
+    outln!(
         "Removed worktree '{}' and branch '{}'.",
-        args.name, args.name
+        args.name,
+        args.name
     );
     Ok(())
 }
@@ -236,19 +237,21 @@ fn worktree_add(args: &WorktreeAddArgs) -> anyhow::Result<()> {
         ),
     };
     let c = ralphy_core::checkouts::add(&primary, &args.name, args.base.as_deref())?;
-    println!(
+    outln!(
         "Created worktree '{}' at {} from {}.",
-        c.name, c.path, c.base
+        c.name,
+        c.path,
+        c.base
     );
     // Carry-over runs AFTER the add reported: the worktree exists whatever
     // these say, and the daemon relays this stdout as the picker's notice.
     if let Some(w) = settings_warning {
-        println!("warning: {w}");
+        outln!("warning: {w}");
     }
     for warning in
         ralphy_core::checkouts::carry_over(&primary, Path::new(&c.path), &settings.worktree)
     {
-        println!("warning: {warning}");
+        outln!("warning: {warning}");
     }
     Ok(())
 }
@@ -259,16 +262,16 @@ fn worktree_list(args: &WorktreeListArgs) -> anyhow::Result<()> {
     let listing = ralphy_core::checkouts::list(&repo_root)?;
 
     if args.format.as_deref() == Some("json") {
-        println!("{}", serde_json::to_string(&listing)?);
+        outln!("{}", serde_json::to_string(&listing)?);
     } else {
-        println!("* {}", listing.primary);
+        outln!("* {}", listing.primary);
         for w in &listing.worktrees {
             let dirty = if w.dirty {
                 "  (uncommitted changes)"
             } else {
                 ""
             };
-            println!("  {}  {}{dirty}", w.name, w.branch);
+            outln!("  {}  {}{dirty}", w.name, w.branch);
         }
     }
     Ok(())
@@ -289,9 +292,11 @@ pub(crate) fn label(cmd: LabelCommand) -> anyhow::Result<()> {
     for l in &args.add {
         ralphy_core::github::add_label(args.issue, l, &repo_root)?;
     }
-    println!(
+    outln!(
         "Issue #{}: removed {:?}, added {:?}.",
-        args.issue, args.remove, args.add
+        args.issue,
+        args.remove,
+        args.add
     );
     Ok(())
 }

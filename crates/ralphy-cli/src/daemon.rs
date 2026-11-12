@@ -189,30 +189,30 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
                 .unwrap_or_default();
             register::migrate_side_stores(&reg, &former);
             for old in &reg.migrated_from {
-                println!("migrated {old} → {}", reg.slug);
+                outln!("migrated {old} → {}", reg.slug);
             }
             if let Some(hash) = &reg.declined {
-                println!(
+                outln!(
                     "kept {} (origin no longer yields a forge slug; {hash} not inserted)",
                     reg.slug
                 );
             }
-            println!("registered {} → {}", reg.slug, repo.display());
+            outln!("registered {} → {}", reg.slug, repo.display());
             Ok(())
         }
         Some(DaemonCommand::Remove { slug }) => {
             let removed = remove_repo_at(&registry::repos_toml_path()?, slug)?;
             if removed {
-                println!("removed {slug}");
+                outln!("removed {slug}");
             } else {
-                println!("{slug} was not registered");
+                outln!("{slug} was not registered");
             }
             Ok(())
         }
         Some(DaemonCommand::Install) => first_start::install(),
         Some(DaemonCommand::Uninstall) => {
             ralphy_daemon::autostart::uninstall()?;
-            println!("removed daemon autostart");
+            outln!("removed daemon autostart");
             Ok(())
         }
         Some(DaemonCommand::Restart { yes }) => restart::restart(*yes),
@@ -365,10 +365,10 @@ fn enroll_password<R: BufRead, W: Write>(input: &mut R, out: &mut W, path: &Path
 /// daemon has not been baptized yet.
 fn status(port: u16) -> Result<()> {
     match identity::load_current()? {
-        Some(id) => println!("{}", format_status_line(&id)),
-        None => println!("not set up — run `ralphy daemon setup`"),
+        Some(id) => outln!("{}", format_status_line(&id)),
+        None => outln!("not set up — run `ralphy daemon setup`"),
     }
-    println!(
+    outln!(
         "access token: {}",
         if auth::load_token()?.is_some() {
             "set"
@@ -376,7 +376,7 @@ fn status(port: u16) -> Result<()> {
             "not set"
         }
     );
-    println!(
+    outln!(
         "totp: {}",
         if totp::load_seed()?.is_some() {
             "enrolled"
@@ -384,7 +384,7 @@ fn status(port: u16) -> Result<()> {
             "not enrolled"
         }
     );
-    println!(
+    outln!(
         "password: {}",
         if password::load()?.is_some() {
             "set"
@@ -392,13 +392,13 @@ fn status(port: u16) -> Result<()> {
             "not set"
         }
     );
-    println!("listener: http://127.0.0.1:{port}");
+    outln!("listener: http://127.0.0.1:{port}");
     match ralphy_daemon::autostart::status() {
-        Ok(st) if st.registered => println!("autostart: registered"),
-        Ok(_) => println!("autostart: not registered"),
+        Ok(st) if st.registered => outln!("autostart: registered"),
+        Ok(_) => outln!("autostart: not registered"),
         Err(e) => {
             tracing::warn!(error = %e, "failed to probe daemon autostart status");
-            println!("autostart: unknown");
+            outln!("autostart: unknown");
         }
     }
     Ok(())

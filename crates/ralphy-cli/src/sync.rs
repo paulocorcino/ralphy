@@ -74,9 +74,9 @@ fn sync_status(args: &SyncStatusArgs) -> anyhow::Result<()> {
 
     if args.format.as_deref() == Some("json") {
         let out = serde_json::json!({ "sync": st });
-        println!("{out}");
+        outln!("{out}");
     } else {
-        println!("{}", human_line(&st));
+        outln!("{}", human_line(&st));
     }
     Ok(())
 }
@@ -111,7 +111,7 @@ fn guarded_root(repo: &Path, verb: &str) -> anyhow::Result<PathBuf> {
 fn sync_fetch(args: &SyncArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "sync fetch")?;
     match ralphy_core::sync::fetch(&repo_root)? {
-        FetchOutcome::Fetched { remote } => println!("Fetched {remote}."),
+        FetchOutcome::Fetched { remote } => outln!("Fetched {remote}."),
         refused @ FetchOutcome::NoRemote => anyhow::bail!(
             "{}",
             refused.reason().unwrap_or_else(|| format!("{refused:?}"))
@@ -124,8 +124,8 @@ fn sync_fetch(args: &SyncArgs) -> anyhow::Result<()> {
 fn sync_pull(args: &SyncArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "sync pull")?;
     match ralphy_core::sync::pull(&repo_root)? {
-        PullOutcome::UpToDate => println!("Already up to date."),
-        PullOutcome::FastForwarded { commits } => println!("Fast-forwarded {commits} commits."),
+        PullOutcome::UpToDate => outln!("Already up to date."),
+        PullOutcome::FastForwarded { commits } => outln!("Fast-forwarded {commits} commits."),
         refused @ (PullOutcome::NoUpstream
         | PullOutcome::DetachedHead
         | PullOutcome::Diverged { .. }
@@ -145,7 +145,7 @@ fn sync_pull(args: &SyncArgs) -> anyhow::Result<()> {
 fn sync_push(args: &SyncArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "sync push")?;
     match ralphy_core::sync::push(&repo_root)? {
-        PushOutcome::UpToDate => println!("Already published."),
+        PushOutcome::UpToDate => outln!("Already published."),
         PushOutcome::Pushed {
             remote,
             branch,
@@ -155,7 +155,7 @@ fn sync_push(args: &SyncArgs) -> anyhow::Result<()> {
             // remote — the operator is told, because the next `status` reads
             // differently because of it.
             let tail = if set_upstream { " (upstream set)" } else { "" };
-            println!("Pushed {branch} to {remote}{tail}.");
+            outln!("Pushed {branch} to {remote}{tail}.");
         }
         refused @ (PushOutcome::NoRemote
         | PushOutcome::DetachedHead

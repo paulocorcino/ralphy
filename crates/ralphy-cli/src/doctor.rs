@@ -360,7 +360,7 @@ pub(crate) fn run(args: &DoctorArgs) -> Result<ExitCode> {
     let mut stdout = std::io::stdout();
     if args.json {
         serde_json::to_writer(&mut stdout, &report)?;
-        println!();
+        outln!();
     } else {
         print_report(&report, &mut stdout)?;
     }

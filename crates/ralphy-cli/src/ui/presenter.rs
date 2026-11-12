@@ -213,7 +213,7 @@ impl Renderer {
                     Ok(()) | Err(_) => {}
                 }
             } else {
-                eprintln!("{line}");
+                eoutln!("{line}");
             }
         }
     }

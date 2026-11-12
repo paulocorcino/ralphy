@@ -173,7 +173,7 @@ pub(super) fn install_observability(
     let tg_cfg = telegram::config::load().unwrap_or_else(|e| {
         // Tracing is not set up yet. The outer message only: the parser's
         // own message quotes the line it failed on, which may hold the token.
-        eprintln!("warning: {e}; this run sends no Telegram message");
+        eoutln!("warning: {e}; this run sends no Telegram message");
         None
     });
     let tg_token = tg_cfg

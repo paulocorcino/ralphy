@@ -85,6 +85,10 @@ pub(crate) fn hold_run_lock(repo: &Path) -> Child {
     child
 }
 
+#[expect(
+    clippy::print_stderr,
+    reason = "a test helper reports a failed cleanup of its child"
+)]
 pub(crate) fn release(mut child: Child) {
     if let Err(e) = child.kill() {
         eprintln!("killing the lock holder: {e}");

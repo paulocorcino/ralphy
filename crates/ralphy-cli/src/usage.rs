@@ -301,7 +301,7 @@ pub(crate) fn usage_cmd(args: &UsageArgs) -> Result<()> {
     // used to hit. Name the resolved slug on stderr so the zero is legible without
     // polluting stdout (which CSV/JSON consumers parse).
     if rows.is_empty() {
-        eprintln!(
+        eoutln!(
             "note: no ledger rows for project '{slug}' \
              (nothing recorded, or the --project slug does not match)"
         );
@@ -321,11 +321,11 @@ pub(crate) fn usage_cmd(args: &UsageArgs) -> Result<()> {
     match args.format.unwrap_or(Format::Table) {
         Format::Table => {
             for line in render_table(&rows, args.by, &table) {
-                println!("{line}");
+                outln!("{line}");
             }
         }
-        Format::Csv => print!("{}", export_csv(&rows, &table)),
-        Format::Json => println!("{}", export_json(&rows, &table)?),
+        Format::Csv => out!("{}", export_csv(&rows, &table)),
+        Format::Json => outln!("{}", export_json(&rows, &table)?),
     }
     Ok(())
 }
@@ -417,14 +417,15 @@ fn recover_models(args: &UsageArgs) -> Result<()> {
         }
     }
 
-    println!("model recovery:");
-    println!("  recovered: {} line(s), {} tok", recovered.0, recovered.1);
-    println!(
+    outln!("model recovery:");
+    outln!("  recovered: {} line(s), {} tok", recovered.0, recovered.1);
+    outln!(
         "  recoverable: {} line(s), {} tok",
-        recoverable.0, recoverable.1
+        recoverable.0,
+        recoverable.1
     );
-    println!("  lost: {} line(s), {} tok", lost.0, lost.1);
-    println!("  conflicts: {} line(s), {} tok", conflicts.0, conflicts.1);
+    outln!("  lost: {} line(s), {} tok", lost.0, lost.1);
+    outln!("  conflicts: {} line(s), {} tok", conflicts.0, conflicts.1);
     Ok(())
 }
 

@@ -103,7 +103,7 @@ pub(crate) fn format_final_report(r: &VerifyReport) -> String {
 /// TTY, or the plain [`format_final_report`] text otherwise.
 fn print_final_report(r: &VerifyReport) {
     if !qa_color() {
-        print!("{}", format_final_report(r));
+        out!("{}", format_final_report(r));
         return;
     }
 
@@ -117,9 +117,9 @@ fn print_final_report(r: &VerifyReport) {
         }
     };
     print_section("Setup complete", None);
-    println!("  {} .ralphy/", mark(r.ralphy_present));
+    outln!("  {} .ralphy/", mark(r.ralphy_present));
     for (path, present) in &r.docs {
-        println!("  {} {path}", mark(*present));
+        outln!("  {} {path}", mark(*present));
     }
 
     print_note(&format!("branch: {}", r.branch));
@@ -162,7 +162,7 @@ fn run_smoke_test(repo: &Path, n: u64, agent: Agent) -> Result<()> {
         .status()
         .with_context(|| format!("spawning smoke test: {}", exe.display()))?;
     if !status.success() {
-        println!("warning: smoke test exited with status {status} — inspect the output above");
+        outln!("warning: smoke test exited with status {status} — inspect the output above");
     }
 
     Ok(())

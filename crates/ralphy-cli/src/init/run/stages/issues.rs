@@ -150,7 +150,7 @@ fn draft_and_publish(
     })?;
     print_note(&format!("Draft written to {}", draft_path.display()));
 
-    println!();
+    outln!();
     for l in format_draft_summary(&draft).lines() {
         print_bullet(l);
     }

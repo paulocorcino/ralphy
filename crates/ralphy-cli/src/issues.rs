@@ -224,7 +224,7 @@ fn print_board(repo_root: &std::path::Path, assignee: Option<&str>) -> Result<()
     let repo_labels = github::list_repo_labels(repo_root)?;
     // The union login: resolve `@me` once; `None` ⇒ unassigned-only default.
     let login = resolve_login_opt(assignee, repo_root)?;
-    println!(
+    outln!(
         "{}",
         render_board_json(&queue, &open, &closed, login.as_deref(), &repo_labels)?
     );
@@ -267,7 +267,7 @@ fn print_show(
         Format::Json => render_show_json(&view, output.fields)?,
         Format::Text => render_show_text(&view),
     };
-    println!("{out}");
+    outln!("{out}");
     Ok(())
 }
 
@@ -286,7 +286,7 @@ fn print_list(
         Format::Json => render_json(&view, output.fields)?,
         Format::Text => render_text(&view, assignee),
     };
-    println!("{out}");
+    outln!("{out}");
     Ok(())
 }
 
@@ -380,7 +380,7 @@ fn push_snapshot(
     let transport = UreqEventTransport::new(url.clone(), token);
     match transport.post(&env)? {
         PostOutcome::Delivered => {
-            println!("queue.snapshot delivered to {url} ({} issues)", view.count);
+            outln!("queue.snapshot delivered to {url} ({} issues)", view.count);
             Ok(())
         }
         PostOutcome::Permanent => anyhow::bail!(

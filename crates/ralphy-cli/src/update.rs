@@ -16,6 +16,7 @@ mod wsl;
 use crate::WRITE_TO_STRING;
 use std::fmt::Write as _;
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Args;
@@ -47,13 +48,19 @@ pub(crate) struct UpdateArgs {
     pub(crate) yes: bool,
 }
 
-pub(crate) fn run(args: &UpdateArgs) -> Result<()> {
+pub(crate) fn run(args: &UpdateArgs) -> Result<ExitCode> {
     let channel: Channel = args.channel.parse().map_err(|e: String| anyhow!(e))?;
     if let Some(daemon_pid) = args.handoff {
         return handoff::run(daemon_pid, channel, args.force);
     }
+    report_and_take(args, channel).map(|()| ExitCode::SUCCESS)
+}
+
+/// Report where this build stands on `channel`, and take the next release
+/// unless `--check` or the operator says no.
+fn report_and_take(args: &UpdateArgs, channel: Channel) -> Result<()> {
     let (build, standing) = read_standing(channel, args.force)?;
-    print!("{}", report(&build, channel, &standing));
+    out!("{}", report(&build, channel, &standing));
 
     match standing {
         Standing::Behind(gap) if !args.check => {
@@ -146,14 +153,14 @@ fn install_release(release: &Release, say: &mut dyn FnMut(&str)) -> Result<Insta
 
 /// Take `release` from a terminal, then restart the daemon if one is running.
 fn take(release: &Release) -> Result<()> {
-    println!();
-    let Installed { dest, parked } = install_release(release, &mut |line| println!("{line}"))?;
+    outln!();
+    let Installed { dest, parked } = install_release(release, &mut |line| outln!("{line}"))?;
     if let Some(parked) = parked {
         // On Windows the parked file is the image this very process is running
         // from, so it cannot go until the next run. Removing it is best-effort
         // by nature, never a failure of the update.
         if std::fs::remove_file(&parked).is_err() {
-            println!("the previous binary is parked at {}", parked.display());
+            outln!("the previous binary is parked at {}", parked.display());
         }
     }
 
@@ -162,14 +169,14 @@ fn take(release: &Release) -> Result<()> {
     // so it would name `ralphy.old (deleted)` — and the old daemon has already
     // been killed by the time the spawn fails.
     match crate::daemon::restart::restart_if_running(&dest) {
-        Ok(true) => println!("restarted the daemon on the new build"),
-        Ok(false) => println!("no daemon was running"),
+        Ok(true) => outln!("restarted the daemon on the new build"),
+        Ok(false) => outln!("no daemon was running"),
         // The binary is already replaced; a daemon that would not come back is
         // worth reporting loudly, but it does not un-take the release.
-        Err(e) => println!("the daemon did not restart: {e:#}"),
+        Err(e) => outln!("the daemon did not restart: {e:#}"),
     }
     crate::install::put_on_path_after_update(&dest);
-    println!("now on {}", release.tag_name);
+    outln!("now on {}", release.tag_name);
     Ok(())
 }
 

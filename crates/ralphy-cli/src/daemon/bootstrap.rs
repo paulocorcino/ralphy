@@ -84,7 +84,7 @@ where
             path.display()
         )
     })?;
-    println!("Initialized git repository.");
+    outln!("Initialized git repository.");
     git::resolve_toplevel(path)
 }
 
