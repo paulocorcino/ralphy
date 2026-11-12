@@ -1,6 +1,6 @@
 # The Antigravity adapter replaces the Gemini adapter, driven from a root Ralphy owns
 
-Status: proposed
+Status: accepted
 Kind: vendor
 Protects: extensibility, observability and cost; constraints security, portability
 

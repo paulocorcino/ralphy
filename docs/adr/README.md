@@ -53,12 +53,3 @@ adapter*). Both were resolved in #293: blocked-by gating was renumbered to
 [ADR-0045](./0045-blocked-by-gating.md), and the drifted "ADR-0004" citations
 that meant the boundary were corrected to ADR-0002. When you see "ADR-0004" it
 means the [Codex adapter](./0004-codex-adapter.md) and nothing else.
-
-## Proposed vendor decisions
-
-A vendor ADR that waits for the operator to accept it. The row leaves this
-table when its status changes.
-
-| ADR | Decision | Waits for |
-| --- | --- | --- |
-| [0086](./0086-antigravity-adapter.md) | The Antigravity adapter replaces the Gemini adapter | the operator's answer on each rule, D1 to D19 |
