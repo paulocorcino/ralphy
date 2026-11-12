@@ -65,6 +65,11 @@
 //! - `stream-stdin` — append each stdin line to the file named by
 //!   [`STDIN_LINES_ENV`] as it arrives, then [`STDIN_EOF_MARKER`] at EOF, and exit
 //!   0. A test reads the file while stdin is still open.
+//! - `print-then-wait` — exit with [`STOP_EXIT_CODE`] on the stop signal, write
+//!   [`STOP_MARKER`] to stdout, then sleep ~60s: a child that ends when asked.
+//! - `drive-stop <cooperative|plain>` — run `print-then-wait` through a
+//!   `HeadlessCall`, raise the operator stop once the marker is in the log, and
+//!   print the result as one line. A test spawns it with or without a console.
 //!
 //! The stdout/stderr marker lines and the large-output byte count are kept in sync
 //! with the assertions in `tests/headless/main.rs` via the shared constants below.
@@ -116,6 +121,57 @@ pub const SESSION_START_DELAY: Duration = Duration::from_millis(500);
 pub const STDIN_LINES_ENV: &str = "RALPHY_STDIN_LINES_FILE";
 /// What the `stream-stdin` child appends once stdin reached EOF.
 pub const STDIN_EOF_MARKER: &str = "<stdin-eof>";
+
+/// The stdout line the `print-then-wait` child writes before it waits.
+pub const STOP_MARKER: &str = "waiting-for-the-stop";
+/// The code the `print-then-wait` child exits with on the stop signal (Unix).
+pub const STOP_EXIT_CODE: i32 = 7;
+
+/// Run `print-then-wait` under a `HeadlessCall`, stop it once it printed, and
+/// print `exit_code=<code> stopped=<bool> kept=<bool>`.
+fn drive_stop() {
+    let cooperative = std::env::args().nth(2).as_deref() == Some("cooperative");
+    let exe = std::env::current_exe().unwrap_or_default();
+    let mut cmd = std::process::Command::new(exe);
+    cmd.arg("print-then-wait")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let log = std::env::temp_dir().join(format!("ralphy-drive-stop-{}.log", std::process::id()));
+    let watched = log.clone();
+    let waker = std::thread::spawn(move || request_stop_once_printed(&watched));
+    let timeout = Duration::from_secs(60);
+    let mut call = ralphy_adapter_support::HeadlessCall::new(cmd, "", timeout, &log);
+    if cooperative {
+        call = call.cooperative_stop(Duration::from_secs(10));
+    }
+    let run = call.run();
+    best_effort(std::fs::remove_file(&log));
+    drop(waker.join());
+    match run {
+        Ok(r) => println!(
+            "exit_code={:?} stopped={} kept={}",
+            r.exit_code,
+            r.stopped,
+            r.stdout.contains(STOP_MARKER)
+        ),
+        Err(e) => {
+            eprintln!("the headless call failed: {e:#}");
+            std::process::exit(3);
+        }
+    }
+}
+
+/// Raise the operator stop once [`STOP_MARKER`] is in the streamed log.
+fn request_stop_once_printed(log: &std::path::Path) {
+    for _ in 0..1200 {
+        if std::fs::read_to_string(log).is_ok_and(|text| text.contains(STOP_MARKER)) {
+            ralphy_core::stop::request();
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
 
 /// Read stdin to EOF and write what came to the file named by the second argument.
 fn record_stdin() {
@@ -288,6 +344,13 @@ fn main() {
             best_effort(std::io::stdout().write_all(buf.as_bytes()));
             best_effort(std::io::stdout().flush());
         }
+        "print-then-wait" => {
+            ralphy_proc_util::exit_on_stop_signal(STOP_EXIT_CODE);
+            println!("{STOP_MARKER}");
+            best_effort(std::io::stdout().flush());
+            std::thread::sleep(Duration::from_secs(60));
+        }
+        "drive-stop" => drive_stop(),
         "record-stdin" => record_stdin(),
         "stream-stdin" => stream_stdin(),
         "session-start-then-record" => {

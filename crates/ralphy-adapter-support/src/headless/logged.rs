@@ -72,6 +72,7 @@ pub struct HeadlessCall<'a> {
     degraded_line: Option<LinePredicate>,
     preamble: Option<&'a str>,
     gate: Option<PromptGate<'a>>,
+    stop_grace: Option<Duration>,
 }
 
 // The command is left out: its environment can hold a secret for the child.
@@ -98,6 +99,7 @@ impl<'a> HeadlessCall<'a> {
             degraded_line: None,
             preamble: None,
             gate: None,
+            stop_grace: None,
         }
     }
 
@@ -118,6 +120,15 @@ impl<'a> HeadlessCall<'a> {
     #[must_use]
     pub fn hold_prompt(mut self, gate: PromptGate<'a>) -> Self {
         self.gate = Some(gate);
+        self
+    }
+
+    /// On an operator stop, the wall timeout or the idle watchdog, first ask the
+    /// child's process group to end and wait up to `grace` for it to exit with
+    /// its output; then end what is left of the tree.
+    #[must_use]
+    pub fn cooperative_stop(mut self, grace: Duration) -> Self {
+        self.stop_grace = Some(grace);
         self
     }
 
@@ -215,6 +226,7 @@ fn run_headless_logged_impl(call: HeadlessCall<'_>) -> Result<HeadlessRun> {
         degraded_line,
         preamble,
         gate,
+        stop_grace,
     } = call;
     // Open the log up front so both streams can be teed to it as they arrive: the
     // run stays observable live and the partial output survives a crash of THIS
@@ -245,6 +257,7 @@ fn run_headless_logged_impl(call: HeadlessCall<'_>) -> Result<HeadlessRun> {
         idle,
         degraded,
         gate,
+        stop_grace,
     };
     let r = drive_headless(cmd, prompt, timeout, guards)?;
     let exited_cleanly = r.exited_cleanly();

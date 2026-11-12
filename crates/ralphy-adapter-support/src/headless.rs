@@ -26,10 +26,11 @@ pub use logged::{run_headless_logged, run_headless_logged_watched, HeadlessCall,
 /// `stdout` and `stderr` are kept **separate** (each captured as lossy-UTF-8) so
 /// every adapter can combine or slice them as it needs — the `OpenCode` adapter
 /// parses the JSON event stream from stdout alone, while Codex and Claude
-/// concatenate the two. `exit` is `Some(status)` on a natural exit and `None`
-/// exactly when the child was killed — either on the timeout deadline (then
-/// `timed_out` is set) or on an early-kill signal (then it is not) — letting each
-/// caller recover its own `exited`/`exited_cleanly` flag from `std` types alone.
+/// concatenate the two. `exit` is `Some(status)` when the child exited, on its
+/// own or on a cooperative stop, and `None` exactly when the child was killed —
+/// on the timeout deadline (then `timed_out` is set) or on an early-kill signal
+/// (then it is not) — letting each caller recover its own
+/// `exited`/`exited_cleanly` flag from `std` types alone.
 #[derive(Debug)]
 pub struct HeadlessOutput {
     /// Everything the child wrote to stdout, captured complete (no truncation).
@@ -125,6 +126,7 @@ struct Guards<'a> {
     idle: IdleWatch,
     degraded: Option<Arc<DegradedSwitch>>,
     gate: Option<PromptGate<'a>>,
+    stop_grace: Option<Duration>,
 }
 
 /// The shared spawn/drain/poll/kill/collect core behind [`run_headless`] and the
@@ -144,8 +146,9 @@ fn drive_headless(
         idle,
         degraded,
         gate,
+        stop_grace,
     } = guards;
-    let (mut child, stdin, stdout, stderr) = spawn_piped(cmd)?;
+    let (mut child, stdin, stdout, stderr) = spawn_piped(cmd, stop_grace.is_some())?;
 
     // Spawn the stdout/stderr reader threads *before* writing stdin, so a prompt
     // larger than the pipe buffer (~64KB) can't deadlock against a child that
@@ -204,7 +207,7 @@ fn drive_headless(
     // poll loop pays nothing for it. It never kills the child; it only turns a
     // persistent degraded stretch into a matched pair of tracing events.
     let mut degraded_watch = degraded.as_ref().map(|_| DegradedWatch::new());
-    let (exit, reap) = loop {
+    let (mut exit, reap) = loop {
         match child.try_wait() {
             Ok(Some(s)) => break (Some(s), None),
             Ok(None) => {}
@@ -220,6 +223,9 @@ fn drive_headless(
         thread::sleep(Duration::from_millis(500));
     };
 
+    if let (Some(grace), Some(Reap::Stopped | Reap::Wall | Reap::Idle)) = (stop_grace, &reap) {
+        exit = ralphy_proc_util::stop_within(&mut child, grace);
+    }
     // Teardown BEFORE collection, on every exit path — including a NATURAL exit.
     // An agent CLI that backgrounded a helper leaves that descendant holding the
     // inherited stdout/stderr write-ends open after the CLI itself exits; without
@@ -254,7 +260,10 @@ fn teardown_after_error(
 }
 
 /// Spawn `cmd` with its three pipes taken.
-fn spawn_piped(mut cmd: Command) -> Result<(Child, ChildStdin, ChildStdout, ChildStderr)> {
+fn spawn_piped(
+    mut cmd: Command,
+    stoppable: bool,
+) -> Result<(Child, ChildStdin, ChildStdout, ChildStderr)> {
     // On Unix, run the child in its own process group so a timeout can signal the
     // whole tree, not just the direct child. An agent CLI that spawned helpers
     // would otherwise leave a grandchild holding the stdout pipe open, blocking the
@@ -271,6 +280,9 @@ fn spawn_piped(mut cmd: Command) -> Result<(Child, ChildStdin, ChildStdout, Chil
     // may run under the console-less daemon-dispatched `ralphy`, where a bare
     // console child would flash a visible window. No-op off Windows.
     ralphy_proc_util::no_window(&mut cmd);
+    if stoppable {
+        ralphy_proc_util::stoppable_group(&mut cmd);
+    }
 
     let mut child = cmd
         .spawn()
