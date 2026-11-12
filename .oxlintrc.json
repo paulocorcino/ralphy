@@ -101,12 +101,18 @@
     "typescript/no-unnecessary-type-parameters": "error",
     "require-unicode-regexp": "error",
     "unicorn/consistent-function-scoping": "error",
-    // debt: 46 sites
-    "no-restricted-properties": "off",
+    // innerHTML is written only in wb-html.ts, through DOMPurify.
+    "no-restricted-properties": [
+      "error",
+      { "property": "innerHTML", "message": "Build the nodes, or go through the module that sanitizes HTML" },
+      { "property": "outerHTML", "message": "Build the nodes, or go through the module that sanitizes HTML" },
+      { "property": "insertAdjacentHTML", "message": "Build the nodes, or go through the module that sanitizes HTML" },
+      { "object": "document", "property": "write", "message": "Build the nodes instead" }
+    ],
     "unicorn/prefer-add-event-listener": "error",
     "unicorn/no-array-sort": "error",
-    // debt: 38 sites
-    "no-console": "off",
+    // The console is written only in wb-log.ts.
+    "no-console": "error",
     "unicorn/prefer-query-selector": "error",
     "unicorn/no-array-callback-reference": "error",
     "max-params": ["error", { "max": 4 }],
@@ -130,8 +136,7 @@
     "unicorn/no-immediate-mutation": "error",
     "unicorn/no-static-only-class": "error",
     "unicorn/prefer-type-error": "error",
-    // debt: 1 site
-    "unicorn/require-post-message-target-origin": "off",
+    "unicorn/require-post-message-target-origin": "error",
     // noise: file size is xtask oversized, one tool per property (D4)
     "max-lines": "off",
     // noise: function complexity is the limit; length alone flags long flat code (D4)

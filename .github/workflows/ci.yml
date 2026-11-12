@@ -287,7 +287,7 @@ jobs:
       - name: UI type-aware lint (oxlint with tsgolint)
         run: |
           ./.github/scripts/fetch-tsgolint.sh
-          OXLINT_TSGOLINT_PATH="$PWD/tsgolint" ./oxlint-x86_64-unknown-linux-gnu --type-aware --deny-warnings crates/ralphy-daemon/assets/ui/*.ts
+          OXLINT_TSGOLINT_PATH="$PWD/tsgolint" ./oxlint-x86_64-unknown-linux-gnu --type-aware --deny-warnings --report-unused-disable-directives-severity=error crates/ralphy-daemon/assets/ui/*.ts
 
       # The format of the modules, in .oxfmtrc.json. The release binary is
       # pinned by version and checksum, as for oxlint.
