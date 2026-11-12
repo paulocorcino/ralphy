@@ -131,6 +131,12 @@ fn triage_with_agent(
         Agent::Opencode => {
             ralphy_agent_opencode::triage_issues(repo, out_path, req, model, effort, timeout)
         }
+        Agent::Antigravity => ralphy_agent_antigravity::triage_issues(
+            repo,
+            out_path,
+            req,
+            crate::antigravity::one_shot_options(repo, model, effort, timeout),
+        ),
     }
 }
 

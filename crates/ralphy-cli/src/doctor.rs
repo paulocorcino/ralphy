@@ -237,7 +237,8 @@ fn checked_by_first_line(agent: Agent) -> bool {
         | Agent::Copilot
         | Agent::Cursor
         | Agent::Gemini
-        | Agent::Kimi => false,
+        | Agent::Kimi
+        | Agent::Antigravity => false,
     }
 }
 

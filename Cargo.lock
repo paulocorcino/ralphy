@@ -2232,6 +2232,7 @@ dependencies = [
  "indicatif",
  "qrcode",
  "ralphy-adapter-support",
+ "ralphy-agent-antigravity",
  "ralphy-agent-claude",
  "ralphy-agent-codex",
  "ralphy-agent-copilot",

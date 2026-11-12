@@ -117,63 +117,36 @@ pub(super) struct AdapterSettings {
     pub(super) copilot: ralphy_agent_copilot::CopilotSettings,
     pub(super) cursor: ralphy_agent_cursor::CursorSettings,
     pub(super) gemini: ralphy_agent_gemini::GeminiSettings,
+    pub(super) antigravity: ralphy_agent_antigravity::AntigravitySettings,
 }
 
 impl AdapterSettings {
     pub(super) fn load(settings: &Settings) -> Self {
-        let claude = settings
-            .agent_settings(ralphy_agent_claude::ClaudeSettings::SECTION)
-            .unwrap_or_else(|e| {
-                warn!(
-                    error = %e,
-                    "malformed claude settings section — its persisted defaults ignored"
-                );
-                ralphy_agent_claude::ClaudeSettings::default()
-            });
-        let opencode = settings
-            .agent_settings(ralphy_agent_opencode::OpenCodeSettings::SECTION)
-            .unwrap_or_else(|e| {
-                warn!(
-                    error = %e,
-                    "malformed opencode settings section — its persisted defaults ignored"
-                );
-                ralphy_agent_opencode::OpenCodeSettings::default()
-            });
-        let copilot = settings
-            .agent_settings(ralphy_agent_copilot::CopilotSettings::SECTION)
-            .unwrap_or_else(|e| {
-                warn!(
-                    error = %e,
-                    "malformed copilot settings section — its persisted defaults ignored"
-                );
-                ralphy_agent_copilot::CopilotSettings::default()
-            });
-        let cursor = settings
-            .agent_settings(ralphy_agent_cursor::CursorSettings::SECTION)
-            .unwrap_or_else(|e| {
-                warn!(
-                    error = %e,
-                    "malformed cursor settings section — its persisted defaults ignored"
-                );
-                ralphy_agent_cursor::CursorSettings::default()
-            });
-        let gemini = settings
-            .agent_settings(ralphy_agent_gemini::GeminiSettings::SECTION)
-            .unwrap_or_else(|e| {
-                warn!(
-                    error = %e,
-                    "malformed gemini settings section — its persisted defaults ignored"
-                );
-                ralphy_agent_gemini::GeminiSettings::default()
-            });
         AdapterSettings {
-            claude,
-            opencode,
-            copilot,
-            cursor,
-            gemini,
+            claude: section(settings, ralphy_agent_claude::ClaudeSettings::SECTION),
+            opencode: section(settings, ralphy_agent_opencode::OpenCodeSettings::SECTION),
+            copilot: section(settings, ralphy_agent_copilot::CopilotSettings::SECTION),
+            cursor: section(settings, ralphy_agent_cursor::CursorSettings::SECTION),
+            gemini: section(settings, ralphy_agent_gemini::GeminiSettings::SECTION),
+            antigravity: section(
+                settings,
+                ralphy_agent_antigravity::AntigravitySettings::SECTION,
+            ),
         }
     }
+}
+
+/// The adapter section `name` of the settings; its defaults, with a warning,
+/// when the section is malformed.
+fn section<T: serde::de::DeserializeOwned + Default>(settings: &Settings, name: &str) -> T {
+    settings.agent_settings(name).unwrap_or_else(|e| {
+        warn!(
+            error = %e,
+            section = name,
+            "malformed agent settings section — its persisted defaults ignored"
+        );
+        T::default()
+    })
 }
 
 /// The branch mode: the flag, else `branch_mode` in the settings, else `new`.

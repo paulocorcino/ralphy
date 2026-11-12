@@ -329,6 +329,12 @@ fn work_the_queue(args: &RunArgs, work: &Work<'_>, workers: Workers) -> Result<(
         wiring::resolve_cursor(plan_flag.clone(), exec_flag.clone(), &adapters.cursor);
     let resolved_gemini =
         wiring::resolve_gemini(plan_flag.clone(), exec_flag.clone(), &adapters.gemini);
+    let resolved_antigravity = wiring::resolve_antigravity(
+        plan_flag.clone(),
+        exec_flag.clone(),
+        work.resolved_effort,
+        &adapters.antigravity,
+    );
     // Stays an `Option`: absent means each execution path uses the default its progress
     // signal supports (docs/adr/0038); `Some(0)` opts out.
     let idle_minutes = args.idle_minutes.or(settings.idle_minutes);
@@ -348,6 +354,7 @@ fn work_the_queue(args: &RunArgs, work: &Work<'_>, workers: Workers) -> Result<(
         &resolved_copilot,
         &resolved_cursor,
         &resolved_gemini,
+        &resolved_antigravity,
         idle_minutes,
     );
     let agent: Box<dyn Agent> = if work.plan_agent == args.agent {
@@ -365,6 +372,7 @@ fn work_the_queue(args: &RunArgs, work: &Work<'_>, workers: Workers) -> Result<(
                 &resolved_copilot,
                 &resolved_cursor,
                 &resolved_gemini,
+                &resolved_antigravity,
                 idle_minutes,
             ),
             executor,

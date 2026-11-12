@@ -18,8 +18,10 @@ use ralphy_agent_opencode::OpenCodeAgent;
 use ralphy_core::{github, Agent, BranchMode, Effort};
 use tracing::warn;
 
+mod antigravity;
 mod logging;
 
+pub(crate) use antigravity::{resolve_antigravity, ResolvedAntigravity};
 pub(crate) use logging::init_tracing;
 
 use crate::cli::{CliAgent, RunArgs};
@@ -147,6 +149,24 @@ pub(crate) fn resolve_gemini(
     }
 }
 
+/// The Cursor agent of a run, with the run's budgets.
+fn cursor_agent(
+    cursor: &ResolvedCursor,
+    claude: &ResolvedClaude,
+    run_dir: PathBuf,
+    run_deadline: Option<std::time::Instant>,
+    headless_idle: u64,
+) -> Box<dyn Agent> {
+    Box::new(
+        CursorAgent::new(cursor.exec_model.clone(), run_dir)
+            .with_plan_model(cursor.plan_model.clone())
+            .with_allow_indexing(cursor.allow_indexing)
+            .with_run_deadline(run_deadline)
+            .with_max_minutes_per_issue(claude.max_minutes_per_issue)
+            .with_idle_minutes(headless_idle),
+    )
+}
+
 /// Build the run's issue queue and the explicitly-named ("forced") issue set. Two
 /// paths:
 ///   `--issues`: an explicit, ordered selection — fetch each number directly
@@ -259,6 +279,7 @@ pub(crate) fn build_agent(
     copilot: &ResolvedCopilot,
     cursor: &ResolvedCursor,
     gemini: &ResolvedGemini,
+    antigravity: &ResolvedAntigravity,
     idle_minutes: Option<u64>,
 ) -> Box<dyn Agent> {
     // The headless adapters drive one child shape, so they resolve the idle
@@ -311,14 +332,7 @@ pub(crate) fn build_agent(
                     .with_idle_minutes(headless_idle),
             )
         }
-        CliAgent::Cursor => Box::new(
-            CursorAgent::new(cursor.exec_model.clone(), run_dir)
-                .with_plan_model(cursor.plan_model.clone())
-                .with_allow_indexing(cursor.allow_indexing)
-                .with_run_deadline(run_deadline)
-                .with_max_minutes_per_issue(claude.max_minutes_per_issue)
-                .with_idle_minutes(headless_idle),
-        ),
+        CliAgent::Cursor => cursor_agent(cursor, claude, run_dir, run_deadline, headless_idle),
         CliAgent::Gemini => {
             let (plan_effort, exec_effort) = effort_strings(effort);
             Box::new(
@@ -362,6 +376,9 @@ pub(crate) fn build_agent(
                 .with_max_minutes_per_issue(claude.max_minutes_per_issue)
                 .with_idle_minutes(headless_idle),
             )
+        }
+        CliAgent::Antigravity => {
+            antigravity::boxed(antigravity, claude, run_dir, run_deadline, headless_idle)
         }
     }
 }
@@ -441,6 +458,7 @@ pub(crate) fn check_agents_present(
 pub(crate) fn preflight_agents(executor: CliAgent, planner: CliAgent) -> Result<()> {
     check_agents_present(executor, planner, |a| match a {
         CliAgent::Cursor => ralphy_agent_cursor::locate_cursor().is_some(),
+        CliAgent::Antigravity => ralphy_proc_util::antigravity::locate_agy().is_some(),
         CliAgent::Claude
         | CliAgent::Codex
         | CliAgent::Copilot

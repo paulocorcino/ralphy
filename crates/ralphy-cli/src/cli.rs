@@ -1,6 +1,6 @@
 //! The clap CLI surface: the top-level `Cli`/`Command`, the `run`/`consolidate`
-//! argument structs, the internal `Hook` subcommands, and the CLI-only
-//! agent/branch-mode selector enums. Kept as a CLI concern separate from the
+//! argument structs, and the CLI-only agent/branch-mode selector enums (the
+//! internal `Hook` subcommands are in `cli/hook.rs`). Kept as a CLI concern separate from the
 //! composition root (`main.rs`) and the run orchestrator (`run.rs`); the enums map
 //! into the core's own types at the boundary (docs/adr/0004, docs/adr/0002).
 
@@ -12,9 +12,13 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_core::{BranchMode, Effort};
 
 use crate::{
-    blob, changes, config, daemon, doctor, gemini, host, init, install, issues, models, mutate,
-    schedule, stop, sync, telegram, triage, uninstall, update, usage,
+    antigravity, blob, changes, config, daemon, doctor, gemini, host, init, install, issues,
+    models, mutate, schedule, stop, sync, telegram, triage, uninstall, update, usage,
 };
+
+mod hook;
+
+pub(crate) use hook::{GuardVendor, HookCommand, HookVendor};
 
 #[derive(Parser)]
 #[command(
@@ -170,6 +174,10 @@ pub(crate) enum Command {
     // ADR-0040 Amendment 3.
     #[command(subcommand, hide = true)]
     Gemini(gemini::GeminiCommand),
+    /// Prepare the folder Ralphy owns for Antigravity.
+    // ADR-0040 Amendment 3, ADR-0086 D8.
+    #[command(subcommand, hide = true)]
+    Antigravity(antigravity::AntigravityCommand),
 }
 
 /// The CLI as `main` parses it. The hidden commands are the ones the workbench
@@ -198,54 +206,6 @@ pub(crate) fn command() -> clap::Command {
         writeln!(text, "  {name:width$}  {about}").expect(WRITE_TO_STRING);
     }
     cmd.after_help(text.trim_end().to_owned())
-}
-
-#[derive(Subcommand)]
-pub(crate) enum HookCommand {
-    /// Record in `$RALPHY_FLAG_FILE` that the agent session ended.
-    Stop,
-    /// Block commands and file writes that would destroy work.
-    Guard {
-        /// Also refuse a check command already measured as slow while the plan
-        /// still has open steps. Execute sessions only.
-        #[arg(long)]
-        cost_gate: bool,
-        /// The agent whose hook runs this; `claude` when not given.
-        #[arg(long, value_enum, default_value_t = GuardVendor::Claude)]
-        vendor: GuardVendor,
-    },
-    /// Record how long each check command took.
-    Post,
-    /// Record what the agent is doing in `$RALPHY_STATUS_FILE`, so the workbench
-    /// can show it. Prints `{}` for Claude, an allow decision for Antigravity
-    /// and nothing for the other agents, and always exits 0.
-    // ADR-0059, ADR-0085 D6.
-    Status {
-        /// The agent whose hook runs this. Without it, `claude`, so a settings
-        /// file written by an older version keeps working.
-        #[arg(value_enum, default_value_t = HookVendor::Claude)]
-        vendor: HookVendor,
-    },
-}
-
-/// The agent a `hook status` call comes from: it decides what the hook
-/// prints and where the question text is in the payload.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
-pub(crate) enum HookVendor {
-    Claude,
-    Codex,
-    // One word, like `--agent opencode`; clap would derive `open-code`.
-    #[value(name = "opencode")]
-    OpenCode,
-    Antigravity,
-}
-
-/// The agent a `hook guard` call comes from: it decides how the payload is
-/// read and how the decision is answered.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
-pub(crate) enum GuardVendor {
-    Claude,
-    Antigravity,
 }
 
 #[derive(Args)]
@@ -462,6 +422,7 @@ pub(crate) enum CliAgent {
     // variant name; pin the spelling and keep that derivation as an alias.
     #[value(name = "opencode", alias = "open-code")]
     OpenCode,
+    Antigravity,
 }
 
 impl CliAgent {
@@ -474,6 +435,7 @@ impl CliAgent {
             CliAgent::Gemini => "gemini",
             CliAgent::Kimi => "kimi",
             CliAgent::OpenCode => "opencode",
+            CliAgent::Antigravity => "antigravity",
         }
     }
 }

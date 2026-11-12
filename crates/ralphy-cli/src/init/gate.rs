@@ -16,6 +16,7 @@ pub(crate) enum Agent {
     Gemini,
     Kimi,
     Opencode,
+    Antigravity,
 }
 
 impl Agent {
@@ -29,7 +30,7 @@ impl Agent {
     /// A NEWCOMER GOES LAST, for the same reason: appending preserves every
     /// current no-flag choice, whereas inserting one before `Copilot` would change
     /// it on a machine already logged into that newcomer.
-    pub(crate) const ALL: [Agent; 7] = [
+    pub(crate) const ALL: [Agent; 8] = [
         Agent::Claude,
         Agent::Codex,
         Agent::Kimi,
@@ -37,6 +38,7 @@ impl Agent {
         Agent::Copilot,
         Agent::Cursor,
         Agent::Gemini,
+        Agent::Antigravity,
     ];
 
     pub(crate) fn cli_name(self) -> &'static str {
@@ -48,6 +50,7 @@ impl Agent {
             Agent::Gemini => "gemini",
             Agent::Kimi => "kimi",
             Agent::Opencode => "opencode",
+            Agent::Antigravity => "antigravity",
         }
     }
 
@@ -63,6 +66,7 @@ impl Agent {
             Agent::Gemini => ralphy_agent_gemini::ACCEPTS_IMAGES,
             Agent::Kimi => ralphy_agent_kimi::ACCEPTS_IMAGES,
             Agent::Opencode => ralphy_agent_opencode::ACCEPTS_IMAGES,
+            Agent::Antigravity => ralphy_agent_antigravity::ACCEPTS_IMAGES,
         }
     }
 }
@@ -286,6 +290,10 @@ pub(crate) fn agent_logged_in(a: Agent) -> bool {
         // report every non-zero exit — a bad flag, a config error — as "logged
         // out". The probe (`--list-sessions`) costs no model call.
         Agent::Gemini => return ralphy_agent_gemini::probe_gemini_login(),
+
+        // `agy models` in the owned root lists models only when signed in, and
+        // costs no model call (ADR-0086 D7).
+        Agent::Antigravity => return ralphy_agent_antigravity::probe_antigravity_login(),
 
         Agent::Kimi => {
             // The kimi-code 0.28 headless contract (ADR-0028 D5), same argv shape the

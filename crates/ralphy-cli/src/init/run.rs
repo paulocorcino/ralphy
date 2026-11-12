@@ -72,6 +72,12 @@ fn diagnose_with_agent(
         Agent::Opencode => {
             ralphy_agent_opencode::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
         }
+
+        Agent::Antigravity => ralphy_agent_antigravity::diagnose_repo(
+            repo,
+            neutral_cwd,
+            crate::antigravity::one_shot_options(repo, model, effort, timeout),
+        ),
     }
 }
 
