@@ -10,7 +10,10 @@
 //! One live loopback daemon, legs sequential. SOLE setter in its process of
 //! `RALPHY_EXE_OVERRIDE` (= `command_test_child`, `RALPHY_TEST_EXIT_CODE=1`)
 //! and `RALPHY_DAEMON_AGENT_OVERRIDE` (= `session_test_child`).
-
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 #![expect(
     clippy::disallowed_methods,
     reason = "nextest runs each test in its own process, so a test may change its environment"

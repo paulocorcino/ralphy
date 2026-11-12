@@ -5,6 +5,10 @@
 //! Unix only: tokio has no Unix socket on Windows, and a Windows daemon serves
 //! TCP alone (#518, amendment M6).
 #![cfg(unix)]
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;

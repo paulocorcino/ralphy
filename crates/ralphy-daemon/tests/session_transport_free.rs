@@ -8,6 +8,10 @@
 //! - The codec must stay transport-agnostic (docs/adr/0032 §5):
 //!   `src/protocol.rs` turns frames into bytes and back, referencing no
 //!   HTTP/WS/runtime type.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 #[test]
 fn session_module_references_no_http_transport() {

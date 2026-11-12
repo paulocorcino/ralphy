@@ -1,6 +1,10 @@
 //! End-to-end coverage of the `ralphy` verbs: each module drives the real
 //! `ralphy` binary against isolated temp repos, never the checkout under test.
 //! No module sets an env var on the test process, so they share one binary.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 mod support;
 

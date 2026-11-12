@@ -4,6 +4,10 @@
 //! is `ralphy-git-read` (ADR-0069 D1) and `ralphy-telegram` (ADR-0085 D14). The
 //! graph comes from `cargo metadata`, so every dependency kind counts: a
 //! dev-dependency on an adapter breaks the rule in core's tests too.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::collections::BTreeSet;
 use std::path::Path;

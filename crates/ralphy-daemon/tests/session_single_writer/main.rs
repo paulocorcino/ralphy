@@ -5,7 +5,10 @@
 //! incumbent keeps the slot. The same reattach WITH `takeover: 1` succeeds,
 //! EVICTS the incumbent (its channel ends), and the taker drives the child.
 //! Proves the explicit, race-free takeover the policy promises.
-
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 #![expect(
     clippy::disallowed_methods,
     reason = "nextest runs each test in its own process, so a test may change its environment"

@@ -2,7 +2,10 @@
 //! 2026-09-29): served with no `repo`, refused on a bad value before anything
 //! spawns, and never answered for a peer. The spawned exe is
 //! `command_test_child`, which echoes its argv.
-
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 #![expect(
     clippy::disallowed_methods,
     reason = "nextest runs each test in its own process, so a test may change its environment"

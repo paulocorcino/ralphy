@@ -7,7 +7,10 @@
 //!
 //! Own file (single test): `RALPHY_EXE_OVERRIDE` and friends are process-global,
 //! so keeping this the binary's sole test avoids the intra-process env race.
-
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 #![expect(
     clippy::disallowed_methods,
     reason = "nextest runs each test in its own process, so a test may change its environment"

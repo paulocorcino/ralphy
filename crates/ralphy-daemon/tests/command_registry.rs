@@ -3,7 +3,10 @@
 //! `repo`, are relayed to a peer by its `daemon` id, refuse an unknown id, and
 //! refuse a bad path before anything spawns. The spawned exe is
 //! `command_test_child`, which logs its argv.
-
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 #![expect(
     clippy::disallowed_methods,
     reason = "nextest runs each test in its own process, so a test may change its environment"

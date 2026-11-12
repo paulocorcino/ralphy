@@ -1,6 +1,10 @@
 //! A verb that changes state, sent on a `spawn` channel of the page socket,
 //! writes a `command` line in the audit log with the device of the browser
 //! that asked (ADR-0074 D12).
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};

@@ -2,6 +2,10 @@
 //! tests fold (ADR-0070 Compliance). Query replies that the CLI produces are
 //! written by the CLI tests; the daemon owns only the refusals it makes before
 //! any child is spawned.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 #[path = "support/golden.rs"]
 mod golden;

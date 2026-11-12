@@ -4,6 +4,10 @@
 //! 2026-10-15, ADR-0052). Both daemons are real; the local one holds a project
 //! with the same slug and a file of the same name, so a reply that came from the
 //! local disk would differ.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 #[path = "support/page.rs"]
 pub mod page;

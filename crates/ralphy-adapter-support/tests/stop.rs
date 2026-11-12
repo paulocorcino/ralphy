@@ -9,6 +9,10 @@
 //!
 //! Driven against the same bundled `headless_test_child` the sibling suite uses,
 //! because the thing under test is a real process being reaped.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::process::{Command, Stdio};
 use std::sync::{Mutex, MutexGuard};

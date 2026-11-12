@@ -2,6 +2,10 @@
 //! (issue #717): a login used from a second device is a notice until its
 //! login is revoked, the pair is dismissed, or 30 days pass. The audit log is
 //! written by the test as the daemon writes it, in a store of its own.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
