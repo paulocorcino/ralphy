@@ -98,6 +98,8 @@ enum Phase {
 /// accept the neutral Effort word at the CLI and are a documented no-op here
 /// (ADR-0044 D4) — Gemini's numeric `thinkingBudget` mapping is deliberately
 /// deferred.
+#[derive(Debug)]
+#[must_use]
 pub struct GeminiAgent {
     exec_model: Option<String>,
     plan_model: Option<String>,

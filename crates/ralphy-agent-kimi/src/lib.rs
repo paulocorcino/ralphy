@@ -81,6 +81,8 @@ fn write_exec_charter(ws: &Workspace) -> Result<PathBuf> {
 /// level axis; `run_dir` is where the captured logs live; `max_minutes_per_issue`
 /// is the per-issue wall budget, clamped to `run_deadline` when the run carries a
 /// global deadline.
+#[derive(Debug)]
+#[must_use]
 pub struct KimiAgent {
     model: Option<String>,
     plan_effort: Option<String>,

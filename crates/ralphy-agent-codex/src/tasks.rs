@@ -85,7 +85,7 @@ pub fn diagnose_repo(
 pub fn draft_issues(
     repo: &Path,
     out_path: &Path,
-    req: &DraftRequest,
+    req: &DraftRequest<'_>,
     model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,
@@ -194,7 +194,7 @@ pub fn consolidate_knowledge(
 pub fn triage_issues(
     repo: &Path,
     out_path: &Path,
-    req: &TriageRequest,
+    req: &TriageRequest<'_>,
     model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,

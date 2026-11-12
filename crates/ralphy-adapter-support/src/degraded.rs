@@ -46,6 +46,7 @@ pub enum DegradedAction {
 /// degraded event on continuous presence ≥ `API_DEGRADED_PING`. Uses an
 /// injected `now` so the state machine unit-tests without real sleeping (mold of
 /// `ApiWatch`).
+#[derive(Debug)]
 pub struct DegradedWatch {
     ping: Duration,
     degraded_since: Option<Instant>,

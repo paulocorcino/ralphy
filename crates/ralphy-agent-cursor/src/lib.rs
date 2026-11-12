@@ -99,6 +99,7 @@ enum Phase {
 /// `with_plan_model`). `None` on either does NOT omit `--model` — it sends
 /// `auto`, because on this vendor an absent flag means "whatever the last
 /// invocation left behind" (ADR-0042 D4).
+#[derive(Debug)]
 pub struct CursorAgent {
     exec_model: Option<String>,
     plan_model: Option<String>,
@@ -121,6 +122,7 @@ impl CursorAgent {
     }
 
     /// Set the model override used for `plan()`.
+    #[must_use]
     pub fn with_plan_model(mut self, model: Option<String>) -> Self {
         self.plan_model = model;
         self
@@ -129,12 +131,14 @@ impl CursorAgent {
     /// Hand the operator back the codebase indexing D6 opts out of by default
     /// (persisted as `cursor.allow_codebase_indexing_i_understand_the_risk`).
     /// Ralphy never denies a capability — it denies a *silent* one.
+    #[must_use]
     pub fn with_allow_indexing(mut self, allow: bool) -> Self {
         self.allow_indexing = allow;
         self
     }
 
     /// Set the per-issue wall-clock budget in minutes.
+    #[must_use]
     pub fn with_max_minutes_per_issue(mut self, minutes: u64) -> Self {
         self.budget = self.budget.with_max_minutes_per_issue(minutes);
         self
@@ -146,12 +150,14 @@ impl CursorAgent {
     /// The default is `ralphy_core::DEFAULT_IDLE_MINUTES` and stays there
     /// deliberately: this vendor opens with ~8 s of silence and shows inter-record
     /// gaps up to ~7.4 s (D3), so a watchdog in seconds would reap healthy runs.
+    #[must_use]
     pub fn with_idle_minutes(mut self, minutes: u64) -> Self {
         self.budget = self.budget.with_idle_minutes(minutes);
         self
     }
 
     /// Set the run's global wall-clock deadline (from `--deadline-hours`).
+    #[must_use]
     pub fn with_run_deadline(mut self, run_deadline: Option<Instant>) -> Self {
         self.budget = self.budget.with_run_deadline(run_deadline);
         self

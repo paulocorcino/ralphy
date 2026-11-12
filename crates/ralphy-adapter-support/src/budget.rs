@@ -37,18 +37,21 @@ impl IssueBudget {
     }
 
     /// Set the per-issue wall-clock budget in minutes.
+    #[must_use]
     pub fn with_max_minutes_per_issue(mut self, minutes: u64) -> Self {
         self.max_minutes_per_issue = minutes;
         self
     }
 
     /// Set the run's global wall-clock deadline; each issue's budget is clamped to it.
+    #[must_use]
     pub fn with_run_deadline(mut self, run_deadline: Option<Instant>) -> Self {
         self.run_deadline = run_deadline;
         self
     }
 
     /// Set the idle watchdog window in minutes (`0` disables it).
+    #[must_use]
     pub fn with_idle_minutes(mut self, minutes: u64) -> Self {
         self.idle_minutes = minutes;
         self

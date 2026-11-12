@@ -18,6 +18,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 
+mod debug;
+
 /// The bytes a console program emits to ask the terminal where the cursor is
 /// (ANSI Device Status Report, `ESC [ 6 n`).
 ///
@@ -60,12 +62,14 @@ impl PtyCommand {
     }
 
     /// Append one argument.
+    #[must_use]
     pub fn arg(mut self, arg: impl Into<OsString>) -> Self {
         self.args.push(arg.into());
         self
     }
 
     /// Append several arguments.
+    #[must_use]
     pub fn args<I, S>(mut self, args: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -76,12 +80,14 @@ impl PtyCommand {
     }
 
     /// Run the child in `dir`.
+    #[must_use]
     pub fn cwd(mut self, dir: impl AsRef<Path>) -> Self {
         self.cwd = Some(dir.as_ref().as_os_str().to_owned());
         self
     }
 
     /// Set an environment variable for the child.
+    #[must_use]
     pub fn env(mut self, key: impl Into<OsString>, val: impl Into<OsString>) -> Self {
         self.env.push((key.into(), val.into()));
         self
@@ -95,12 +101,14 @@ impl PtyCommand {
     /// wins.
     ///
     /// [`env`]: PtyCommand::env
+    #[must_use]
     pub fn env_remove(mut self, key: impl Into<OsString>) -> Self {
         self.env_remove.push(key.into());
         self
     }
 
     /// Set the PTY's initial size in character cells.
+    #[must_use]
     pub fn size(mut self, rows: u16, cols: u16) -> Self {
         self.rows = rows;
         self.cols = cols;

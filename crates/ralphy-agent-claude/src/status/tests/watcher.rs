@@ -57,17 +57,17 @@ impl<S: tracing::Subscriber> Layer<S> for Capture {
 
 fn sink() -> Sink {
     static SINK: OnceLock<Sink> = OnceLock::new();
-    SINK.get_or_init(|| {
+    let shared = SINK.get_or_init(|| {
         let sink: Sink = Arc::new(Mutex::new(Vec::new()));
         // A default set by another test in this binary would make this a
         // no-op and the assertions below would fail loudly, not silently.
         tracing::subscriber::set_global_default(
-            tracing_subscriber::registry().with(Capture(sink.clone())),
+            tracing_subscriber::registry().with(Capture(Arc::clone(&sink))),
         )
         .expect("this test binary installs the one global subscriber");
         sink
-    })
-    .clone()
+    });
+    Arc::clone(shared)
 }
 
 fn mine(sink: &Sink, tag: &str) -> Vec<Seen> {

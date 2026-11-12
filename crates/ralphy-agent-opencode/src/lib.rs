@@ -176,6 +176,7 @@ impl OpenCodeAgent {
     /// dialect from `--exec-variant` only — never from resolved Effort (ADR-0044
     /// D8). Passed through to `OpenCode` only when present; omitted otherwise so the
     /// adapter never sends a value the provider rejects.
+    #[must_use]
     pub fn with_variant(mut self, variant: Option<String>) -> Self {
         self.variant = variant;
         self
@@ -184,6 +185,7 @@ impl OpenCodeAgent {
     /// Accept the resolved planning Effort word (ADR-0044 D5). Documented no-op
     /// at the discard site in [`Agent::plan`] (D4) — must not alter argv or map
     /// onto `--variant` (D8).
+    #[must_use]
     pub fn with_plan_effort(mut self, effort: Option<String>) -> Self {
         self.plan_effort = effort;
         self
@@ -192,6 +194,7 @@ impl OpenCodeAgent {
     /// Accept the resolved execution Effort word (ADR-0044 D5). Documented no-op
     /// at the discard site in [`Agent::execute`] (D4) — must not alter argv or map
     /// onto `--variant` (D8).
+    #[must_use]
     pub fn with_exec_effort(mut self, effort: Option<String>) -> Self {
         self.exec_effort = effort;
         self
@@ -199,6 +202,7 @@ impl OpenCodeAgent {
 
     /// Set the per-issue wall-clock budget in minutes (mirrors
     /// `ClaudeAgent::with_max_minutes_per_issue`).
+    #[must_use]
     pub fn with_max_minutes_per_issue(mut self, minutes: u64) -> Self {
         self.budget = self.budget.with_max_minutes_per_issue(minutes);
         self
@@ -207,6 +211,7 @@ impl OpenCodeAgent {
     /// Set the idle watchdog window in minutes: reap the child after that long
     /// with no output at all. `0` disables it. Unlike the per-issue cap, this
     /// keys on progress rather than elapsed time (docs/adr/0038).
+    #[must_use]
     pub fn with_idle_minutes(mut self, minutes: u64) -> Self {
         self.budget = self.budget.with_idle_minutes(minutes);
         self
@@ -216,9 +221,22 @@ impl OpenCodeAgent {
     /// issue's budget is then clamped to it, so an issue started just under the
     /// global limit can't overrun by a whole per-issue window (mirrors
     /// `CodexAgent::with_run_deadline`).
+    #[must_use]
     pub fn with_run_deadline(mut self, run_deadline: Option<Instant>) -> Self {
         self.budget = self.budget.with_run_deadline(run_deadline);
         self
+    }
+}
+
+// By hand: the test-only `run_hook` is a closure, which has no `Debug`.
+impl std::fmt::Debug for OpenCodeAgent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenCodeAgent")
+            .field("model", &self.model)
+            .field("variant", &self.variant)
+            .field("run_dir", &self.run_dir)
+            .field("budget", &self.budget)
+            .finish_non_exhaustive()
     }
 }
 

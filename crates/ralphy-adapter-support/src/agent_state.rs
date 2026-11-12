@@ -333,6 +333,7 @@ impl Fold {
 
 /// The tail: reads what was appended since the last poll and folds each
 /// complete line through `map`.
+#[derive(Debug)]
 pub struct Tail {
     path: PathBuf,
     offset: u64,
@@ -399,6 +400,7 @@ impl Tail {
 /// each state change. `start` truncates the file (a previous child's lines
 /// are not this child's); `stop` takes the last look and joins. A file that
 /// cannot be truncated fails `start`.
+#[derive(Debug)]
 pub struct Watcher {
     stop: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
@@ -409,7 +411,7 @@ impl Watcher {
     pub fn start(path: PathBuf, map: MapFn) -> anyhow::Result<Self> {
         std::fs::write(&path, b"").with_context(|| format!("resetting {}", path.display()))?;
         let stop = Arc::new(AtomicBool::new(false));
-        let flag = stop.clone();
+        let flag = Arc::clone(&stop);
         let tail = Tail::new(path.clone(), map);
         let handle = std::thread::spawn(move || watch(tail, &flag));
         Ok(Watcher {

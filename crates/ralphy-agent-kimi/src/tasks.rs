@@ -81,13 +81,12 @@ pub fn diagnose_repo(
 pub fn draft_issues(
     repo: &Path,
     out_path: &Path,
-    req: &DraftRequest,
+    req: &DraftRequest<'_>,
     model: Option<&str>,
-    effort: Option<&str>,
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
+    _effort: Option<&str>,
     timeout: Duration,
 ) -> Result<IssuesDraft> {
-    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
-    let _: Option<&str> = effort;
     let model = resolve_init_kimi_model(model);
     let prompt =
         build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
@@ -205,13 +204,12 @@ fn thread_file_pointer(out_path: &Path, block: &str) -> Result<String> {
 pub fn triage_issues(
     repo: &Path,
     out_path: &Path,
-    req: &TriageRequest,
+    req: &TriageRequest<'_>,
     model: Option<&str>,
-    effort: Option<&str>,
+    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
+    _effort: Option<&str>,
     timeout: Duration,
 ) -> Result<TriageDraft> {
-    // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
-    let _: Option<&str> = effort;
     let model = resolve_init_kimi_model(model);
     let threads = thread_file_pointer(out_path, req.thread_block)?;
     let prompt = format!(

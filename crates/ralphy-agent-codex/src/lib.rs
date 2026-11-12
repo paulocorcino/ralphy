@@ -84,6 +84,19 @@ pub struct CodexAgent {
     >,
 }
 
+// By hand: the test-only `run_hook` is a closure, which has no `Debug`.
+impl std::fmt::Debug for CodexAgent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CodexAgent")
+            .field("model", &self.model)
+            .field("plan_effort", &self.plan_effort)
+            .field("exec_effort", &self.exec_effort)
+            .field("run_dir", &self.run_dir)
+            .field("budget", &self.budget)
+            .finish_non_exhaustive()
+    }
+}
+
 impl CodexAgent {
     pub fn new(model: Option<String>, run_dir: PathBuf) -> Self {
         Self {
@@ -108,6 +121,7 @@ impl CodexAgent {
 
     /// Set the planning-phase reasoning effort (`model_reasoning_effort`).
     /// `None` keeps the vendor default (`DEFAULT_CODEX_EFFORT`).
+    #[must_use]
     pub fn with_plan_effort(mut self, effort: Option<String>) -> Self {
         self.plan_effort = effort;
         self
@@ -115,12 +129,14 @@ impl CodexAgent {
 
     /// Set the execution-phase reasoning effort (`model_reasoning_effort`).
     /// `None` keeps the vendor default (`DEFAULT_CODEX_EFFORT`).
+    #[must_use]
     pub fn with_exec_effort(mut self, effort: Option<String>) -> Self {
         self.exec_effort = effort;
         self
     }
 
     /// Set the per-issue wall-clock budget in minutes.
+    #[must_use]
     pub fn with_max_minutes_per_issue(mut self, minutes: u64) -> Self {
         self.budget = self.budget.with_max_minutes_per_issue(minutes);
         self
@@ -129,6 +145,7 @@ impl CodexAgent {
     /// Set the idle watchdog window in minutes: reap the child after that long
     /// with no output at all. `0` disables it. Unlike the per-issue cap, this
     /// keys on progress rather than elapsed time (docs/adr/0038).
+    #[must_use]
     pub fn with_idle_minutes(mut self, minutes: u64) -> Self {
         self.budget = self.budget.with_idle_minutes(minutes);
         self
@@ -138,6 +155,7 @@ impl CodexAgent {
     /// issue's budget is then clamped to it, so an issue started just under the
     /// global limit can't overrun by a whole per-issue window (mirrors
     /// `ClaudeAgent::with_run_deadline`).
+    #[must_use]
     pub fn with_run_deadline(mut self, run_deadline: Option<Instant>) -> Self {
         self.budget = self.budget.with_run_deadline(run_deadline);
         self

@@ -285,7 +285,7 @@ pub fn diagnose_repo(
 pub fn draft_issues(
     repo: &Path,
     out_path: &Path,
-    req: &DraftRequest,
+    req: &DraftRequest<'_>,
     model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,
@@ -319,7 +319,7 @@ pub fn draft_issues(
 /// `@`-reference block per fetched image (ADR-0043 D14). The `@` syntax is
 /// this vendor's alone, so it is appended here rather than folded into the
 /// core-owned manifest.
-pub(crate) fn triage_prompt(repo: &Path, req: &TriageRequest, out_path: &Path) -> String {
+pub(crate) fn triage_prompt(repo: &Path, req: &TriageRequest<'_>, out_path: &Path) -> String {
     format!(
         "{}{}{}{}",
         build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path),
@@ -340,7 +340,7 @@ pub(crate) fn triage_prompt(repo: &Path, req: &TriageRequest, out_path: &Path) -
 pub fn triage_issues(
     repo: &Path,
     out_path: &Path,
-    req: &TriageRequest,
+    req: &TriageRequest<'_>,
     model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,

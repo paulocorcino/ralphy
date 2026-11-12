@@ -95,6 +95,7 @@ enum Phase {
 /// degraded fallback (ADR-0041 D4). `run_dir` is where the captured logs live;
 /// `max_minutes_per_issue` is the per-issue wall budget, clamped to
 /// `run_deadline` when the run carries a global deadline.
+#[derive(Debug)]
 pub struct CopilotAgent {
     exec_model: Option<String>,
     plan_model: Option<String>,
@@ -126,6 +127,7 @@ impl CopilotAgent {
 
     /// Set the model override used for `plan()` (mirrors `ClaudeAgent`'s builder
     /// style; ADR-0041 D4).
+    #[must_use]
     pub fn with_plan_model(mut self, model: Option<String>) -> Self {
         self.plan_model = model;
         self
@@ -133,12 +135,14 @@ impl CopilotAgent {
 
     /// Set the reasoning effort requested for `plan()` (ADR-0041 D5a). The value
     /// is the operator's REQUEST, not what is sent: it is clamped per model.
+    #[must_use]
     pub fn with_plan_effort(mut self, effort: Option<String>) -> Self {
         self.plan_effort = effort;
         self
     }
 
     /// Set the reasoning effort requested for `execute()` (ADR-0041 D5a).
+    #[must_use]
     pub fn with_exec_effort(mut self, effort: Option<String>) -> Self {
         self.exec_effort = effort;
         self
@@ -148,6 +152,7 @@ impl CopilotAgent {
     /// escape hatch). `true` both drops `--disable-builtin-mcps` and skips the
     /// in-band receipt guard — suppressing the check while still passing the flag
     /// would grant the operator nothing.
+    #[must_use]
     pub fn with_allow_builtin_mcps(mut self, allow: bool) -> Self {
         self.allow_builtin_mcps = allow;
         self
@@ -200,6 +205,7 @@ impl CopilotAgent {
     }
 
     /// Set the per-issue wall-clock budget in minutes.
+    #[must_use]
     pub fn with_max_minutes_per_issue(mut self, minutes: u64) -> Self {
         self.budget = self.budget.with_max_minutes_per_issue(minutes);
         self
@@ -207,6 +213,7 @@ impl CopilotAgent {
 
     /// Set the idle watchdog window in minutes: reap the child after that long
     /// with no output at all. `0` disables it (docs/adr/0038).
+    #[must_use]
     pub fn with_idle_minutes(mut self, minutes: u64) -> Self {
         self.budget = self.budget.with_idle_minutes(minutes);
         self
@@ -214,6 +221,7 @@ impl CopilotAgent {
 
     /// Set the run's global wall-clock deadline (from `--deadline-hours`). Each
     /// issue's budget is then clamped to it.
+    #[must_use]
     pub fn with_run_deadline(mut self, run_deadline: Option<Instant>) -> Self {
         self.budget = self.budget.with_run_deadline(run_deadline);
         self
