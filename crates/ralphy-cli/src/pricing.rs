@@ -204,4 +204,26 @@ mod tests {
             None
         );
     }
+
+    /// The Antigravity axis end to end: the adapter's own `price_key` feeds the
+    /// lookup, so a suffixed id bills as its base model.
+    #[test]
+    fn antigravity_ids_price_through_the_adapters_key() {
+        let table = PriceTable::defaults();
+        let t = one_million_each();
+        let cost = |id: &str| table.cost_usd(&ralphy_agent_antigravity::price_key(id), &t);
+        let opus = cost("claude-opus-5-5-high").expect("the opus row prices");
+        assert!((opus - 29.2).abs() < 1e-9, "got {opus}");
+        assert_eq!(cost("claude-opus-5-5-high"), cost("claude-opus-5-5"));
+        assert!(cost("gemini-3.8-flash-low").is_some());
+        assert!(cost("gpt-oss-120b-medium").is_some());
+    }
+
+    /// No published price, no row: the cost is `None` (shown as not priced), not 0.
+    #[test]
+    fn an_agy_id_with_no_row_is_not_priced() {
+        let table = PriceTable::defaults();
+        let id = ralphy_agent_antigravity::price_key("gemini-9-unknown-high");
+        assert_eq!(table.cost_usd(&id, &one_million_each()), None);
+    }
 }
