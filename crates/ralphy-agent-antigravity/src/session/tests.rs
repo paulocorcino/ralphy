@@ -2,6 +2,7 @@ use super::*;
 
 fn session<'a>(dir: &'a Path, log_path: &'a Path) -> Session<'a> {
     Session {
+        program: Path::new("agy"),
         root: dir,
         work_dir: dir,
         run_dir: dir,
@@ -31,7 +32,7 @@ fn the_proof_message_is_one_fixed_ndjson_line() {
 fn the_child_is_pointed_at_a_fresh_status_file_in_the_run_dir() {
     let dir = tempfile::tempdir().expect("tempdir");
     let stale = dir.path().join(status::STATUS_FILE);
-    std::fs::write(&stale, "{\"event\":\"SessionStart\"}\n").expect("stale line");
+    fs::write(&stale, "{\"event\":\"SessionStart\"}\n").expect("stale line");
     let log = dir.path().join("session.log");
     let (cmd, status_file) = session(dir.path(), &log).command().expect("command");
     assert_eq!(status_file, stale);
@@ -41,7 +42,7 @@ fn the_child_is_pointed_at_a_fresh_status_file_in_the_run_dir() {
         .map(|(_, value)| value.map(PathBuf::from))
         .collect();
     assert_eq!(env, [Some(status_file.clone())]);
-    assert_eq!(std::fs::read(&status_file).expect("status file"), b"");
+    assert_eq!(fs::read(&status_file).expect("status file"), b"");
 }
 
 #[test]

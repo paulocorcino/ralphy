@@ -142,3 +142,17 @@ fn exit_three_with_invalid_utf8_is_a_machine_fault() {
     assert_eq!(machine_fault(Some(3), TIMEOUT_STDERR, hooks), None);
     assert_eq!(machine_fault(Some(1), UTF8_STDERR, hooks), None);
 }
+
+#[test]
+fn a_cut_task_turn_never_falls_back_to_the_proof_result() {
+    let last = TWO_TURNS.trim_end().rfind('\n').expect("two lines or more");
+    let cut_mid_json = TWO_TURNS.get(..last + 60).expect("a char boundary");
+    let no_task_result = TWO_TURNS.get(..last).expect("a char boundary");
+    for capture in [cut_mid_json, no_task_result] {
+        let fold = fold(capture);
+        assert!(fold.result.is_none(), "not the READY of the proof turn");
+        let signals = completion_signals(&fold, "", exit(0));
+        assert!(signals.errored);
+        assert_eq!(classify(signals), Outcome::Stuck);
+    }
+}

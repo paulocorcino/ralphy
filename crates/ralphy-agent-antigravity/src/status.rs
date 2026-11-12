@@ -2,7 +2,6 @@
 //! `ralphy hook status antigravity` appends one line per hook event to the
 //! file named by `RALPHY_STATUS_FILE`, and a session holds its task until the
 //! file holds a `SessionStart` line.
-#![expect(dead_code, reason = "used once the Agent impl lands")]
 
 use std::fmt;
 use std::fs;

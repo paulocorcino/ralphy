@@ -1,10 +1,6 @@
 //! Signing in to `agy` (ADR-0086 D7) and the limit class of its errors (D6).
 //! The signals are text: the logged-out signature was measured on Linux; on
 //! Windows the same strings are in the binary, not yet seen in a run.
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used once the Agent impl lands")
-)]
 
 use std::path::Path;
 
@@ -33,9 +29,16 @@ const LIMIT_WORDS: [&str; 5] = [
 /// same line may hold the digits.
 const LIMIT_CODE: &str = "429";
 
+/// Whether the operator is signed in to `agy` for Ralphy: `agy models` in
+/// the owned root lists models. It makes no model call. A missing `agy`, a
+/// sign-in error or any other failure reads as not signed in.
+pub fn probe_antigravity_login() -> bool {
+    crate::catalog::fetch_catalog().is_ok()
+}
+
 /// The message of a run that found `agy` signed out. `agy` has no login
 /// command: the operator starts it in Ralphy's root and signs in.
-pub(crate) fn auth_message(root: &Path) -> String {
+pub fn auth_message(root: &Path) -> String {
     format!(
         "Antigravity is not signed in for Ralphy. Run `agy --gemini_dir=\"{}\"` with no other \
          argument, sign in, then run Ralphy again.",

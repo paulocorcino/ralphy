@@ -1,14 +1,16 @@
 //! The quota read-out of `agy` and the reset time of a limit (ADR-0086 D6).
 //! The read-out is a slash command answered without a model call.
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used once the Agent impl lands")
-)]
 
 use std::ffi::OsString;
 use std::path::Path;
+use std::process::Stdio;
+use std::time::Duration;
 
+use ralphy_core::ResetAt;
 use serde::Deserialize;
+
+/// How long the quota read-out may run.
+const READ_LIMIT: Duration = Duration::from_secs(30);
 
 /// The quota group of the Gemini models.
 const GEMINI_GROUP: &str = "Gemini Models";
@@ -22,15 +24,34 @@ const ARGON_GROUP: &str = "Gemini 4 Argon";
 /// The argv of the quota read-out in the owned `root`. No `--model`: the
 /// command is answered before any model call.
 pub(crate) fn quota_args(root: &Path) -> Vec<OsString> {
-    let mut root_flag = OsString::from("--gemini_dir=");
-    root_flag.push(root);
     vec![
-        root_flag,
+        crate::command::root_flag(root),
         "-p".into(),
         "/quota".into(),
         "--output-format".into(),
         "json".into(),
     ]
+}
+
+/// The reset of a limit `model` hit, from the quota read-out of `program` in
+/// the owned `root`. `None` when the read-out fails or names no reset: the
+/// run clock then waits its own window.
+pub(crate) fn read_reset(program: &Path, root: &Path, model: Option<&str>) -> Option<ResetAt> {
+    let mut cmd = crate::command::agy_command(program);
+    cmd.args(quota_args(root))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let out = match ralphy_adapter_support::run_headless(cmd, "", READ_LIMIT) {
+        Ok(out) => out,
+        Err(e) => {
+            tracing::warn!("antigravity: the quota read-out did not run: {e:#}");
+            return None;
+        }
+    };
+    let text = reset_time(&out.stdout, model)?;
+    let at = chrono::DateTime::parse_from_rfc3339(&text).ok();
+    Some(ResetAt { text, at })
 }
 
 /// The reset time (RFC 3339, UTC) of a limit hit by `model`: the `reset_time`

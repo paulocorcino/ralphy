@@ -1,9 +1,5 @@
 //! Token usage of a run: the sum of the per-call records of the stream
 //! (ADR-0086 D5).
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used once the Agent impl lands")
-)]
 
 use ralphy_core::Usage;
 use serde_json::Value;

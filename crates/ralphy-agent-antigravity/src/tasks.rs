@@ -3,7 +3,6 @@
 //! [`Session`], so it gets the owned root, the proof turn and the guard as a
 //! run does (ADR-0086 D8, D9). None publishes to GitHub: the CLI applies the
 //! drafted file after the operator confirms.
-#![expect(dead_code, reason = "used once the Agent impl lands")]
 
 use std::fs;
 use std::path::Path;
@@ -22,21 +21,21 @@ use crate::session::Session;
 
 /// The settings every one-shot task takes.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct OneShotOptions<'a> {
+pub struct OneShotOptions<'a> {
     /// The `--model` id; `None` uses the default of the operator's plan.
-    pub(crate) model: Option<&'a str>,
+    pub model: Option<&'a str>,
     /// The effort word, passed as `--effort` with a base model id.
-    pub(crate) effort: Option<&'a str>,
+    pub effort: Option<&'a str>,
     /// The wall-clock budget of the session.
-    pub(crate) timeout: Duration,
+    pub timeout: Duration,
     /// The operator lets a session whose hooks did not prove they run go on.
-    pub(crate) run_without_guard_proof: bool,
+    pub run_without_guard_proof: bool,
 }
 
 /// Diagnose `repo` from `neutral_cwd`, a folder outside the repository, so
 /// `agy` loads none of the repository's own agent files. The session writes
 /// `diagnosis.json` there.
-pub(crate) fn diagnose_repo(
+pub fn diagnose_repo(
     repo: &Path,
     neutral_cwd: &Path,
     options: OneShotOptions<'_>,
@@ -51,7 +50,7 @@ pub(crate) fn diagnose_repo(
 
 /// Draft issues from a backlog or a milestone, in the repository, into
 /// `out_path`.
-pub(crate) fn draft_issues(
+pub fn draft_issues(
     repo: &Path,
     out_path: &Path,
     req: &DraftRequest<'_>,
@@ -67,7 +66,7 @@ pub(crate) fn draft_issues(
 
 /// Triage the issues of `req` in the repository: the charter, each issue's
 /// thread, then the attachment list, whose images `agy` reads by path.
-pub(crate) fn triage_issues(
+pub fn triage_issues(
     repo: &Path,
     out_path: &Path,
     req: &TriageRequest<'_>,
@@ -84,7 +83,7 @@ pub(crate) fn triage_issues(
 /// Consolidate the knowledge notes of `ws` into `KNOWLEDGE.md`, which the
 /// caller checks. The usage is the sum of the session's model calls, the
 /// proof turn's included.
-pub(crate) fn consolidate_knowledge(
+pub fn consolidate_knowledge(
     ws: &Workspace,
     run_dir: &Path,
     options: OneShotOptions<'_>,
@@ -113,7 +112,9 @@ fn held_one_shot(
     task: &str,
 ) -> Result<HeadlessRun> {
     let root = ralphy_proc_util::antigravity::owned_root()?;
+    let program = crate::command::agy_program();
     let session = Session {
+        program: &program,
         root: &root,
         work_dir,
         run_dir: log_path.parent().unwrap_or(work_dir),
@@ -131,11 +132,7 @@ fn held_one_shot(
         Some(RunStop::Timeout) => bail!("the {what} session hit the wall timeout (see {see})"),
         Some(RunStop::Stopped) | None => {}
     }
-    let stderr = run
-        .log
-        .strip_prefix(run.stdout.as_str())
-        .unwrap_or(&run.log);
-    answer(&run.stdout, stderr)
+    answer(&run.stdout, outcome::stderr_of(&run))
         .with_context(|| format!("the {what} session failed (see {see})"))?;
     Ok(run)
 }

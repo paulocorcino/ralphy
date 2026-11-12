@@ -71,3 +71,14 @@ fn a_failed_task_turn_is_an_error_even_after_a_good_proof_turn() {
         "a stream with no result is no answer"
     );
 }
+
+#[test]
+fn a_one_shot_whose_last_result_is_cut_is_an_error() {
+    let stdout = fixture("two_turns.jsonl");
+    let last = stdout.trim_end().rfind('\n').expect("two lines or more");
+    let cut = stdout.get(..last + 60).expect("a char boundary");
+    assert!(
+        answer(cut, "").is_err(),
+        "the proof turn's READY is no answer"
+    );
+}

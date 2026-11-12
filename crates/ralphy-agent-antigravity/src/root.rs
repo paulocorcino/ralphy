@@ -42,8 +42,13 @@ pub(crate) fn ensure(root: &Path) -> Result<()> {
         )
     })?;
     let hooks = serde_json::to_string_pretty(&hooks_document(&ralphy)?)?;
-    write_if_changed(&config.join("hooks.json"), &format!("{hooks}\n"))?;
+    write_if_changed(&hooks_file(root), &format!("{hooks}\n"))?;
     turn_swarm_off(&config.join("config.json"))
+}
+
+/// The hooks file `agy` reads from the owned `root`.
+pub(crate) fn hooks_file(root: &Path) -> PathBuf {
+    root.join("config").join("hooks.json")
 }
 
 /// The hooks file: the guard first on every tool, then the status hook on the
@@ -114,10 +119,6 @@ fn write_if_changed(path: &Path, text: &str) -> Result<()> {
 
 /// The nearest repository hooks file `agy` will also run, from `cwd` up to
 /// `repo_root`: `hooks.json` in `.agents/`, `.agent/` or `_agents/` (D10).
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used once the Agent impl lands")
-)]
 pub(crate) fn workspace_hooks_file(cwd: &Path, repo_root: &Path) -> Option<PathBuf> {
     cwd.ancestors()
         .take_while(|dir| dir.starts_with(repo_root))

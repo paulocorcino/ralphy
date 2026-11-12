@@ -2089,6 +2089,7 @@ name = "ralphy-agent-antigravity"
 version = "0.1.0-rc.43"
 dependencies = [
  "anyhow",
+ "chrono",
  "include_dir",
  "ralphy-adapter-support",
  "ralphy-core",
@@ -2096,6 +2097,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "tracing",
 ]
 
 [[package]]

@@ -1,14 +1,10 @@
 //! The end of an `agy` run read from its `stream-json` capture (ADR-0086 D3):
 //! the fold of the stream, the completion signals the shared ladder orders
 //! (ADR-0023), and the machine fault of D9.
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used once the Agent impl lands")
-)]
 
 use std::path::Path;
 
-use ralphy_adapter_support::{blocked_reason, done_sentinel, CompletionSignals};
+use ralphy_adapter_support::{blocked_reason, done_sentinel, CompletionSignals, HeadlessRun};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -65,33 +61,44 @@ pub(crate) struct RunEnd {
     pub(crate) committed: bool,
 }
 
-/// Fold a capture of stdout. A line that is not a JSON record is skipped.
+/// Fold a capture of stdout. A line of plain text is skipped. A result counts
+/// only when the stream ends with it: a step after it starts the next turn,
+/// and a record cut mid-JSON may be the final result. Either way the result is
+/// unknown, and never the proof turn's.
 pub(crate) fn fold(stdout: &str) -> Fold {
     let mut fold = Fold::default();
-    let records = stdout
-        .lines()
-        .filter_map(|line| serde_json::from_str::<Value>(line.trim()).ok());
-    for mut record in records {
+    for line in stdout.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        match serde_json::from_str::<Value>(line) {
+            Ok(record) => fold.take(record),
+            Err(_) if line.starts_with('{') => fold.result = None,
+            Err(_) => {}
+        }
+    }
+    fold
+}
+
+impl Fold {
+    fn take(&mut self, mut record: Value) {
         match record.get("event").and_then(Value::as_str) {
             Some("init") => {
-                fold.conversation_id = record
+                self.conversation_id = record
                     .get("conversation_id")
                     .and_then(Value::as_str)
                     .map(str::to_owned);
             }
             Some("step_update") => {
+                self.result = None;
                 if let Some(step) = record.get_mut("step_update") {
-                    fold.steps.push(step.take());
+                    self.steps.push(step.take());
                 }
             }
             Some("result") => {
                 let body = record.get_mut("result").map(Value::take);
-                fold.result = body.and_then(|body| serde_json::from_value(body).ok());
+                self.result = body.and_then(|body| serde_json::from_value(body).ok());
             }
             _ => {}
         }
     }
-    fold
 }
 
 /// The signals of one run (D3). `stderr` is the child's stderr alone: the
@@ -114,6 +121,13 @@ pub(crate) fn completion_signals(fold: &Fold, stderr: &str, end: RunEnd) -> Comp
         exited_ok,
         errored,
     }
+}
+
+/// The child's stderr alone: the run's log is its stdout, then its stderr.
+pub(crate) fn stderr_of(run: &HeadlessRun) -> &str {
+    run.log
+        .strip_prefix(run.stdout.as_str())
+        .unwrap_or(&run.log)
 }
 
 /// The last line of `text` that is not blank.

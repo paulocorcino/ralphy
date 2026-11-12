@@ -17,6 +17,7 @@ fn flags(model: Option<&'static str>, effort: Option<&'static str>) -> RunFlags<
 #[test]
 fn the_run_argv_states_every_flag() {
     let cmd = build_agy_command(
+        Path::new(NAME),
         Path::new("/repo"),
         flags(Some("claude-sonnet-5-5"), Some("high")),
     );
@@ -42,6 +43,7 @@ fn the_run_argv_states_every_flag() {
     assert_eq!(cmd.get_current_dir(), Some(Path::new("/repo")));
 
     let bare = argv(&build_agy_command(
+        Path::new(NAME),
         Path::new("/repo"),
         flags(None, Some("high")),
     ));
@@ -77,7 +79,7 @@ fn the_child_environment_drops_google_and_gemini_keys() {
     ]
     .map(OsString::from);
     let cmd = build_with(
-        NAME.into(),
+        Path::new(NAME),
         parent.into_iter(),
         Path::new("/repo"),
         flags(None, None),

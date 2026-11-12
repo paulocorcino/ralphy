@@ -1,9 +1,5 @@
 //! The headless `agy` child: its argv (ADR-0086 D2), its environment (D7) and
 //! the NDJSON line a prompt becomes on stdin.
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used once the Agent impl lands")
-)]
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -22,14 +18,35 @@ pub(crate) struct RunFlags<'a> {
 }
 
 /// The `agy` program: the locator's path, else the bare name.
-fn agy_program() -> OsString {
-    ralphy_proc_util::antigravity::locate_agy().map_or_else(|| NAME.into(), PathBuf::into_os_string)
+pub(crate) fn agy_program() -> PathBuf {
+    ralphy_proc_util::antigravity::locate_agy().unwrap_or_else(|| PathBuf::from(NAME))
+}
+
+/// The `--gemini_dir` flag that points `agy` at the owned `root`.
+pub(crate) fn root_flag(root: &Path) -> OsString {
+    let mut flag = OsString::from("--gemini_dir=");
+    flag.push(root);
+    flag
+}
+
+/// `program` with no sign-in variable of this process: every `agy` child
+/// starts here.
+pub(crate) fn agy_command(program: &Path) -> Command {
+    scrubbed(program, std::env::vars_os().map(|(name, _)| name))
+}
+
+fn scrubbed(program: &Path, parent: impl Iterator<Item = OsString>) -> Command {
+    let mut cmd = Command::new(program);
+    for name in parent.filter(|name| is_sign_in_variable(name)) {
+        cmd.env_remove(name);
+    }
+    cmd
 }
 
 /// The headless `agy` command of a run in `work_dir`, with the real environment.
-pub(crate) fn build_agy_command(work_dir: &Path, flags: RunFlags<'_>) -> Command {
+pub(crate) fn build_agy_command(program: &Path, work_dir: &Path, flags: RunFlags<'_>) -> Command {
     let parent = std::env::vars_os().map(|(name, _)| name);
-    build_with(agy_program(), parent, work_dir, flags)
+    build_with(program, parent, work_dir, flags)
 }
 
 /// [`build_agy_command`] over the program and the parent's variable names.
@@ -39,16 +56,14 @@ pub(crate) fn build_agy_command(work_dir: &Path, flags: RunFlags<'_>) -> Command
 /// D15), Ralphy's budgets are the deadline (no `--print-timeout`), and remote
 /// control is never offered (D12).
 fn build_with(
-    program: OsString,
+    program: &Path,
     parent: impl Iterator<Item = OsString>,
     work_dir: &Path,
     flags: RunFlags<'_>,
 ) -> Command {
-    let mut root_flag = OsString::from("--gemini_dir=");
-    root_flag.push(flags.root);
-    let mut cmd = Command::new(program);
+    let mut cmd = scrubbed(program, parent);
     cmd.current_dir(work_dir)
-        .arg(root_flag)
+        .arg(root_flag(flags.root))
         .args(["--output-format", "stream-json"])
         .args(["--input-format", "stream-json"])
         .arg("--dangerously-skip-permissions")
@@ -60,9 +75,6 @@ fn build_with(
     }
     if let Some(level) = crate::effort::effort_flag(flags.model, flags.effort) {
         cmd.args(["--effort", level]);
-    }
-    for name in parent.filter(|name| is_sign_in_variable(name)) {
-        cmd.env_remove(name);
     }
     cmd
 }

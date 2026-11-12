@@ -8,6 +8,9 @@ description = "Antigravity CLI adapter for Ralphy: drives headless `agy` behind 
 
 [dependencies]
 anyhow.workspace = true
+# The reset of a limit is an instant (`ResetAt.at`).
+chrono.workspace = true
+tracing.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 include_dir.workspace = true
