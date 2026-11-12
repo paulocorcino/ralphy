@@ -1,4 +1,8 @@
 //! Hook form tests that run the `version_test_child` helper.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

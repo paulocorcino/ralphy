@@ -3,6 +3,10 @@
 //! passes 4096 bytes. They cover reads, run snapshots, file encodings, confined
 //! writes and the refusal of a malformed run. No module sets an env var, so
 //! they share one test binary.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 #[path = "../support/golden.rs"]
 mod golden;

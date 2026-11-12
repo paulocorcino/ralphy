@@ -1,7 +1,10 @@
 //! The peer tunnel (ADR-0067 §2) against `command_test_child` standing in for
 //! `ssh`: it records its argv to `RALPHY_TEST_ARGV_FILE`, then lives for
 //! `RALPHY_TEST_SLEEP_MS`. Never a real SSH connection.
-
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 #![expect(
     clippy::disallowed_methods,
     reason = "nextest runs each test in its own process, so a test may change its environment"

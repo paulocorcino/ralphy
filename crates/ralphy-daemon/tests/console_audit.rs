@@ -3,7 +3,10 @@
 //! `console_takeover` line; a plain reattach and a refused one write none
 //! (ADR-0074, amendment 2026-10-05). The device cookie rides on the upgrade of
 //! the page socket.
-
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 #![expect(
     clippy::disallowed_methods,
     reason = "nextest runs each test in its own process, so a test may change its environment"

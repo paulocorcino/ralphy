@@ -11,7 +11,10 @@
 //! Its own test binary on purpose: it mutates the process environment (the only
 //! way to have something to inherit), so it must not race a sibling test that
 //! reads it. Its two tests set different variables.
-
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 #![expect(
     clippy::disallowed_methods,
     reason = "nextest runs each test in its own process, so a test may change its environment"

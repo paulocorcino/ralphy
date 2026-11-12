@@ -2,7 +2,10 @@
 //! holds it open: the child's answer must come back without waiting for the
 //! grandchild. Proves the handle inheritance on each OS, which the unit fakes
 //! cannot.
-
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 #![expect(
     clippy::disallowed_methods,
     reason = "nextest runs each test in its own process, so a test may change its environment"

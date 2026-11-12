@@ -20,7 +20,10 @@
 //! env-setting tests are alone in their binary, and nextest runs each test in
 //! its own process. The legs of one test run SEQUENTIALLY so nothing races on
 //! them.
-
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 #![expect(
     clippy::disallowed_methods,
     reason = "nextest runs each test in its own process, so a test may change its environment"

@@ -10,6 +10,10 @@
 //!
 //! Each check reads both sides as text, like `ratchets/`: xtask may not
 //! depend on the daemon.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

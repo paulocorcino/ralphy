@@ -1,6 +1,10 @@
 //! A peer poll that carries a key the registry has since re-keyed is served, not
 //! refused (ADR-0036 amendment 2026-10-15). The host's poller reads its key once,
 //! so after a rename it asks with the old one until its tab closes.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::time::Instant;
 

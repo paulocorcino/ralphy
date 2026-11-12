@@ -4,6 +4,10 @@
 //! and a real grandchild that inherits its stdout pipe — makes the "leaked
 //! background process can't hang the gate" guarantee observable, portably across
 //! Windows and Unix.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::time::{Duration, Instant};
 

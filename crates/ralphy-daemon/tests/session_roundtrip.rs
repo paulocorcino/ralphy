@@ -3,6 +3,10 @@
 //! the four behaviors the issue's Done-when names — spawn-in-cwd, stdin echo,
 //! resize propagation, and process-tree teardown on close. No socket: the WS
 //! bridge is a later step; this proves the transport-free core first.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::path::PathBuf;
 use std::time::Duration;

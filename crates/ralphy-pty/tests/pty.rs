@@ -6,6 +6,10 @@
 //! The shared driver below plays the terminal: it drains the master on a
 //! background thread and answers the shell's start-up cursor-position query
 //! ([`CURSOR_POSITION_REQUEST`]), without which the child blocks before running.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::io::Read;
 use std::sync::mpsc::{self, Receiver};

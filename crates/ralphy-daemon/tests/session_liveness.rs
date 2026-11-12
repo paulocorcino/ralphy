@@ -9,7 +9,10 @@
 //! Its own binary: the ping period is shortened through
 //! `RALPHY_DAEMON_WS_PING_MS`, read once per process, and the other session
 //! tests must keep the production period.
-
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 #![expect(
     clippy::disallowed_methods,
     reason = "nextest runs each test in its own process, so a test may change its environment"

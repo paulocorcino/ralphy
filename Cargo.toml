@@ -60,6 +60,7 @@ as_conversions = "deny"
 undocumented_unsafe_blocks = "deny"
 mod_module_files = "deny"
 clone_on_ref_ptr = "deny"
+tests_outside_test_module = "deny"
 # The lint gate: `pedantic` is on. A lint `allow` below is debt that docs/lint/lint-transition.md
 # turns on (this list only shrinks), or noise, off for good with its reason.
 pedantic = { level = "deny", priority = -1 }

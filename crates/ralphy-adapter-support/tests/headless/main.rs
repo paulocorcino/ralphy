@@ -2,6 +2,10 @@
 //! `headless_test_child` helper binary (located via `CARGO_BIN_EXE_*`, which Cargo
 //! sets for integration tests). A real child process makes the spawn/drain/kill
 //! plumbing observable, portably across Windows and Unix.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::fmt::Write as _;
 use std::process::{Command, Stdio};

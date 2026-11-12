@@ -9,7 +9,10 @@
 //! process-global, which is also why the two phases are one test — the second
 //! phase must run with the re-key knob UNSET, and a sibling test could not be
 //! ordered against that.
-
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 #![expect(
     clippy::disallowed_methods,
     reason = "nextest runs each test in its own process, so a test may change its environment"

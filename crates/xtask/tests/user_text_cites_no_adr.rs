@@ -6,6 +6,10 @@
 //! line, an error, a generated file, a comment posted to GitHub. `xtask` is
 //! left out, because its readers are the developers. `--help` text comes from
 //! doc comments, not literals; `ralphy-cli` has its own test for that.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::path::{Path, PathBuf};
 

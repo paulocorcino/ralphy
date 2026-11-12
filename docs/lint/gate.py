@@ -32,10 +32,6 @@ UI = "crates/ralphy-daemon/assets/ui"
 UI_TESTS = "crates/ralphy-daemon/ui-tests"
 OXLINT = ["npx", "-y", "-p", "oxlint@1.93.0", "-p", "oxlint-tsgolint@7.0.2006", "oxlint"]
 TSC = ["npx", "-y", "-p", "typescript@7.0.2", "tsc"]
-# Rules `added` does not read yet. `tests_outside_test_module` fires on every
-# test of a `tests/` crate until its phase puts one `#![expect]` at each crate
-# root; that phase removes it from this list.
-ADDED_IGNORE = {"clippy": "clippy::tests_outside_test_module"}
 # The tsconfig flags of the target that are not on yet; tsconfig.json has them all.
 TSC_FLAGS: list[str] = []
 
@@ -64,10 +60,8 @@ def shrink(base: str) -> int:
     return failed
 
 
-def tally_added(fmt: str, output: Path, base: str, ignore: str = "") -> int:
+def tally_added(fmt: str, output: Path, base: str) -> int:
     cmd = [sys.executable, str(SCRIPTS / "tally.py"), "added", fmt, str(output), "--base", base]
-    if ignore:
-        cmd += ["--ignore", ignore]
     return run(cmd).returncode
 
 
@@ -104,7 +98,7 @@ def added(base: str) -> int:
         if clippy_draft(out / "clippy.json") != 0:
             print("the clippy draft did not finish", file=sys.stderr)
             return 1
-        failed |= tally_added("clippy", out / "clippy.json", base, ADDED_IGNORE["clippy"])
+        failed |= tally_added("clippy", out / "clippy.json", base)
         oxlint_draft(out / "oxlint.json", type_aware=False)
         failed |= tally_added("oxlint", out / "oxlint.json", base)
         oxlint_draft(out / "oxlint-typed.json", type_aware=True)

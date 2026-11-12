@@ -6,6 +6,10 @@
 //!
 //! docs/ARCHITECTURE.md is the map of the structural decisions: every ADR it
 //! cites exists, and every structural ADR from 0068 on is cited there.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

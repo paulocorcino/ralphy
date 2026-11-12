@@ -1,6 +1,10 @@
 //! `GET /api/repos` serves the keys a project had before it was re-keyed, so a
 //! host can follow the rename (ADR-0036 amendment 2026-10-15). A project that
 //! was never re-keyed has no such field.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::time::Instant;
 

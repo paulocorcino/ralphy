@@ -32,6 +32,10 @@
 //! its tool fails. The ignore list ratchet keeps the size of each list that
 //! hides files from a linter. The core dependency test keeps every vendor crate
 //! out of the manifest of `ralphy-core`.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

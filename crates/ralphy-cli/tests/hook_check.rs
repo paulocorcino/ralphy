@@ -1,4 +1,8 @@
 //! The daemon's start check against the real `ralphy hook status`.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::path::Path;
 use std::time::Duration;

@@ -7,7 +7,10 @@
 //! every queue test that ran after it, and it would read as flake rather than as
 //! a leak. Every test here takes [`StopFlagGuard`], which serializes them and
 //! restores the flag even through a panicking assertion.
-
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 #![expect(
     clippy::disallowed_methods,
     reason = "nextest runs each test in its own process, so a test may change its environment"

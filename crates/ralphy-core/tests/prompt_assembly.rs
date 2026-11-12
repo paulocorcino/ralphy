@@ -19,6 +19,10 @@
 //! The same binary checks the plan prompt's `## Acceptance ledger` example
 //! against the ledger parser: the prompt shows the agent a format that
 //! `parse_ledger` and `apply_ledger` really accept.
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 
 use std::collections::BTreeMap;
 use std::fs;

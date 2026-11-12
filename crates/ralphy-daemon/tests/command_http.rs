@@ -1,7 +1,10 @@
 //! `POST /api/command` answers a one-reply command with the same JSON the
 //! page socket sends on a `spawn` channel, under the same guard, cap and audit
 //! record, and refuses a command whose output streams (ADR-0082 D1, ADR-0072 D3, D11).
-
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 #![expect(
     clippy::disallowed_methods,
     reason = "nextest runs each test in its own process, so a test may change its environment"

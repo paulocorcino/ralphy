@@ -9,7 +9,10 @@
 //! SOLE env-setter in its file (see `command_config.rs`): `RALPHY_EXE_OVERRIDE`
 //! and `RALPHY_TEST_*` are process-global. The two legs run SEQUENTIALLY inside
 //! one test so the exit code can differ per leg without an intra-process race.
-
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 #![expect(
     clippy::disallowed_methods,
     reason = "nextest runs each test in its own process, so a test may change its environment"

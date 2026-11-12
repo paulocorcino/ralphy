@@ -4,7 +4,10 @@
 //! helper child through the same process-wide `RALPHY_DAEMON_AGENT_OVERRIDE`
 //! value, and the CLI at `command_test_child` through `RALPHY_EXE_OVERRIDE`, and
 //! sets no other env var, so they can share a process.
-
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 #![expect(
     clippy::disallowed_methods,
     reason = "nextest runs each test in its own process, so a test may change its environment"

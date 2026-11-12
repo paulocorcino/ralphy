@@ -15,7 +15,10 @@
 //!
 //! The environment and the start check are process-global, so each test
 //! needs a process of its own (nextest runs each test in its own process).
-
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test crate is the test module"
+)]
 #![expect(
     clippy::disallowed_methods,
     reason = "nextest runs each test in its own process, so a test may change its environment"
