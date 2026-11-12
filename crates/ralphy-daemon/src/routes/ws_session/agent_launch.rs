@@ -5,11 +5,11 @@ use std::path::{Path, PathBuf};
 
 use axum::http::StatusCode;
 
-use super::gemini_root;
 use super::join::hold;
 use super::refuse::Refusal;
 use super::upgrade::{launch_record, Open, Opened};
 use super::SessionLabels;
+use super::{antigravity_root, gemini_root};
 use crate::routes::blocking_read;
 use crate::{agent_state, auth, checkout, registry, session};
 
@@ -116,6 +116,10 @@ impl Open {
     /// that writes them (ADR-0032 §10), so `gemini_root::ensure` asks the CLI to
     /// (ADR-0040 Amendment 3). INVARIANT: this refusal precedes `spec_for` and
     /// every spawn path, so no Gemini child is ever created outside the owned root.
+    ///
+    /// ADR-0086 D8/D9: an Antigravity child runs in the owned root with Ralphy's
+    /// hooks file in it; `antigravity_root::ensure` prepares it the same way, and
+    /// refuses the launch here when the file is still missing.
     async fn vendor_gate(
         &self,
         agent: session::Agent,
@@ -128,6 +132,9 @@ impl Open {
         }
         if agent == session::Agent::Gemini {
             gemini_root::ensure(root, &self.daemon_id).await?;
+        }
+        if agent == session::Agent::Antigravity {
+            antigravity_root::ensure(root, &self.daemon_id).await?;
         }
         Ok(())
     }

@@ -61,6 +61,7 @@ impl std::fmt::Debug for SessionSpec {
 /// vendor's TUI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Agent {
+    Antigravity,
     Claude,
     Codex,
     Copilot,
@@ -72,9 +73,10 @@ pub enum Agent {
 
 impl Agent {
     /// Every launchable vendor. The anti-drift tests (the workbench trio, the
-    /// usage-store resolvers) enumerate the daemon's vendors from here, so an
-    /// eighth variant reds them instead of passing silently.
-    pub const ALL: [Agent; 7] = [
+    /// usage-store resolvers) enumerate the daemon's vendors from here, so a
+    /// new variant reds them instead of passing silently.
+    pub const ALL: [Agent; 8] = [
+        Agent::Antigravity,
         Agent::Claude,
         Agent::Codex,
         Agent::Copilot,
@@ -88,6 +90,7 @@ impl Agent {
     /// can reject them rather than launching a surprise program.
     pub fn from_query(value: &str) -> Option<Agent> {
         match value {
+            "antigravity" => Some(Agent::Antigravity),
             "claude" => Some(Agent::Claude),
             "codex" => Some(Agent::Codex),
             "copilot" => Some(Agent::Copilot),
@@ -102,6 +105,7 @@ impl Agent {
     /// The program name to resolve on `PATH` for this agent.
     fn program_name(self) -> &'static str {
         match self {
+            Agent::Antigravity => "agy",
             Agent::Claude => "claude",
             Agent::Codex => "codex",
             // The GitHub Copilot CLI ships as `copilot`, the same name the
@@ -129,6 +133,7 @@ impl Agent {
     /// disagree (ADR-0042 D14/D19).
     pub fn locate_program(self) -> Option<PathBuf> {
         match self {
+            Agent::Antigravity => ralphy_proc_util::antigravity::locate_agy(),
             Agent::Cursor => ralphy_proc_util::cursor::locate_cursor(),
             Agent::Claude
             | Agent::Codex
@@ -232,7 +237,8 @@ pub fn spec_with_status(
                 gemini_home(root).into_os_string(),
             )],
         ),
-        Agent::Claude
+        Agent::Antigravity
+        | Agent::Claude
         | Agent::Codex
         | Agent::Copilot
         | Agent::Cursor
@@ -254,9 +260,28 @@ pub fn spec_with_status(
         Agent::Claude => add_claude_launch(&mut spec, root, repo_slug, console, status),
         Agent::Codex => add_codex_launch(&mut spec, status),
         Agent::OpenCode => add_opencode_launch(&mut spec, status),
+        Agent::Antigravity => add_antigravity_launch(&mut spec),
         Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi => {}
     }
     spec
+}
+
+/// The Antigravity part of [`spec_with_status`]: the owned root as
+/// `--gemini_dir`, and no autonomy flag (ADR-0086 D8). The route refuses the
+/// launch before this when the root cannot be resolved; if it still cannot,
+/// the program is cleared so the spawn fails and `agy` never runs elsewhere.
+fn add_antigravity_launch(spec: &mut SessionSpec) {
+    match ralphy_proc_util::antigravity::owned_root() {
+        Ok(root) => {
+            let mut flag = OsString::from("--gemini_dir=");
+            flag.push(root);
+            spec.args.push(flag);
+        }
+        Err(e) => {
+            tracing::error!(error = %format!("{e:#}"), "no owned root for an Antigravity console");
+            spec.program = OsString::new();
+        }
+    }
 }
 
 /// The Codex part of [`spec_with_status`]: the status hooks as `-c`

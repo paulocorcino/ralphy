@@ -19,9 +19,9 @@ pub struct AgentRow {
 }
 
 /// The `Alt+Shift+<digit>` accelerator each adapter answers to. EXHAUSTIVE on
-/// purpose: an eighth `Agent` variant does not compile until it is given a
+/// purpose: a new `Agent` variant does not compile until it is given a
 /// digit, which is what makes "onboarding a vendor needs no frontend change"
-/// enforced rather than hoped. Digit `8` is free; `9` and `0` belong to the
+/// enforced rather than hoped. No digit is free; `9` and `0` belong to the
 /// frontend (`9` opens the console menu's command field, `0` is the plain
 /// console), which are not vendor adapters and never enter this enumeration.
 fn accelerator(a: Agent) -> &'static str {
@@ -33,6 +33,7 @@ fn accelerator(a: Agent) -> &'static str {
         Agent::Copilot => "5",
         Agent::Cursor => "6",
         Agent::Gemini => "7",
+        Agent::Antigravity => "8",
     }
 }
 
@@ -93,6 +94,13 @@ mod tests {
     }
 
     #[test]
+    fn the_roster_gives_antigravity_digit_8() {
+        let rows = roster_with(&|_| None);
+        let row = rows.iter().find(|r| r.id == "antigravity");
+        assert_eq!(row.map(|r| r.accelerator), Some("8"), "{rows:?}");
+    }
+
+    #[test]
     fn accelerators_are_unique_and_stable() {
         let rows = roster();
         let digits: std::collections::BTreeSet<&str> = rows.iter().map(|r| r.accelerator).collect();
@@ -127,7 +135,7 @@ mod tests {
         }
         // Served in digit order, so the menu renders without re-sorting.
         let order: Vec<&str> = rows.iter().map(|r| r.accelerator).collect();
-        assert_eq!(order, ["1", "2", "3", "4", "5", "6", "7"]);
+        assert_eq!(order, ["1", "2", "3", "4", "5", "6", "7", "8"]);
     }
 
     #[test]

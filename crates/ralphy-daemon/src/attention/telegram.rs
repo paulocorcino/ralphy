@@ -73,6 +73,7 @@ fn sends_runs_of(request: &AttentionRequest, ctx: &Context) -> bool {
 /// The vendor's name as a person writes it; an unknown one as it came.
 fn vendor_name(vendor: &str) -> &str {
     match Agent::from_query(vendor) {
+        Some(Agent::Antigravity) => "Antigravity",
         Some(Agent::Claude) => "Claude",
         Some(Agent::Codex) => "Codex",
         Some(Agent::Copilot) => "Copilot",

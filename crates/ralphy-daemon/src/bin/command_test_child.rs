@@ -27,7 +27,9 @@
 //! always writes `prepare-root.ran`; with `prepare-root.fail` present it
 //! prints an `Error: ` line and exits 1; with `prepare-root.noop` present it
 //! exits 0 and writes nothing else; otherwise it writes the policy document
-//! the daemon looks for and exits 0.
+//! the daemon looks for and exits 0. Called as `antigravity prepare-root`, it
+//! does the same, but what it writes is `antigravity-root/config/hooks.json`
+//! under `RALPHY_DAEMON_DIR`, where the daemon looks for the owned root.
 //!
 //! Called with `--version` as its only argument, it stands in for
 //! `claude --version`: it writes the same env dump to
@@ -45,7 +47,10 @@
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args == ["gemini", "prepare-root"] {
-        prepare_root();
+        prepare_root(write_gemini_policy);
+    }
+    if args == ["antigravity", "prepare-root"] {
+        prepare_root(write_antigravity_hooks);
     }
     if args == ["--version"] {
         claude_version();
@@ -147,12 +152,13 @@ fn main() {
     std::process::exit(code);
 }
 
-/// The `gemini prepare-root` stand-in described in the module docs. Never returns.
+/// The `prepare-root` stand-in described in the module docs; `write` writes
+/// what the real command writes. Never returns.
 #[expect(
     clippy::disallowed_methods,
     reason = "a test helper child reports to its test by its exit code"
 )]
-fn prepare_root() {
+fn prepare_root(write: fn(&std::path::Path)) {
     let cwd = std::env::current_dir().expect("reading the working directory");
     std::fs::write(cwd.join("prepare-root.ran"), "").expect("writing prepare-root.ran");
     if cwd.join("prepare-root.fail").exists() {
@@ -160,11 +166,26 @@ fn prepare_root() {
         std::process::exit(1);
     }
     if !cwd.join("prepare-root.noop").exists() {
-        let dir = cwd.join(".ralphy").join("gemini-home").join(".gemini");
-        std::fs::create_dir_all(&dir).expect("creating the owned root");
-        std::fs::write(dir.join("ralphy-policy.toml"), "# policy\n").expect("writing the policy");
+        write(&cwd);
     }
     std::process::exit(0);
+}
+
+/// The policy document of a repo's owned Gemini root.
+fn write_gemini_policy(repo: &std::path::Path) {
+    let dir = repo.join(".ralphy").join("gemini-home").join(".gemini");
+    std::fs::create_dir_all(&dir).expect("creating the owned root");
+    std::fs::write(dir.join("ralphy-policy.toml"), "# policy\n").expect("writing the policy");
+}
+
+/// The hooks file of the owned Antigravity root, under `RALPHY_DAEMON_DIR`.
+fn write_antigravity_hooks(_repo: &std::path::Path) {
+    let store = std::env::var_os("RALPHY_DAEMON_DIR").expect("RALPHY_DAEMON_DIR names the store");
+    let dir = std::path::PathBuf::from(store)
+        .join("antigravity-root")
+        .join("config");
+    std::fs::create_dir_all(&dir).expect("creating the owned root");
+    std::fs::write(dir.join("hooks.json"), "{}\n").expect("writing the hooks file");
 }
 
 /// Write this child's view of the daemon's secrets and of its daemon id to
