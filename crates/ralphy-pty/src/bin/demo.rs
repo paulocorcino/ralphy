@@ -10,6 +10,11 @@
 //! and handed back here so the main loop can both reply to the shell's
 //! cursor-position query and poll the child for exit.
 
+#![expect(
+    clippy::print_stdout,
+    reason = "a demo binary: printing what the shell rendered is its job"
+)]
+
 use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::{Duration, Instant};

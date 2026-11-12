@@ -7,6 +7,11 @@
 //! `hang` sleeps 60 s; `exit0` exits 0 and writes nothing. Every mode except
 //! `hang` ignores a trailing `--version`.
 
+#![expect(
+    clippy::print_stdout,
+    reason = "a test helper child: the parent test reads what it prints"
+)]
+
 use std::io::Write;
 use std::process::ExitCode;
 

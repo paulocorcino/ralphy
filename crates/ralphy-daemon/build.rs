@@ -15,6 +15,10 @@ mod ui;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+#[expect(
+    clippy::print_stderr,
+    reason = "a build script reports its failure to Cargo on stderr"
+)]
 fn main() -> ExitCode {
     // lib.rs embeds the tree `ui::build` writes, which Cargo does not track on
     // its own: without this line an edit to a UI asset leaves the binary

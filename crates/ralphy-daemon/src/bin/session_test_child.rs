@@ -26,6 +26,11 @@
 //! - `--version` prints `2.1.312 (Claude Code)` and exits, as Claude Code does.
 //! - `sleep` mode sleeps ~60s — the grandchild that holds stdout open.
 
+#![expect(
+    clippy::print_stdout,
+    reason = "a test helper child: the parent test reads what it prints"
+)]
+
 use std::io::{Read, Write};
 use std::time::Duration;
 

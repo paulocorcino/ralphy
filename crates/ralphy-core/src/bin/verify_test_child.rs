@@ -16,6 +16,12 @@
 //!   grandchild holding the pipe).
 //! - `sleep` — sleep ~60s; used both directly and as the spawned grandchild.
 
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "a test helper child: the parent test reads what it prints"
+)]
+
 use std::time::Duration;
 
 fn main() {
