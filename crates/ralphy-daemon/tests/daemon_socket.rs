@@ -151,9 +151,7 @@ async fn a_live_socket_makes_the_second_bind_fail() {
     );
 
     let second = socket::bind(store.path());
-    let err = second
-        .err()
-        .expect("a second daemon of the account is refused");
+    let err = second.expect_err("a second daemon of the account is refused");
     assert!(
         format!("{err:#}").contains("already listens"),
         "unexpected error: {err:#}"
