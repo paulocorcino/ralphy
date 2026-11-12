@@ -1,0 +1,73 @@
+# agy install, binary names and encoding, ADR-0040 C10 (stage 3 of the agy spike, 2026-11-12)
+# No model call is made by any probe in this file except the one marked (isolated-root check).
+
+## Windows 11
+$ which agy
+/c/Users/PICHAU/AppData/Local/agy/bin/agy
+$ ls -la "$LOCALAPPDATA/agy/bin"            (before the probes)
+-rwxr-xr-x 1 Corcino 197121 208545432 Oct 28 17:02 agy.exe*
+$ agy --version
+1.4.9
+## The same folder after the first probe's background updater finished (see the state log)
+-rwxr-xr-x 1 Corcino 197121 242141336 2026-11-12 08:19:51 agy.exe*
+-rwxr-xr-x 1 Corcino 197121 208545432 2026-10-28 17:02:03 agy.exe.1794482221548117500.old
+$ agy --version
+1.5.6
+## The .old copy was gone by 08:32, after the next run.
+## Other agy files on Windows, written by the CLI into its state root:
+%USERPROFILE%\.gemini\antigravity-cli\bin\agentapi.bat   -> "C:\Users\PICHAU\AppData\Local\agy\bin\agy.exe" agentapi %*
+%USERPROFILE%\.gemini\antigravity-cli\bin\webm_encoder.exe (13 MB)
+## `antigravity.cmd` on PATH is the IDE launcher, another product (first facts, #729).
+
+## WSL Ubuntu
+$ ls -la ~/.local/bin/agy; ~/.local/bin/agy --version; which agy
+-rwxr-xr-x 1 corcino corcino 279462288 Nov 12 07:47 /home/corcino/.local/bin/agy
+1.5.6
+/home/corcino/.local/bin/agy
+$ cat ~/.gemini/antigravity-cli/bin/agentapi
+#!/bin/sh
+exec "/home/corcino/.local/bin/agy.1793217806081684432.old" agentapi "$@"
+## The shim still names the pre-update binary, which the updater renamed to .old.
+
+## Install commands (documentation only: https://antigravity.google/docs/getting-started)
+Windows (PowerShell): irm https://antigravity.google/cli/install.ps1 | iex
+Windows (CMD):        curl -fsSL https://antigravity.google/cli/install.cmd -o install.cmd && install.cmd && del install.cmd
+                      default binary location: C:\Users\<username>\AppData\Local\agy\bin
+macOS / Linux:        curl -fsSL https://antigravity.google/cli/install.sh | bash
+                      default binary location: ~/.local/bin/agy
+No Homebrew, npm or winget package is named. The install scripts take --skip-aliases and --skip-path
+(https://antigravity.google/docs/install).
+
+$ agy install --help
+Usage: agy.exe install [flags]
+Configure environment paths and shell settings
+Flags:
+  --dir           Custom directory target to configure PATH for
+  --skip-aliases  Bypasses shell profile alias purging
+  --skip-path     Bypasses shell profile PATH appending
+
+## Sign-in for CI (documentation only: https://antigravity.google/docs/install)
+Gemini API key: set "modelProvider": "gemini" in ~/.gemini/antigravity-cli/settings.json, then export
+GEMINI_API_KEY (the variable alone has no effect; .env files are ignored).
+Application Default Credentials: gcloud auth application-default login --project <project>, then
+AGY_ADC_AUTH=true (optional GOOGLE_CLOUD_QUOTA_PROJECT, GOOGLE_CLOUD_LOCATION).
+
+## Windows stdout encoding (the one model call of this stage, isolated root, Flash)
+$ agy --gemini_dir=<tmp> -p "Reply in one line. Start with the exact text: ação ✓ 日本. ..." \
+      --model gemini-3.8-flash-low --output-format json --print-timeout 150s </dev/null > win-call.out
+exit=0
+$ od -c win-call.out | head        (the bytes of "response":"ação ✓ 日本 ...)
+0000000   "   r   e   s   p   o   n   s   e   "   :   "   a 303 247 303
+0000020 243   o     342 234 223     346 227 245 346 234 254       M   A
+## UTF-8 bytes on a pipe, not the console code page (ç = 303 247, ✓ = 342 234 223, 日 = 346 227 245).
+
+## Environment variables in agy.exe 1.5.6 (strings of the binary; AGY_* and ANTIGRAVITY_* names)
+AGY_ADC_AUTH AGY_ACCOUNT AGY_ERROR AGY_CLI_OSC7501 AGY_CLI_OSC7501_MESSAGES AGY_CLI_THEME
+AGY_CLI_MAC_OPTION_AS_ALT AGY_CLI_HIDE_LOGO AGY_CLI_HIDE_ACCOUNT_INFO AGY_CLI_DISABLE_LATEX
+AGY_CLI_DISABLE_ESCAPE_SEQUENCE_OPTIMIZATIONS AGY_CLI_CMD_OUTPUT_PERCENTAGE AGY_CLI_CDE_AUTH_ACTION
+AGY_CLI_AUTO_COMPACT_OVERRIDE AGY_CDE_SEAMLESS_AUTH AGY_BUSINESS_PAYGO_TIER
+ANTIGRAVITY_AGENTAPI_EXE ANTIGRAVITY_CONFIG_REL_DIR ANTIGRAVITY_CONVERSATION_ID ANTIGRAVITY_CSRF_TOKEN
+ANTIGRAVITY_DISABLE_EMBEDDED_RIPGREP ANTIGRAVITY_EXECUTABLE_DATA_DIR ANTIGRAVITY_LS_ADDRESS
+ANTIGRAVITY_PERM_GRANTS ANTIGRAVITY_PROJECT_ID ANTIGRAVITY_SIDECAR_UI_TOKEN ANTIGRAVITY_SIDECAR_WEB_PORT
+Also read: GEMINI_API_KEY, GOOGLE_API_KEY, GOOGLE_GEMINI_BASE_URL, GOOGLE_GENAI_USE_VERTEXAI, NO_COLOR.
+None of them turns off the auto-updater or moves the state root.
