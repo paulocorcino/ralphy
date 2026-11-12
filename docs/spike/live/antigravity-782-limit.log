@@ -1,0 +1,60 @@
+# agy limit, ADR-0040 C7 (stage 4 of the agy spike, 2026-11-12).
+# Windows 11, agy 1.5.6, isolated root --gemini_dir=<tmp>\gd (auth from the Windows keyring),
+# cwd = a scratch git repo <tmp>\repo, stdin = a file or /dev/null (never a terminal).
+# Spawned by a Python harness (subprocess, own pid); <tmp> = %LOCALAPPDATA%\Temp\agy782s4.
+
+## No limit was reached: the stage's budget allows Flash calls only, and the operator's buckets
+## stayed at 98-100%. What follows is the free quota read-out (observed) and the limit signals
+## found in the binary and its embedded changelog (read, not observed).
+
+## 1. The quota read-out, free (slash commands answered without a model call).
+## Under Git Bash, MSYS rewrites "/quota" into a path; MSYS_NO_PATHCONV=1 was set. Ralphy spawns
+## directly, so it is not affected. (Four calls were lost to this rewrite: see the cost table.)
+$ agy -p /quota --model gemini-3.8-flash-low
+exit=0 wall=4.4s
+--- stdout:
+Gemini Models	Weekly Limit Remaining	100%	2026-11-19T11:32:40Z
+Gemini Models	Five Hour Limit Remaining	99%	2026-11-12T16:32:40Z
+Claude and GPT models	Weekly Limit Remaining	100%	2026-11-19T12:13:38Z
+Claude and GPT models	Five Hour Limit Remaining	100%	2026-11-12T17:13:38Z
+Gemini 4 Argon	Gemini 4 Argon Weekly Limit	98%	2026-11-19T12:11:52Z
+$ agy -p /usage --model gemini-3.8-flash-low
+exit=0   (same five records)
+$ agy -p /credits --model gemini-3.8-flash-low
+exit=0
+--- stdout:
+Remaining credits	0
+Upgrade	https://antigravity.google/g1-upgrade
+
+$ agy -p /quota --output-format json --model gemini-3.8-flash-low
+exit=0 wall=3.8s
+--- stdout:
+{"conversation_id":"","status":"SUCCESS","response":"Gemini Models\tWeekly Limit Remaining\t100%\t2026-11-19T11:32:40Z\nGemini Models\tFive Hour Limit Remaining\t99%\t2026-11-12T16:32:40Z\nClaude and GPT models\tWeekly Limit Remaining\t100%\t2026-11-19T12:13:52Z\nClaude and GPT models\tFive Hour Limit Remaining\t100%\t2026-11-12T17:13:52Z\nGemini 4 Argon\tGemini 4 Argon Weekly Limit\t98%\t2026-11-19T12:11:52Z\n","duration_seconds":0,"num_turns":0,"usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":0},"command":{"name":"usage","data":{"description":"Within each group, models share a weekly limit and a 5-hour limit. Quota is consumed proportionally to the cost of the tokens. Thus, limits will last longer with shorter tasks or using more cost-effective models. The 5-hour limit smooths out aggregate demand to fairly distribute global capacity across all users, while your weekly limit is tied directly to your individual tier.","groups":[{"name":"Gemini Models","description":"Models within this group: Gemini Flash, Gemini Pro","buckets":[{"id":"gemini-weekly","name":"Weekly Limit Remaining","description":"You have used some of your weekly limit, it will fully refresh in 6 days, 23 hours.","window":"weekly","remaining_fraction":0.9955034852027893,"reset_time":"2026-11-19T11:32:40Z"},{"id":"gemini-5h","name":"Five Hour Limit Remaining","description":"You have used some of your 5-hour limit, it will fully refresh in 4 hours, 18 minutes.","window":"5h","remaining_fraction":0.9890287518501282,"reset_time":"2026-11-12T16:32:40Z"}]},{"name":"Claude and GPT models","description":"Models within this group: Claude Opus, Claude Sonnet, GPT-OSS","buckets":[{"id":"3p-weekly","name":"Weekly Limit Remaining","window":"weekly","remaining_fraction":1,"reset_time":"2026-11-19T12:13:52Z"},{"id":"3p-5h","name":"Five Hour Limit Remaining","window":"5h","remaining_fraction":1,"reset_time":"2026-11-12T17:13:52Z"}]},{"name":"Gemini 4 Argon","description":"For paid Pro plans, Argon quota is separate. Higher Argon quota (included as part of the larger Gemini quota bucket) is available on Ultra plans.","buckets":[{"id":"gemini-argon-wtu-weekly","name":"Gemini 4 Argon Weekly Limit","description":"You have used some of your weekly limit, it will fully refresh in 6 days, 23 hours.","window":"weekly","remaining_fraction":0.9762334823608398,"reset_time":"2026-11-19T12:11:52Z"}]}]}}}
+
+## Every print run also calls the quota endpoint (cli.log):
+W1112 09:08:39.005762     201 cache.go:157] Cache(retrieveUserQuotaSummary): Singleflight refresh failed: Post "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary": context canceled
+
+## 2. Limit strings in agy.exe 1.5.6 (strings -n 8, one hit each unless noted)
+You have exhausted your quota on this model.
+individual quota reached
+Your AI credits balance is too low to continue
+MODEL_CAPACITY_EXHAUSTED
+RESOURCE_EXHAUSTED            (several)
+Too Many Requests
+Usage limit reached
+Quota exhausted
+const QUOTA_RE = /RESOURCE_EXHAUSTED|quota|\b429\b|exhausted your capacity|rate.?limit/i      (a bundled script)
+AGY_ERROR: {"short_error":%q}
+json:"short_error,omitempty"
+
+## 3. The embedded changelog (strings of agy.exe 1.5.6), the entries about limits and errors:
+- Improved headless (`-p` / `--prompt`) error reporting when a turn terminates on an agent or model API failure: the CLI now prints a structured `AGY_ERROR: {...}` JSON line on stderr with canonical status, HTTP or gRPC error code, retryability, and error ID (including HTTP status mapping for `GEMINI_API_KEY` SDK errors) and exits with code `3` instead of `1`.
+- Fixed headless (`-p` / `--prompt`) runs that streamed part of a response and then ended on a model or agent error exiting with code 0; they now exit with code `3` and print the `AGY_ERROR` line, and JSON error output includes the partial response, while multi-turn `stream-json` sessions still warn and continue
+- Improved model API error resilience and diagnostics: transient `genai.APIError` failures (`502`, `503`, `504`, per-minute `429` rate limits, and mid-stream interruptions) automatically retry in-process with exponential backoff while preserving completed tool call outputs, and unrecovered `503` and `429` responses surface clear user-facing error messages.
+- Improved rate-limit handling when the model API returns a retry delay: the CLI now waits the delay the server asks for instead of a fixed 5 seconds, and stops right away instead of retrying when the delay is longer than 30 seconds or the quota is a daily or billing cap
+- Improved error messages: a request that fails with an HTML error page, for example from a corporate proxy, now shows the page title instead of the raw HTML, other long non-JSON error bodies are cut off after 500 bytes, and reaching your individual quota is reported right away instead of being retried.
+- Fixed requests made after your plan quota is used up and your AI credits balance cannot cover them: instead of retrying on `Working...` for about two and a half minutes and then showing the generic "Agent execution terminated due to error.", the CLI now immediately says "Your AI credits balance is too low to continue."
+- Added support for G1 credits in the Antigravity CLI. Users can now utilize G1 credits when their standard quota runs out. This includes a new `UseG1Credits` setting to enable automatic credit usage and a real-time display of remaining credits in the status bar.
+- Improved `GEMINI_API_KEY` sessions to stop immediately when the Gemini API reports an exhausted daily quota, a project or billing-account spend cap, or depleted prepaid credits, instead of spending several minutes on retries that cannot succeed; short-lived per-minute rate limits are still retried
+- Improved `-p "/usage"` to show quota reset times in your local time zone when printing to a terminal; piped and `--json` output still use UTC timestamps, so existing scripts are unaffected
+- Added non-interactive answers for the read-only slash commands in print mode, so `-p "/usage"`, `/quota`, `/credits`, `/model`, `/effort` and `/skills` emit one tab-separated record per line

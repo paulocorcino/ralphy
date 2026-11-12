@@ -1,0 +1,144 @@
+# agy store, ADR-0040 C6 (stage 4 of the agy spike, 2026-11-12).
+# Windows 11, agy 1.5.6, isolated root --gemini_dir=<tmp>\gd (auth from the Windows keyring),
+# cwd = a scratch git repo <tmp>\repo, stdin = a file or /dev/null (never a terminal).
+# Spawned by a Python harness (subprocess, own pid); <tmp> = %LOCALAPPDATA%\Temp\agy782s4.
+
+## 1. Layout of the isolated root after the probes (<root> = <tmp>\gd\antigravity-cli)
+$ ls <root>
+bin/ brain/ builtin/ cache/ cli.log@ conversation_summaries.db conversations/ crashes/ implicit/ installation_id jetbox_summaries_proto.pb jetski_state.pbtxt last_check.timestamp log/ presence/ updater/ 
+
+$ find <root>/brain/cf415564-…/ -type f      (the execute probe)
+brain/<id>/.system_generated/logs/chunks/transcript/00000000.jsonl
+brain/<id>/.system_generated/logs/chunks/transcript_full/00000000.jsonl
+brain/<id>/.system_generated/logs/transcript.jsonl
+brain/<id>/.system_generated/logs/transcript_full.jsonl
+brain/<id>/.system_generated/steps/2/output.txt
+brain/<id>/.system_generated/steps/4/output.txt
+
+$ cat <root>/cache/last_conversations.json
+{
+  "C:\\Users\\PICHAU\\AppData\\Local\\Temp\\agy782s4\\repo": "69b49994-73f1-47f1-a33f-911d81920c64"
+}
+
+## 2. transcript_full.jsonl of the execute probe (strings cut at 120 characters)
+{"step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT", "status": "DONE", "created_at": "2026-11-12T12:10:37Z", "content": "<USER_REQUEST>\nCreate a file named hello.txt in the current folder that contains the single line: hello from agy\nThen ru..."}
+{"step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE", "status": "DONE", "created_at": "2026-11-12T12:10:37Z", "input_tokens": 8325, "cache_read_tokens": 0, "output_tokens": 50, "tool_calls": [{"name": "write_file", "args": {"Content": "hello from agy", "Path": "C:/Users/PICHAU/AppData/Local/Temp/agy782s4/repo/hello.txt"}}]}
+{"step_index": 2, "source": "MODEL", "type": "GENERIC", "status": "DONE", "created_at": "2026-11-12T12:10:40Z", "content": "Created At: 2026-11-12T09:10:40-03:00\nCompleted At: 2026-11-12T09:10:40-03:00\nCreated At: 2026-11-12T09:10:40-03:00\nComp..."}
+{"step_index": 3, "source": "MODEL", "type": "PLANNER_RESPONSE", "status": "DONE", "created_at": "2026-11-12T12:10:40Z", "input_tokens": 8451, "cache_read_tokens": 0, "output_tokens": 38, "tool_calls": [{"name": "run_command", "args": {"CommandLine": "git status --short", "WaitMsBeforeAsync": 5000, "toolSummary": "Git status check"}}]}
+{"step_index": 4, "source": "MODEL", "type": "GENERIC", "status": "DONE", "created_at": "2026-11-12T12:10:42Z", "content": "Created At: 2026-11-12T09:10:42-03:00\nCompleted At: 2026-11-12T09:10:43-03:00\nCreated At: 2026-11-12T09:10:42-03:00\nComp..."}
+{"step_index": 5, "source": "MODEL", "type": "PLANNER_RESPONSE", "status": "DONE", "created_at": "2026-11-12T12:10:43Z", "input_tokens": 8579, "cache_read_tokens": 0, "output_tokens": 73, "content": "The file [hello.txt](file:///C:/Users/PICHAU/AppData/Local/Temp/agy782s4/repo/hello.txt) has been created with the conte..."}
+
+## The same probe's stream-json: per-step usage, then the result event
+"step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":2.3710172,"usage":{"input_tokens":8325,"output_tokens":50,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8375}
+"step_index":3,"state":"DONE","step_type":"agent_response","duration_seconds":2.5095319,"usage":{"input_tokens":8451,"output_tokens":38,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8489}
+"step_index":5,"state":"DONE","step_type":"agent_response","duration_seconds":4.2318613,"usage":{"input_tokens":8579,"output_tokens":73,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8652}
+"num_turns":1,"usage":{"input_tokens":25355,"output_tokens":161,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":25516}
+## 8325 + 8451 + 8579 = 25355 input; 50 + 38 + 73 = 161 output: each record is one model call; the result is their sum.
+
+## 3. The default-model (Gemini 4 Argon) run 8adbb1bf: cache reads and thinking
+{'step_index': 1, 'type': 'PLANNER_RESPONSE', 'input_tokens': 8293, 'output_tokens': 196, 'cache_read_tokens': 0}
+{'step_index': 3, 'type': 'PLANNER_RESPONSE', 'input_tokens': 3315, 'output_tokens': 77, 'cache_read_tokens': 6239}
+{'step_index': 5, 'type': 'PLANNER_RESPONSE', 'input_tokens': 2123, 'output_tokens': 375, 'cache_read_tokens': 8147}
+--- its --output-format json result usage:
+"usage":{"input_tokens":13731,"output_tokens":648,"thinking_tokens":314,"cache_read_tokens":14386,"total_tokens":14379}
+## 8293+3315+2123 = 13731 input; 196+77+375 = 648 output; 6239+8147 = 14386 cache read;
+## total_tokens 14379 = input + output (cache read not in it; thinking inside output, see 4).
+
+## 4. SQLite: <root>/conversations/<id>.db (read-only open)
+CREATE TABLE `trajectory_meta` (`trajectory_id` text,`cascade_id` text,`trajectory_type` integer,`source` integer,PRIMARY KEY (`trajectory_id`))
+CREATE TABLE `steps` (`idx` integer,`step_type` integer NOT NULL DEFAULT 0,`status` integer NOT NULL DEFAULT 0,`has_subtrajectory` numeric NOT NULL DEFAULT false,`metadata` blob,`error_details` blob,`permissions` blob,`task_details` blob,`render_info` blob,`step_payload` blob,`step_format` integer NOT NULL DEFAULT 0,PRIMARY KEY (`idx`))
+CREATE TABLE `gen_metadata` (`idx` integer,`data` blob,`size` integer NOT NULL DEFAULT 0,PRIMARY KEY (`idx`))
+CREATE TABLE `executor_metadata` (`idx` integer,`data` blob,PRIMARY KEY (`idx`))
+CREATE TABLE `parent_references` (`idx` integer,`data` blob,PRIMARY KEY (`idx`))
+CREATE TABLE `trajectory_metadata_blob` (`id` text DEFAULT "main",`data` blob,PRIMARY KEY (`id`))
+CREATE TABLE `battle_mode_infos` (`idx` integer,`data` blob,PRIMARY KEY (`idx`))
+trajectory_meta rows 1
+steps rows 6
+gen_metadata rows 3
+executor_metadata rows 1
+parent_references rows 0
+trajectory_metadata_blob rows 1
+battle_mode_infos rows 0
+## gen_metadata.data is protobuf; a schema-less decode (field paths) of the rows that carry usage:
+== gen_metadata 0 1324
+   1.4.1 1418
+   1.4.2 8293
+   1.4.3 196
+   1.4.6 24
+   1.4.9 132
+   1.4.10 64
+   1.19 gemini-4-argon-trial
+   1.21 Gemini 4 Argon (Medium)
+== gen_metadata 1 1325
+   1.4.1 1418
+   1.4.2 3315
+   1.4.3 77
+   1.4.5 6239
+   1.4.6 24
+   1.4.9 11
+   1.4.10 66
+   1.19 gemini-4-argon-trial
+   1.21 Gemini 4 Argon (Medium)
+== gen_metadata 2 66971
+   1.4.1 1418
+   1.4.2 2123
+   1.4.3 375
+   1.4.5 8147
+   1.4.6 24
+   1.4.9 171
+   1.4.10 204
+   1.19 gemini-4-argon-trial
+   1.21 Gemini 4 Argon (Medium)
+## Read: 1.4.2 input, 1.4.3 output, 1.4.5 cache read, 1.4.9 thinking, 1.4.10 visible output
+## (132+64 = 196, 11+66 = 77), 1.19 backend model id, 1.21 the label agy models prints.
+## The execute probe's rows (Flash):
+== gen_metadata 0 1313
+   1.4.2 8325
+   1.4.3 50
+   1.4.10 50
+   1.19 gemini-3.8-flash-n
+   1.21 Gemini 3.8 Flash (Low)
+== gen_metadata 1 1314
+   1.4.2 8451
+   1.4.3 38
+   1.4.10 38
+   1.19 gemini-3.8-flash-n
+   1.21 Gemini 3.8 Flash (Low)
+== gen_metadata 2 59485
+   1.4.2 8579
+   1.4.3 73
+   1.4.10 73
+   1.19 gemini-3.8-flash-n
+   1.21 Gemini 3.8 Flash (Low)
+
+$ sqlite3 <root>/conversation_summaries.db '.tables'
+conversation_summaries search_schema_version conversations_fts conversations_fts_data conversations_fts_idx conversations_fts_content conversations_fts_docsize conversations_fts_config conversation_parents
+CREATE TABLE `conversation_summaries` (`conversation_id` text,`title` text NOT NULL DEFAULT "",`preview` text NOT NULL DEFAULT "",`step_count` integer NOT NULL DEFAULT 0,`last_modified_time` datetime NOT NULL,`workspace_uris` text NOT NULL,`status` text NOT NULL DEFAULT "",`source` text NOT NULL DEFAULT "",`project_id` text NOT NULL DEFAULT "",`agent_name` text NOT NULL DEFAULT "",`parent_conversation_id` text NOT NULL DEFAULT "",`nesting_depth` integer NOT NULL DEFAULT 0,`battle_id` text NOT NULL DEFAULT "",`winning_conversation_id` text NOT NULL DEFAULT "",`not_fully_idle` numeric NOT NULL DEFAULT false,`killed` numeric NOT NULL DEFAULT false,`last_user_input_time` datetime NOT NULL,`last_user_input_step_index` integer NOT NULL DEFAULT -1,`app_data_dir` text NOT NULL DEFAULT "",`raw_summary` blob,`group_id` text NOT NULL DEFAULT "",PRIMARY KEY (`conversation_id`))
+
+## 5. Every conversation in the root: model label (store) and the transcript sums (input output cache_read)
+0176b5c4-ac08-4015-9e6e-651474b8b17c | Gemini 3.8 Flash (Low) | 16729 99 0
+01fd2caa-c1a3-42ea-811f-a612929185d2 | Gemini 3.8 Flash (Low) | 17173 95 0
+0b902efc-bf38-4727-b9a7-347b3f3ceb1f | <no model call> | 0 0 0
+11546930-2bec-4107-8bdb-d79e85ebe008 | <no model call> | 0 0 0
+11958b3a-f2a4-43a9-883e-b1a9247c3a1e | <no model call> | 0 0 0
+24e41d82-702d-4f49-97e5-19b32905de2e | <no model call> | 0 0 0
+29c71e3e-db8b-4185-949a-29b25666103e | <no model call> | 0 0 0
+2d7a7e90-6834-44fa-8453-ebfaecd1d9e4 | Gemini 4 Argon (Medium) | 13635 504 14378
+328394ed-7eed-4da2-8dc4-8b09bc936691 | Gemini 4 Argon (Medium) | 8287 131 0
+46fd71df-22ab-48f1-a264-ef6946abb45c | <no model call> | 0 0 0
+4c15e3f1-06bb-4d91-970b-ac7ad49155a4 | <no model call> | 0 0 0
+57735a9f-80ed-43fd-9172-24f07c7b49b6 | Gemini 4 Argon (Medium) | 8295 53 0
+577528fe-2cff-45be-9612-df6a7bac9b3c | <no model call> | 0 0 0
+65a99e0c-71f4-4fac-91fd-b09379e666ec | <no model call> | 0 0 0
+69b49994-73f1-47f1-a33f-911d81920c64 | <no model call> | 0 0 0
+861985bf-dcdb-411a-8d27-3fd1ecffd816 | <no model call> | 0 0 0
+8adbb1bf-60f6-4258-84b1-e71e33451749 | Gemini 4 Argon (Medium) | 13731 648 14386
+8b12017e-6817-4e9f-b836-5bbd0c9d7adc | Gemini 3.8 Flash (Low) | 16766 107 0
+c2db7f8b-3f2d-49e5-8219-aa71f99f200b | <no model call> | 0 0 0
+cf415564-d721-4e43-8dce-e7536810cc8e | Gemini 3.8 Flash (Low) | 25355 161 0
+df5af37c-1651-48af-91d0-7ade36e8bbfa | Gemini 3.8 Flash (Low) | 18352 153 0
+e890cd11-e1a1-40e2-9ea4-a067d98ee62f | <no model call> | 0 0 0
+eaf76240-cb0f-4e67-baee-9d9a28f45ec0 | Gemini 3.8 Flash (Low) | 8300 42 0
+ec86824a-ac31-4574-8ba6-bc6da7f869b3 | Gemini 3.8 Flash (Low) | 17854 52 0
+f61fbf05-177f-43a0-b6cd-c3d6758db45f | <no model call> | 0 0 0
+## A run cut before the model call (--print-timeout 1ms) still leaves a conversation with one USER_INPUT step.

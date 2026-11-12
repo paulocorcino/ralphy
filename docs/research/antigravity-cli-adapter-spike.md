@@ -32,6 +32,15 @@ Session date: 2026-11-12.
 | --- | --- | --- | --- |
 | Logged-out probes (C5), `agy models` in temp roots, subcommand listings | Windows, WSL | none | 0 |
 | Isolated-root check: one `-p` turn under `--gemini_dir=<tmp>` (C9, C10, C11) | Windows | `gemini-3.8-flash-low` | 8 475 in, 17 out, 0 thinking, 0 cache read (8 492 total) |
+| `agy models`, unknown-model and `--effort` rejections, every `--print-timeout 1ms` probe (prompt channel, `--conversation`, NDJSON input, image block), `-p /quota`, `/usage`, `/credits`, `/model`, `/effort` (C1, C4, C6, C7, parity 14) | Windows | none (refused or cut before the model call; the store has no model record) | 0 |
+| Plan probe, `--mode plan` (C1–C3) | Windows | `gemini-3.8-flash-low` | 18 352 in, 153 out |
+| Execute probe, writes `hello.txt` and runs `git status` (C1–C3) | Windows | `gemini-3.8-flash-low` | 25 355 in, 161 out |
+| No `--dangerously-skip-permissions`: a file write (C1) | Windows | `gemini-3.8-flash-low` | 16 729 in, 99 out |
+| No `--dangerously-skip-permissions`: a shell command, denied (C1, C3) | Windows | `gemini-3.8-flash-low` | 8 300 in, 42 out |
+| Timeout probe, `--print-timeout 30s` on a 90 s `ping` (C3, parity 9) | Windows | `gemini-3.8-flash-low` | 17 173 in, 95 out |
+| Parity 13: read a gitignored `.ralphy/` file | Windows | `gemini-3.8-flash-low` | 16 766 in, 107 out |
+| Parity 14: read a PNG by path | Windows | `gemini-3.8-flash-low` | 17 854 in, 52 out |
+| Four slash-command probes lost to Git Bash path rewriting (`/quota` became `C:/Program Files/Git/quota`) and sent without `--model`, so the default model answered them as prompts | Windows | `gemini-4-argon-medium` (default) | 13 635 in, 504 out, 14 378 cache read; 8 295 in, 53 out; 8 287 in, 131 out; 13 731 in, 648 out (314 thinking), 14 386 cache read |
 
 ## 0. Executive summary
 
@@ -39,27 +48,197 @@ Filled by Stage 5.
 
 ## 1. C1 — Invocation and the headless contract
 
-Filled by Stage 4 or 5.
+Raw logs: `docs/spike/live/antigravity-782-plan.log` (prompt channel, plan
+probe), `docs/spike/live/antigravity-782-execute.log` (execute probe,
+permissions). Host: Windows, agy 1.5.6, isolated root `--gemini_dir=<tmp>`,
+stdin never a terminal. Every C1–C4, C6 and C7 probe ran on Windows: on WSL the
+credential is a file inside the root (§5), so an isolated root there is logged
+out, and a signed-in probe would write into the operator's real `~/.gemini`.
 
-**C1 answer:** _Stage 4/5_
+Which text became the prompt was read from the CLI log line
+`Print mode: starting (promptLength=N, …)` with `--print-timeout 1ms`, which
+cuts the turn before any model call (0 tokens).
+
+| Invocation (stdin = `stdin1.txt`, 27 bytes) | Exit | What happened 🔬 |
+| --- | --- | --- |
+| `agy -p --model …` | 2 | `Error: -p took "--model" as its prompt, …` |
+| `agy … -p` (last) | 2 | `flag needs an argument: -p` |
+| `agy … -p ""` | 1 | `Error: empty prompt. Usage: agy --print "your prompt here"`, `promptLength=0`: stdin not read |
+| `agy … -p -` | 3 | `promptLength=1`: `-` is a literal prompt |
+| `agy … -p ARG` | 3 | `promptLength=3`: stdin ignored, not appended |
+| `agy …` (no `-p`) | 3 | `promptLength=27`: **piped stdin alone starts print mode and is the whole prompt** |
+
+- 🔬 **The prompt goes on stdin.** With no `-p` and a piped stdin, agy runs
+  headless with stdin as the prompt. 72 025 bytes of UTF-8 (`ação ✓ 日本` on
+  every line) arrived whole (`promptLength=72025`), so the ~32 KB argv limit
+  of Windows is avoided. 🔬 There is no grace timer: stdin written 3 s after
+  the spawn was still read (`promptLength=26`); the CLI waits for EOF, so
+  Ralphy writes the prompt and closes stdin.
+- 🔬 Never pass `-p` together with a stdin prompt: `-p <text>` wins and stdin
+  is dropped silently.
+- 🔬 A second stdin channel, `--input-format stream-json` (needs
+  `--output-format stream-json`), takes one NDJSON line per turn:
+  `{"event":"user","message":{"role":"user","content":"…"}}`. A bare string
+  for `message` is refused (exit 1, `cannot unmarshal string into Go struct
+  field StreamInputMessage.message`). Content blocks other than `text` are
+  refused (parity 14).
+- 🔬 **Full autonomy is `--dangerously-skip-permissions`** (the init event
+  then says `"permission_mode":"always-proceed"`). Without it the mode is
+  `request-review`: a file write in the workspace still ran, but a shell
+  command was **auto-denied without a prompt**, and the run still exited 0 with
+  `"status":"SUCCESS"`, an empty `response`, and
+  `"denied_actions":[{"action":"command","display_name":"RunCommand"}]`;
+  stderr: `jetski: no output produced — a tool required the "command"
+  permission that headless mode cannot prompt for, so it was auto-denied. …
+  re-run with --dangerously-skip-permissions to auto-approve all tools.` So a
+  missing flag does not hang; it produces an empty, successful-looking run.
+  📖 `--mode accept-edits|auto|plan` and `--sandbox` exist (`agy --help`); only
+  `--mode plan` was run.
+- 🔬 **Working directory:** there is no `--cwd` flag; the spawned process's cwd
+  is the workspace (`init.cwd` equals it, and tool paths resolve under it).
+  `--add-dir` adds more roots (📖 `--help`).
+- 🔬 **No PTY is needed for the plan's quota:** headless runs are billed to the
+  same quota buckets as the console (`-p /quota` showed the Gemini 5-hour
+  bucket at 99% after the Flash probes, C7).
+- 🔬 Wall time is 3–7 s more than the JSON `duration_seconds` (plan probe: 13.2
+  s against 6.5 s; execute: 13.7 s against 9.8 s): sign-in, `loadCodeAssist`
+  and `fetchAvailableModels` run before the turn. The 63 s Flash run of §9 was
+  not reproduced: the six other Flash runs here took 9–16 s.
+
+**C1 answer:** Headless one-shot is print mode; the prompt goes on **stdin with no `-p` at all** (🔬 piped stdin alone starts print mode, 72 KB UTF-8 arrived whole, no grace timer — write and close stdin), while `-p <text>` takes the next argument and silently drops stdin, and `-p` before another flag exits 2; full autonomy is `--dangerously-skip-permissions` (without it a shell command is auto-denied and the run still exits 0 with an empty response and `denied_actions`); there is no cwd flag, the spawned cwd is the workspace; no PTY is needed for plan billing.
 
 ## 2. C2 — The output stream
 
-Filled by Stage 4 or 5.
+Raw logs: `antigravity-782-plan.log` §2, `antigravity-782-execute.log`.
 
-**C2 answer:** _Stage 4/5_
+Modes 📖 `--help`, 🔬 run: `text` (default, the response only), `json` (one
+object at the end), `stream-json` (NDJSON). `stream-json` is the one Ralphy
+needs: `text` gives no usage and no error state.
+
+🔬 **`stream-json` discriminators** (`event`, then `step_type` and `state`):
+
+| `event` | Content |
+| --- | --- |
+| `init` | first line: `conversation_id`, `init.model` (only when `--model` is given, and as written in argv), `init.cwd`, `init.tools`, `init.permission_mode`, `expanded_commands` |
+| `step_update` | `step_index`, `state` (`ACTIVE`, `DONE`), `step_type`: `user_input`, `agent_response` (with `text_delta` while `ACTIVE`; `usage` and `duration_seconds` when `DONE`), `tool` (`tool_name`, `tool_info.parameters`, and on `DONE` an `output` summary such as `1 lines, 10 bytes` or the command output) |
+| `result` | **the terminal envelope**: `status` (`SUCCESS`, `ERROR`), `response`, `error`, `duration_seconds`, `num_turns`, `usage`, `finished_reason` (omitted on a normal finish; `print_timeout`, `error`, 🔎 `interrupted`), `denied_actions` when a tool was auto-denied |
+
+- 🔬 **The terminal envelope exists**: every run, including errors before the
+  turn (unknown model, logged out, bad NDJSON input), ended with exactly one
+  `result` line. A capture that ends without it is truncated.
+- 🔬 **The final assistant message** is `result.response`; it equals the
+  `text_delta` text of the last `agent_response` step, the one that has no
+  following tool step. An earlier `agent_response` that only called a tool has
+  no text. On a timeout, `response` holds the partial last message.
+- 🔬 **No progress field**: no record counts files or lines changed. A
+  `write_file` tool step carries only the path; a `run_command` step carries
+  the command line and its output. Progress must come from the HEAD diff.
+- 🔬 Text is UTF-8 on Windows (`text_delta` and `response` carried `ação ✓ 日本`
+  in §10; 🔎 the changelog says a fix stopped `stream-json` deltas from turning
+  non-ASCII into replacement characters).
+- 🔬 stderr carries the human lines, not JSON, except one: `AGY_ERROR: {…}` (C3).
+
+**C2 answer:** Use `--output-format stream-json`: NDJSON with `event` = `init` (conversation id, cwd, tools, permission mode, model only when `--model` is given), `step_update` (`step_type` `user_input` | `agent_response` | `tool`, `state` `ACTIVE` | `DONE`, text in `text_delta`, per-call `usage` on a `DONE` agent_response) and one terminal `result` envelope (`status`, `response`, `usage`, `finished_reason`, `denied_actions`) that every observed run ended with, errors included; the final message is `result.response` (the text of the last agent_response step); no stream field reports files changed, so progress comes from the HEAD diff (🔬).
 
 ## 3. C3 — Completion and the sentinel
 
-Filled by Stage 4 or 5.
+Raw logs: `antigravity-782-plan.log`, `antigravity-782-execute.log`,
+`antigravity-782-timeout.log`.
 
-**C3 answer:** _Stage 4/5_
+- 🔬 **The sentinel holds on Flash.** Every prompt that asked for
+  `RALPHY_DONE_EXIT` as the last line got it as the last line of
+  `result.response` (plan, execute, write, gitignored read, image: 5 of 5),
+  followed by one `\n`. The run with a denied shell command ended with an
+  empty `response`, so no sentinel: a missing autonomy flag reads as "not
+  done", not as success.
+- **Exit codes** observed 🔬 (and 🔎 from the embedded changelog):
+
+| Exit | When | Marker |
+| --- | --- | --- |
+| 0 | the turn ended; **also** when a tool was auto-denied (empty response), and for `--input-format stream-json` when `--print-timeout` cut the turn (`status:"SUCCESS"`, `finished_reason:"print_timeout"`) | 🔬 |
+| 1 | refused before the turn: unknown model, bad `--effort`, effort conflict, empty prompt, bad NDJSON input, logged out (§5) | 🔬 |
+| 2 | argv usage error (`-p` swallowed a flag, `flag needs an argument: -p`, unknown flag) | 🔬 |
+| 3 | `--print-timeout` expired (`finished_reason:"print_timeout"`); 🔎 also a turn that ends on a model or agent API failure | 🔬 / 🔎 |
+
+- 🔬 **`AGY_ERROR` line.** On exit 3, stderr has one line
+  `AGY_ERROR: {"short_error":…,"status":"DEADLINE_EXCEEDED","retryable":false,"reason":"print_timeout","tasks":[…]}`.
+  🔎 The changelog says the same line carries the canonical status, the HTTP
+  or gRPC code, retryability and an error id on an API failure. This is the
+  structured error channel for the classifier.
+- 🔬 **`--print-timeout` works and cleans up** (`antigravity-782-timeout.log`):
+  with `30s` on a turn waiting on `ping -n 90`, the run exited 3 at 33 s,
+  stderr said `terminating 1 background task(s) on exit`, and no `PING.EXE`
+  was left. The default is `0s` (no limit).
+- Hooks as a completion signal: the hook probes are in _Hooks and
+  integrations_ (Stage 5). 🔎 The changelog names `Stop`, `PreInvocation`,
+  `PostInvocation`, `PreToolUse`, `PostToolUse` and `SessionStart`.
+- `CompletionSignals` (ADR-0023) from the stream 🔬: `done` = last line of
+  `result.response` is the sentinel; `blocked` = the blocked sentinel in the
+  same text; `timed_out` = `finished_reason:"print_timeout"` or exit 3 with
+  `reason:"print_timeout"` (or Ralphy's own deadline); `exited_ok` = exit 0
+  **and** `result.status:"SUCCESS"` **and** no `finished_reason` (exit 0 alone
+  is not enough, see the NDJSON-input row); `errored` = `status:"ERROR"`, an
+  `AGY_ERROR` line, or a non-empty `denied_actions`; `limit` = C7;
+  `committed` = Ralphy's HEAD check, as for every vendor.
+
+**C3 answer:** The `RALPHY_DONE_EXIT` last line held in 5 of 5 Flash runs (🔬); exit codes are 0 (turn ended — also with an auto-denied tool and, under `--input-format stream-json`, with a print timeout), 1 (refused before the turn: model, effort, empty prompt, logged out), 2 (argv usage) and 3 (`--print-timeout` expired, 🔬; model or agent API failure, 🔎), and exit 3 comes with a JSON `AGY_ERROR:` line on stderr; `--print-timeout` ends the turn, kills its background tasks and exits 3 (🔬), so `exited_ok` must read `result.status` and `finished_reason`, not the exit code alone; hooks are probed in _Hooks and integrations_.
 
 ## 4. C4 — Models
 
-Filled by Stage 4 or 5.
+Raw log: `docs/spike/live/antigravity-782-models.log`.
 
-**C4 answer:** _Stage 4/5_
+🔬 `agy models` is free and deterministic (no model call; the progress line
+goes to stderr). On Windows it listed 13 ids; Stage 3 saw the same 13 on WSL.
+`agy models --output-format json` does not exist in 1.5.6 (exit 1). The
+provider below comes from the quota groups of `-p /quota --output-format json`
+(C7): _"Models within this group: Gemini Flash, Gemini Pro"_ and _"Claude
+Opus, Claude Sonnet, GPT-OSS"_.
+
+| Id (`agy models`) | Label | Provider | Effort variants of the base id | Store's backend id |
+| --- | --- | --- | --- | --- |
+| `gemini-4-argon-low`, `-medium`, `-high` | Gemini 4 Argon | Google | low, medium, high | `gemini-4-argon-trial` (medium) |
+| `gemini-3.8-flash-low`, `-medium`, `-high` | Gemini 3.8 Flash | Google | low, medium, high | `gemini-3.8-flash-n` (low) |
+| `claude-opus-5-5-low`, `-medium`, `-high` | Claude Opus 5.5 | Anthropic | low, medium, high | not observed |
+| `claude-sonnet-5-5-low`, `-medium`, `-high` | Claude Sonnet 5.5 | Anthropic | low, medium, high | not observed |
+| `gpt-oss-120b-medium` | GPT-OSS 120B | OpenAI (open-weight model) | medium only | not observed |
+
+- 🔬 **Multi-model, multi-provider.** The **default** with no `--model` is
+  `Gemini 4 Argon (Medium)` (CLI log `Propagating selected model override …
+  label="Gemini 4 Argon (Medium)"`). No router call was seen: each run used one
+  model for every call (store, C6).
+- 🔬 **The stream does not name the model that answered.** `init.model`
+  appears only when `--model` is given, and it echoes argv (`gemini-3.8-flash`
+  for a base id the CLI resolved to `gemini-3.8-flash-low`). The store names
+  the model per call (C6), by label and backend id.
+- 🔬 **Unknown model: refused before any model call**, exit 1:
+  `error: invalid model selection (--model "no-such-model" --effort ""): model
+  no-such-model is not recognized as a known model or custom model in
+  settings` followed by `Available models:` and the 13 labels. The same JSON
+  `error` is on stdout.
+- 🔬 **Effort**: `--effort` takes `low|medium|high|xhigh|max` and is the same
+  axis as the id suffix. A base id is an alias: `--model gemini-3.8-flash`
+  resolves to `-medium` (the model's default), `--model gemini-3.8-flash
+  --effort low` to `-low`. A suffixed id with a different `--effort` is
+  refused (`--model gemini-3.8-flash-low conflicts with --effort=max`); the
+  same effort is accepted. An effort the model lacks is refused with its list
+  (`gpt-oss-120b has no "high" effort (available: medium)`;
+  `claude-opus-5-5 has no "max" effort (available: low, medium, high)`). No
+  model in this listing offers `xhigh` or `max`. All these refusals cost 0
+  tokens.
+- 🔬 `-p /model --output-format json` returns the current selection for free:
+  `{"id":"gemini-3.8-flash-low","label":"Gemini 3.8 Flash (Low)","effort":"low","is_default":false}`.
+- **Entitlement**: probed at one tier only (the operator's plan). The quota
+  output says the Argon bucket differs by plan (_"For paid Pro plans, Argon
+  quota is separate … Ultra plans"_) and the backend id is
+  `gemini-4-argon-trial`, so the list is plan-scoped; `model` must stay
+  `Option<String>`, omitted when `None`.
+- 🔬 **Price table**: none of the 13 ids, and none of their base names, has a
+  row in `crates/ralphy-pricing/src/floor.rs` at this commit. The price key
+  needs the effort suffix removed (`-low|-medium|-high`) and rows for
+  `gemini-4-argon`, `gemini-3.8-flash`, `claude-opus-5-5`, `claude-sonnet-5-5`
+  and `gpt-oss-120b`.
+
+**C4 answer:** Multi-model, multi-provider: `agy models` (free, deterministic) lists 13 ids — `gemini-4-argon-{low,medium,high}` and `gemini-3.8-flash-{low,medium,high}` (Google), `claude-opus-5-5-{low,medium,high}` and `claude-sonnet-5-5-{low,medium,high}` (Anthropic), `gpt-oss-120b-medium` (OpenAI open-weight) — and the default is `gemini-4-argon-medium`; the id suffix is the effort, `--effort low|medium|high|xhigh|max` selects it from a base id (a base id alone takes the model's default, medium here) and a conflicting pair is refused; an unknown model or effort is refused before any model call with exit 1 and `model <id> is not recognized as a known model or custom model in settings` plus the available list (🔬); the stream names the model only as argv gives it, so the answering model comes from the store (C6); no id is in the price table yet.
 
 ## 5. C5 — Authentication
 
@@ -142,15 +321,117 @@ expected to match WSL. The exit code on Windows is not observed.
 
 ## 6. C6 — Usage and the session store
 
-Filled by Stage 4 or 5.
+Raw log: `docs/spike/live/antigravity-782-store.log`.
 
-**C6 answer:** _Stage 4/5_
+### Where the counts live
+
+| Source | Per what | Fields | Model | Marker |
+| --- | --- | --- | --- | --- |
+| `stream-json` `step_update` (`agent_response`, `DONE`) | one model call | `input_tokens`, `output_tokens`, `thinking_tokens`, `cache_read_tokens`, `total_tokens` | no | 🔬 |
+| `stream-json` / `json` `result.usage` | the whole run | the same five | no | 🔬 |
+| `<root>/brain/<id>/.system_generated/logs/transcript_full.jsonl` (`PLANNER_RESPONSE` lines) | one model call | `input_tokens`, `output_tokens`, `cache_read_tokens` (no thinking) | no | 🔬 |
+| `<root>/conversations/<id>.db` (SQLite), table `gen_metadata`, protobuf `data` | one model call | input, output, cache read, thinking, visible output | backend id (`gemini-3.8-flash-n`) and label (`Gemini 3.8 Flash (Low)`) | 🔬 decoded without a schema |
+| `<root>/conversation_summaries.db` (SQLite) | one conversation | title, preview, step count, workspace, status; no tokens | no | 🔬 |
+
+`<root>` is `~/.gemini/antigravity-cli` (or the `--gemini_dir` root, §11).
+
+- 🔬 **Per-call records are incremental: sum them.** Execute probe: steps
+  8 325 + 8 451 + 8 579 = 25 355 input and 50 + 38 + 73 = 161 output, which is
+  exactly `result.usage` (25 355 / 161); the transcript and the SQLite rows
+  hold the same per-call numbers. Each call's `input_tokens` is that call's
+  own prompt, not a running total. A test for the adapter: three step records
+  and a `result` whose input is their sum; keep-last gives 8 579 and fails.
+- 🔬 **The four counts.** `input_tokens` is the uncached input: in the Argon
+  run, call 2 had 3 315 input and 6 239 cache read, and `result` had
+  `input_tokens` 13 731 with `cache_read_tokens` 14 386, larger than the input.
+  So cache read is separate from input. `output_tokens` **includes thinking**:
+  the SQLite rows split output into thinking + visible (132 + 64 = 196,
+  11 + 66 = 77), and `total_tokens` = input + output (13 731 + 648 = 14 379),
+  with `thinking_tokens` 314 inside the 648. **There is no cache-creation
+  count** in the stream, the transcript or the SQLite rows read.
+- 🔬 **Model attribution:** per call only in the SQLite `gen_metadata` rows
+  (backend id and label; the label maps to an `agy models` id one to one).
+  The stream gives no model when `--model` is omitted (C4).
+- 🔬 **The session id cannot be chosen before the spawn.** `--conversation`
+  with an unknown id (a UUID or `ralphy-run-42`) prints `warning: conversation
+  "…" not found` and starts a new conversation with a CLI-made UUID. But the
+  id is the **first stdout line** (`init.conversation_id`) and is repeated in
+  `result`, so the lookup is a direct key read from the stream, with no
+  snapshot-diff. 🔬 `<root>/cache/last_conversations.json` maps the workspace
+  path to the latest id, and is overwritten by every run.
+- 🔬 **Billing unit is a quota share, not tokens.** `-p /quota --output-format
+  json` says _"Quota is consumed proportionally to the cost of the tokens"_,
+  per group, as a `remaining_fraction` of a 5-hour and a weekly bucket (C7).
+  🔎 `/credits` reports a separate credit balance (`Remaining credits 0`) that
+  is used when the plan quota is spent. Tokens drive `Usage`; the quota share
+  is a separate reading.
+- 🔬 **For `ralphy-usage-scan`**: the store is local and readable. A scan can
+  walk `<root>/brain/*/.system_generated/logs/transcript_full.jsonl` (JSON,
+  no thinking, no model) or open `<root>/conversations/*.db` read-only
+  (protobuf, with model and thinking). A run cut before the model call still
+  leaves a conversation with one `USER_INPUT` step and no usage (14 of 25
+  conversations in the probe root), so the scan must accept a conversation
+  with no usage. Subagent conversations: 🔎 `conversation_parents` exists in
+  `conversation_summaries.db`; no subagent ran here.
+
+**C6 answer:** Usage is per model call and incremental — sum the `stream-json` `step_update` usage, or read `result.usage`, which is that sum (🔬 8 325 + 8 451 + 8 579 = 25 355); `input_tokens` excludes cache reads (`cache_read_tokens` is separate and can exceed it), `output_tokens` includes `thinking_tokens`, `total_tokens` = input + output, and **no cache-creation count exists** anywhere; the same per-call counts are on disk in `~/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl` (no thinking, no model) and in the SQLite `conversations/<id>.db` `gen_metadata` protobuf (with the model's label and backend id, the only per-call model record); the session id cannot be minted (`--conversation <unknown>` warns and starts a new id) but is the first stream line (`init.conversation_id`), so no snapshot-diff is needed; the plan bills a quota share per model group, not tokens.
 
 ## 7. C7 — Limits
 
-Filled by Stage 4 or 5.
+Raw log: `docs/spike/live/antigravity-782-limit.log`.
 
-**C7 answer:** _Stage 4/5_
+**No limit was reached.** The authorized budget was Flash calls, and the
+operator's buckets stayed at 98–100% (a 5-hour bucket would need hours of
+Flash runs). What follows is the free quota read-out (🔬) and the limit signals
+from the binary (🔎).
+
+### 🔬 The quota is readable for free, with reset times
+
+`agy -p /quota` (also `/usage`) answers without a model call (0 tokens, no
+conversation), one tab-separated record per bucket (tabs shown as two spaces):
+
+```text
+Gemini Models  Weekly Limit Remaining  100%  2026-11-19T11:32:40Z
+Gemini Models  Five Hour Limit Remaining  99%  2026-11-12T16:32:40Z
+Claude and GPT models  Weekly Limit Remaining  100%  2026-11-19T12:13:38Z
+Claude and GPT models  Five Hour Limit Remaining  100%  2026-11-12T17:13:38Z
+Gemini 4 Argon  Gemini 4 Argon Weekly Limit  98%  2026-11-19T12:11:52Z
+```
+
+With `--output-format json`, `command.data.groups[].buckets[]` carries `id`
+(`gemini-5h`, `gemini-weekly`, `3p-5h`, `3p-weekly`,
+`gemini-argon-wtu-weekly`), `window` (`5h`, `weekly`), `remaining_fraction`
+and `reset_time` (UTC). Every print run also calls
+`v1internal:retrieveUserQuotaSummary` (CLI log). The weekly buckets of
+`Claude and GPT models` moved their `reset_time` between three reads a few seconds apart
+(12:13:38Z, 12:13:43Z, 12:13:52Z) while unused at 100%, so a reset time of an
+unused bucket means nothing. Under Git Bash, `/quota` must be passed with
+`MSYS_NO_PATHCONV=1`; Ralphy spawns directly and is not affected.
+
+### 🔎 How a limit would surface (agy.exe 1.5.6 strings and changelog)
+
+- A turn that ends on a model API failure exits **3** with an `AGY_ERROR:`
+  JSON line (canonical status, HTTP or gRPC code, `retryable`, error id).
+- The CLI retries per-minute `429` and `5xx` itself, honours the server's
+  retry delay, and **stops at once** when the delay is over 30 s or the quota
+  is a daily or billing cap; "reaching your individual quota is reported right
+  away instead of being retried".
+- Message strings: `You have exhausted your quota on this model.`,
+  `individual quota reached`, `Your AI credits balance is too low to
+  continue`, `MODEL_CAPACITY_EXHAUSTED`, `RESOURCE_EXHAUSTED`,
+  `Too Many Requests`, `Usage limit reached`. A bundled script matches
+  `/RESOURCE_EXHAUSTED|quota|\b429\b|exhausted your capacity|rate.?limit/i`.
+- Credits: a `UseG1Credits` setting spends G1 credits when the plan quota runs
+  out (the operator has 0). No spend-cap flag exists in `agy --help`.
+
+For the adapter: match a limit class over the `AGY_ERROR` text and stderr
+(`RESOURCE_EXHAUSTED | quota | 429 | rate.?limit | exhausted | credits balance
+is too low`); for the reset, read `-p /quota --output-format json` after the
+failure and take the `reset_time` of the exhausted bucket (the one with
+`remaining_fraction` 0 in the model's group). If no bucket is at 0, emit
+`Limit(None)`.
+
+**C7 answer:** Not observed — no limit was reached at the authorized cost (Flash only; buckets stayed at 98–100%); 🔎 a limit is expected as exit 3 with a structured `AGY_ERROR:` stderr line (status, HTTP/gRPC code, `retryable`) and strings such as `You have exhausted your quota on this model.`, `individual quota reached`, `RESOURCE_EXHAUSTED`, `Your AI credits balance is too low to continue`, with per-minute 429s retried inside the CLI and daily or billing caps reported at once; 🔬 a schedulable reset hint is available for free from `agy -p /quota --output-format json` (per-group 5-hour and weekly buckets with `remaining_fraction` and UTC `reset_time`); no spend-cap flag exists.
 
 ## 8. C8 — Skills and prompts
 
@@ -311,7 +592,7 @@ strings); `agy --version` does not spawn it.
 
 ## Hooks and integrations
 
-Filled by Stage 4.
+Filled by Stage 5.
 
 ## Feature parity
 
@@ -322,20 +603,20 @@ from #782; the answer column is filled by Stages 4 and 5.
 
 | # | Tier | Feature | What `agy` must prove | Answer |
 | --- | --- | --- | --- | --- |
-| 1 | A | Tokens per call: input, output, cache read, cache creation (ADR-0008) | The four counts are separate. Per-call records are cumulative or incremental, with a test that fails the wrong choice | |
-| 2 | A | Priced usage (ADR-0034) | Every id is in the price table, with its provider | |
-| 3 | A | Model per turn, `Usage::fold_usage` | Which model answered each turn | |
-| 4 | A | Model recovery (ADR-0053) | The model can be read back from the store | |
-| 5 | A | Usage scan and interactive usage (ADR-0033) | A read-only scan of the store that never errors on a missing store. If there are no local counts, the gap is stated and no number is invented | |
-| 6 | A | Auth preflight (ADR-0013) | The login command, and the exit code and stderr marker when logged out | |
-| 7 | A | Limits and synthetic reset (ADR-0003, ADR-0030) | How a limit shows up, and a reset hint or `Limit(None)` | |
-| 8 | A | Outcome classifier signals (ADR-0023) | Which `CompletionSignals` each stream fact fills | |
-| 9 | A | Budgets: per issue, idle, run deadline (ADR-0038) | Whether `--print-timeout` helps, and whether the output stops when the agent hangs | |
-| 10 | A | Effort ladder (ADR-0044) | The map from `low`..`max` to `--effort` and the id suffix | |
-| 11 | A | The five roles and the four one-shots | `plan`, `execute`, `diagnose_repo`, `draft_issues`, `triage_issues`, `consolidate_knowledge` | |
+| 1 | A | Tokens per call: input, output, cache read, cache creation (ADR-0008) | The four counts are separate. Per-call records are cumulative or incremental, with a test that fails the wrong choice | 🔬 Separate: `input_tokens` (uncached), `output_tokens` (thinking included), `cache_read_tokens`, `thinking_tokens`; no cache-creation count exists. Per-call records are incremental (sum = `result.usage`: 8 325 + 8 451 + 8 579 = 25 355), so a keep-last parser fails the test (C6) |
+| 2 | A | Priced usage (ADR-0034) | Every id is in the price table, with its provider | 🔬 No: none of the 13 ids (Google, Anthropic, OpenAI) nor their base names has a row in `crates/ralphy-pricing/src/floor.rs`; the key needs the effort suffix removed (C4) |
+| 3 | A | Model per turn, `Usage::fold_usage` | Which model answered each turn | 🔬 Not in the stream (`init.model` only echoes `--model`); per call in the SQLite `gen_metadata` row (label and backend id). One model per run was observed (C4, C6) |
+| 4 | A | Model recovery (ADR-0053) | The model can be read back from the store | 🔬 Yes, from `conversations/<id>.db` `gen_metadata` (label `Gemini 3.8 Flash (Low)` maps to the `agy models` id); the transcript JSONL has no model (C6) |
+| 5 | A | Usage scan and interactive usage (ADR-0033) | A read-only scan of the store that never errors on a missing store. If there are no local counts, the gap is stated and no number is invented | 🔬 A read-only scan is possible: `brain/*/.system_generated/logs/transcript_full.jsonl` (input, output, cache read) or `conversations/*.db` (also model and thinking); conversations with no usage exist and must be skipped; no cache-creation count to report (C6) |
+| 6 | A | Auth preflight (ADR-0013) | The login command, and the exit code and stderr marker when logged out | 🔬 Login is `agy` with no arguments; logged out (WSL) exits 1 with `Authentication required. Please visit the URL to log in:` after a fixed 60 s wait; Windows exit code not observed (C5) |
+| 7 | A | Limits and synthetic reset (ADR-0003, ADR-0030) | How a limit shows up, and a reset hint or `Limit(None)` | 🔎 Not observed: expected exit 3 with an `AGY_ERROR:` line and quota strings (`RESOURCE_EXHAUSTED`, `You have exhausted your quota on this model.`); 🔬 reset hint from `agy -p /quota --output-format json` (`reset_time` per bucket), else `Limit(None)` (C7) |
+| 8 | A | Outcome classifier signals (ADR-0023) | Which `CompletionSignals` each stream fact fills | 🔬 `done`/`blocked`: sentinel in `result.response`; `timed_out`: `finished_reason:"print_timeout"`; `exited_ok`: exit 0 and `status:"SUCCESS"` and no `finished_reason`; `errored`: `status:"ERROR"`, `AGY_ERROR`, or `denied_actions`; `limit`: C7 (C3) |
+| 9 | A | Budgets: per issue, idle, run deadline (ADR-0038) | Whether `--print-timeout` helps, and whether the output stops when the agent hangs | 🔬 `--print-timeout 30s` ended a hung turn at 33 s with exit 3, `finished_reason:"print_timeout"`, and killed its background task; stdout is silent while the agent waits on a background command (25 s here), so an idle budget must allow it (C3) |
+| 10 | A | Effort ladder (ADR-0044) | The map from `low`..`max` to `--effort` and the id suffix | 🔬 `--effort` (`low`, `medium`, `high`, `xhigh`, `max`) = the id suffix; a base id plus `--effort` selects the variant, a base id alone takes the model's default (medium); a conflicting pair or a missing level is refused with exit 1; no listed model has `xhigh` or `max`, `gpt-oss-120b` has `medium` only (C4) |
+| 11 | A | The five roles and the four one-shots | `plan`, `execute`, `diagnose_repo`, `draft_issues`, `triage_issues`, `consolidate_knowledge` | 🔬 `plan` ran with `--mode plan` (read-only plan, no file changed) and `execute` with `--dangerously-skip-permissions` (wrote a file, ran a command); the four one-shots use the same stdin + `stream-json` path and were not run one by one |
 | 12 | A | Overlay slots and plan charters | `overlay.antigravity.md`, including the `stagedplan` charter | |
-| 13 | A | Run artifacts under `.ralphy/` | Whether the agent can read gitignored files. Gemini could not (the inlining in `crates/ralphy-agent-gemini/src/context.rs`) | |
-| 14 | A | Images (ADR-0025) | Whether headless mode accepts an attachment | |
+| 13 | A | Run artifacts under `.ralphy/` | Whether the agent can read gitignored files. Gemini could not (the inlining in `crates/ralphy-agent-gemini/src/context.rs`) | 🔬 Yes: with `.ralphy/` in `.gitignore`, `read_file` read `.ralphy/note.md` and the reply quoted its marker; no inlining is needed |
+| 14 | A | Images (ADR-0025) | Whether headless mode accepts an attachment | 🔬 No attachment channel headless: the NDJSON input refuses an `image` block (`only "text"`, exit 1); but the agent read a PNG by path with `read_file` and named its color, so an image saved in the repo (for example under `.ralphy/`) and named in the prompt works |
 | 15 | A | Autonomy revocation | Whether an administrator or a policy can silently turn off auto-approve, as detected in `crates/ralphy-agent-gemini/src/revocation.rs` | |
 | 16 | A | Wiring of ADR-0040: five tiers, three agent enums, `config.rs`, the daemon roster and keyboard digit | `ralphy config set` works for every axis | |
 | 17 | B | Agent state by hooks (ADR-0059) | The hook events of section 2 | |
