@@ -1,6 +1,7 @@
 allow-unwrap-in-tests = true
 allow-dbg-in-tests = true
 allow-panic-in-tests = true
+allow-print-in-tests = true
 # The default is 7. A function with more than 5 arguments groups them in a
 # struct, or carries `#[expect(clippy::too_many_arguments, reason = "...")]`.
 too-many-arguments-threshold = 5

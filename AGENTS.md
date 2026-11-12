@@ -282,6 +282,9 @@ The lint rules, their debt and the plan that turns the rest on are in
     enters: `apiFetch` and `socketFrame` in `wb-api.ts` for the workbench;
   - `exit` becomes a return from `main`; the environment is not written while
     threads run;
+  - a print: output goes through `crates/ralphy-cli/src/output.rs`
+    (`out!`, `outln!`, `eoutln!`); a binary crate's root carries the one
+    expect;
   - a function that is too complex is a god function, and a file that is too
     long a god file: split each by the responsibilities it already carries,
     or rewrite the function with guard clauses or a table of cases;

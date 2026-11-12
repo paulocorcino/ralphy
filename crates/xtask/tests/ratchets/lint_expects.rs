@@ -1,7 +1,7 @@
 //! The `#[expect]` ratchet of the lint gate (#889): each lint that a phase
 //! turned into an error keeps an exact count of the `#[expect(clippy::<lint>`
 //! exceptions under `crates/`, so a new exception is a reviewed change of a
-//! constant here. Phases 4 and 7 add their lints to the table.
+//! constant here. Phases 4 and 7 added their lints to the table.
 
 use super::*;
 
@@ -13,7 +13,10 @@ const EXPECTS: &[(&str, usize)] = &[
     ("cast_possible_wrap", 0),
     ("cast_precision_loss", 7),
     ("cast_sign_loss", 2),
+    ("exit", 3),
     ("panic", 0),
+    ("print_stderr", 8),
+    ("print_stdout", 8),
     ("string_slice", 0),
     ("too_many_arguments", 43),
     ("undocumented_unsafe_blocks", 0),
