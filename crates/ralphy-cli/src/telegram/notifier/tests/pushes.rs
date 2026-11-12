@@ -3,13 +3,13 @@ use super::*;
 #[test]
 fn worker_pushes_on_sleep_enter_and_resume() {
     let transport = RecordingTransport::new();
-    let calls = transport.calls.clone();
+    let calls = Arc::clone(&transport.calls);
     let client = BotClient::new(transport);
     let queue = Arc::new(EventQueue::new());
     let shutdown = Arc::new(AtomicBool::new(false));
 
-    let worker_queue = queue.clone();
-    let worker_shutdown = shutdown.clone();
+    let worker_queue = Arc::clone(&queue);
+    let worker_shutdown = Arc::clone(&shutdown);
     let state = RunState::new("title", 1);
     let handle =
         std::thread::spawn(move || drive_worker(client, 7, state, &worker_queue, &worker_shutdown));
@@ -59,7 +59,7 @@ fn worker_fires_notice_and_delete_when_sleep_events_co_batch() {
     // nets to `sleep = None`; per-event edge detection must still fire the
     // sleep-in notice AND its delete (a batch-to-batch compare would swallow both).
     let transport = RecordingTransport::new();
-    let calls = transport.calls.clone();
+    let calls = Arc::clone(&transport.calls);
     let client = BotClient::new(transport);
     let queue = Arc::new(EventQueue::new());
     // Inline run: shutdown already set, so the first drain takes both events.
@@ -92,13 +92,13 @@ fn worker_pushes_on_api_degraded_and_recover_edges() {
     // The matched-pair edge (issue #149): one buzz on the false→true degraded
     // edge, one on the true→false recover edge — mirrors the sleep-edge test.
     let transport = RecordingTransport::new();
-    let calls = transport.calls.clone();
+    let calls = Arc::clone(&transport.calls);
     let client = BotClient::new(transport);
     let queue = Arc::new(EventQueue::new());
     let shutdown = Arc::new(AtomicBool::new(false));
 
-    let worker_queue = queue.clone();
-    let worker_shutdown = shutdown.clone();
+    let worker_queue = Arc::clone(&queue);
+    let worker_shutdown = Arc::clone(&shutdown);
     let state = RunState::new("title", 1);
     let handle =
         std::thread::spawn(move || drive_worker(client, 7, state, &worker_queue, &worker_shutdown));
@@ -148,13 +148,13 @@ fn worker_reap_after_degraded_never_claims_recovery() {
     // "API recovered, resuming" about a child Ralphy had just killed for going
     // silent. The reap must speak for itself and suppress that edge.
     let transport = RecordingTransport::new();
-    let calls = transport.calls.clone();
+    let calls = Arc::clone(&transport.calls);
     let client = BotClient::new(transport);
     let queue = Arc::new(EventQueue::new());
     let shutdown = Arc::new(AtomicBool::new(false));
 
-    let worker_queue = queue.clone();
-    let worker_shutdown = shutdown.clone();
+    let worker_queue = Arc::clone(&queue);
+    let worker_shutdown = Arc::clone(&shutdown);
     let state = RunState::new("title", 1);
     let handle =
         std::thread::spawn(move || drive_worker(client, 7, state, &worker_queue, &worker_shutdown));
@@ -198,7 +198,7 @@ fn worker_lone_api_recover_pushes_nothing() {
     // A lone `ApiRecovered` with no prior degraded folded is a no-op: matched
     // pairs only (`prev_degraded` starts false), so no recover buzz fires.
     let transport = RecordingTransport::new();
-    let calls = transport.calls.clone();
+    let calls = Arc::clone(&transport.calls);
     let client = BotClient::new(transport);
     let queue = Arc::new(EventQueue::new());
     let shutdown = Arc::new(AtomicBool::new(true)); // run inline: drain then finish.
@@ -222,13 +222,13 @@ fn worker_lone_api_recover_pushes_nothing() {
 #[test]
 fn worker_pushes_on_a_waiting_agent_state_only() {
     let transport = RecordingTransport::new();
-    let calls = transport.calls.clone();
+    let calls = Arc::clone(&transport.calls);
     let client = BotClient::new(transport);
     let queue = Arc::new(EventQueue::new());
     let shutdown = Arc::new(AtomicBool::new(false));
 
-    let worker_queue = queue.clone();
-    let worker_shutdown = shutdown.clone();
+    let worker_queue = Arc::clone(&queue);
+    let worker_shutdown = Arc::clone(&shutdown);
     let state = RunState::new("title", 1);
     let handle =
         std::thread::spawn(move || drive_worker(client, 7, state, &worker_queue, &worker_shutdown));

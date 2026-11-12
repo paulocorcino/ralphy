@@ -30,11 +30,11 @@ fn envelopes_delivered_by(f: impl FnOnce(Option<events::sink::EventsHandle>)) ->
             emitter: serde_json::json!({ "version": "0.0.0", "pid": 4242 }),
             git: serde_json::json!({ "repository": "o/r", "branch": "main" }),
         },
-        queue.clone(),
+        Arc::clone(&queue),
         std::env::temp_dir().join("ralphy-nonexistent-plan.md"),
     );
     let subscriber =
-        tracing_subscriber::registry().with(events::sink::new_events_layer(queue.clone()));
+        tracing_subscriber::registry().with(events::sink::new_events_layer(Arc::clone(&queue)));
     tracing::subscriber::with_default(subscriber, || f(handle));
     let out = recorded
         .lock()

@@ -162,8 +162,8 @@ fn ui_sources(root: &Path) -> Vec<(String, String)> {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            p.is_file()
-                && (name.ends_with(".js") || (name.ends_with(".ts") && !name.ends_with(".d.ts")))
+            let ext = p.extension().and_then(|e| e.to_str());
+            p.is_file() && (ext == Some("js") || (ext == Some("ts") && !name.ends_with(".d.ts")))
         })
         .collect();
     files.sort();

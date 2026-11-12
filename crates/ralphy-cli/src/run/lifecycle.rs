@@ -89,8 +89,12 @@ pub(super) fn start_delivery(
             let state = runstate::RunState::new(title.to_owned(), queue_len);
             let client =
                 telegram::client::BotClient::new(telegram::client::UreqTransport::new(token));
-            notifier =
-                telegram::notifier::try_start_notifier(client, chat_id, state, event_queue.clone());
+            notifier = telegram::notifier::try_start_notifier(
+                client,
+                chat_id,
+                state,
+                Arc::clone(event_queue),
+            );
         }
     }
 
@@ -108,7 +112,8 @@ pub(super) fn start_delivery(
         };
         let transport =
             events::client::UreqEventTransport::new(url.clone(), obs.events_token.clone());
-        events_handle = events::sink::try_start_sink(transport, ctx, queue.clone(), ws.plan_path());
+        events_handle =
+            events::sink::try_start_sink(transport, ctx, Arc::clone(queue), ws.plan_path());
     }
 
     // The snapshot publisher (ADR-0047 §2). `None` on the `--if-idle` deferral: it
@@ -119,7 +124,7 @@ pub(super) fn start_delivery(
             ctx,
             runstate::RunState::new(title.to_owned(), queue_len),
             repo_root.to_path_buf(),
-            obs.snapshot_queue.clone(),
+            Arc::clone(&obs.snapshot_queue),
             ws.plan_path(),
         )
     });
@@ -181,7 +186,7 @@ pub(super) fn install_observability(
     let event_queue = notify.then(|| Arc::new(telegram::notifier::EventQueue::new()));
     let notifier_layer = event_queue
         .as_ref()
-        .map(|q| telegram::notifier::new_notifier_layer(q.clone()));
+        .map(|q| telegram::notifier::new_notifier_layer(Arc::clone(q)));
 
     // The CloudEvents sink (ADR-0019): active only when this repo has an
     // `events.url` in the global store (`~/.ralphy/events.toml`) — an absent entry
@@ -208,13 +213,13 @@ pub(super) fn install_observability(
     let event_sink_queue = events_url.as_ref().map(|_| events::sink::new_queue());
     let events_layer = event_sink_queue
         .as_ref()
-        .map(|q| events::sink::new_events_layer(q.clone()));
+        .map(|q| events::sink::new_events_layer(Arc::clone(q)));
 
     // The run-snapshot ring + Layer (ADR-0047 §1/§2): installed unconditionally, so
     // the panel sees every run — including one typed by hand in a terminal.
     let snapshot_queue = Arc::new(telegram::notifier::EventQueue::new());
     let snapshot_layer =
-        crate::delivery::DeliveryLayer::new(snapshot_queue.clone(), "run::snapshot");
+        crate::delivery::DeliveryLayer::new(Arc::clone(&snapshot_queue), "run::snapshot");
 
     let presenter = init_tracing(
         log_file,

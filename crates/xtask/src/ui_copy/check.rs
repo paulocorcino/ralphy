@@ -59,7 +59,8 @@ impl CopyCall {
 
 #[derive(Deserialize, Debug)]
 struct Term {
-    term: String,
+    #[serde(rename = "term")]
+    word: String,
     #[serde(rename = "use")]
     instead: String,
     #[serde(default)]
@@ -231,8 +232,8 @@ fn casing_violations(row: &Row, text: &str, rules: &Rules) -> Vec<(String, Strin
 fn term_violations(rule: &str, terms: &[Term], text: &str) -> Vec<(String, String)> {
     terms
         .iter()
-        .filter(|t| has_term(text, &t.term, t.whole_word, t.case_sensitive))
-        .map(|t| (format!("{rule}:{}", t.term), format!("use {}", t.instead)))
+        .filter(|t| has_term(text, &t.word, t.whole_word, t.case_sensitive))
+        .map(|t| (format!("{rule}:{}", t.word), format!("use {}", t.instead)))
         .collect()
 }
 
@@ -413,7 +414,7 @@ fn longest_sentence(text: &str) -> Option<usize> {
     longest.max(Some(count)).filter(|&n| n > 0)
 }
 
-pub(crate) fn to_text(report: &Report) -> String {
+pub(crate) fn to_text(report: &Report<'_>) -> String {
     let mut out = String::new();
     out.push_str("ui-copy --check: the ADR-0065 rules over the inventory\n\n");
     for v in &report.violations {

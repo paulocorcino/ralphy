@@ -146,7 +146,7 @@ pub(crate) fn unpack(bytes: &[u8], name: &str, dir: &Path) -> Result<PathBuf> {
 /// here depends on that: the binary is found by name at any depth.
 pub(crate) fn unpack_binary(bytes: &[u8], name: &str, dir: &Path, binary: &str) -> Result<PathBuf> {
     std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-    if name.ends_with(".zip") {
+    if Path::new(name).extension().is_some_and(|e| e == "zip") {
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
             .with_context(|| format!("opening {name}"))?;
         archive

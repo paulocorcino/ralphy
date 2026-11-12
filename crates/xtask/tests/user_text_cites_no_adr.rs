@@ -144,7 +144,10 @@ fn collect_rs(dir: &Path, out: &mut Vec<PathBuf>) {
             if !skipped {
                 collect_rs(&path, out);
             }
-        } else if name.ends_with(".rs") && name != "tests.rs" && !name.ends_with("_test_child.rs") {
+        } else if path.extension().is_some_and(|e| e == "rs")
+            && name != "tests.rs"
+            && !name.ends_with("_test_child.rs")
+        {
             out.push(path);
         }
     }

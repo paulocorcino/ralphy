@@ -174,9 +174,10 @@ fn sources(ui: &Path) -> Result<Vec<String>> {
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
-        let wanted = name.ends_with(".html")
+        let ext = Path::new(&name).extension().and_then(|e| e.to_str());
+        let wanted = ext == Some("html")
             || name == "app.ts"
-            || (name.starts_with("wb-") && (name.ends_with(".js") || name.ends_with(".ts")));
+            || (name.starts_with("wb-") && matches!(ext, Some("js" | "ts")));
         if wanted {
             names.push(name);
         }
@@ -185,7 +186,7 @@ fn sources(ui: &Path) -> Result<Vec<String>> {
     Ok(names)
 }
 
-fn inventory(ui: &Path, pins: &[Pin], fns: CopyFns) -> Result<Vec<Row>> {
+fn inventory(ui: &Path, pins: &[Pin], fns: CopyFns<'_>) -> Result<Vec<Row>> {
     let mut rows = Vec::new();
     for name in sources(ui)? {
         let path = ui.join(&name);
@@ -197,9 +198,9 @@ fn inventory(ui: &Path, pins: &[Pin], fns: CopyFns) -> Result<Vec<Row>> {
 }
 
 /// Every row of one source file, in line order.
-fn rows_of(name: &str, src: &str, pins: &[Pin], fns: CopyFns) -> Vec<Row> {
+fn rows_of(name: &str, src: &str, pins: &[Pin], fns: CopyFns<'_>) -> Vec<Row> {
     let mut found = Vec::new();
-    if name.ends_with(".html") {
+    if Path::new(name).extension().is_some_and(|e| e == "html") {
         html::scan(src, fns, &mut found);
     } else {
         js::scan(src, 1, fns, &mut found);

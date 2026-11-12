@@ -27,7 +27,7 @@ pub(super) fn rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {
             if !matches!(name, "target" | "node_modules") && !name.starts_with('.') {
                 rust_sources(&path, out);
             }
-        } else if name.ends_with(".rs") {
+        } else if path.extension().is_some_and(|e| e == "rs") {
             out.push(path);
         }
     }

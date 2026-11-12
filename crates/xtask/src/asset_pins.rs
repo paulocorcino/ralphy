@@ -201,7 +201,7 @@ fn test_files_under(root: &Path, dir: &str) -> Result<Vec<String>> {
         let rel = format!("{dir}/{name}");
         if root.join(&rel).is_dir() {
             found.extend(test_files_under(root, &rel)?);
-        } else if name.ends_with(".rs") {
+        } else if Path::new(&name).extension().is_some_and(|e| e == "rs") {
             found.push(rel);
         }
     }

@@ -13,7 +13,7 @@ fn config_keys_round_trip_through_set_and_unset() {
     // (key, value, read the stored value as Debug text, the Debug text once
     // set, a refused value and the words of its refusal)
     type Row<'a> = (&'a str, &'a str, Read, &'a str, Option<(&'a str, &'a str)>);
-    let rows: [Row; 7] = [
+    let rows: [Row<'_>; 7] = [
         (
             "remote_control",
             "true",

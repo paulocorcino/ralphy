@@ -31,7 +31,7 @@ struct Attr {
     line: usize,
 }
 
-pub(super) fn scan(src: &str, fns: CopyFns, out: &mut Vec<Found>) {
+pub(super) fn scan(src: &str, fns: CopyFns<'_>, out: &mut Vec<Found>) {
     let cs: Vec<char> = src.chars().collect();
     let mut line = 1;
     let mut i = 0;
@@ -98,7 +98,7 @@ fn open_element(
     stack: &mut Vec<(String, Option<String>)>,
     out: &mut Vec<Found>,
     carry: bool,
-    fns: CopyFns,
+    fns: CopyFns<'_>,
 ) -> (usize, bool) {
     let (name, attrs, self_closing, end) = read_tag(cs, i + 1, line);
     let continues = continues_sentence(&name, &attrs, carry, false);
@@ -211,7 +211,7 @@ fn raw_text_body(
     name: &str,
     attrs: &[Attr],
     line: &mut usize,
-    fns: CopyFns,
+    fns: CopyFns<'_>,
     out: &mut Vec<Found>,
 ) -> usize {
     let close = format!("</{name}");

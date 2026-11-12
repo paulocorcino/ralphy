@@ -239,7 +239,7 @@ pub(crate) fn draft_with_agent(
     chosen: ChosenAgent<'_>,
     repo: &Path,
     out_path: &Path,
-    req: &DraftRequest,
+    req: &DraftRequest<'_>,
     timeout: Duration,
 ) -> Result<IssuesDraft> {
     let ChosenAgent { agent, model } = chosen;

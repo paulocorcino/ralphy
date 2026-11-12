@@ -110,9 +110,9 @@ impl Drop for SinkGuard {
 pub(crate) fn capture_events<T>(f: impl FnOnce() -> T) -> (T, Vec<Captured>) {
     install();
     let sink: Sink = Arc::new(Mutex::new(Vec::new()));
-    let _guard = SinkGuard(SINK.with(|s| s.borrow_mut().replace(sink.clone())));
+    let guard = SinkGuard(SINK.with(|s| s.borrow_mut().replace(Arc::clone(&sink))));
     let out = f();
-    drop(_guard);
+    drop(guard);
     let events = std::mem::take(&mut *sink.lock().unwrap());
     (out, events)
 }

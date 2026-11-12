@@ -127,7 +127,7 @@ fn check_agents_present_gates_executor_and_planner() {
     type Locate = fn(CliAgent) -> bool;
     // (case, executor, planner, locator, words of the refusal; `None` is Ok)
     type Row<'a> = (&'a str, CliAgent, CliAgent, Locate, Option<&'a [&'a str]>);
-    let rows: [Row; 3] = [
+    let rows: [Row<'_>; 3] = [
         (
             "executor absent",
             CliAgent::Claude,
@@ -361,9 +361,13 @@ fn build_agent_builds_every_agent_the_cli_accepts() {
                 plan: None,
                 exec: None,
             },
-            &resolve_copilot(None, None, &Default::default()),
-            &resolve_cursor(None, None, &Default::default()),
-            &resolve_gemini(None, None, &Default::default()),
+            &resolve_copilot(
+                None,
+                None,
+                &ralphy_agent_copilot::CopilotSettings::default(),
+            ),
+            &resolve_cursor(None, None, &ralphy_agent_cursor::CursorSettings::default()),
+            &resolve_gemini(None, None, &ralphy_agent_gemini::GeminiSettings::default()),
             Some(0),
         );
         assert_eq!(built.name(), name, "--agent {name} built another adapter");
@@ -399,7 +403,7 @@ fn gemini_models_resolve_flag_then_persisted_then_none() {
     assert_eq!(r.exec_model.as_deref(), Some("gemini-3.5-flash"));
 
     // Neither set: `None`, which omits `-m` and lets the vendor route.
-    let r = resolve_gemini(None, None, &Default::default());
+    let r = resolve_gemini(None, None, &ralphy_agent_gemini::GeminiSettings::default());
     assert_eq!(r.plan_model, None);
     assert_eq!(r.exec_model, None);
 }
@@ -417,8 +421,8 @@ fn strip_secret_tokens_from_env_removes_both() {
 
 fn run_args(extra: &[&str]) -> RunArgs {
     use clap::Parser;
-    let argv = ["ralphy", "run"].into_iter().chain(extra.iter().copied());
-    let cli = crate::cli::Cli::try_parse_from(argv).expect("the run arguments parse");
+    let words = ["ralphy", "run"].into_iter().chain(extra.iter().copied());
+    let cli = crate::cli::Cli::try_parse_from(words).expect("the run arguments parse");
     let crate::cli::Command::Run(args) = cli.command else {
         panic!("not a run command");
     };

@@ -262,8 +262,8 @@ pub(crate) fn spawn_worker<E: DeliveryEngine + Send + 'static>(
     detach_warn: fn(),
 ) -> Option<WorkerHandle> {
     let shutdown = Arc::new(AtomicBool::new(false));
-    let worker_queue = queue.clone();
-    let worker_shutdown = shutdown.clone();
+    let worker_queue = Arc::clone(&queue);
+    let worker_shutdown = Arc::clone(&shutdown);
     let join = std::thread::Builder::new()
         .name(name.into())
         .spawn(move || run_delivery_worker(engine, &worker_queue, &worker_shutdown))
@@ -363,11 +363,11 @@ mod tests {
             });
         }
         let engine = FakeEngine {
-            log: log.clone(),
+            log: Arc::clone(&log),
             start_sleep: Duration::ZERO,
         };
         let handle =
-            spawn_worker("test-worker", engine, queue.clone(), || {}).expect("spawn worker");
+            spawn_worker("test-worker", engine, Arc::clone(&queue), || {}).expect("spawn worker");
         handle.shutdown_within(Duration::from_secs(5));
 
         let log = log.lock().unwrap();

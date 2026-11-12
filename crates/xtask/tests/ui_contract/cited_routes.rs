@@ -172,7 +172,7 @@ fn served_routes(files: &[(String, PathBuf)]) -> BTreeSet<String> {
     let route = Regex::new(r#"\.route\(\s*"([^"]+)""#).expect("a valid regex");
     files
         .iter()
-        .filter(|(rel, _)| rel.ends_with(".rs"))
+        .filter(|(_, path)| path.extension().is_some_and(|e| e == "rs"))
         .flat_map(|(_, path)| {
             let text = read(path);
             route
