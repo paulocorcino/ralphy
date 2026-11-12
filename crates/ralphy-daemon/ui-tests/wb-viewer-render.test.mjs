@@ -39,6 +39,7 @@ test("a mermaid file is one diagram holder with the whole file as its source", (
   const doc = { createElement: (tag) => ({ tag, className: "", id: "", dataset: {} }) };
   const source = "flowchart TD\n  A[Start] --> B[Finish]\n";
   const pending = renderBody({ kind: "mermaid", content: source, uid: 7 }, article, doc);
+  // oxlint-disable-next-line no-restricted-properties -- reads a fake element; the rule is for writes
   assert.equal(article.innerHTML, "");
   assert.equal(appended.length, 1);
   assert.deepEqual(pending, appended);

@@ -430,6 +430,7 @@ test("an inline mermaid code element stays as code; a fenced one becomes a diagr
     delete globalThis.DOMPurify;
   }
   assert.ok(paneOf(mount, "m"), "the markdown pane is mounted");
+  // oxlint-disable-next-line no-restricted-properties -- reads a fake element; the rule is for writes
   assert.equal(article.innerHTML, html);
   assert.equal(replaced.length, 1);
   assert.equal(replaced[0].className, "mermaid");

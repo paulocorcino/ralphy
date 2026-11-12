@@ -9,6 +9,7 @@
    container measures 0.
    --------------------------------------------------------------------------- */
 
+import { setMarkup, setSanitizedHtml } from "./wb-html.ts";
 import { filterDbml, renderDbmlGrid } from "./wb-dbml-view.ts";
 
 /** The file kinds the markdown pane shows as a rendered body. */
@@ -65,7 +66,7 @@ export function prepareFind(kind: string, article: Element, term: string): void 
 }
 
 function markdownBody(article: Element, content: string, uid: number, doc: Document) {
-  article.innerHTML = DOMPurify.sanitize(marked.parse(content));
+  setSanitizedHtml(article, marked.parse(content));
 
   // mermaid fences: marked emits <pre><code class="language-mermaid">. Defer
   // the actual draw to first paint (a hidden container measures as 0). An
@@ -87,7 +88,7 @@ function markdownBody(article: Element, content: string, uid: number, doc: Docum
 
 // A `.mmd` file is one diagram: the whole text is its source.
 function diagramBody(article: Element, content: string, uid: number, doc: Document) {
-  article.innerHTML = "";
+  setMarkup(article, "");
   const holder = doc.createElement("div");
   holder.className = "mermaid";
   holder.id = `mmd-${uid}-0`;

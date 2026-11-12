@@ -2,6 +2,7 @@
 // until the operator shows it (ADR-0064 §8 as amended). `createNotes` builds it
 // with the editor's names as typed deps; the text of each function is the one
 // it had in `wb-notes.ts`.
+import { setMarkup } from "./wb-html.ts";
 import { veiledOf, withVeil } from "./wb-notes-folds.ts";
 import type { NoteCard, NoteSource } from "./wb-types.d.ts";
 
@@ -49,7 +50,7 @@ export function createNoteVeil(deps: NoteVeilDeps) {
     const p = document.createElement("p");
     p.className = "note-veiled";
     p.title = "This note is hidden. Click the eye button to show it.";
-    p.innerHTML = '<i class="bi bi-eye-slash"></i>';
+    setMarkup(p, '<i class="bi bi-eye-slash"></i>');
     return p;
   }
 
@@ -63,7 +64,7 @@ export function createNoteVeil(deps: NoteVeilDeps) {
     const marked = veiledOf(el._noteMarkdown);
     const shown = marked && el._noteRevealed;
     const hides = !marked || shown;
-    btn.innerHTML = hides ? '<i class="bi bi-eye-slash"></i>' : '<i class="bi bi-eye"></i>';
+    setMarkup(btn, hides ? '<i class="bi bi-eye-slash"></i>' : '<i class="bi bi-eye"></i>');
     btn.title = marked ? markedTitle(shown) : "Hide this note";
     el.classList.toggle("veiled", veiledNow(el));
   }

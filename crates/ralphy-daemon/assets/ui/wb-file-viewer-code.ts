@@ -1,5 +1,6 @@
 // The source-code pane: its tab, the Monaco editor in it, the Save key and the
 // pane-width rule that trims the editor's gutter.
+import { setMarkup } from "./wb-html.ts";
 import { WBMonaco } from "./wb-monaco.ts";
 import { need, required } from "./wb-dom-need.ts";
 import { encodingBtnHtml } from "./wb-viewer-encoding.ts";
@@ -156,7 +157,9 @@ export function createViewerCode(deps: ViewerCodeDeps) {
     el.className = "viewer code-viewer";
     el.dataset["tabId"] = rec.id;
     el.style.display = "none";
-    el.innerHTML = `
+    setMarkup(
+      el,
+      `
       <div class="viewer-toolbar">
         <span class="viewer-path"></span>
         <span class="spacer"></span>
@@ -175,7 +178,8 @@ export function createViewerCode(deps: ViewerCodeDeps) {
           ><i class="bi bi-save"></i><span class="vbtn-label">Save</span></button>
         ${detachBtnHtml(rec)}
       </div>
-      <div class="viewer-body"></div>`;
+      <div class="viewer-body"></div>`,
+    );
     setPathLabel(el, rec);
     required(viewers, "the element that holds the panes").append(el);
     wireEncodingMenu(rec, el);

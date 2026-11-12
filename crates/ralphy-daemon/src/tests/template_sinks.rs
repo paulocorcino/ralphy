@@ -2,12 +2,14 @@
 
 use super::*;
 
-/// The `innerHTML` writes of `src` that take a template string with a value
-/// in it, or a bare variable: each is a sink that would parse a file name as
-/// markup.
+/// The `innerHTML` writes of `src`, direct or through `setMarkup`, that take a
+/// template string with a value in it, or a bare variable: each is a sink that
+/// would parse a file name as markup.
 fn template_html_sinks(src: &str) -> Vec<String> {
-    let template = regex::Regex::new(r"innerHTML\s*=\s*`[^`]*\$\{").expect("valid regex");
-    let variable = regex::Regex::new(r"innerHTML\s*=\s*[A-Za-z_$][\w$]*\s*;").expect("valid regex");
+    let sink = r"(?:innerHTML\s*=|setMarkup\([^,()]+,)\s*";
+    let template = regex::Regex::new(&format!(r"{sink}`[^`]*\$\{{")).expect("valid regex");
+    let variable =
+        regex::Regex::new(&format!(r"{sink}[A-Za-z_$][\w$]*\s*[;)]")).expect("valid regex");
     template
         .find_iter(src)
         .chain(variable.find_iter(src))
@@ -27,6 +29,12 @@ fn no_menu_or_key_sink_takes_a_template_string() {
         1
     );
     assert_eq!(template_html_sinks("b.innerHTML = text;").len(), 1);
+    assert_eq!(template_html_sinks("setMarkup(b, `<i>${x}</i>`);").len(), 1);
+    assert_eq!(template_html_sinks("setMarkup(b, text);").len(), 1);
+    assert_eq!(
+        template_html_sinks("setMarkup(b, '<i class=\"bi bi-x\"></i>');"),
+        Vec::<String>::new()
+    );
     assert_eq!(
         template_html_sinks("b.innerHTML = '<i class=\"bi bi-x\"></i>';"),
         Vec::<String>::new()

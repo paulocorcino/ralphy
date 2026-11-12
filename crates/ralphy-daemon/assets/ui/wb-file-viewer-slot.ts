@@ -1,5 +1,6 @@
 // The file panes' split: the slot beside the active pane, the mirror and the
 // divider between the two columns.
+import { setMarkup } from "./wb-html.ts";
 import { WBMonaco } from "./wb-monaco.ts";
 import { WBSplit } from "./wb-split.ts";
 import { sendDocument } from "./wb-events.ts";
@@ -136,7 +137,9 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
     // without it the body has no flex to fill and Monaco mounts 0px tall.
     el.style.display = "flex";
     el.style.gridColumn = "3";
-    el.innerHTML = `
+    setMarkup(
+      el,
+      `
       <div class="viewer-toolbar">
         <span class="viewer-path"></span>
         <span class="viewer-mirror-tag">Mirror</span>
@@ -144,7 +147,8 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
         <button class="vbtn" data-act="mirror" title="Close mirror" aria-label="Close mirror"
           ><i class="bi bi-x-lg"></i><span class="vbtn-label">Close mirror</span></button>
       </div>
-      <div class="viewer-body"></div>`;
+      <div class="viewer-body"></div>`,
+    );
     setPathLabel(el, rec);
     need(el, '[data-act="mirror"]').addEventListener("click", () => {
       window.Alpine.store("tabs").toggleMirror();
@@ -182,9 +186,11 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
     if (divider) return;
     divider = document.createElement("div");
     divider.className = "viewers-divider";
-    divider.innerHTML =
+    setMarkup(
+      divider,
       '<button class="slot-close" title="Close the second pane" ' +
-      'aria-label="Close the second pane"><i class="bi bi-x-lg"></i></button>';
+        'aria-label="Close the second pane"><i class="bi bi-x-lg"></i></button>',
+    );
     need(divider, ".slot-close").addEventListener("click", () => {
       window.Alpine.store("tabs").clearSlot();
     });

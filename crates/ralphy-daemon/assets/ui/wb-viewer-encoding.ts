@@ -1,4 +1,5 @@
 // The encoding pill and its menu, on a file pane that has bytes.
+import { setMarkup } from "./wb-html.ts";
 import { WBFail } from "./wb-fail.ts";
 import { isNode, targetClosest } from "./wb-dom-need.ts";
 import type { Messages } from "./wb-messages.ts";
@@ -96,7 +97,7 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
     const menu = document.createElement("div");
     menu.className = "enc-menu";
     menu.style.display = "none";
-    menu.innerHTML = group("Reopen with", "reopen") + group("Save with", "savewith");
+    setMarkup(menu, group("Reopen with", "reopen") + group("Save with", "savewith"));
     el.append(menu);
     rec.encMenu = menu;
     const close = () => {
