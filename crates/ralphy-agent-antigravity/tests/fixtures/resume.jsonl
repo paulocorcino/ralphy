@@ -1,0 +1,6 @@
+{"event":"init","conversation_id":"00000000-0000-4000-8000-000000000002","init":{"cwd":"<tmp>/repo","tools":["read_file","run_command","write_file"]}}
+{"event":"step_update","step_update":{"conversation_id":"00000000-0000-4000-8000-000000000002","step_index":7,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"00000000-0000-4000-8000-000000000002","step_index":8,"state":"DONE","step_type":"system_message","duration_seconds":0.0005062}}
+{"event":"step_update","step_update":{"conversation_id":"00000000-0000-4000-8000-000000000002","step_index":9,"state":"ACTIVE","step_type":"agent_response","text_delta":"echo hook-probe"}}
+{"event":"step_update","step_update":{"conversation_id":"00000000-0000-4000-8000-000000000002","step_index":9,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":2.6656331,"usage":{"input_tokens":8835,"output_tokens":4,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8839}}}
+{"event":"result","result":{"conversation_id":"00000000-0000-4000-8000-000000000002","status":"SUCCESS","response":"echo hook-probe\n","duration_seconds":70.4137327,"num_turns":3,"usage":{"input_tokens":34107,"output_tokens":49,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":34156}}}
