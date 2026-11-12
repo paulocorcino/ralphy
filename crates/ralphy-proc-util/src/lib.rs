@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 
+pub mod antigravity;
 pub mod cursor;
 pub mod elevated;
 pub mod exe;
