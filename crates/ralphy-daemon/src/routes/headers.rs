@@ -12,6 +12,7 @@
 //! stays and an injected Alpine attribute is still code — `DOMPurify` on every
 //! rendered markdown is the control there, not this header.
 
+use std::fmt::Write as _;
 use std::sync::{Arc, OnceLock};
 
 use axum::extract::State;
@@ -94,8 +95,10 @@ fn build_policy(extra_img_src: &str) -> HeaderValue {
         .filter_map(|shell| UI.get_file(shell.file()))
         .filter_map(|file| file.contents_utf8())
         .flat_map(inline_script_bodies)
-        .map(|body| format!(" 'sha256-{}'", script_hash(body)))
-        .collect::<String>();
+        .fold(String::new(), |mut hashes, body| {
+            write!(hashes, " 'sha256-{}'", script_hash(body)).expect(crate::WRITE_TO_STRING);
+            hashes
+        });
     let policy = format!(
         "default-src 'self';          script-src 'self' 'unsafe-eval'{hashes};          \
         style-src 'self' 'unsafe-inline';          \

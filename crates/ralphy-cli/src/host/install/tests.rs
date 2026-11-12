@@ -85,8 +85,9 @@ fn run(fake: &mut FakeHost, local: &Local<'_>, fetch: &mut Fixed) -> (Result<()>
     let svrapp = Destination {
         dest: "svrapp",
         key_file: None,
+        keygen: no_keygen,
     };
-    let result = install(fake, local, svrapp, no_keygen, fetch, &mut printed);
+    let result = install(fake, local, svrapp, fetch, &mut printed);
     let printed = String::from_utf8(printed.into_inner()).expect("utf-8");
     (result, printed)
 }
@@ -311,9 +312,9 @@ fn check_announces_what_install_would_send() {
         Destination {
             dest: "svrapp",
             key_file: None,
+            keygen: no_keygen,
         },
         None,
-        no_keygen,
         &mut printed,
     )
     .expect("checked");

@@ -94,7 +94,7 @@ impl Shape {
 fn attribute(
     stmt: &str,
     bindings: &BTreeMap<String, String>,
-    fallback: &Option<String>,
+    fallback: Option<&String>,
 ) -> Option<String> {
     for (var, named) in bindings {
         // `css.contains(` / `!css.contains(` / `css_rule_body(&css,` — the
@@ -103,7 +103,7 @@ fn attribute(
             return Some(named.clone());
         }
     }
-    fallback.clone()
+    fallback.cloned()
 }
 
 /// Is this literal a bare asset filename rather than a fragment of asset text?

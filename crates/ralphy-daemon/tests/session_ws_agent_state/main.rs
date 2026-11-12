@@ -161,3 +161,68 @@ async fn wait_for_block(
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
+
+/// The console's output once `done` accepts its flattened form, answering
+/// the cursor position request on the way; panics after 10 s.
+async fn read_echo(ws: &mut page::Channel, done: impl Fn(&str) -> bool) -> String {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let mut acc = String::new();
+        while let Some(msg) = ws.next().await {
+            let Message::Binary(bytes) = msg.expect("read the next frame") else {
+                continue;
+            };
+            if let Ok(Frame::Terminal { data, .. }) = protocol::decode(&bytes) {
+                if data
+                    .windows(CURSOR_POSITION_REQUEST.len())
+                    .any(|w| w == CURSOR_POSITION_REQUEST)
+                {
+                    ws.send(terminal(CURSOR_POSITION_REPLY))
+                        .await
+                        .expect("answer the cursor position request");
+                }
+                acc.push_str(&String::from_utf8_lossy(&data));
+                if done(&flatten(&acc)) {
+                    return acc;
+                }
+            }
+        }
+        acc
+    })
+    .await
+    .expect("the env + argv round-trip must complete within 10s")
+}
+
+/// Append one line to the status file, as the hook does.
+fn append_status(status: &std::path::Path, line: &str) {
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(status)
+        .expect("open the status file");
+    writeln!(f, "{line}").expect("append to the status file");
+}
+
+/// The `/api/sessions` body once it carries an `agent_state`; panics after 5 s.
+async fn wait_for_agent_state(port: u16) -> String {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let body = http_get(port, "/api/sessions").await;
+        if body.contains("agent_state") {
+            return body;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "no agent_state within 5s: {body}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// Wait until `/api/sessions` is empty; panics after 10 s.
+async fn wait_for_no_session(port: u16) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while http_get(port, "/api/sessions").await != "[]" {
+        assert!(Instant::now() < deadline, "the session did not end");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}

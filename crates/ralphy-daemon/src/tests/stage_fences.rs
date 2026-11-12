@@ -11,16 +11,7 @@ fn shell_draws_fences_below_the_windows() {
     // The console, its fence list, its fences and its title, as one text: the
     // fence element lives in the fences, the fence list and its rendering in
     // the fence list, the console rename in the title.
-    let js = &[
-        include_str!("../../assets/ui/wb-console.ts"),
-        include_str!("../../assets/ui/wb-stage-window.ts"),
-        include_str!("../../assets/ui/wb-stage-fence-list.ts"),
-        include_str!("../../assets/ui/wb-stage-fences.ts"),
-        include_str!("../../assets/ui/wb-stage-fence-tile.ts"),
-        include_str!("../../assets/ui/wb-stage-fence-gestures.ts"),
-        include_str!("../../assets/ui/wb-console-title.ts"),
-    ]
-    .concat();
+    let js = &fences_js();
     for pin in [
         "function renderFences(",
         "function renameFence(",
@@ -49,22 +40,16 @@ fn shell_draws_fences_below_the_windows() {
         html.contains("newFence()"),
         "index.html must carry the Fence button (#340)"
     );
+}
 
+#[test]
+fn a_fence_name_is_edited_in_place() {
+    let js = &fences_js();
     // Scoped to the `.fence` rule's OWN body: `pointer-events` and a small
     // `z-index` both occur elsewhere in the sheet, so an unscoped substring
     // would pass with the fence tier deleted.
     let css = served_css();
-    let rule = |head: &str| -> String {
-        let after = css
-            .split_once(head)
-            .unwrap_or_else(|| panic!("styles.css must keep the {head} rule"))
-            .1;
-        after
-            .split_once('}')
-            .expect("the rule must close")
-            .0
-            .to_owned()
-    };
+    let rule = |head: &str| css_rule_body(&css, head).to_owned();
     let fence = rule("\n.fence {");
     assert!(
         fence.contains("pointer-events: none"),
@@ -117,6 +102,12 @@ fn shell_draws_fences_below_the_windows() {
         squeezed.contains("name.setSelectionRange(0, 0);"),
         "ending an edit must collapse the selection its `select()` made"
     );
+}
+
+#[test]
+fn a_fence_past_the_cap_is_refused() {
+    let js = &fences_js();
+    let squeezed: String = js.split_whitespace().collect::<Vec<_>>().join(" ");
     // THE CAP: refused, not absorbed (the refusal is driven by
     // `wb-console.test.mjs`). A 13th fence once cost the operator a DIFFERENT
     // one, dropped by its age; nothing on the page drops a record now
@@ -140,7 +131,12 @@ fn shell_draws_fences_below_the_windows() {
             && !squeezed.contains("name: `Fence ${fences().length + 1}`"),
         "numbering by the fence COUNT collides at the cap — measured"
     );
+}
 
+#[test]
+fn the_fence_menu_follows_the_cap() {
+    let js = &fences_js();
+    let squeezed: String = js.split_whitespace().collect::<Vec<_>>().join(" ");
     // The console menus (wb-consoles-tab-menus.ts) hold the toolbar acts and keys.
     let tab_js = include_str!("../../assets/ui/wb-consoles-tab-menus.ts");
     let app: String = tab_js.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -333,17 +329,7 @@ fn shell_fences_are_a_group() {
         "no window record may carry a stored fence id (#341)"
     );
     let css = served_css();
-    let rule = |head: &str| -> String {
-        let after = css
-            .split_once(head)
-            .unwrap_or_else(|| panic!("styles.css must keep the {head} rule"))
-            .1;
-        after
-            .split_once('}')
-            .expect("the rule must close")
-            .0
-            .to_owned()
-    };
+    let rule = |head: &str| css_rule_body(&css, head).to_owned();
     // Both handles opt back IN, against a `.fence`/`.fence-head` that stay
     // inert — that pair is the whole hit-test contract of this slice. The
     // resize handle is `.fence-edge` since ADR-0051 §7a made every border a
@@ -448,17 +434,7 @@ fn shell_arranges_into_the_fence() {
     // `.fence`/`.fence-head` that stay inert — without this the control is
     // drawn and unclickable, and every other pin here stays green.
     let css = served_css();
-    let rule = |head: &str| -> String {
-        let after = css
-            .split_once(head)
-            .unwrap_or_else(|| panic!("styles.css must keep the {head} rule"))
-            .1;
-        after
-            .split_once('}')
-            .expect("the rule must close")
-            .0
-            .to_owned()
-    };
+    let rule = |head: &str| css_rule_body(&css, head).to_owned();
     assert!(
         rule("\n.fence-arrange {").contains("pointer-events: auto"),
         "the fence's arrange button must take pointer events (#342)"
@@ -485,4 +461,18 @@ fn shell_arranges_into_the_fence() {
             "styles.css's window floor must still be `{decl}` — wb-console.ts mirrors it (#342)"
         );
     }
+}
+
+/// The console, its window, its fence list, its fences and its title, as one text.
+fn fences_js() -> String {
+    [
+        include_str!("../../assets/ui/wb-console.ts"),
+        include_str!("../../assets/ui/wb-stage-window.ts"),
+        include_str!("../../assets/ui/wb-stage-fence-list.ts"),
+        include_str!("../../assets/ui/wb-stage-fences.ts"),
+        include_str!("../../assets/ui/wb-stage-fence-tile.ts"),
+        include_str!("../../assets/ui/wb-stage-fence-gestures.ts"),
+        include_str!("../../assets/ui/wb-console-title.ts"),
+    ]
+    .concat()
 }

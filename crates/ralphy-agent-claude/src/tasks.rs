@@ -37,6 +37,10 @@ use crate::usage::parse_plan_usage;
 /// `--output-format stream-json --verbose` makes the stdout stream carry the
 /// terminal `result` event, which `parse_plan_usage` reads — so the run-level
 /// `consolidate` ledger line carries real usage (ADR-0008 D9, issue #276).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public entry point called by the composition root with one value per setting"
+)]
 pub fn consolidate_knowledge(
     ws: &Workspace,
     run_dir: &Path,
@@ -82,6 +86,10 @@ pub fn consolidate_knowledge(
 /// report to `<neutral_cwd>/diagnosis.json`, which this function reads, validates
 /// against [`DiagnosisReport`], and returns. Mirrors [`consolidate_knowledge`]'s
 /// settings/auth/timeout handling.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public entry point called by the composition root with one value per setting"
+)]
 pub fn diagnose_repo(
     repo: &Path,
     neutral_cwd: &Path,

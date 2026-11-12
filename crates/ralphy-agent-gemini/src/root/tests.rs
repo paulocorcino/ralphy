@@ -6,6 +6,38 @@ use super::*;
 /// sessions and the installation id included, down to the mtime.
 #[test]
 fn ensure_is_idempotent() {
+    fn walkdir(dir: &Path) -> Vec<std::fs::DirEntry> {
+        let mut out = Vec::new();
+        for entry in std::fs::read_dir(dir).expect("the test tree is readable") {
+            let entry = entry.expect("the test tree is readable");
+            if entry
+                .file_type()
+                .expect("the test tree is readable")
+                .is_dir()
+            {
+                out.extend(walkdir(&entry.path()));
+            } else {
+                out.push(entry);
+            }
+        }
+        out
+    }
+
+    fn snapshot(dir: &Path) -> Vec<(PathBuf, Vec<u8>, std::time::SystemTime)> {
+        let mut out = Vec::new();
+        for entry in walkdir(dir) {
+            let mtime = entry
+                .metadata()
+                .expect("the test tree is readable")
+                .modified()
+                .expect("the test tree is readable");
+            let bytes = std::fs::read(entry.path()).expect("the test tree is readable");
+            out.push((entry.path(), bytes, mtime));
+        }
+        out.sort();
+        out
+    }
+
     let base = tempfile::tempdir().unwrap();
     let first = ensure(base.path()).unwrap();
 
@@ -24,29 +56,6 @@ fn ensure_is_idempotent() {
         write_session_pair(&chats, i);
     }
     std::fs::write(first.cli_dir().join("installation_id"), b"b54f6a30-stable").unwrap();
-
-    fn snapshot(dir: &Path) -> Vec<(PathBuf, Vec<u8>, std::time::SystemTime)> {
-        let mut out = Vec::new();
-        for entry in walkdir(dir) {
-            let mtime = entry.metadata().unwrap().modified().unwrap();
-            let bytes = std::fs::read(entry.path()).unwrap();
-            out.push((entry.path(), bytes, mtime));
-        }
-        out.sort();
-        out
-    }
-    fn walkdir(dir: &Path) -> Vec<std::fs::DirEntry> {
-        let mut out = Vec::new();
-        for entry in std::fs::read_dir(dir).unwrap() {
-            let entry = entry.unwrap();
-            if entry.file_type().unwrap().is_dir() {
-                out.extend(walkdir(&entry.path()));
-            } else {
-                out.push(entry);
-            }
-        }
-        out
-    }
 
     let before = snapshot(&first.cli_dir());
     let second = ensure(base.path()).unwrap();

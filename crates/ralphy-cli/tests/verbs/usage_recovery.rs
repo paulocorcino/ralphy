@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::path::Path;
 
 fn jsonl_snapshot(dir: &Path) -> BTreeMap<String, Vec<u8>> {
@@ -84,7 +85,6 @@ fn recovery_reports_totals_persists_map_and_never_rewrites_jsonl() {
         BTreeMap::from([("sess-resolved".into(), "claude-opus-4-8".into())])
     );
     let first_map_bytes = std::fs::read(&map_path).unwrap();
-    use std::io::Write;
     writeln!(
         std::fs::OpenOptions::new()
             .append(true)

@@ -1,4 +1,6 @@
+use crate::WRITE_TO_STRING;
 use ralphy_core::{DiagnosisReport, RepoKind};
+use std::fmt::Write as _;
 
 use super::wizard::{InitConfig, Question};
 
@@ -53,7 +55,6 @@ pub(crate) fn resolve_text(default: Option<&str>, raw: &str) -> Option<String> {
 /// unrecognized answer keeps the default.
 pub(crate) fn resolve_bool(default: bool, raw: &str) -> bool {
     match raw.trim().to_ascii_lowercase().as_str() {
-        "" => default,
         "y" | "yes" | "true" => true,
         "n" | "no" | "false" => false,
         _ => default,
@@ -155,35 +156,44 @@ pub(crate) fn seed_questions(report: &DiagnosisReport) -> Vec<Question> {
 /// resolved field appears so the confirmation is complete.
 pub(crate) fn format_config_echo(cfg: &InitConfig) -> String {
     let mut out = String::new();
-    out.push_str(&format!("repo kind:     {}\n", display_kind(cfg.repo_kind)));
-    out.push_str(&format!(
-        "language/build: {}\n",
+    writeln!(out, "repo kind:     {}", display_kind(cfg.repo_kind)).expect(WRITE_TO_STRING);
+    writeln!(
+        out,
+        "language/build: {}",
         display_opt(cfg.language_build.as_deref())
-    ));
-    out.push_str(&format!(
-        "backlog:        {}\n",
+    )
+    .expect(WRITE_TO_STRING);
+    writeln!(
+        out,
+        "backlog:        {}",
         display_opt(cfg.backlog_location.as_deref())
-    ));
-    out.push_str(&format!(
-        "milestone docs: {}\n",
-        display_list(&cfg.milestone_docs)
-    ));
-    out.push_str(&format!(
-        "skills dir:     {}\n",
+    )
+    .expect(WRITE_TO_STRING);
+    writeln!(out, "milestone docs: {}", display_list(&cfg.milestone_docs)).expect(WRITE_TO_STRING);
+    writeln!(
+        out,
+        "skills dir:     {}",
         display_opt(cfg.skills_dir.as_deref())
-    ));
-    out.push_str(&format!(
-        "context/ADRs:   {}\n",
+    )
+    .expect(WRITE_TO_STRING);
+    writeln!(
+        out,
+        "context/ADRs:   {}",
         display_bool(cfg.has_context_or_adrs)
-    ));
-    out.push_str(&format!(
-        "remote host:    {}\n",
+    )
+    .expect(WRITE_TO_STRING);
+    writeln!(
+        out,
+        "remote host:    {}",
         display_opt(cfg.remote_host.as_deref())
-    ));
-    out.push_str(&format!(
-        "PRD/roadmap:    {}\n",
+    )
+    .expect(WRITE_TO_STRING);
+    writeln!(
+        out,
+        "PRD/roadmap:    {}",
         display_bool(cfg.adopt_prd_roadmap)
-    ));
+    )
+    .expect(WRITE_TO_STRING);
     out
 }
 

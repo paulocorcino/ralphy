@@ -41,6 +41,7 @@ pub(crate) fn command_http_routes(s: &RouterShared) -> Router {
     let daemon_id = s.daemon_id.clone();
     let sessions = s.sessions.clone();
     let audit = s.audit.clone();
+    let bound_port = s.bound_port;
     Router::new()
         .route(
             "/api/command",
@@ -54,6 +55,7 @@ pub(crate) fn command_http_routes(s: &RouterShared) -> Router {
                         daemon_id: daemon_id.clone(),
                         sessions: sessions.clone(),
                         secret_ok: request_may_carry_a_secret(&headers),
+                        bound_port,
                     };
                     let who = SocketAudit::of(audit.clone(), caller);
                     async move { Json(reply(&ctx, &cmd, &who).await) }

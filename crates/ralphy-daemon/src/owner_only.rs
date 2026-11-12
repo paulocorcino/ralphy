@@ -30,12 +30,12 @@ fn write_owner_only_probed(
     bytes: &[u8],
     after_create: impl FnOnce(&Path),
 ) -> Result<()> {
-    let name = path
-        .file_name()
-        .with_context(|| format!("{} names no file", path.display()))?;
     // The counter keeps two writers in one process (the daemon's threads) off
     // each other's temporary file; the pid keeps processes apart.
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let name = path
+        .file_name()
+        .with_context(|| format!("{} names no file", path.display()))?;
     let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut tmp_name = name.to_os_string();
     tmp_name.push(format!(".tmp-{}-{n}", std::process::id()));
@@ -52,7 +52,8 @@ fn write_owner_only_probed(
     .with_context(|| format!("creating {}", tmp.display()))?;
     let written = (|| -> Result<()> {
         let mut file = file;
-        protect_new_file(&tmp)?;
+        #[cfg(windows)]
+        set_owner_only(&tmp)?;
         after_create(&tmp);
         file.write_all(bytes)
             .with_context(|| format!("writing {}", tmp.display()))?;
@@ -79,7 +80,8 @@ fn write_owner_only_probed(
 pub(crate) fn append_owner_only(path: &Path, bytes: &[u8]) -> Result<()> {
     let mut file = match create_owner_only_file(path) {
         Ok(file) => {
-            protect_new_file(path)?;
+            #[cfg(windows)]
+            set_owner_only(path)?;
             file
         }
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => std::fs::OpenOptions::new()
@@ -103,24 +105,13 @@ fn create_owner_only_file(path: &Path) -> std::io::Result<std::fs::File> {
         .open(path)
 }
 
-/// Create `path` new; [`protect_new_file`] sets its DACL before any write.
+/// Create `path` new; [`set_owner_only`] sets its DACL before any write.
 #[cfg(windows)]
 fn create_owner_only_file(path: &Path) -> std::io::Result<std::fs::File> {
     std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(path)
-}
-
-/// On unix the mode was set at creation; nothing is left to do.
-#[cfg(unix)]
-fn protect_new_file(_path: &Path) -> Result<()> {
-    Ok(())
-}
-
-#[cfg(windows)]
-fn protect_new_file(path: &Path) -> Result<()> {
-    set_owner_only(path)
 }
 
 /// Create the store directory `path` (and its parents). On unix it gets mode

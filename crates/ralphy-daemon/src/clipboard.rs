@@ -103,7 +103,7 @@ pub fn write_image(root: &Path, kind: ImageType, bytes: &[u8]) -> Result<String,
                     .map_err(|e| failed(WriteError::Io, "writing the pasted image", &e))?;
                 return Ok(rel);
             }
-            Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
             Err(_) => return Err(WriteError::Io),
         }
     }

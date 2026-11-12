@@ -1,3 +1,5 @@
+use crate::WRITE_TO_STRING;
+use std::fmt::Write as _;
 use std::path::Path;
 use std::time::Duration;
 
@@ -55,16 +57,20 @@ pub(crate) fn publish_decision(answer: &str) -> bool {
 pub(crate) fn format_draft_summary(draft: &IssuesDraft) -> String {
     let mut out = String::new();
     match &draft.milestone {
-        Some(ms) => out.push_str(&format!(
-            "will create {} issue(s), all in milestone \"{}\"\n",
+        Some(ms) => writeln!(
+            out,
+            "will create {} issue(s), all in milestone \"{}\"",
             draft.issue_count(),
             ms.title
-        )),
-        None => out.push_str(&format!("will create {} issue(s)\n", draft.issue_count())),
+        )
+        .expect(WRITE_TO_STRING),
+        None => {
+            writeln!(out, "will create {} issue(s)", draft.issue_count()).expect(WRITE_TO_STRING);
+        }
     }
 
     if let Some(prd) = &draft.prd_path {
-        out.push_str(&format!("PRD written: {prd}\n"));
+        writeln!(out, "PRD written: {prd}").expect(WRITE_TO_STRING);
     }
 
     for (i, issue) in draft.issues.iter().enumerate() {
@@ -83,13 +89,7 @@ pub(crate) fn format_draft_summary(draft: &IssuesDraft) -> String {
                 .collect();
             format!("  (blocked by {})", refs.join(", "))
         };
-        out.push_str(&format!(
-            "  {}. {}{}{}\n",
-            i + 1,
-            issue.title,
-            labels,
-            blocked
-        ));
+        writeln!(out, "  {}. {}{}{}", i + 1, issue.title, labels, blocked).expect(WRITE_TO_STRING);
     }
 
     out
@@ -234,15 +234,16 @@ pub(crate) struct ChosenAgent<'a> {
 /// Dispatch the backlog/milestone → issues draft session to the selected agent's
 /// adapter. Like `diagnose_with_agent`, the charter is shared
 /// ([`ralphy_core::build_init_issues_prompt`]) and only the invocation differs.
+/// The session runs at medium effort.
 pub(crate) fn draft_with_agent(
     chosen: ChosenAgent<'_>,
     repo: &Path,
     out_path: &Path,
     req: &DraftRequest,
-    effort: Option<&str>,
     timeout: Duration,
 ) -> Result<IssuesDraft> {
     let ChosenAgent { agent, model } = chosen;
+    let effort = Some("medium");
     match agent {
         Agent::Claude => ralphy_agent_claude::draft_issues(
             repo,

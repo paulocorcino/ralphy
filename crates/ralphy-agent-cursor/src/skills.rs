@@ -97,9 +97,6 @@ mod tests {
 
     #[test]
     fn materialize_writes_nothing_outside_the_workspace() {
-        let (dir, ws) = workspace("scoped");
-        let parent = dir.path().to_path_buf();
-
         fn listing(root: &std::path::Path) -> Vec<std::path::PathBuf> {
             let mut out = Vec::new();
             let mut stack = vec![root.to_path_buf()];
@@ -118,6 +115,9 @@ mod tests {
             out.sort();
             out
         }
+
+        let (dir, ws) = workspace("scoped");
+        let parent = dir.path().to_path_buf();
 
         let before = listing(&parent);
         materialize_cursor_skills(&ws).expect("materialize");
@@ -144,12 +144,6 @@ mod tests {
     /// actually write.
     #[test]
     fn materialize_never_writes_under_the_real_home_directory() {
-        let (_dir, ws) = workspace("home-safety");
-        let Some(home) = ralphy_adapter_support::home_dir() else {
-            return; // no HOME/USERPROFILE resolvable in this environment
-        };
-        let home_skills = home.join(".cursor").join("skills");
-
         fn snapshot(dir: &std::path::Path) -> Option<Vec<std::ffi::OsString>> {
             let mut names: Vec<_> = fs::read_dir(dir)
                 .ok()?
@@ -159,6 +153,12 @@ mod tests {
             names.sort();
             Some(names)
         }
+
+        let (_dir, ws) = workspace("home-safety");
+        let Some(home) = ralphy_adapter_support::home_dir() else {
+            return; // no HOME/USERPROFILE resolvable in this environment
+        };
+        let home_skills = home.join(".cursor").join("skills");
 
         let before = snapshot(&home_skills);
         materialize_cursor_skills(&ws).expect("materialize");

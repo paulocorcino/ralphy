@@ -105,7 +105,7 @@ where
             };
             match protocol::decode(&bytes) {
                 Ok(Frame::Command(c)) if c.verb == verb => return Some(c.payload),
-                _ => continue,
+                _ => {}
             }
         }
         None

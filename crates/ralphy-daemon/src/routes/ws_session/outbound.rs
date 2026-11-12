@@ -129,19 +129,14 @@ impl Opening {
 /// indefinitely.
 pub(super) async fn announce_end(
     outbox: &mut Outbox,
-    id: session::SessionId,
-    opening: &Opening,
-    attach: &mut session::Attachment,
-    traffic: &mut Traffic,
+    mut ending: Ending<'_>,
     reason: session::EndReason,
 ) {
+    let opening = ending.opening;
     let farewell = async {
-        if tokio::time::timeout(
-            DRAIN_LIMIT,
-            drain(outbox, id, opening, attach, traffic, reason),
-        )
-        .await
-        .is_err()
+        if tokio::time::timeout(DRAIN_LIMIT, drain(outbox, &mut ending, reason))
+            .await
+            .is_err()
         {
             // A client that cannot take the queue in time loses the rest of
             // it. The session is already gone, so nothing sends it later.
@@ -168,17 +163,30 @@ pub(super) async fn announce_end(
 /// about to be told it lost the session.
 async fn drain(
     outbox: &mut Outbox,
-    id: session::SessionId,
-    opening: &Opening,
-    attach: &mut session::Attachment,
-    traffic: &mut Traffic,
+    ending: &mut Ending<'_>,
     reason: session::EndReason,
 ) -> Result<(), WriterClosed> {
     outbox.flush().await?;
     if reason == session::EndReason::ChildExited {
-        send_queued(outbox, id, opening, attach, traffic).await?;
+        send_queued(
+            outbox,
+            ending.id,
+            ending.opening,
+            ending.attach,
+            ending.traffic,
+        )
+        .await?;
     }
     Ok(())
+}
+
+/// The console a bridge ends: its id, its opening, its attachment and its
+/// traffic count.
+pub(super) struct Ending<'a> {
+    pub(super) id: session::SessionId,
+    pub(super) opening: &'a Opening,
+    pub(super) attach: &'a mut session::Attachment,
+    pub(super) traffic: &'a mut Traffic,
 }
 
 /// Queue `session-open` (the fields of `opening`, then the replay's), the

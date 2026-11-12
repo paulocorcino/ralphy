@@ -16,8 +16,8 @@ fn drive_worker<T: Transport>(
     client: BotClient<T>,
     chat_id: i64,
     state: RunState,
-    queue: Arc<EventQueue>,
-    shutdown: Arc<AtomicBool>,
+    queue: &EventQueue,
+    shutdown: &AtomicBool,
 ) {
     let engine = TelegramEngine {
         client,
@@ -130,7 +130,7 @@ fn worker_sends_one_card_then_edits_in_place_no_pushes() {
     let worker_shutdown = shutdown.clone();
     let state = RunState::new("title", 1);
     let handle =
-        std::thread::spawn(move || drive_worker(client, 7, state, worker_queue, worker_shutdown));
+        std::thread::spawn(move || drive_worker(client, 7, state, &worker_queue, &worker_shutdown));
 
     shutdown.store(true, Ordering::SeqCst);
     queue.wake();
@@ -212,7 +212,7 @@ fn worker_swallows_edit_error_and_finishes_cleanly() {
         outcome: "Stuck".into(),
     });
 
-    drive_worker(client, 7, RunState::new("t", 1), queue.clone(), shutdown);
+    drive_worker(client, 7, RunState::new("t", 1), &queue, &shutdown);
 
     let calls = calls.lock().unwrap();
     let m = methods(&calls);
@@ -237,7 +237,7 @@ fn worker_terminal_edit_adds_footer_as_the_last_call() {
     let queue = Arc::new(EventQueue::new());
     let shutdown = Arc::new(AtomicBool::new(true));
 
-    drive_worker(client, 7, RunState::new("idle", 1), queue, shutdown);
+    drive_worker(client, 7, RunState::new("idle", 1), &queue, &shutdown);
 
     let calls = calls.lock().unwrap();
     let m = methods(&calls);

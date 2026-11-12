@@ -7,7 +7,16 @@ const REM: SessionKind = SessionKind::Remembered;
 const ZERO_ID: &str = "AAAAAAAAAAAAAAAAAAAAAA";
 
 fn sign(token: &str, epoch: u64, kind: SessionKind, iat: u64, exp: u64) -> String {
-    super::sign(token, epoch, kind, iat, exp, LoginId::mint())
+    super::sign(
+        token,
+        epoch,
+        &Claims {
+            iat,
+            exp,
+            kind,
+            login: LoginId::mint(),
+        },
+    )
 }
 
 #[test]
@@ -21,7 +30,16 @@ fn round_trip_verifies() {
 #[test]
 fn a_login_id_round_trips_through_the_cookie() {
     let login = LoginId::mint();
-    let c = super::sign("tok", 0, STD, 500, 1000, login);
+    let c = super::sign(
+        "tok",
+        0,
+        &Claims {
+            iat: 500,
+            exp: 1000,
+            kind: STD,
+            login,
+        },
+    );
     let claims = verify_claims("tok", 0, &c, 900).expect("a fresh cookie verifies");
     assert_eq!(claims.login, login);
     assert_eq!(LoginId::parse(&login.to_string()), Some(login));
@@ -48,7 +66,16 @@ fn a_v4_cookie_matches_an_independent_hmac() {
              c2481af5473ae872b4158b1173dfd7af58ad8086",
         ),
     ] {
-        let signed = super::sign(&token, 7, kind, 1_700_000_000, 1_700_001_800, login);
+        let signed = super::sign(
+            &token,
+            7,
+            &Claims {
+                iat: 1_700_000_000,
+                exp: 1_700_001_800,
+                kind,
+                login,
+            },
+        );
         assert_eq!(signed, cookie);
         let claims = verify_claims(&token, 7, cookie, 1_700_000_900).expect("verifies");
         assert_eq!((claims.kind, claims.login), (kind, login));
@@ -72,10 +99,12 @@ fn a_tampered_login_id_is_rejected() {
     let c = super::sign(
         "tok",
         0,
-        STD,
-        500,
-        1000,
-        LoginId::parse(ZERO_ID).expect("an ID"),
+        &Claims {
+            iat: 500,
+            exp: 1000,
+            kind: STD,
+            login: LoginId::parse(ZERO_ID).expect("an ID"),
+        },
     );
     let edited = c.replacen(ZERO_ID, "AAAAAAAAAAAAAAAAAAAAAQ", 1);
     assert_ne!(c, edited, "the ID was found and edited");

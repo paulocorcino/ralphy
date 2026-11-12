@@ -83,10 +83,13 @@ pub(crate) fn build_gemini_command(
     session_id: &str,
     model: Option<&str>,
     work_dir: &Path,
-    home: &Path,
-    policy: &Path,
-    auth_type: Option<&str>,
+    root: RootArgs<'_>,
 ) -> Command {
+    let RootArgs {
+        home,
+        policy,
+        auth_type,
+    } = root;
     let mut cmd = Command::new(resolve_gemini_program());
     cmd.current_dir(work_dir)
         .arg("--approval-mode")
@@ -106,6 +109,14 @@ pub(crate) fn build_gemini_command(
     }
     apply_auth_env(&mut cmd, std::env::vars().map(|(k, _)| k), auth_type, home);
     cmd
+}
+
+/// The parts of Ralphy's configuration root a child is given.
+#[derive(Clone, Copy)]
+pub(crate) struct RootArgs<'a> {
+    pub(crate) home: &'a Path,
+    pub(crate) policy: &'a Path,
+    pub(crate) auth_type: Option<&'a str>,
 }
 
 /// The authentication variables that MAY be forwarded, per the operator's declared

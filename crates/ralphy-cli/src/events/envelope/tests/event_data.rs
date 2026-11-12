@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn queue_built_has_no_subject_and_lists_order() {
     let v = map(
-        RunEvent::QueueBuilt {
+        &RunEvent::QueueBuilt {
             count: 3,
             order: vec![1, 2, 3],
             stop_before: Some(2),
@@ -34,7 +34,7 @@ fn queue_built_carries_the_enriched_issues_array() {
          "skip_reason": null, "blocked_by": [1], "position": null},
     ]);
     let v = map(
-        RunEvent::QueueBuilt {
+        &RunEvent::QueueBuilt {
             count: 2,
             order: vec![1, 2],
             stop_before: None,
@@ -66,7 +66,7 @@ fn queue_snapshot_data_matches_queue_built_data() {
     ];
     for (case, issues, filter) in rows {
         let built = map(
-            RunEvent::QueueBuilt {
+            &RunEvent::QueueBuilt {
                 count: 1,
                 order: vec![1],
                 stop_before: None,
@@ -91,21 +91,36 @@ fn queue_snapshot_data_matches_queue_built_data() {
         assert_eq!(snapshot["data"], built["data"], "{case}");
     }
 }
+/// (event, run size, type, subject, data fields)
+type Row<'a> = (
+    RunEvent,
+    usize,
+    &'a str,
+    Option<&'a str>,
+    Vec<(&'a str, Value)>,
+);
+
 /// Each run event maps to its `CloudEvent` `type`, carries `subject:
 /// issue/<n>` only when it is about one issue (a run-scoped event carries
 /// none), and puts its fields under `data`.
+fn assert_rows(rows: Vec<Row<'_>>) {
+    for (event, total, kind, subject, data) in rows {
+        let v = map(&event, &RunState::new("t", total));
+        assert_eq!(v["type"], kind);
+        assert_eq!(
+            v.get("subject").and_then(Value::as_str),
+            subject,
+            "{kind}: {v}"
+        );
+        for (key, want) in data {
+            assert_eq!(v["data"][key], want, "{kind}: data.{key}");
+        }
+    }
+}
+
 #[test]
-fn each_run_event_maps_to_its_type_subject_and_data() {
-    let reason = "skipped: run in progress since 2026-07-19 10:00:00, pid 4242";
-    // (event, run size, type, subject, data fields)
-    type Row<'a> = (
-        RunEvent,
-        usize,
-        &'a str,
-        Option<&'a str>,
-        Vec<(&'a str, Value)>,
-    );
-    let rows: Vec<Row> = vec![
+fn each_issue_event_maps_to_its_type_subject_and_data() {
+    let rows: Vec<Row<'_>> = vec![
         (
             RunEvent::IssueStarted {
                 number: 7,
@@ -150,6 +165,14 @@ fn each_run_event_maps_to_its_type_subject_and_data() {
             Some("issue/7"),
             vec![],
         ),
+    ];
+    assert_rows(rows);
+}
+
+#[test]
+fn each_run_event_maps_to_its_type_subject_and_data() {
+    let reason = "skipped: run in progress since 2026-07-19 10:00:00, pid 4242";
+    let rows: Vec<Row<'_>> = vec![
         (
             RunEvent::SleepStarted {
                 reset: "14:30".into(),
@@ -218,24 +241,13 @@ fn each_run_event_maps_to_its_type_subject_and_data() {
             vec![("reason", json!(reason))],
         ),
     ];
-    for (event, total, kind, subject, data) in rows {
-        let v = map(event, &RunState::new("t", total));
-        assert_eq!(v["type"], kind);
-        assert_eq!(
-            v.get("subject").and_then(Value::as_str),
-            subject,
-            "{kind}: {v}"
-        );
-        for (key, want) in data {
-            assert_eq!(v["data"][key], want, "{kind}: data.{key}");
-        }
-    }
+    assert_rows(rows);
 }
 
 #[test]
 fn planning_resolves_subject_from_active() {
     let v = map(
-        RunEvent::Planning {
+        &RunEvent::Planning {
             model: Some("opus".into()),
             effort: Some("high".into()),
         },
@@ -250,7 +262,7 @@ fn planning_resolves_subject_from_active() {
 #[test]
 fn plan_written_carries_open_steps_usage_and_subject() {
     let v = map(
-        RunEvent::PlanWritten {
+        &RunEvent::PlanWritten {
             number: 7,
             open_steps: 4,
             usage: UsageLite {
@@ -282,7 +294,7 @@ fn plan_written_carries_open_steps_usage_and_subject() {
 fn plan_opened_and_closed_carry_raw_plan_md_subject_and_issue_block() {
     let raw = "# Plan for #7\n\n## Steps\n- [ ] do a thing\n";
     let opened = map(
-        RunEvent::PlanOpened {
+        &RunEvent::PlanOpened {
             number: 7,
             plan_md: raw.into(),
         },
@@ -296,7 +308,7 @@ fn plan_opened_and_closed_carry_raw_plan_md_subject_and_issue_block() {
     assert_eq!(opened["data"]["issue"]["title"], "hello");
 
     let closed = map(
-        RunEvent::PlanClosed {
+        &RunEvent::PlanClosed {
             number: 7,
             plan_md: raw.into(),
         },
@@ -311,7 +323,7 @@ fn plan_opened_and_closed_carry_raw_plan_md_subject_and_issue_block() {
 #[test]
 fn executing_resolves_active_number_and_subject() {
     let v = map(
-        RunEvent::Executing {
+        &RunEvent::Executing {
             number: 0,
             budget_min: 45,
             model: "claude-sonnet-4".into(),
@@ -330,7 +342,7 @@ fn executing_resolves_active_number_and_subject() {
 fn skipped_maps_kind_and_parking_label() {
     // A human-return skip names the parking label.
     let v = map(
-        RunEvent::Skipped {
+        &RunEvent::Skipped {
             number: 9,
             kind: SkipKind::HumanReturn,
             label: Some("needs-info".into()),
@@ -348,7 +360,7 @@ fn skipped_maps_kind_and_parking_label() {
     // A blocked-by skip has no parking label, the `blocked_by` kind, and names the
     // still-open blocker(s) in `data.blocked_by`.
     let v = map(
-        RunEvent::Skipped {
+        &RunEvent::Skipped {
             number: 4,
             kind: SkipKind::BlockedBy,
             label: None,
@@ -423,7 +435,7 @@ fn run_started_maps_cli_params_without_subject() {
 #[test]
 fn hooks_unproven_allowed_maps_to_its_cloudevent() {
     let v = map(
-        RunEvent::HooksUnprovenAllowed {
+        &RunEvent::HooksUnprovenAllowed {
             cause: "no SessionStart hook event came in 30 s".into(),
         },
         &RunState::new("t", 1),

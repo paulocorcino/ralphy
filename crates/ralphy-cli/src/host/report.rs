@@ -32,7 +32,7 @@ impl<W: Write> Report<W> {
         self.out
     }
 
-    fn event(&mut self, value: Value) -> Result<()> {
+    fn event(&mut self, value: &Value) -> Result<()> {
         writeln!(self.out, "{value}")?;
         self.out.flush()?;
         Ok(())
@@ -40,7 +40,7 @@ impl<W: Write> Report<W> {
 
     pub(crate) fn note(&mut self, text: &str) -> Result<()> {
         if self.json {
-            return self.event(json!({"event": "note", "text": text}));
+            return self.event(&json!({"event": "note", "text": text}));
         }
         writeln!(self.out, "{text}")?;
         Ok(())
@@ -49,7 +49,7 @@ impl<W: Write> Report<W> {
     /// Signed in. Text mode prints nothing: the checks header names the OS.
     pub(crate) fn connected(&mut self, os: HostOs) -> Result<()> {
         if self.json {
-            return self.event(json!({"event": "connected", "os": os.label()}));
+            return self.event(&json!({"event": "connected", "os": os.label()}));
         }
         Ok(())
     }
@@ -84,7 +84,7 @@ impl<W: Write> Report<W> {
                 CheckStatus::Fix(op) => Some(render(Some(os), op)?),
                 CheckStatus::Pass | CheckStatus::Warn | CheckStatus::Pending => None,
             };
-            self.event(json!({
+            self.event(&json!({
                 "event": "check",
                 "id": c.id.key(),
                 "label": c.id.label(),
@@ -94,7 +94,7 @@ impl<W: Write> Report<W> {
             }))?;
         }
         if let Some(o) = offer {
-            self.event(json!({
+            self.event(&json!({
                 "event": "install",
                 "version": o.version,
                 "target": o.target,
@@ -108,7 +108,7 @@ impl<W: Write> Report<W> {
     /// `check`'s fix ran; `rendered` is the host command.
     pub(crate) fn fixed(&mut self, check: &HostCheck, rendered: &str) -> Result<()> {
         if self.json {
-            return self.event(json!({"event": "fixed", "id": check.id.key()}));
+            return self.event(&json!({"event": "fixed", "id": check.id.key()}));
         }
         writeln!(self.out, "Done: {rendered}")?;
         Ok(())
@@ -118,7 +118,7 @@ impl<W: Write> Report<W> {
     pub(crate) fn linger_needs_sudo(&mut self, user: &str) -> Result<()> {
         let command = format!("sudo loginctl enable-linger {user}");
         if self.json {
-            return self.event(json!({
+            return self.event(&json!({
                 "event": "check",
                 "id": CheckId::Linger.key(),
                 "label": CheckId::Linger.label(),
@@ -136,7 +136,7 @@ impl<W: Write> Report<W> {
 
     pub(crate) fn added(&mut self, d: &PeerDescriptor, dest: &str, port: u16) -> Result<()> {
         if self.json {
-            return self.event(json!({
+            return self.event(&json!({
                 "event": "added",
                 "name": d.name,
                 "daemon_id": d.daemon_id,
@@ -160,7 +160,7 @@ impl<W: Write> Report<W> {
         let ssh = e.chain().find_map(|c| c.downcast_ref::<SshError>());
         let kind = ssh.map_or("other", |s| s.kind.key());
         let key_line = ssh.and_then(|s| s.key_line.as_deref());
-        self.event(json!({
+        self.event(&json!({
             "event": "failed",
             "kind": kind,
             "message": format!("{e:#}"),

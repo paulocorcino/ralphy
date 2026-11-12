@@ -268,20 +268,22 @@ fn every_registry_key_is_handled_by_all_subcommands() {
     let sample = |key: &str| -> &str {
         match key {
             "branch_mode" => "current",
-            "verify.require_verify_gate" | "queue.trust_all_comments" => "true",
-            "remote_control" => "true",
+            "verify.require_verify_gate"
+            | "queue.trust_all_comments"
+            | "remote_control"
+            | "claude.console_name"
+            | "claude.console_classic_screen"
+            | "copilot.allow_builtin_mcp_servers_i_understand_the_risk"
+            | "cursor.allow_codebase_indexing_i_understand_the_risk"
+            | "claude.run_without_guard_proof_i_understand_the_risk" => "true",
             "claude.max_minutes_per_issue" => "45",
             "runs.keep" => "50",
             "files.upload_max_mb" => "25",
-            "claude.console_name" | "claude.console_classic_screen" => "true",
             // Validated against effort vocabularies, so `x` is refused.
             "claude.plan_effort"
             | "claude.exec_effort"
             | "copilot.plan_effort"
             | "copilot.exec_effort" => "high",
-            "copilot.allow_builtin_mcp_servers_i_understand_the_risk" => "true",
-            "cursor.allow_codebase_indexing_i_understand_the_risk" => "true",
-            "claude.run_without_guard_proof_i_understand_the_risk" => "true",
             // Validated against the vendor's id set, so `x` is refused.
             "gemini.plan_model" | "gemini.exec_model" => "gemini-3.5-flash",
             _ => "x",

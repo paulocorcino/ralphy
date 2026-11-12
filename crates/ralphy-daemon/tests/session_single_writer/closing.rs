@@ -47,7 +47,7 @@ async fn a_client_close_announces_nothing() {
                     }
                 }
                 Ok(Message::Close(_)) | Err(_) => return None,
-                Ok(_) => continue,
+                Ok(_) => {}
             }
         }
         None

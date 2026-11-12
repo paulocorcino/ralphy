@@ -237,33 +237,22 @@ fn mac_hex(token: &str, epoch: u64, claims: &Claims) -> String {
         Hmac::<Sha1>::new_from_slice(token.as_bytes()).expect("HMAC accepts a key of any length");
     mac.update(format!("4|{epoch}|{iat}|{exp}|{}|{login}", kind.tag()).as_bytes());
     let bytes = mac.finalize().into_bytes();
-    let mut hex = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        hex.push_str(&format!("{b:02x}"));
-    }
-    hex
+    crate::lower_hex(&bytes)
 }
 
 /// Mint a cookie value binding `epoch`, `iat`, `exp`, `kind` and `login` to
 /// `token`.
-pub fn sign(
-    token: &str,
-    epoch: u64,
-    kind: SessionKind,
-    iat: u64,
-    exp: u64,
-    login: LoginId,
-) -> String {
-    let claims = Claims {
+pub fn sign(token: &str, epoch: u64, claims: &Claims) -> String {
+    let Claims {
         iat,
         exp,
         kind,
         login,
-    };
+    } = claims;
     format!(
         "4.{epoch}.{iat}.{exp}.{}.{login}.{}",
         kind.tag(),
-        mac_hex(token, epoch, &claims)
+        mac_hex(token, epoch, claims)
     )
 }
 

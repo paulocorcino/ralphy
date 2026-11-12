@@ -7,7 +7,7 @@ use crate::{Execution, Issue, Outcome, Plan, ResetAt, Usage};
 
 use super::IssueCtx;
 use crate::runner::artifacts::{clear_protocol_failure, clear_verify_failure};
-use crate::runner::{synthetic_reset, RunLedger, WaitOutcome};
+use crate::runner::{synthetic_reset, PhaseSpend, RunLedger, WaitOutcome};
 
 /// The terminal-status label written to the ledger's `outcome` field (ADR-0008
 /// D6), one of `done`/`blocked`/`timeout`/`stuck`/`limit`. A read-time report
@@ -109,8 +109,10 @@ pub(crate) fn execute_phase(
         issue.number,
         "execute",
         outcome_label(&outcome),
-        &exec_usage,
-        exec_session_id.as_deref(),
+        PhaseSpend {
+            usage: &exec_usage,
+            session_id: exec_session_id.as_deref(),
+        },
     );
 
     Ok(if outcome == Outcome::Done {
@@ -150,7 +152,7 @@ fn execute_once(
         *exec_session_id = Some(id);
     }
     let after_sha = cx.repo.head_sha().ok();
-    *no_commit_streak = advance_streak(*no_commit_streak, &before_sha, &after_sha);
+    *no_commit_streak = advance_streak(*no_commit_streak, before_sha.as_ref(), after_sha.as_ref());
     Ok(outcome)
 }
 
@@ -158,7 +160,7 @@ fn execute_once(
 /// A commit resets it, a no-commit execute advances it. If either SHA read
 /// failed, progress is unknown — the streak is left untouched rather than
 /// collapsing both errors to "" and reading it as a false no-commit.
-fn advance_streak(streak: u32, before_sha: &Option<String>, after_sha: &Option<String>) -> u32 {
+fn advance_streak(streak: u32, before_sha: Option<&String>, after_sha: Option<&String>) -> u32 {
     match (before_sha, after_sha) {
         (Some(b), Some(a)) if b != a => 0,
         (Some(_), Some(_)) => streak + 1,

@@ -114,14 +114,6 @@ mod tests {
 
     #[test]
     fn materialize_is_idempotent_and_leaves_the_root_alone() {
-        let dir = base("idempotent");
-        let root = crate::root::ensure(dir.path()).expect("ensure");
-        let id_file = root.cli_dir().join("installation_id");
-        fs::write(&id_file, b"b54f6a30-stable").unwrap();
-        let settings_bytes = fs::read(&root.settings).unwrap();
-
-        materialize_gemini_skills(&root).expect("first pass");
-
         fn snapshot(dir: &Path) -> Vec<(std::path::PathBuf, Vec<u8>)> {
             let mut out = Vec::new();
             let mut stack = vec![dir.to_path_buf()];
@@ -134,13 +126,21 @@ mod tests {
                     if p.is_dir() {
                         stack.push(p);
                     } else {
-                        out.push((p.clone(), fs::read(&p).unwrap()));
+                        out.push((p.clone(), fs::read(&p).expect("the test tree is readable")));
                     }
                 }
             }
             out.sort_by(|a, b| a.0.cmp(&b.0));
             out
         }
+
+        let dir = base("idempotent");
+        let root = crate::root::ensure(dir.path()).expect("ensure");
+        let id_file = root.cli_dir().join("installation_id");
+        fs::write(&id_file, b"b54f6a30-stable").expect("the test root is writable");
+        let settings_bytes = fs::read(&root.settings).expect("the settings file exists");
+
+        materialize_gemini_skills(&root).expect("first pass");
 
         let skills_dir = root.cli_dir().join("skills");
         let before = snapshot(&skills_dir);
@@ -157,11 +157,6 @@ mod tests {
 
     #[test]
     fn materialize_never_writes_under_the_operators_gemini_root() {
-        let Some(home) = ralphy_proc_util::home_dir() else {
-            return; // no HOME/USERPROFILE resolvable in this environment
-        };
-        let operator_skills = home.join(".gemini").join("skills");
-
         fn snapshot(dir: &Path) -> Option<Vec<std::ffi::OsString>> {
             let mut names: Vec<_> = fs::read_dir(dir)
                 .ok()?
@@ -171,6 +166,11 @@ mod tests {
             names.sort();
             Some(names)
         }
+
+        let Some(home) = ralphy_proc_util::home_dir() else {
+            return; // no HOME/USERPROFILE resolvable in this environment
+        };
+        let operator_skills = home.join(".gemini").join("skills");
 
         let before = snapshot(&operator_skills);
         let dir = base("home-safety");

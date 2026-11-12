@@ -46,7 +46,7 @@ async fn api_desk_refuses_a_corrupt_desk_and_leaves_its_bytes() {
         dir.path(),
         serde_json::json!([create(
             "window",
-            window_json("w-a", serde_json::json!(7), false)
+            &window_json("w-a", &serde_json::json!(7), false)
         )]),
     )
     .await;
@@ -114,7 +114,7 @@ async fn a_desk_that_cannot_be_read_is_unavailable_and_never_moved_aside() {
         dir.path(),
         serde_json::json!([create(
             "window",
-            window_json("w-a", serde_json::json!(7), false)
+            &window_json("w-a", &serde_json::json!(7), false)
         )]),
     )
     .await;
@@ -137,7 +137,7 @@ async fn api_desk_new_refuses_a_readable_desk() {
         dir.path(),
         serde_json::json!([create(
             "window",
-            window_json("w-a", serde_json::json!(7), false)
+            &window_json("w-a", &serde_json::json!(7), false)
         )]),
     )
     .await;

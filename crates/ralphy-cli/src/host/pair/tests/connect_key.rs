@@ -7,9 +7,11 @@ fn connect_with_a_key_file_never_falls_back() {
     let err = connect(
         &mut fake,
         store.path(),
-        "svrapp",
-        Some(Path::new("my_key")),
-        no_keygen,
+        Destination {
+            dest: "svrapp",
+            key_file: Some(Path::new("my_key")),
+            keygen: no_keygen,
+        },
         &mut Report::text(Vec::new()),
     )
     .unwrap_err();

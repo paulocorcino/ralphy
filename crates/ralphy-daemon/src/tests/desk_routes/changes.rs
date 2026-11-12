@@ -6,8 +6,11 @@ async fn api_desk_put_then_get_round_trips() {
     let res = desk_put(
         dir.path(),
         serde_json::json!([
-            create("window", window_json("w-a", serde_json::json!(7), true)),
-            create("window", window_json("w-b", serde_json::Value::Null, false)),
+            create("window", &window_json("w-a", &serde_json::json!(7), true)),
+            create(
+                "window",
+                &window_json("w-b", &serde_json::Value::Null, false)
+            ),
         ]),
     )
     .await;
@@ -33,13 +36,13 @@ async fn a_body_without_changes_is_refused_as_restored_and_writes_nothing() {
         dir.path(),
         serde_json::json!([create(
             "window",
-            window_json("w-1", serde_json::json!(7), false)
+            &window_json("w-1", &serde_json::json!(7), false)
         )]),
     )
     .await;
     let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
     let legacy = serde_json::json!({
-        "windows": [window_json("w-old", serde_json::Value::Null, false)],
+        "windows": [window_json("w-old", &serde_json::Value::Null, false)],
         "fences": [],
         "removed": { "windows": ["w-1"] },
     });
@@ -65,9 +68,9 @@ async fn a_refused_change_is_named_and_the_rest_of_the_body_applies() {
     let res = desk_put(
         dir.path(),
         serde_json::json!([
-            create("note", off),
-            create("note", bad_tree),
-            create("note", note_json("n-ok", "c.note")),
+            create("note", &off),
+            create("note", &bad_tree),
+            create("note", &note_json("n-ok", "c.note")),
         ]),
     )
     .await;
@@ -99,10 +102,10 @@ async fn a_refused_change_is_named_and_the_rest_of_the_body_applies() {
 async fn a_create_past_a_cap_is_refused_and_nothing_is_pruned() {
     let dir = tempfile::tempdir().unwrap();
     let fences: Vec<serde_json::Value> = (1..=desk::FENCE_MAX + 1)
-        .map(|n| create("fence", fence_json(&format!("f{n}"), "region")))
+        .map(|n| create("fence", &fence_json(&format!("f{n}"), "region")))
         .collect();
     let notes: Vec<serde_json::Value> = (1..=desk::NOTE_MAX + 1)
-        .map(|n| create("note", note_json(&format!("n{n}"), &format!("a{n}.note"))))
+        .map(|n| create("note", &note_json(&format!("n{n}"), &format!("a{n}.note"))))
         .collect();
     let all: Vec<serde_json::Value> = fences.into_iter().chain(notes).collect();
     let res = desk_put(dir.path(), serde_json::json!(all)).await;
@@ -120,7 +123,7 @@ async fn api_desk_round_trips_notes() {
     let dir = tempfile::tempdir().unwrap();
     let res = desk_put(
         dir.path(),
-        serde_json::json!([create("note", note_json("n1", ".ralphy/notes/a.note"))]),
+        serde_json::json!([create("note", &note_json("n1", ".ralphy/notes/a.note"))]),
     )
     .await;
     assert_eq!(res.status(), StatusCode::OK);
@@ -175,9 +178,9 @@ async fn api_desk_round_trips_checkouts() {
 #[tokio::test]
 async fn api_desk_round_trips_and_gates_a_records_checkout() {
     let dir = tempfile::tempdir().unwrap();
-    let mut record = window_json("w1", serde_json::Value::Null, false);
+    let mut record = window_json("w1", &serde_json::Value::Null, false);
     record["checkout"] = serde_json::json!("wt-a");
-    let res = desk_put(dir.path(), serde_json::json!([create("window", record)])).await;
+    let res = desk_put(dir.path(), serde_json::json!([create("window", &record)])).await;
     assert_eq!(res.status(), StatusCode::OK);
     let get_body = desk_get(dir.path()).await;
     assert!(
@@ -190,7 +193,7 @@ async fn api_desk_round_trips_and_gates_a_records_checkout() {
         serde_json::json!([set(
             "window",
             "w1",
-            serde_json::json!({ "checkout": "../x" })
+            &serde_json::json!({ "checkout": "../x" })
         )]),
     )
     .await;
@@ -211,10 +214,13 @@ async fn api_desk_round_trips_a_lock_on_a_record_and_a_fence() {
     let res = desk_put(
         dir.path(),
         serde_json::json!([
-            create("window", window_json("w1", serde_json::Value::Null, false)),
-            create("fence", fence_json("f1", "backend")),
-            set("window", "w1", serde_json::json!({ "locked": true })),
-            set("fence", "f1", serde_json::json!({ "locked": true })),
+            create(
+                "window",
+                &window_json("w1", &serde_json::Value::Null, false)
+            ),
+            create("fence", &fence_json("f1", "backend")),
+            set("window", "w1", &serde_json::json!({ "locked": true })),
+            set("fence", "f1", &serde_json::json!({ "locked": true })),
         ]),
     )
     .await;
@@ -230,8 +236,8 @@ async fn api_desk_round_trips_a_lock_on_a_record_and_a_fence() {
     let res = desk_put(
         dir.path(),
         serde_json::json!([
-            set("window", "w1", serde_json::json!({ "locked": false })),
-            set("fence", "f1", serde_json::json!({ "locked": false })),
+            set("window", "w1", &serde_json::json!({ "locked": false })),
+            set("fence", "f1", &serde_json::json!({ "locked": false })),
         ]),
     )
     .await;
@@ -285,14 +291,17 @@ async fn api_desk_put_refuses_a_bad_body_without_touching_the_store() {
     desk_put(
         dir.path(),
         serde_json::json!([
-            create("window", window_json("w-a", serde_json::Value::Null, false)),
-            create("fence", fence_json("f-a", "backend")),
+            create(
+                "window",
+                &window_json("w-a", &serde_json::Value::Null, false)
+            ),
+            create("fence", &fence_json("f-a", "backend")),
         ]),
     )
     .await;
     let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
 
-    let huge = create("fence", fence_json("f-huge", "planning"))
+    let huge = create("fence", &fence_json("f-huge", "planning"))
         .to_string()
         .replace("\"left\":40.0", "\"left\":1e400");
     let unprocessable = StatusCode::UNPROCESSABLE_ENTITY;
@@ -302,7 +311,7 @@ async fn api_desk_put_refuses_a_bad_body_without_touching_the_store() {
         ("not JSON", "{".into(), bad),
         (
             "the pre-#340 bare array",
-            serde_json::json!([window_json("w-b", serde_json::Value::Null, false)]).to_string(),
+            serde_json::json!([window_json("w-b", &serde_json::Value::Null, false)]).to_string(),
             unprocessable,
         ),
         ("`[]`", "[]".into(), unprocessable),

@@ -184,6 +184,14 @@ async fn git_backed_verbs_run_in_the_selected_worktree() {
     let root = dir.path();
     let slug = SLUG;
 
+    queries_run_in_the_worktree(port, slug).await;
+    other_verbs_run_at_the_root(port, slug, root).await;
+    mutates_run_in_the_worktree(port, slug).await;
+    an_unknown_checkout_spawns_nothing(port, slug, root).await;
+}
+
+/// (a)-(c) The queries of the family run in the selected worktree.
+async fn queries_run_in_the_worktree(port: u16, slug: &str) {
     // (a) changes.list under the selection: worktree cwd, argv untouched.
     let text = queried(
         &ask(
@@ -238,7 +246,10 @@ async fn git_backed_verbs_run_in_the_selected_worktree() {
         text.contains("dispatch-argv: branch list --format json"),
         "branch.list argv; got {text:?}"
     );
+}
 
+/// (d)-(e) Outside the family, or with no checkout, the cwd is the root.
+async fn other_verbs_run_at_the_root(port: u16, slug: &str, root: &Path) {
     // (d) Outside the family the key is ignored: `.ralphy/` is the primary's.
     let text = queried(
         &ask(
@@ -304,7 +315,10 @@ async fn git_backed_verbs_run_in_the_selected_worktree() {
         "changes",
     );
     assert_at_root(&text, root, "changes.list without checkout");
+}
 
+/// (f) The Mutate arm follows the same cwd rule.
+async fn mutates_run_in_the_worktree(port: u16, slug: &str) {
     // (f) The Mutate arm: same cwd rule, argv unchanged, relayed on exit 1.
     std::env::set_var("RALPHY_TEST_EXIT_CODE", "1");
     let msg = relayed(
@@ -349,7 +363,10 @@ async fn git_backed_verbs_run_in_the_selected_worktree() {
         msg.contains("branch switch -- side"),
         "switch argv unchanged; got {msg:?}"
     );
+}
 
+/// (g) An unknown checkout is refused before any spawn.
+async fn an_unknown_checkout_spawns_nothing(port: u16, slug: &str, root: &Path) {
     // (g) An unknown name is refused BEFORE any spawn: the sentinel the child
     // writes on exit never appears.
     let sentinel = root.join("spawned.txt");

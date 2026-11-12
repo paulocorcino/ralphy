@@ -41,9 +41,8 @@ pub(crate) enum LockState {
 /// Read and classify the lockfile. Liveness is injected so tests never need a
 /// real second process (same pattern as `check_agents_present` in main.rs).
 pub(crate) fn inspect(path: &Path, is_alive: impl Fn(u32) -> bool) -> LockState {
-    let raw = match fs::read_to_string(path) {
-        Ok(raw) => raw,
-        Err(_) => return LockState::Free,
+    let Ok(raw) = fs::read_to_string(path) else {
+        return LockState::Free;
     };
     let info: LockInfo = match serde_json::from_str(&raw) {
         Ok(info) => info,

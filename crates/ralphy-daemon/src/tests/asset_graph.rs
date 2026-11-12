@@ -73,6 +73,94 @@ fn the_sweep_set_covers_every_asset_we_wrote() {
     );
 }
 
+/// The modules the console popup cannot work without.
+const DETACHED_FLOOR: &[&str] = &[
+    "wb-fleet.js",
+    "wb-detached.js",
+    "wb-monaco.js",
+    "wb-file-viewer.js",
+    "wb-events.js",
+    "wb-messages.js",
+];
+
+/// The modules the fence popup cannot work without.
+const FENCE_FLOOR: &[&str] = &[
+    "wb-fleet.js",
+    "wb-fail.js",
+    "wb-detached-fence.js",
+    "wb-desk-sink.js",
+    "wb-desk-sync.js",
+    "wb-detach-link.js",
+    "wb-session-route.js",
+    "wb-resume.js",
+    "wb-daemon.js",
+    "wb-events.js",
+    // `wb-console.ts` imports the desk folds, the GPU budget, the
+    // object that names its members (`wb-console-api.ts`, which
+    // imports the geometry, the session folds, the input folds
+    // and the resume rule), the title, the fence list, the detach, the view, the
+    // terminal, the window chrome, the popup registry, the fences, the desk
+    // and its records and
+    // restore, the console name,
+    // the input folds, the key bar, the feeds, the dormancy, the parts of the stage
+    // (which import the window states, the columns, the fence list, the view and the
+    // chrome), the window birth and the
+    // placeholder, and they import the window state; the terminal imports its touch
+    // gesture and its paste; the title imports the worktree switcher, the fences
+    // import the fence gestures and the chrome the window gestures; the entry
+    // imports the console, the door for operator messages, and the z stack and
+    // the gestures. Stated HERE because this set is a hardcoded floor:
+    // nothing derives the popup's needs from the tree, so an
+    // import dropped from the entry breaks the second monitor
+    // with no other signal.
+    "wb-geometry.js",
+    "wb-window-state.js",
+    "wb-console-name.js",
+    "wb-console-api.js",
+    "wb-console-input.js",
+    "wb-console-keys.js",
+    "wb-console-feeds.js",
+    "wb-console-dormancy.js",
+    "wb-console-spawn.js",
+    "wb-console-placeholder.js",
+    "wb-console-session.js",
+    "wb-desk-folds.js",
+    "wb-console-gpu.js",
+    "wb-console-fit.js",
+    "wb-console-frames.js",
+    "wb-console-press.js",
+    "wb-console-terminal.js",
+    "wb-console-touch.js",
+    "wb-console-paste.js",
+    "wb-console-title.js",
+    "wb-console-checkout.js",
+    "wb-stage-fence-gestures.js",
+    "wb-stage-fence-list.js",
+    "wb-desk-detach.js",
+    "wb-stage-view.js",
+    "wb-stage-chrome.js",
+    "wb-stage-window-gestures.js",
+    "wb-desk-popups.js",
+    "wb-desk-records.js",
+    "wb-desk-restore.js",
+    "wb-stage-fence-tile.js",
+    "wb-stage-fences.js",
+    "wb-stage-window.js",
+    "wb-stage-columns.js",
+    "wb-stage-parts.js",
+    "wb-stage-stack.js",
+    "wb-desk.js",
+    "wb-console.js",
+    "wb-messages.js",
+];
+
+/// The three documents the daemon serves, by name.
+const SHELLS: [(&str, &str); 3] = [
+    ("index.html", INDEX_HTML),
+    ("detached.html", DETACHED_HTML),
+    ("detached-fence.html", DETACHED_FENCE_HTML),
+];
+
 /// The three shells and the embedded tree agree, in both directions.
 ///
 /// This is the regression a file split actually causes, and until now
@@ -90,11 +178,6 @@ fn the_sweep_set_covers_every_asset_we_wrote() {
 ///   more often it means the tag was DROPPED rather than the file added.
 #[test]
 fn every_shell_tag_resolves_and_every_asset_is_reachable() {
-    const SHELLS: [(&str, &str); 3] = [
-        ("index.html", INDEX_HTML),
-        ("detached.html", DETACHED_HTML),
-        ("detached-fence.html", DETACHED_FENCE_HTML),
-    ];
     let embedded = embedded_ui_paths();
     let mut referenced: Vec<String> = Vec::new();
 
@@ -114,7 +197,12 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
             referenced.push(reference);
         }
     }
+}
 
+/// The other direction of
+/// [`every_shell_tag_resolves_and_every_asset_is_reachable`], for the desk.
+#[test]
+fn the_desk_loads_every_asset_it_embeds() {
     // The other direction, and it must be PER SHELL. A union-wide "somebody
     // references it" is too weak to catch the split regression: drop
     // `wb-fleet.js` from index.html and the union is still satisfied by the
@@ -148,95 +236,18 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
              tag was dropped, or the asset is dead weight in the binary"
         );
     }
+}
 
+/// What each popup must load, which no tree can derive.
+#[test]
+fn each_popup_loads_its_floor() {
     // The two popups load SUBSETS, so theirs cannot be derived from the tree
     // — a module they legitimately do not need is not a defect. What each
     // one needs is stated here, and it is the floor: adding a module to a
     // popup never reds this, dropping one always does.
     for (shell, required) in [
-        (
-            "detached.html",
-            &[
-                "wb-fleet.js",
-                "wb-detached.js",
-                "wb-monaco.js",
-                "wb-file-viewer.js",
-                "wb-events.js",
-                "wb-messages.js",
-            ][..],
-        ),
-        (
-            "detached-fence.html",
-            &[
-                "wb-fleet.js",
-                "wb-fail.js",
-                "wb-detached-fence.js",
-                "wb-desk-sink.js",
-                "wb-desk-sync.js",
-                "wb-detach-link.js",
-                "wb-session-route.js",
-                "wb-resume.js",
-                "wb-daemon.js",
-                "wb-events.js",
-                // `wb-console.ts` imports the desk folds, the GPU budget, the
-                // object that names its members (`wb-console-api.ts`, which
-                // imports the geometry, the session folds, the input folds
-                // and the resume rule), the title, the fence list, the detach, the view, the
-                // terminal, the window chrome, the popup registry, the fences, the desk
-                // and its records and
-                // restore, the console name,
-                // the input folds, the key bar, the feeds, the dormancy, the parts of the stage
-                // (which import the window states, the columns, the fence list, the view and the
-                // chrome), the window birth and the
-                // placeholder, and they import the window state; the terminal imports its touch
-                // gesture and its paste; the title imports the worktree switcher, the fences
-                // import the fence gestures and the chrome the window gestures; the entry
-                // imports the console, the door for operator messages, and the z stack and
-                // the gestures. Stated HERE because this set is a hardcoded floor:
-                // nothing derives the popup's needs from the tree, so an
-                // import dropped from the entry breaks the second monitor
-                // with no other signal.
-                "wb-geometry.js",
-                "wb-window-state.js",
-                "wb-console-name.js",
-                "wb-console-api.js",
-                "wb-console-input.js",
-                "wb-console-keys.js",
-                "wb-console-feeds.js",
-                "wb-console-dormancy.js",
-                "wb-console-spawn.js",
-                "wb-console-placeholder.js",
-                "wb-console-session.js",
-                "wb-desk-folds.js",
-                "wb-console-gpu.js",
-                "wb-console-fit.js",
-                "wb-console-frames.js",
-                "wb-console-press.js",
-                "wb-console-terminal.js",
-                "wb-console-touch.js",
-                "wb-console-paste.js",
-                "wb-console-title.js",
-                "wb-console-checkout.js",
-                "wb-stage-fence-gestures.js",
-                "wb-stage-fence-list.js",
-                "wb-desk-detach.js",
-                "wb-stage-view.js",
-                "wb-stage-chrome.js",
-                "wb-stage-window-gestures.js",
-                "wb-desk-popups.js",
-                "wb-desk-records.js",
-                "wb-desk-restore.js",
-                "wb-stage-fence-tile.js",
-                "wb-stage-fences.js",
-                "wb-stage-window.js",
-                "wb-stage-columns.js",
-                "wb-stage-parts.js",
-                "wb-stage-stack.js",
-                "wb-desk.js",
-                "wb-console.js",
-                "wb-messages.js",
-            ][..],
-        ),
+        ("detached.html", DETACHED_FLOOR),
+        ("detached-fence.html", FENCE_FLOOR),
     ] {
         let (_, html) = SHELLS
             .iter()

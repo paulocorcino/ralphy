@@ -62,9 +62,9 @@ fn screaming(name: &str) -> bool {
             .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
 }
 
-fn anchor(found: &mut [Found], before: String) {
+fn anchor(found: &mut [Found], before: &str) {
     for f in found {
-        f.anchor = Some(before.clone());
+        f.anchor = Some(before.to_owned());
     }
 }
 

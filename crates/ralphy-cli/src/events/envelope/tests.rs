@@ -19,7 +19,7 @@ fn git_block_is_merged_on_mapped_and_run_envelopes() {
     // `emitter` — on a subject-carrying mapped event and on a subject-less
     // run-scoped one (via `run_envelope`).
     let mapped = map(
-        RunEvent::IssueStarted {
+        &RunEvent::IssueStarted {
             number: 7,
             title: "hello".into(),
         },
@@ -62,7 +62,7 @@ fn run_state() -> RunState {
 fn agent_block_reflects_phase_and_is_absent_on_run_finished() {
     // Before any phase: name falls back to the run's exec agent, model/effort null.
     let pre = map(
-        RunEvent::IssueStarted {
+        &RunEvent::IssueStarted {
             number: 7,
             title: "hello".into(),
         },
@@ -84,7 +84,7 @@ fn agent_block_reflects_phase_and_is_absent_on_run_finished() {
         model: Some("opus".into()),
         effort: Some("high".into()),
     });
-    let v = map(RunEvent::NeedsSplit { number: 7 }, &planning);
+    let v = map(&RunEvent::NeedsSplit { number: 7 }, &planning);
     assert_eq!(v["data"]["agent"]["name"], "codex");
     assert_eq!(v["data"]["agent"]["model"], "opus");
     assert_eq!(v["data"]["agent"]["effort"], "high");
@@ -97,13 +97,13 @@ fn agent_block_reflects_phase_and_is_absent_on_run_finished() {
         model: "claude-sonnet-4".into(),
         effort: Some("medium".into()),
     });
-    let v = map(RunEvent::NeedsSplit { number: 7 }, &executing);
+    let v = map(&RunEvent::NeedsSplit { number: 7 }, &executing);
     assert_eq!(v["data"]["agent"]["name"], "claude");
     assert_eq!(v["data"]["agent"]["model"], "claude-sonnet-4");
 
     // `run.finished` carries NO agent block.
     let fin = map(
-        RunEvent::RunFinished {
+        &RunEvent::RunFinished {
             outcome: "completed".into(),
             issues_done: 1,
             issues_skipped: 0,
@@ -129,7 +129,7 @@ fn agent_block_reflects_phase_and_is_absent_on_run_finished() {
 fn agent_name_is_null_before_run_started_folds() {
     // On `queue.built` (precedes `run.started`), the exec agent is unknown → null.
     let v = map(
-        RunEvent::QueueBuilt {
+        &RunEvent::QueueBuilt {
             count: 1,
             order: vec![1],
             stop_before: None,
@@ -149,7 +149,7 @@ fn agent_name_is_null_before_run_started_folds() {
 fn issue_block_present_on_subject_scoped_absent_on_run_scoped() {
     // `issue.started` carries `data.issue.{number,title}`.
     let started = map(
-        RunEvent::IssueStarted {
+        &RunEvent::IssueStarted {
             number: 7,
             title: "hello".into(),
         },
@@ -161,7 +161,7 @@ fn issue_block_present_on_subject_scoped_absent_on_run_scoped() {
     // `plan.written` (subject-scoped) carries the issue block too, with the title
     // resolved from the folded state.
     let plan = map(
-        RunEvent::PlanWritten {
+        &RunEvent::PlanWritten {
             number: 7,
             open_steps: 3,
             usage: UsageLite::default(),
@@ -174,7 +174,7 @@ fn issue_block_present_on_subject_scoped_absent_on_run_scoped() {
 
     // Run-scoped events carry NO issue block.
     let built = map(
-        RunEvent::QueueBuilt {
+        &RunEvent::QueueBuilt {
             count: 1,
             order: vec![1],
             stop_before: None,
@@ -189,7 +189,7 @@ fn issue_block_present_on_subject_scoped_absent_on_run_scoped() {
         "queue.built has no issue block: {built}"
     );
     let started_run = map(
-        RunEvent::RunStarted {
+        &RunEvent::RunStarted {
             repo: "o/r".into(),
             queue_labels: vec![],
             agent: "claude".into(),
@@ -252,8 +252,8 @@ fn active_state() -> RunState {
     s
 }
 
-fn map(ev: RunEvent, state: &RunState) -> Value {
-    runevent_to_cloudevent(&ev, &ctx(), state)
+fn map(ev: &RunEvent, state: &RunState) -> Value {
+    runevent_to_cloudevent(ev, &ctx(), state)
 }
 
 #[test]
@@ -267,7 +267,7 @@ fn only_extension_attribute_is_runid_git_issue_agent_live_in_data() {
         effort: Some("high".into()),
     });
     let v = map(
-        RunEvent::PlanWritten {
+        &RunEvent::PlanWritten {
             number: 7,
             open_steps: 3,
             usage: UsageLite::default(),
@@ -310,7 +310,7 @@ fn queue_built_envelope_carries_no_scope_key() {
     // `scope` is LOG-ONLY (#222): it folds the console edge notice and must NEVER
     // reach the wire — the `dev.ralphy.queue.built` shape is unchanged.
     let v = map(
-        RunEvent::QueueBuilt {
+        &RunEvent::QueueBuilt {
             count: 0,
             order: vec![],
             stop_before: None,
@@ -335,13 +335,13 @@ fn agent_state_rides_the_active_issue_subject() {
         since: "2026-09-15T10:00:00-03:00".into(),
         detail: Some("AskUserQuestion: which port?".into()),
     };
-    let v = map(ev.clone(), &active_state());
+    let v = map(&ev, &active_state());
     assert_eq!(v["type"], "dev.ralphy.issue.agent_state");
     assert_eq!(v["subject"], "issue/7");
     assert_eq!(v["data"]["state"], "waiting");
     assert_eq!(v["data"]["since"], "2026-09-15T10:00:00-03:00");
     assert_eq!(v["data"]["detail"], "AskUserQuestion: which port?");
     assert!(v["data"].get("interrupted").is_none(), "{v}");
-    let v = map(ev, &RunState::new("t", 1));
+    let v = map(&ev, &RunState::new("t", 1));
     assert!(v.get("subject").is_none() || v["subject"].is_null(), "{v}");
 }

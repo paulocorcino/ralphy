@@ -112,7 +112,7 @@ where
                         ..Tab::default()
                     };
                     let bridge =
-                        channel::bridge_attached(attach, id, tab, &out, &mut frames, shutdown);
+                        channel::attached(attach, id, tab).bridge(&out, &mut frames, shutdown);
                     tokio::pin!(bridge);
                     tokio::select! {
                         () = &mut bridge => {}

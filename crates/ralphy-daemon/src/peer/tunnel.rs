@@ -216,13 +216,13 @@ impl Tunnels {
     /// [`Tunnels::ensure`], and say when no `ssh` runs because the next one
     /// waits.
     pub fn ensure_or_wait(&self, daemon_id: &str, spec: &TunnelSpec) -> Result<Ensured> {
-        self.ensure_with(daemon_id, spec, Instant::now(), false, || spawn_ssh(spec))
+        self.ensure_with(daemon_id, spec, (Instant::now(), false), || spawn_ssh(spec))
     }
 
     /// [`Tunnels::ensure_or_wait`] for an operator who asked to wake the peer:
     /// the exit is counted, but the next `ssh` does not wait for it.
     pub fn wake(&self, daemon_id: &str, spec: &TunnelSpec) -> Result<Ensured> {
-        self.ensure_with(daemon_id, spec, Instant::now(), true, || spawn_ssh(spec))
+        self.ensure_with(daemon_id, spec, (Instant::now(), true), || spawn_ssh(spec))
     }
 
     /// The peer `daemon_id` answered through its tunnel: the next exit of its
@@ -287,8 +287,7 @@ impl Tunnels {
         &self,
         daemon_id: &str,
         spec: &TunnelSpec,
-        now: Instant,
-        wake: bool,
+        (now, wake): (Instant, bool),
         spawn: impl FnOnce() -> Result<Child>,
     ) -> Result<Ensured> {
         // A poisoned lock means a panic mid-insert; the map is still a map, and

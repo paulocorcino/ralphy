@@ -59,6 +59,7 @@ panic = "deny"
 string_slice = "deny"
 as_conversions = "deny"
 undocumented_unsafe_blocks = "deny"
+mod_module_files = "deny"
 # The lint gate: `pedantic` is on. A lint `allow` below is debt that docs/lint/lint-transition.md
 # turns on (this list only shrinks), or noise, off for good with its reason.
 pedantic = { level = "deny", priority = -1 }
@@ -66,68 +67,26 @@ pedantic = { level = "deny", priority = -1 }
 missing_errors_doc = "allow"
 # noise: fires on every pure function; #[must_use] goes where ignoring the value is a bug (D3)
 must_use_candidate = "allow"
-# debt: 103 sites
-format_push_string = "allow"
 # debt: 91 sites
 missing_panics_doc = "allow"
-# debt: 68 sites
-needless_pass_by_value = "allow"
 # debt: 54 sites
 return_self_not_must_use = "allow"
 # debt: 45 sites
 case_sensitive_file_extension_comparisons = "allow"
-# debt: 35 sites
-too_many_lines = "allow"
 # debt: 33 sites
 unreadable_literal = "allow"
 # debt: 23 sites
 default_trait_access = "allow"
-# debt: 22 sites
-items_after_statements = "allow"
-# debt: 17 sites
-match_same_arms = "allow"
-# debt: 16 sites
-needless_continue = "allow"
-# debt: 15 sites
-unused_async = "allow"
-# debt: 14 sites
-unnecessary_wraps = "allow"
 # debt: 13 sites
 similar_names = "allow"
-# debt: 13 sites
-trivially_copy_pass_by_ref = "allow"
-# debt: 12 sites
-assigning_clones = "allow"
-# debt: 12 sites
-option_option = "allow"
-# debt: 12 sites
-ref_option = "allow"
 # debt: 11 sites
 used_underscore_binding = "allow"
-# debt: 8 sites
-struct_excessive_bools = "allow"
-# debt: 7 sites
-format_collect = "allow"
 # debt: 6 sites
 unnecessary_debug_formatting = "allow"
-# debt: 5 sites
-manual_let_else = "allow"
 # debt: 4 sites
 struct_field_names = "allow"
-# debt: 4 sites
-unused_self = "allow"
-# debt: 3 sites
-match_wildcard_for_single_variants = "allow"
 # debt: 2 sites
 many_single_char_names = "allow"
-# debt: 2 sites
-needless_for_each = "allow"
-# debt: 1 site
-fn_params_excessive_bools = "allow"
-# debt: 1 site
-implicit_hasher = "allow"
-# debt: 1 site
-nonminimal_bool = "allow"
 
 [workspace.package]
 edition = "2021"

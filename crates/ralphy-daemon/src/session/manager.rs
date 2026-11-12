@@ -21,7 +21,7 @@ mod pump;
 mod record;
 use agent_status::AgentStatus;
 pub use agent_status::TurnEnd;
-pub use attachment::{AttachError, Attachment};
+pub use attachment::{AttachError, Attachment, WriterClaim};
 use id_seq::IdSeq;
 #[cfg(test)]
 use kept::publish;
@@ -306,7 +306,7 @@ impl SessionManager {
         id: SessionId,
         takeover: bool,
     ) -> Result<Attachment, AttachError> {
-        self.attach_as(id, takeover, None, None, None)
+        self.attach_as(id, takeover, WriterClaim::default(), None)
     }
 
     /// [`attach`](Self::attach) as `holder`. A busy slot whose writer claimed it
@@ -329,10 +329,10 @@ impl SessionManager {
         self: &Arc<Self>,
         id: SessionId,
         takeover: bool,
-        holder: Option<&str>,
-        attempt: Option<u64>,
+        claim: WriterClaim<'_>,
         since: Option<u64>,
     ) -> Result<Attachment, AttachError> {
+        let WriterClaim { holder, attempt } = claim;
         let token = Arc::new(EvictToken::new());
         let sess = {
             // REGISTRATION INVARIANT: the `sessions` lock is held ACROSS the slot

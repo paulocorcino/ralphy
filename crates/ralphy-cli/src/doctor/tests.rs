@@ -110,7 +110,7 @@ fn a_signed_out_gh_says_how_to_sign_in() {
 fn lingering_warns_and_never_fails() {
     let off = evaluate(
         &MachineFacts {
-            linger: Some(Some(false)),
+            linger: Some(LingerRead(Some(false))),
             ..all_found()
         },
         false,

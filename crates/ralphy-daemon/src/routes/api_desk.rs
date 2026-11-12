@@ -2,6 +2,7 @@
 //! desk cannot be read.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use axum::extract::Query;
 use axum::http::StatusCode;
@@ -13,9 +14,6 @@ use axum::Router;
 use super::RouterShared;
 use super::{peer_slug_aliases, push, PeerRepoCache, Push};
 use crate::{checkout, desk, registry, rekey};
-
-#[cfg(test)]
-use std::sync::Arc;
 
 /// Query for `PUT /api/desk`: the writing tab's id, echoed in the
 /// `desk.dirty` push so that tab does not read its own write again.
@@ -79,6 +77,15 @@ fn unreadable(e: &anyhow::Error) -> Response {
         .into_response()
 }
 
+/// Where the desk is read and written: its file, the repo registry its keys
+/// follow, and the repos of the peers.
+#[derive(Clone)]
+pub(crate) struct DeskFiles {
+    pub(crate) desk: PathBuf,
+    pub(crate) registry: PathBuf,
+    pub(crate) peers: PeerRepoCache,
+}
+
 /// `GET /api/desk`: the saved desk — windows and fences together, each in layout
 /// order (ADR-0050, ADR-0051 §10), plus `checkouts` (the selected worktree per
 /// repo ref, ADR-0063 §4) when any is set. An absent `desk.toml` answers
@@ -89,13 +96,9 @@ fn unreadable(e: &anyhow::Error) -> Response {
 /// registry has since re-keyed (`former_slugs`) is rewritten on the way out,
 /// so a migrated project's consoles come back to it (ADR-0036 amendment
 /// 2026-09-16). The registry is read fresh, like `/api/repos`.
-pub(crate) async fn desk_get_route(
-    path: PathBuf,
-    registry_path: PathBuf,
-    peers: PeerRepoCache,
-) -> Response {
-    let aliases = former_slug_aliases(&registry_path, &peers);
-    match desk::load_from(&path) {
+pub(crate) fn desk_get_route(path: &Path, registry_path: &Path, peers: &PeerRepoCache) -> Response {
+    let aliases = former_slug_aliases(registry_path, peers);
+    match desk::load_from(path) {
         Ok(store) => Json(rekey::rekey_desk(store, &aliases)).into_response(),
         Err(e) => unreadable(&e),
     }
@@ -220,7 +223,7 @@ fn reload_first(error: &str) -> Response {
 fn put_reply(store: &desk::DeskStore, refused: &[desk::apply::Refusal]) -> Response {
     let mut body = match serde_json::to_value(store) {
         Ok(body) => body,
-        Err(e) => return failed(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")),
+        Err(e) => return failed(StatusCode::INTERNAL_SERVER_ERROR, &format!("{e:#}")),
     };
     if let Some(map) = body.as_object_mut() {
         map.insert("refused".to_owned(), serde_json::json!(refused));
@@ -234,7 +237,7 @@ fn read_put_body(raw: &[u8]) -> Result<desk::apply::DeskBody, Box<Response>> {
     let value: serde_json::Value = serde_json::from_slice(raw).map_err(|e| {
         Box::new(failed(
             StatusCode::BAD_REQUEST,
-            format!("the desk upload is not JSON: {e}"),
+            &format!("the desk upload is not JSON: {e}"),
         ))
     })?;
     if value
@@ -248,7 +251,7 @@ fn read_put_body(raw: &[u8]) -> Result<desk::apply::DeskBody, Box<Response>> {
     serde_json::from_value(value).map_err(|e| {
         Box::new(failed(
             StatusCode::UNPROCESSABLE_ENTITY,
-            format!("the desk upload is not a list of changes: {e}"),
+            &format!("the desk upload is not a list of changes: {e}"),
         ))
     })
 }
@@ -279,23 +282,26 @@ fn read_put_body(raw: &[u8]) -> Result<desk::apply::DeskBody, Box<Response>> {
 /// open tabs read it again (ADR-0070 D5). A write that changes nothing writes
 /// nothing and pushes nothing.
 pub(crate) async fn desk_put_route(
-    path: PathBuf,
-    registry_path: PathBuf,
-    peers: PeerRepoCache,
-    pushes: tokio::sync::broadcast::Sender<Push>,
+    files: &DeskFiles,
+    pushes: &tokio::sync::broadcast::Sender<Push>,
     tab: Option<String>,
     raw: &[u8],
 ) -> Response {
+    let DeskFiles {
+        desk: path,
+        registry: registry_path,
+        peers,
+    } = files;
     let body = match read_put_body(raw) {
         Ok(body) => body,
         Err(refusal) => return *refusal,
     };
     let mut seqs = DESK_WRITE.lock().await;
-    let stored = match desk::load_from(&path) {
+    let stored = match desk::load_from(path) {
         Ok(stored) => stored,
         Err(e) => return unreadable(&e),
     };
-    let aliases = former_slug_aliases(&registry_path, &peers);
+    let aliases = former_slug_aliases(registry_path, peers);
     let stored = rekey::rekey_desk(stored, &aliases);
     // A page that loaded before a restore still shows the older layout
     // (ADR-0050 amendment 2026-10-04, desk history).
@@ -310,14 +316,14 @@ pub(crate) async fn desk_put_route(
     let mut store = applied.desk;
     if applied.changed {
         store.rev = before.rev + 1;
-        if let Err(e) = desk::save_to(&store, &path) {
-            return failed(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}"));
+        if let Err(e) = desk::save_to(&store, path) {
+            return failed(StatusCode::INTERNAL_SERVER_ERROR, &format!("{e:#}"));
         }
-        let dir = history_dir(&path);
+        let dir = history_dir(path);
         if let Err(e) = desk::history::capture(&dir, &before, &store, now_ms()) {
             tracing::warn!(error = %format!("{e:#}"), "desk history not written");
         }
-        push(&pushes, Push::Desk { tab: tab.clone() });
+        push(pushes, Push::Desk { tab: tab.clone() });
     }
     if let Some(t) = tab.as_deref() {
         seqs.record(t, body.seq);
@@ -383,12 +389,17 @@ fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
-fn failed(status: StatusCode, error: String) -> Response {
+fn failed(status: StatusCode, error: &str) -> Response {
     (status, Json(serde_json::json!({ "error": error }))).into_response()
 }
 
 /// `/api/desk`, `/api/desk/new` and `/api/desk/history`.
 pub(crate) fn desk_routes(s: &RouterShared) -> Router {
+    let files = DeskFiles {
+        desk: s.desk_path.clone(),
+        registry: s.registry_path.clone(),
+        peers: Arc::clone(&s.peer_repo_cache),
+    };
     Router::new()
         .route(
             "/api/desk",
@@ -396,21 +407,14 @@ pub(crate) fn desk_routes(s: &RouterShared) -> Router {
                 let path = s.desk_path.clone();
                 let registry = s.registry_path.clone();
                 let peers = s.peer_repo_cache.clone();
-                move || desk_get_route(path.clone(), registry.clone(), peers.clone())
+                move || std::future::ready(desk_get_route(&path, &registry, &peers))
             })
             .put({
-                let path = s.desk_path.clone();
-                let registry = s.registry_path.clone();
-                let peers = s.peer_repo_cache.clone();
+                let files = files.clone();
                 let pushes = s.pushes.clone();
                 move |Query(q): Query<DeskPutQuery>, raw: axum::body::Bytes| {
-                    let (path, registry, peers, pushes) = (
-                        path.clone(),
-                        registry.clone(),
-                        peers.clone(),
-                        pushes.clone(),
-                    );
-                    async move { desk_put_route(path, registry, peers, pushes, q.tab, &raw).await }
+                    let (files, pushes) = (files.clone(), pushes.clone());
+                    async move { desk_put_route(&files, &pushes, q.tab, &raw).await }
                 }
             }),
         )
@@ -421,16 +425,11 @@ pub(crate) fn desk_routes(s: &RouterShared) -> Router {
                 move |Query(q): Query<HistoryQuery>| desk_history_get_route(path.clone(), q.id)
             })
             .post({
-                let path = s.desk_path.clone();
-                let registry = s.registry_path.clone();
-                let peers = s.peer_repo_cache.clone();
                 let pushes = s.pushes.clone();
                 let sessions = s.sessions.clone();
                 move |Json(body): Json<RestoreBody>| {
                     desk_history_restore_route(
-                        path.clone(),
-                        registry.clone(),
-                        peers.clone(),
+                        files.clone(),
                         pushes.clone(),
                         sessions.clone(),
                         body,

@@ -44,12 +44,13 @@ pub(crate) struct Local<'a> {
     pub latest: Option<String>,
 }
 
-/// Where a host flow connects: the destination to pass to `ssh`, and the key
-/// to use (`None` = the operator's SSH config or agent).
-#[derive(Clone, Copy)]
-pub(crate) struct Destination<'a> {
+/// Where a host flow connects: the destination to pass to `ssh`, the key to
+/// use (`None` = the operator's SSH config or agent), and how to create the
+/// peer key when the host refuses the operator's keys.
+pub(crate) struct Destination<'a, K: FnOnce(&Path) -> Result<()>> {
     pub dest: &'a str,
     pub key_file: Option<&'a Path>,
+    pub keygen: K,
 }
 
 /// A signed-in session: the key to use (`None` = the operator's SSH config or
@@ -165,7 +166,12 @@ pub(crate) fn add(
     probe: Probe<'_>,
     out: &mut Report<impl Write>,
 ) -> Result<PeerDescriptor> {
-    let (identity, os) = connect(shell, local.store, dest, key_file, keygen, out)?;
+    let destination = Destination {
+        dest,
+        key_file,
+        keygen,
+    };
+    let (identity, os) = connect(shell, local.store, destination, out)?;
     out.connected(os)?;
     let mut s = Session {
         shell,
@@ -200,8 +206,7 @@ pub(crate) fn add(
     let port = choose_local_port(local.port, &taken, keep, is_free).with_context(|| {
         format!("no free local port between {FIRST_TUNNEL_PORT} and {LAST_TUNNEL_PORT}")
     })?;
-    let identity_file = s.identity.as_ref().map(|p| p.display().to_string());
-    let descriptor = tunnel_descriptor(&d, dest, port, identity_file, probe, out)?;
+    let descriptor = tunnel_descriptor(&d, &s, port, probe, out)?;
     peer::write_descriptor(local.store, &descriptor)?;
     out.added(&descriptor, dest, port)?;
     Ok(descriptor)
@@ -274,16 +279,17 @@ fn apply_fixes<S: HostShell>(
     Ok(restart)
 }
 
-/// The descriptor of the host, naming the daemon's socket when it answers
-/// there and its port otherwise.
+/// The descriptor of the host `s` signed in to, naming the daemon's socket
+/// when it answers there and its port otherwise.
 fn tunnel_descriptor(
     d: &DaemonDescription,
-    dest: &str,
+    s: &Session<'_, impl HostShell>,
     port: u16,
-    identity_file: Option<String>,
     probe: Probe<'_>,
     out: &mut Report<impl Write>,
 ) -> Result<PeerDescriptor> {
+    let dest = s.dest;
+    let identity_file = s.identity.as_ref().map(|p| p.display().to_string());
     let descriptor = peer::paired_descriptor(d, dest, port, identity_file.clone())?;
     let Err(why) = reached_through_socket(&descriptor, d, probe) else {
         return Ok(descriptor);
@@ -360,13 +366,12 @@ fn port_fallback(
 pub(crate) fn check(
     shell: &mut impl HostShell,
     local: &Local<'_>,
-    destination: Destination<'_>,
+    destination: Destination<'_, impl FnOnce(&Path) -> Result<()>>,
     wanted_name: Option<&str>,
-    keygen: impl FnOnce(&Path) -> Result<()>,
     out: &mut Report<impl Write>,
 ) -> Result<Vec<HostCheck>> {
-    let Destination { dest, key_file } = destination;
-    let (identity, os) = connect(shell, local.store, dest, key_file, keygen, out)?;
+    let dest = destination.dest;
+    let (identity, os) = connect(shell, local.store, destination, out)?;
     out.connected(os)?;
     let mut s = Session {
         shell,

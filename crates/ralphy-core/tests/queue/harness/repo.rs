@@ -144,8 +144,8 @@ fn sweep_stale(prefix: &str) {
 }
 
 pub(crate) fn init_repo(name: &str) -> PathBuf {
-    ensure_usage_dir();
     static N: AtomicU32 = AtomicU32::new(0);
+    ensure_usage_dir();
     let dir = std::env::temp_dir().join(format!(
         "ralphy-queue-{}-{}-{}",
         std::process::id(),

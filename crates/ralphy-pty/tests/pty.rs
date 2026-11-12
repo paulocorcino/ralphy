@@ -321,7 +321,7 @@ fn output_channel_delivers_the_output_of_a_child_and_closes_at_eof() {
     let closed = loop {
         let left = deadline.saturating_duration_since(Instant::now());
         match rx.recv_timeout(left) {
-            Ok(_) => continue,
+            Ok(_) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break true,
             Err(mpsc::RecvTimeoutError::Timeout) => break false,
         }

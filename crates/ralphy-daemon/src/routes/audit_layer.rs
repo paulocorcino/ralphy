@@ -275,16 +275,17 @@ pub(crate) async fn audit_layer(
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
         .map(|ConnectInfo(addr)| addr.ip().to_string());
-    req.extensions_mut().insert(Caller {
+    let caller = Caller {
         device,
         login,
         actor,
-        server: server.clone(),
-    });
+        server,
+    };
+    req.extensions_mut().insert(caller.clone());
 
     let mut resp = next.run(req).await;
 
-    if let Some(mut event) = event_for(&method, &path, resp.status(), device, actor, server) {
+    if let Some(mut event) = event_for(&method, &path, resp.status(), &caller) {
         event.login = line_login(&event, login, &resp).map(|l| l.to_string());
         audit.record(&event);
     }
@@ -308,14 +309,13 @@ fn line_login(event: &Event, sent_by: Option<LoginId>, resp: &Response) -> Optio
 }
 
 /// The line one finished request writes, or `None`.
-fn event_for(
-    method: &Method,
-    path: &str,
-    status: StatusCode,
-    device: Option<DeviceId>,
-    actor: Actor,
-    server: ServerFacts,
-) -> Option<Event> {
+fn event_for(method: &Method, path: &str, status: StatusCode, caller: &Caller) -> Option<Event> {
+    let Caller {
+        device,
+        actor,
+        ref server,
+        ..
+    } = *caller;
     let mutating = [Method::POST, Method::PUT, Method::PATCH, Method::DELETE].contains(method);
     if !mutating || !path.starts_with("/api/") || NOT_AN_ACTION.contains(&path) {
         return None;

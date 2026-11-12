@@ -192,7 +192,7 @@ pub fn grep_with(
     };
     let clock = Clock::start(budget);
     let matcher = Matcher { re: &re, fallback };
-    collect_hits(grep_walks(&dir), &dir, &matcher, budget, &clock, &mut reply);
+    reply = collect_hits(grep_walks(&dir), &dir, &matcher, budget, &clock);
     reply.hits.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(reply)
 }
@@ -242,22 +242,25 @@ struct Matcher<'a> {
     fallback: &'static Encoding,
 }
 
-/// Push a hit into `reply` for each file of `walks` that contains `re`, until
-/// the clock runs out or the hit cap is reached; either one sets `truncated`.
-/// The cap is checked only for a file that is a hit, so a walk that ends
-/// right at the cap is not `truncated`.
+/// A hit for each file of `walks` that contains `re`, until the clock runs
+/// out or the hit cap is reached; either one sets `truncated`. The cap is
+/// checked only for a file that is a hit, so a walk that ends right at the
+/// cap is not `truncated`.
 fn collect_hits(
     walks: impl Iterator<Item = ignore::Walk>,
     dir: &Path,
     matcher: &Matcher<'_>,
     budget: &SearchBudget,
     clock: &Clock,
-    reply: &mut SearchReply<GrepHit>,
-) {
+) -> SearchReply<GrepHit> {
+    let mut reply = SearchReply {
+        hits: Vec::new(),
+        truncated: false,
+    };
     for entry in walks.flatten().filter_map(Result::ok) {
         if clock.expired() {
             reply.truncated = true;
-            return;
+            return reply;
         }
         if !entry.file_type().is_some_and(|t| t.is_file()) {
             continue;
@@ -267,12 +270,13 @@ fn collect_hits(
         };
         if reply.hits.len() >= budget.max_hits {
             reply.truncated = true;
-            return;
+            return reply;
         }
         reply
             .hits
             .extend(rel_of(dir, &entry).map(|path| GrepHit { path, count }));
     }
+    reply
 }
 
 /// Occurrences of `re` in the file at `path`, or `None` when the file is not a

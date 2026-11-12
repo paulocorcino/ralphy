@@ -288,7 +288,8 @@ async fn the_device_a_notice_names_cannot_dismiss_it() {
     write_log_used_from(dir.path(), LOGIN, &named_id, 1);
     let bare = json!({"at": at(1), "event": "login_other_device", "login": LOGIN});
     let mut text = std::fs::read_to_string(log_path(dir.path())).expect("read the audit log");
-    text.push_str(&format!("{bare}\n"));
+    text.push_str(&bare.to_string());
+    text.push('\n');
     std::fs::write(log_path(dir.path()), text).expect("write the audit log");
     let from_named = format!("login={LOGIN}&device={named_id}");
     let from_none = format!("login={LOGIN}&device=");
@@ -380,7 +381,7 @@ where
             };
             match protocol::decode(&bytes) {
                 Ok(Frame::Command(c)) if c.verb == verb => return Some(c.payload),
-                _ => continue,
+                _ => {}
             }
         }
         None

@@ -64,9 +64,8 @@ pub fn state_path(project_root: &Path) -> PathBuf {
 /// Load the state, degrading to empty on any error (fail-open: no knowledge
 /// means no denial).
 pub fn load(project_root: &Path) -> CostState {
-    let raw = match std::fs::read_to_string(state_path(project_root)) {
-        Ok(raw) => raw,
-        Err(_) => return CostState::default(),
+    let Ok(raw) = std::fs::read_to_string(state_path(project_root)) else {
+        return CostState::default();
     };
     serde_json::from_str(&raw).unwrap_or_default()
 }
@@ -367,7 +366,7 @@ pnpm run test:harness
                 );
                 assert!(msg.contains("~167s"), "names the cost: {msg}");
             }
-            other => panic!("expected Deny, got {other:?}"),
+            CostDecision::Allow => panic!("expected Deny, got Allow"),
         }
     }
 

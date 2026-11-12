@@ -1,3 +1,5 @@
+use crate::WRITE_TO_STRING;
+use std::fmt::Write as _;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -61,12 +63,14 @@ fn agent_skills_block(cfg: &InitConfig) -> String {
     let mut out = String::new();
     out.push_str(AGENT_SKILLS_HEADING);
     out.push('\n');
-    out.push_str(&format!(
+    writeln!(
+        out,
         "\nThe engineering skills onboard from the docs below.\n\n\
          - Issue tracker: {tracker}. See `docs/agents/issue-tracker.md`.\n\
          - Triage labels: this repo's canonical triage roles. See `docs/agents/triage-labels.md`.\n\
-         - Domain docs: single-context. See `docs/agents/domain.md`.\n"
-    ));
+         - Domain docs: single-context. See `docs/agents/domain.md`."
+    )
+    .expect(WRITE_TO_STRING);
     out
 }
 

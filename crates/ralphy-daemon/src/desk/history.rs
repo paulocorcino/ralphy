@@ -249,9 +249,13 @@ pub fn restore(current: DeskStore, version: DeskStore, now: i64) -> (DeskStore, 
         }
     }
     let mut fences = version.fences;
-    fences.iter_mut().for_each(|f| f.ts = now);
+    for f in &mut fences {
+        f.ts = now;
+    }
     let mut notes = version.notes;
-    notes.iter_mut().for_each(|n| n.ts = now);
+    for n in &mut notes {
+        n.ts = now;
+    }
     let desk = DeskStore {
         rev: current.rev,
         generation: current.generation,

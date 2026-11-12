@@ -15,13 +15,7 @@ fn shell_lists_the_fences() {
     // The console, its fence list, its window chrome and its view, as one text: the fence
     // list and the focused fence live in the fence list, the birth in the focused fence in the
     // chrome, the jumps and the slide in the view.
-    let js = &[
-        include_str!("../../assets/ui/wb-console.ts"),
-        include_str!("../../assets/ui/wb-stage-fence-list.ts"),
-        include_str!("../../assets/ui/wb-stage-chrome.ts"),
-        include_str!("../../assets/ui/wb-stage-view.ts"),
-    ]
-    .concat();
+    let js = &fence_list_js();
     let geometry = include_str!("../../assets/ui/wb-geometry.ts");
     for pin in [
         "function fenceList(",
@@ -31,17 +25,7 @@ fn shell_lists_the_fences() {
     ] {
         assert!(js.contains(pin), "the console must keep the #343 pin {pin}");
     }
-    let body = |name: &str| -> String {
-        let after = js
-            .split_once(name)
-            .unwrap_or_else(|| panic!("the console must keep {name}"))
-            .1;
-        after
-            .split_once("\n  }")
-            .expect("the function must close")
-            .0
-            .to_owned()
-    };
+    let body = |name: &str| function_body(js, name);
     // The issue's own rule: the jump REUSES a shared fold, it does not
     // re-derive the arithmetic. Both halves are load-bearing — the call
     // site, and the fact that there is exactly one definition to call. A
@@ -104,6 +88,11 @@ fn shell_lists_the_fences() {
             "wb-console.ts must not define {what} again (#343)"
         );
     }
+}
+
+#[test]
+fn a_fence_jump_slides_and_the_hand_outranks_it() {
+    let body = |name: &str| function_body(&fence_list_js(), name);
     // The slide is a VIEW effect layered on top, never a substitute for the
     // committed offsets: `slideTo` is cancellable, and both the floor's pan
     // and the wheel take the view back from a jump still in flight.
@@ -136,6 +125,11 @@ fn shell_lists_the_fences() {
         body("function stepFence(").contains("jumpToFence("),
         "a keyboard step must be a real jump, not a bare focus flip (§7)"
     );
+}
+
+#[test]
+fn the_fence_focus_is_one_state() {
+    let body = |name: &str| function_body(&fence_list_js(), name);
     // The focus STATE MACHINE, not just its function names: measured, a
     // `focusFence` gutted to an empty body leaves every other pin here, the
     // whole node table and clippy green — while no ring renders and every
@@ -168,6 +162,12 @@ fn shell_lists_the_fences() {
         body("function onFloorDown(").contains("clearFenceFocus()"),
         "a bare-floor press outside the focused fence must clear it (#343)"
     );
+}
+
+#[test]
+fn a_console_is_born_inside_the_focused_fence() {
+    let body = |name: &str| function_body(&fence_list_js(), name);
+    let geometry = include_str!("../../assets/ui/wb-geometry.ts");
     // The containment predicate is REUSED, not re-spelled — the same rule
     // the issue states for `bringIntoView`. Pinning only the definition
     // lets an inlined comparison sit beside it as exported dead code.
@@ -218,6 +218,10 @@ fn shell_lists_the_fences() {
         body("function refreshFenceChrome(").contains("fenceSummaries("),
         "the fence chrome must read the same fold the list does (#343)"
     );
+}
+
+#[test]
+fn the_fence_list_is_in_the_toolbar_and_the_focus_is_visible() {
     let tab = include_str!("../../assets/ui/wb-consoles-tab-menus.ts");
     for pin in ["jumpFence(", "fenceList()"] {
         assert!(
@@ -262,4 +266,28 @@ fn shell_lists_the_fences() {
         "the focus ring's colour token must exist — an undefined one voids the whole shorthand \
         (#343)"
     );
+}
+
+/// The console, its fence list, its window chrome and its view, as one text.
+fn fence_list_js() -> String {
+    [
+        include_str!("../../assets/ui/wb-console.ts"),
+        include_str!("../../assets/ui/wb-stage-fence-list.ts"),
+        include_str!("../../assets/ui/wb-stage-chrome.ts"),
+        include_str!("../../assets/ui/wb-stage-view.ts"),
+    ]
+    .concat()
+}
+
+/// The text of the function `name` opens in `js`, up to its closing brace.
+fn function_body(js: &str, name: &str) -> String {
+    let after = js
+        .split_once(name)
+        .unwrap_or_else(|| panic!("the console must keep {name}"))
+        .1;
+    after
+        .split_once("\n  }")
+        .expect("the function must close")
+        .0
+        .to_owned()
 }

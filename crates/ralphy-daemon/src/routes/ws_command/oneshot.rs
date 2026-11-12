@@ -135,20 +135,27 @@ pub(crate) async fn spawn_cwd(
 pub(crate) async fn execute_oneshot(
     verb: dispatch::Verb,
     cmd: &protocol::Command,
-    repo_path: &Path,
+    repo: OneshotRepo<'_>,
     daemon_id: Option<&str>,
-    slug: &str,
     sessions: &session::SessionManager,
 ) -> Option<serde_json::Value> {
+    let repo_path = repo.path;
     match verb.effect_class() {
         dispatch::EffectClass::Observe => Some(observe::observe(verb, cmd, repo_path).await),
         dispatch::EffectClass::Write => Some(write::write(verb, cmd, repo_path).await),
         dispatch::EffectClass::Query => Some(collect::query(verb, cmd, repo_path, daemon_id).await),
         dispatch::EffectClass::Mutate => {
-            Some(collect::mutate(verb, cmd, repo_path, daemon_id, slug, sessions).await)
+            Some(collect::mutate(verb, cmd, repo, daemon_id, sessions).await)
         }
         dispatch::EffectClass::Spawn | dispatch::EffectClass::Native => None,
     }
+}
+
+/// The repo a one-shot verb runs in: its slug and its folder.
+#[derive(Clone, Copy)]
+pub(crate) struct OneshotRepo<'a> {
+    pub(crate) slug: &'a str,
+    pub(crate) path: &'a Path,
 }
 
 /// Answer `note.write` (ADR-0064 §5): the markdown the card holds is packed

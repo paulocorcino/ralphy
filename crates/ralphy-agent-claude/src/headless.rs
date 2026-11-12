@@ -234,7 +234,9 @@ pub(crate) fn classify_outcome(
     classify(CompletionSignals {
         done,
         blocked,
-        limit: transcript.and_then(transcript_limit),
+        limit: transcript
+            .and_then(transcript_limit)
+            .map(|limit| limit.reset),
         committed: false,
         timed_out,
         exited_ok: !timed_out,

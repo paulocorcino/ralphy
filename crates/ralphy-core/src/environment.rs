@@ -21,6 +21,7 @@
 //! `std::process::id` for the orchestrator identity — so the same code produces the
 //! right brief on Windows, Linux, and macOS.
 
+use std::fmt::Write as _;
 use std::process::Command;
 
 use regex::Regex;
@@ -144,7 +145,7 @@ const TOOLS: &[Tool] = &[
 /// the charter reads no brief, strictly no worse than today.
 pub fn ensure_brief(ws: &Workspace) {
     let path = ws.ralphy_dir().join(ENVIRONMENT_FILE);
-    if let Err(e) = std::fs::write(&path, render(detect(), &orchestrator_guard())) {
+    if let Err(e) = std::fs::write(&path, render(&detect(), &orchestrator_guard())) {
         warn!(error = %e, "writing the environment brief failed");
     }
 }
@@ -271,12 +272,12 @@ fn classify_wsl(proc_version: &str) -> Option<&'static str> {
 /// each detected tool), then the orchestrator-guard notice last so the machine
 /// facts stay contiguous under the header. Pure over its inputs ([`Detected`] plus
 /// the pre-rendered `guard`) so it unit-tests without touching the host.
-fn render(d: Detected, guard: &str) -> String {
+fn render(d: &Detected, guard: &str) -> String {
     let mut out = String::from(HEADER);
     out.push('\n');
-    out.push_str(&format!("- OS: {}\n", d.os));
+    writeln!(out, "- OS: {}", d.os).expect(crate::WRITE_TO_STRING);
     for tool in &d.tools {
-        out.push_str(&format!("- {tool}\n"));
+        writeln!(out, "- {tool}").expect(crate::WRITE_TO_STRING);
     }
     out.push('\n');
     out.push_str(guard);
@@ -333,7 +334,7 @@ mod tests {
     #[test]
     fn render_lists_os_then_tools_then_guard_under_the_header() {
         let md = render(
-            Detected {
+            &Detected {
                 os: "Windows 11 · x86_64".into(),
                 tools: vec!["git 2.44.0".into(), "node 22.3.0".into()],
             },

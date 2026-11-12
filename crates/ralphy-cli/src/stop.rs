@@ -51,7 +51,7 @@ pub(crate) struct StopArgs {
 }
 
 /// `ralphy stop [--repo <path>] [--runid <id>] [--format json]`.
-pub(crate) fn stop(args: StopArgs) -> anyhow::Result<()> {
+pub(crate) fn stop(args: &StopArgs) -> anyhow::Result<()> {
     let repo_root = ralphy_core::git::resolve_toplevel(&args.repo)?;
     let listing = ralphy_run_snapshot::list_runs(&repo_root, ralphy_proc_util::pid_is_alive);
     let live: Vec<(String, u32)> = listing

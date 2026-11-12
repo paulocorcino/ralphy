@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use super::{collect_config, not_answered, spawn_cwd};
+use super::{collect_config, not_answered, spawn_cwd, OneshotRepo};
 use crate::{dispatch, protocol, session};
 
 type Argv = Result<Vec<String>, dispatch::ArgvError>;
@@ -117,11 +117,14 @@ fn query_reply(collected: dispatch::Collected, field: &str) -> serde_json::Value
 pub(super) async fn mutate(
     verb: dispatch::Verb,
     cmd: &protocol::Command,
-    repo_path: &Path,
+    repo: OneshotRepo<'_>,
     daemon_id: Option<&str>,
-    slug: &str,
     sessions: &session::SessionManager,
 ) -> serde_json::Value {
+    let OneshotRepo {
+        slug,
+        path: repo_path,
+    } = repo;
     if let Some(refusal) = live_console_refusal(verb, cmd, slug, sessions) {
         return refusal;
     }

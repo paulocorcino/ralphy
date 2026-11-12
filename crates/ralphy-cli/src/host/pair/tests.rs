@@ -94,6 +94,10 @@ pub(super) fn linux_host(probe: &str, first: &DaemonDescription) -> FakeHost {
 }
 
 /// The probe of a host whose tunnel reaches its own daemon.
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "it stands in for a `Probe`, whose type returns a `Result`"
+)]
 fn as_the_host(_: &TunnelSpec, _: Option<&str>) -> std::result::Result<String, String> {
     Ok(HOST_ID.to_owned())
 }
@@ -120,9 +124,9 @@ fn check_applies_nothing() {
         Destination {
             dest: "svrapp",
             key_file: None,
+            keygen: no_keygen,
         },
         None,
-        no_keygen,
         &mut printed,
     )
     .unwrap();
@@ -155,9 +159,9 @@ fn check_creates_the_peer_key_and_hands_over_its_line() {
         Destination {
             dest: "svrapp",
             key_file: None,
+            keygen: fake_keygen,
         },
         None,
-        fake_keygen,
         &mut Report::text(Vec::new()),
     )
     .unwrap_err();

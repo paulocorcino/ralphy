@@ -20,7 +20,7 @@
 )]
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result};
@@ -45,7 +45,7 @@ pub const ACCEPTS_IMAGES: bool = true;
 
 use auth::{codex_reset, is_codex_auth_error, is_codex_limit_text, CODEX_AUTH_ERROR_MSG};
 use command::{
-    build_codex_command, codex_config_model, recommended_tier, tier_to_model_effort,
+    build_codex_command, codex_config_model, recommended_tier, tier_to_model_effort, StatusHooks,
     CODEX_MODEL_SOL, DEFAULT_CODEX_EFFORT,
 };
 use forge_rules::install_forge_rules;
@@ -150,6 +150,28 @@ impl CodexAgent {
     /// subscription account on the model it is entitled to with no explicit flag;
     /// the routed fallback replaces the dead `gpt-5-codex` floor (ADR-0004,
     /// Amendment 2026-07-10).
+    /// One `codex exec` command, with the status watcher its hooks write to
+    /// started; the caller stops the watcher when the call ends.
+    fn watched_command(
+        &self,
+        model: &str,
+        effort: &str,
+        root: &Path,
+        out_path: &Path,
+    ) -> Result<(std::process::Command, status::Watcher)> {
+        // Each status hook runs this ralphy program (ADR-0085 D2).
+        let exe = ralphy_proc_util::exe::running_exe()?;
+        let status = status::Watcher::start(&self.run_dir)?;
+        let hooks = StatusHooks {
+            exe: &exe,
+            file: status.path(),
+        };
+        Ok((
+            build_codex_command(model, effort, root, out_path, hooks),
+            status,
+        ))
+    }
+
     fn resolve_model(&self, routed: &str) -> String {
         if let Some(m) = self.model.as_deref() {
             return m.to_owned();
@@ -171,6 +193,13 @@ impl CodexAgent {
     }
 }
 
+/// The rollout files under the sessions dir, none when it is unknown.
+fn rollout_files(sessions_dir: Option<&Path>) -> Vec<PathBuf> {
+    sessions_dir
+        .map(|d| list_session_files(d, "jsonl", true, Some("rollout-")))
+        .unwrap_or_default()
+}
+
 impl Agent for CodexAgent {
     fn name(&self) -> &'static str {
         "codex"
@@ -187,12 +216,7 @@ impl Agent for CodexAgent {
         // D10, appeared-over-grew): a file that APPEARED is this run's session, one
         // that merely grew is a concurrent pre-existing session and is excluded.
         let sessions_dir = codex_sessions_dir();
-        let snapshot = || {
-            sessions_dir
-                .as_deref()
-                .map(|d| list_session_files(d, "jsonl", true, Some("rollout-")))
-                .unwrap_or_default()
-        };
+        let snapshot = || rollout_files(sessions_dir.as_deref());
 
         let run = || {
             materialize_codex_skills(ws)?;
@@ -200,17 +224,7 @@ impl Agent for CodexAgent {
             remove_stale_file(&out_path);
             let before = snapshot();
             let effort = self.resolved_plan_effort();
-            // Each status hook runs this ralphy program (ADR-0085 D2).
-            let exe = ralphy_proc_util::exe::running_exe()?;
-            let status = status::Watcher::start(&self.run_dir)?;
-            let cmd = build_codex_command(
-                &model,
-                effort,
-                ws.repo_root(),
-                &out_path,
-                &exe,
-                status.path(),
-            );
+            let (cmd, status) = self.watched_command(&model, effort, ws.repo_root(), &out_path)?;
             ralphy_core::emit::planning("codex exec", &model, effort, "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/snapshot setup.
@@ -282,29 +296,14 @@ impl Agent for CodexAgent {
         // Snapshot the rollout tree around the call for appeared-over-grew token
         // capture (ADR-0008 D10), the same rule the Claude adapter uses.
         let sessions_dir = codex_sessions_dir();
-        let snapshot = || {
-            sessions_dir
-                .as_deref()
-                .map(|d| list_session_files(d, "jsonl", true, Some("rollout-")))
-                .unwrap_or_default()
-        };
+        let snapshot = || rollout_files(sessions_dir.as_deref());
 
         let run = || {
             materialize_codex_skills(ws)?;
             install_forge_rules(ws.repo_root())?;
             remove_stale_file(&out_path);
             let before = snapshot();
-            // Each status hook runs this ralphy program (ADR-0085 D2).
-            let exe = ralphy_proc_util::exe::running_exe()?;
-            let status = status::Watcher::start(&self.run_dir)?;
-            let cmd = build_codex_command(
-                &model,
-                effort,
-                ws.repo_root(),
-                &out_path,
-                &exe,
-                status.path(),
-            );
+            let (cmd, status) = self.watched_command(&model, effort, ws.repo_root(), &out_path)?;
             ralphy_core::emit::executing("codex exec", 0, &model, effort, "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/snapshot setup.

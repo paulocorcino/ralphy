@@ -224,7 +224,7 @@ fn list_folder(folder: &str, prefix: &str, registry: &RegistryStore) -> Result<L
     let registered = registered_roots(registry);
     let entries = names
         .into_iter()
-        .map(|name| entry(dir.join(&name), name, &registered))
+        .map(|name| entry(&dir.join(&name), name, &registered))
         .collect();
     Ok(Listing {
         entries,
@@ -259,8 +259,8 @@ fn is_hidden(name: &str, _item: &std::fs::DirEntry) -> bool {
     name.starts_with('.')
 }
 
-fn entry(path: PathBuf, name: String, registered: &HashSet<PathBuf>) -> Entry {
-    if std::fs::read_dir(&path).is_err() {
+fn entry(path: &Path, name: String, registered: &HashSet<PathBuf>) -> Entry {
+    if std::fs::read_dir(path).is_err() {
         return Entry {
             name,
             repo: false,
@@ -269,8 +269,8 @@ fn entry(path: PathBuf, name: String, registered: &HashSet<PathBuf>) -> Entry {
         };
     }
     Entry {
-        repo: has_git(&path),
-        added: is_registered(&path, registered),
+        repo: has_git(path),
+        added: is_registered(path, registered),
         name,
         error: None,
     }

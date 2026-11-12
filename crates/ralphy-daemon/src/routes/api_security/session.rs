@@ -1,7 +1,5 @@
 //! Login, logout and the login card's session state.
 
-use std::sync::Arc;
-
 use axum::extract::Form;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -28,9 +26,9 @@ pub(crate) struct LoginForm {
 /// header; on a bad credential `401`; while rate-limited `429` with a
 /// `Retry-After` (amendment §D). Login is meaningless without a `Session` policy,
 /// so any other policy returns `404`.
-pub(crate) async fn login_submit(
-    state: Arc<auth::AuthState>,
-    headers: axum::http::HeaderMap,
+pub(crate) fn login_submit(
+    state: &auth::AuthState,
+    headers: &axum::http::HeaderMap,
     Form(form): Form<LoginForm>,
 ) -> Response {
     // Throttle first: a 6-digit TOTP is otherwise online-brute-forceable.
@@ -54,7 +52,15 @@ pub(crate) async fn login_submit(
     } else {
         cookie::SessionKind::Standard
     };
-    match session.login_checked(&form.code, form.password.as_deref(), kind, now, last_step) {
+    match session.login_checked(
+        auth::LoginAttempt {
+            code: &form.code,
+            password: form.password.as_deref(),
+        },
+        kind,
+        now,
+        last_step,
+    ) {
         auth::LoginOutcome::Ok {
             cookie,
             kind,
@@ -67,7 +73,7 @@ pub(crate) async fn login_submit(
             // `Secure` when the login came through a TLS front (audit F6): the
             // cookie then never rides plain http, and a loopback browser on
             // `http://127.0.0.1` keeps its plain cookie.
-            let secure = request_is_https(&headers);
+            let secure = request_is_https(headers);
             let mut resp = (
                 StatusCode::OK,
                 [(
@@ -94,16 +100,13 @@ pub(crate) async fn login_submit(
 /// SERVER-SIDE (amendment §B — not merely cleared client-side), then emit a
 /// `Max-Age=0` clearing `Set-Cookie`. The cookie is `HttpOnly`, so JS cannot
 /// clear it — the server must (issue #186).
-pub(crate) async fn logout_route(
-    state: Arc<auth::AuthState>,
-    headers: axum::http::HeaderMap,
-) -> Response {
+pub(crate) fn logout_route(state: &auth::AuthState, headers: &axum::http::HeaderMap) -> Response {
     if let Err(e) = state.invalidate_sessions() {
         // A failed epoch bump must not strand the operator "logged in": clearing
         // the cookie still drops this browser. Log and proceed.
         tracing::warn!(error = %e, "failed to bump the session epoch on logout");
     }
-    let secure = request_is_https(&headers);
+    let secure = request_is_https(headers);
     (
         StatusCode::OK,
         [(header::SET_COOKIE, cookie::clear_cookie_value_with(secure))],
@@ -136,10 +139,10 @@ pub(crate) struct SessionState {
 /// `GET /api/session`: report whether this request is authorized and whether a
 /// password factor is enrolled. `Localhost`/`Bearer` are always `authed`; under a
 /// `Session` policy `authed` reflects a valid `Bearer` OR session cookie.
-pub(crate) async fn session_state_route(
-    state: Arc<auth::AuthState>,
+pub(crate) fn session_state_route(
+    state: &auth::AuthState,
     avatar: Option<String>,
-    headers: axum::http::HeaderMap,
+    headers: &axum::http::HeaderMap,
 ) -> Response {
     let auth = state.policy();
     let bearer = headers

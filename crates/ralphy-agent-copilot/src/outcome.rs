@@ -73,14 +73,13 @@ fn toolless_assistant_text(line: &str) -> Option<String> {
 /// `log` is the raw stdout+stderr the call captured; a usage limit lands there as a
 /// bare error line, never in the parsed `final_text`. As with Codex and Kimi, that
 /// text scan is only trusted on a non-clean exit — a genuine limit fails the
-/// process, so a clean exit proves the phrase was merely echoed. `exit_code` is
-/// unused for limit detection: Copilot has no semantic exit code equivalent to
-/// Kimi's `75 = RETRYABLE` (spike §3), so every limit arrives as exit 1 + text.
+/// process, so a clean exit proves the phrase was merely echoed. The exit code is
+/// not read: Copilot has no semantic exit code equivalent to Kimi's
+/// `75 = RETRYABLE` (spike §3), so every limit arrives as exit 1 + text.
 pub(crate) fn classify_copilot_outcome(
     exited_cleanly: bool,
     timed_out: bool,
     committed: bool,
-    _exit_code: Option<i32>,
     final_text: &str,
     log: &str,
 ) -> Outcome {
@@ -251,7 +250,7 @@ mod tests {
     #[test]
     fn classify_stuck_on_non_zero_exit() {
         assert_eq!(
-            classify_copilot_outcome(false, false, true, Some(1), "RALPHY_DONE_EXIT", ""),
+            classify_copilot_outcome(false, false, true, "RALPHY_DONE_EXIT", ""),
             Outcome::Stuck
         );
     }
@@ -262,7 +261,7 @@ mod tests {
         // ADR-0030 synthetic cadence.
         let log = "Error: API rate limit exceeded for this token.";
         assert_eq!(
-            classify_copilot_outcome(false, false, false, Some(1), "", log),
+            classify_copilot_outcome(false, false, false, "", log),
             Outcome::Limit(None)
         );
     }
@@ -272,7 +271,7 @@ mod tests {
         // A clean exit proves the phrase was merely echoed by the agent's prose.
         let log = "the issue asks us to handle a rate limit gracefully";
         assert_eq!(
-            classify_copilot_outcome(true, false, true, Some(0), "RALPHY_DONE_EXIT", log),
+            classify_copilot_outcome(true, false, true, "RALPHY_DONE_EXIT", log),
             Outcome::Done
         );
     }

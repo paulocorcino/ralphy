@@ -24,6 +24,20 @@ pub struct SessionAuth {
     pub revoked: RevokedLogins,
 }
 
+/// What the operator typed at the login: the TOTP code, and the password
+/// when one is asked for.
+#[derive(Clone, Copy)]
+pub struct LoginAttempt<'a> {
+    pub code: &'a str,
+    pub password: Option<&'a str>,
+}
+
+impl std::fmt::Debug for LoginAttempt<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LoginAttempt").finish_non_exhaustive()
+    }
+}
+
 impl SessionAuth {
     /// Whether a `Cookie:` header carries a valid, unexpired session cookie
     /// signed by this daemon's token AT THE CURRENT EPOCH.
@@ -54,12 +68,12 @@ impl SessionAuth {
     /// `cookie` with the `Max-Age` of `kind`.
     pub fn login_checked(
         &self,
-        code: &str,
-        password: Option<&str>,
+        attempt: LoginAttempt<'_>,
         kind: cookie::SessionKind,
         now: u64,
         last_step: Option<u64>,
     ) -> LoginOutcome {
+        let LoginAttempt { code, password } = attempt;
         let Some(step) = self.totp.matched_step(code, now, 1) else {
             return LoginOutcome::BadCredential;
         };
@@ -79,10 +93,12 @@ impl SessionAuth {
         let cookie = cookie::sign(
             &self.token,
             self.epoch.get(),
-            kind,
-            iat,
-            cookie::slide_exp(kind, iat, now),
-            login,
+            &cookie::Claims {
+                iat,
+                exp: cookie::slide_exp(kind, iat, now),
+                kind,
+                login,
+            },
         );
         LoginOutcome::Ok {
             cookie,
@@ -96,7 +112,12 @@ impl SessionAuth {
     /// over [`login_checked`](Self::login_checked) returning just the cookie.
     /// Kept for callers/tests that don't thread the last-step store.
     pub fn login(&self, code: &str, password: Option<&str>, now: u64) -> Option<String> {
-        match self.login_checked(code, password, cookie::SessionKind::Standard, now, None) {
+        match self.login_checked(
+            LoginAttempt { code, password },
+            cookie::SessionKind::Standard,
+            now,
+            None,
+        ) {
             LoginOutcome::Ok { cookie, .. } => Some(cookie),
             LoginOutcome::BadCredential | LoginOutcome::Replayed => None,
         }
@@ -121,10 +142,12 @@ impl SessionAuth {
             cookie::sign(
                 &self.token,
                 self.epoch.get(),
-                claims.kind,
-                claims.iat,
-                new_exp,
-                claims.login,
+                &cookie::Claims {
+                    iat: claims.iat,
+                    exp: new_exp,
+                    kind: claims.kind,
+                    login: claims.login,
+                },
             ),
             claims.kind,
         ))

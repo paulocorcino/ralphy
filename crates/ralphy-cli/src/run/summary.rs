@@ -81,7 +81,7 @@ impl RunSummary {
             .collect();
 
         RunSummary {
-            outcome: super::report::outcome_of(&report.stop),
+            outcome: super::report::outcome_of(report.stop.as_ref()),
             done,
             blocked,
             skipped,
@@ -143,15 +143,13 @@ pub(crate) mod tests {
         outcome: Option<Outcome>,
         status: ResultStatus,
         skip: Option<SkipReason>,
-        blocked_by: Vec<u64>,
-        human_blockers: Vec<u64>,
     ) -> IssueResult {
         IssueResult {
             number,
             outcome,
             closed: false,
-            blocked_by,
-            human_blockers,
+            blocked_by: vec![],
+            human_blockers: vec![],
             status,
             skip,
             review_only: 0,
@@ -167,41 +165,24 @@ pub(crate) mod tests {
             worked: vec![
                 IssueResult {
                     review_only: 2,
-                    ..result(
-                        1,
-                        Some(Outcome::Done),
-                        ResultStatus::Done,
-                        None,
-                        vec![],
-                        vec![],
-                    )
+                    ..result(1, Some(Outcome::Done), ResultStatus::Done, None)
                 },
-                result(
-                    2,
-                    Some(Outcome::Stuck),
-                    ResultStatus::NonGreen,
-                    None,
-                    vec![],
-                    vec![],
-                ),
+                result(2, Some(Outcome::Stuck), ResultStatus::NonGreen, None),
                 result(
                     3,
                     None,
                     ResultStatus::Skipped,
                     Some(SkipReason::HumanReturn),
-                    vec![],
-                    vec![],
                 ),
-                result(
-                    4,
-                    None,
-                    ResultStatus::Skipped,
-                    Some(SkipReason::BlockedBy),
-                    vec![9],
-                    vec![],
-                ),
-                result(5, None, ResultStatus::Hitl, None, vec![], vec![8]),
-                result(6, None, ResultStatus::Planned, None, vec![], vec![]),
+                IssueResult {
+                    blocked_by: vec![9],
+                    ..result(4, None, ResultStatus::Skipped, Some(SkipReason::BlockedBy))
+                },
+                IssueResult {
+                    human_blockers: vec![8],
+                    ..result(5, None, ResultStatus::Hitl, None)
+                },
+                result(6, None, ResultStatus::Planned, None),
             ],
             stop: None,
             commits: 0,

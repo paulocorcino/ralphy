@@ -200,10 +200,10 @@ pub fn slug_from_url(url: &str) -> Option<String> {
 /// `path-<hash>` slug derived from the repo-root path string (single-machine, but
 /// never wrong). Always returns a non-empty string.
 pub fn project_slug(repo: &Path) -> String {
+    use std::hash::{Hash, Hasher};
     if let Some(slug) = origin_url(repo).as_deref().and_then(slug_from_url) {
         return slug;
     }
-    use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     repo.to_string_lossy().hash(&mut hasher);
     format!("path-{:x}", hasher.finish())

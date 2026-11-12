@@ -71,10 +71,12 @@ async fn secure_cookie_follows_the_forwarded_scheme_on_login_slide_and_logout() 
     let stale = cookie::sign(
         "tok",
         0,
-        cookie::SessionKind::Standard,
-        now - cookie::SLIDE_MIN_SECS - 10,
-        now + cookie::SESSION_IDLE_TTL_SECS - cookie::SLIDE_MIN_SECS - 10,
-        cookie::LoginId::mint(),
+        &cookie::Claims {
+            iat: now - cookie::SLIDE_MIN_SECS - 10,
+            exp: now + cookie::SESSION_IDLE_TTL_SECS - cookie::SLIDE_MIN_SECS - 10,
+            kind: cookie::SessionKind::Standard,
+            login: cookie::LoginId::mint(),
+        },
     );
     for (forwarded, want_secure) in [(Some("https"), true), (None, false)] {
         let mut req = Request::builder()
@@ -234,10 +236,12 @@ async fn the_guard_hands_the_login_id_to_the_request() {
     let value = cookie::sign(
         "tok",
         session_epoch.get(),
-        cookie::SessionKind::Standard,
-        now,
-        now + 600,
-        login,
+        &cookie::Claims {
+            iat: now,
+            exp: now + 600,
+            kind: cookie::SessionKind::Standard,
+            login,
+        },
     );
     let resp = app
         .oneshot(
@@ -277,10 +281,12 @@ async fn a_revoked_login_is_refused_and_another_is_not() {
         let value = cookie::sign(
             "tok",
             session_epoch.get(),
-            cookie::SessionKind::Standard,
-            now,
-            now + 600,
-            login,
+            &cookie::Claims {
+                iat: now,
+                exp: now + 600,
+                kind: cookie::SessionKind::Standard,
+                login,
+            },
         );
         format!("ralphy_session={value}")
     };

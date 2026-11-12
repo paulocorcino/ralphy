@@ -1,6 +1,5 @@
 use super::super::input::{StringCap, STRING_CAP};
 use super::*;
-
 /// Codex's input box: a scroll region over the top rows, and 3000 lines
 /// scrolled inside it. The lines go to the scrollback, up to its cap, and a
 /// rebuilt screen scrolls the next lines the same way.
@@ -8,9 +7,10 @@ use super::*;
 fn lines_scrolled_inside_a_top_scroll_region_reach_the_scrollback() {
     let mut stream = format!("\x1b[1;{}r\x1b[{};1H", ROWS_40 - 3, ROWS_40 - 3);
     for n in 0..3000 {
-        stream.push_str(&format!("\r\nhistory {n}"));
+        write!(stream, "\r\nhistory {n}").expect(crate::WRITE_TO_STRING);
     }
-    stream.push_str(&format!("\x1b[{};1H\x1b[7m input box \x1b[0m", ROWS_40 - 1));
+    write!(stream, "\x1b[{};1H\x1b[7m input box \x1b[0m", ROWS_40 - 1)
+        .expect(crate::WRITE_TO_STRING);
     let mut a = Screen::new(ROWS_40, COLS_120, SCROLLBACK_LINES);
     a.feed(stream.as_bytes());
     assert_eq!(a.term.grid().history_size(), SCROLLBACK_LINES);

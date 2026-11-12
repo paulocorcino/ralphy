@@ -20,7 +20,7 @@ fn console_cwd_prefers_chosen_repo_then_falls_back_to_home() {
 #[test]
 fn peer_console_spec_preserves_typed_wsl_arguments() {
     let path = PathBuf::from("/home/owner/shared");
-    let spec = peer_console_spec("wsl.exe".into(), "Ubuntu-22.04", &path, 24, 80, None);
+    let spec = peer_console_spec("wsl.exe".into(), "Ubuntu-22.04", &path, (24, 80), None);
     assert_eq!(spec.program, OsString::from("wsl.exe"));
     assert_eq!(
         spec.args,
@@ -36,7 +36,13 @@ fn peer_console_spec_preserves_typed_wsl_arguments() {
 #[test]
 fn peer_console_spec_runs_a_startup_command_through_a_login_sh() {
     let path = PathBuf::from("/home/owner/shared");
-    let spec = peer_console_spec("wsl.exe".into(), "Ubuntu", &path, 24, 80, Some("htop -d 5"));
+    let spec = peer_console_spec(
+        "wsl.exe".into(),
+        "Ubuntu",
+        &path,
+        (24, 80),
+        Some("htop -d 5"),
+    );
     assert_eq!(
         spec.args,
         vec![
@@ -176,8 +182,7 @@ fn cursor_resolves_off_path_through_the_vendor_locator() {
                 Path::new("."),
                 PathBuf::from("."),
                 "owner/repo",
-                24,
-                80
+                (24, 80)
             )
             .program,
             ralphy_proc_util::cursor::locate_cursor()
@@ -280,7 +285,7 @@ fn the_gemini_root_layout_matches_the_adapters_own() {
 #[test]
 fn gemini_launches_under_the_owned_root_and_its_policy() {
     let repo = PathBuf::from("C:/Dev/FinCal");
-    let spec = spec_for(Agent::Gemini, &repo, repo.clone(), "owner/fincal", 24, 80);
+    let spec = spec_for(Agent::Gemini, &repo, repo.clone(), "owner/fincal", (24, 80));
     assert_eq!(
         spec.env,
         vec![(
@@ -300,7 +305,7 @@ fn gemini_launches_under_the_owned_root_and_its_policy() {
 
     // Gemini's containment is its OWN: no other vendor gets an env var, and
     // the one vendor that does carry args carries a different flag.
-    let bare = spec_for(Agent::Codex, &repo, repo.clone(), "owner/fincal", 24, 80);
+    let bare = spec_for(Agent::Codex, &repo, repo.clone(), "owner/fincal", (24, 80));
     assert!(bare.args.is_empty() && bare.env.is_empty());
 }
 
@@ -327,7 +332,7 @@ fn no_vendor_is_ever_given_a_worktree_flag_and_the_cwd_is_the_checkout() {
     let wt = root.join(".ralphy/worktrees/wt-a");
     let flag = OsString::from("--worktree");
     for agent in Agent::ALL {
-        let spec = spec_for(agent, &root, wt.clone(), "owner/ralphy", 24, 80);
+        let spec = spec_for(agent, &root, wt.clone(), "owner/ralphy", (24, 80));
         assert!(
             !spec.args.contains(&flag),
             "{agent:?} must never be given a worktree flag: {:?}",
@@ -335,7 +340,7 @@ fn no_vendor_is_ever_given_a_worktree_flag_and_the_cwd_is_the_checkout() {
         );
         assert_eq!(spec.cwd, wt, "{agent:?} runs in the checkout");
     }
-    let claude = spec_for(Agent::Claude, &root, wt.clone(), "owner/ralphy", 24, 80);
+    let claude = spec_for(Agent::Claude, &root, wt.clone(), "owner/ralphy", (24, 80));
     assert!(
         claude.name.is_some(),
         "the name opt-in is read from the primary"
@@ -351,7 +356,7 @@ fn gemini_in_a_checkout_is_contained_by_the_primary_trees_root() {
     let d = tempfile::tempdir().unwrap();
     let root = d.path().to_path_buf();
     let wt = root.join(".ralphy/worktrees/wt-a");
-    let spec = spec_for(Agent::Gemini, &root, wt.clone(), "owner/ralphy", 24, 80);
+    let spec = spec_for(Agent::Gemini, &root, wt.clone(), "owner/ralphy", (24, 80));
     assert_eq!(
         spec.env,
         vec![(

@@ -172,8 +172,7 @@ pub fn spec_for(
     root: &Path,
     cwd: PathBuf,
     repo_slug: &str,
-    rows: u16,
-    cols: u16,
+    (rows, cols): (u16, u16),
 ) -> SessionSpec {
     spec_with_status(agent, root, cwd, repo_slug, None, rows, cols, None)
 }

@@ -13,6 +13,8 @@ mod handoff;
 #[cfg(any(windows, test))]
 mod wsl;
 
+use crate::WRITE_TO_STRING;
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -178,23 +180,18 @@ fn report(build: &Build, channel: Channel, standing: &Standing) -> String {
     match standing {
         Standing::Behind(gap) => {
             let plural = if gap.len() == 1 { "" } else { "s" };
-            out.push_str(&format!(
-                "{} newer release{plural}, newest first:\n",
-                gap.len()
-            ));
+            writeln!(out, "{} newer release{plural}, newest first:", gap.len())
+                .expect(WRITE_TO_STRING);
             for release in gap {
-                out.push_str(&format!(
-                    "  {:<16} {}\n",
-                    release.tag_name,
-                    published(release)
-                ));
+                writeln!(out, "  {:<16} {}", release.tag_name, published(release))
+                    .expect(WRITE_TO_STRING);
             }
         }
         Standing::Level => out.push_str("up to date\n"),
         Standing::Ahead => {
             out.push_str("a development build, ahead of its tag — nothing to take");
             match build.tag.as_deref() {
-                Some(tag) => out.push_str(&format!(" (tagged {tag})\n")),
+                Some(tag) => writeln!(out, " (tagged {tag})").expect(WRITE_TO_STRING),
                 None => out.push('\n'),
             }
         }

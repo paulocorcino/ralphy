@@ -1,3 +1,4 @@
+use super::derived::{repo_relative_plan_path, resolve_verify_timeout_minutes};
 use super::*;
 
 /// The document carries the plan's REPO-RELATIVE path, forward-slashed —
@@ -43,7 +44,7 @@ fn run_resolves_both_efforts_and_passes_them_to_both_agent_builds() {
             .unwrap_or_else(|| panic!("the {phase} effort is resolved"));
         assert_eq!(
             args_at(at + head.len()),
-            format!("args.{phase}_effort,claude_settings.{phase}_effort.clone(),None"),
+            format!("args.{phase}_effort,adapters.claude.{phase}_effort.clone(),None"),
             "the {phase} effort resolves from --{phase}-effort and claude.{phase}_effort"
         );
     }
@@ -59,7 +60,7 @@ fn run_resolves_both_efforts_and_passes_them_to_both_agent_builds() {
     );
     for args in builds {
         assert!(
-            args.contains("&resolved_effort"),
+            args.split(',').any(|arg| arg == "resolved_effort"),
             "every agent build must receive the resolved effort: {args}"
         );
     }

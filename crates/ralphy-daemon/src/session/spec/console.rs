@@ -97,8 +97,7 @@ pub fn peer_console_spec(
     launcher: OsString,
     distro: &str,
     peer_path: &Path,
-    rows: u16,
-    cols: u16,
+    (rows, cols): (u16, u16),
     command: Option<&str>,
 ) -> SessionSpec {
     let mut args: Vec<OsString> = vec![

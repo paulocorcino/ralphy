@@ -18,9 +18,23 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
+use std::fmt::Write as _;
+
 use anyhow::{Context, Result};
 use axum::Router;
 use include_dir::{include_dir, Dir};
+
+/// The `expect` message of a `write!` to a `String`, which cannot fail.
+pub(crate) const WRITE_TO_STRING: &str = "a write to a String does not fail";
+
+/// `bytes` as lowercase hex, two characters per byte.
+pub(crate) fn lower_hex<'a>(bytes: impl IntoIterator<Item = &'a u8>) -> String {
+    let mut hex = String::new();
+    for b in bytes {
+        write!(hex, "{b:02x}").expect(WRITE_TO_STRING);
+    }
+    hex
+}
 
 pub mod agent_state;
 pub mod assets;

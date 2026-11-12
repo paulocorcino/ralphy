@@ -314,6 +314,10 @@ pub const QUEUE_BUILT_MSG: &str = "queue built";
 /// the queue carries no stop-before (issue numbers are ≥ 1). `scope` is LOG-ONLY:
 /// the human-readable queue scope phrase the console notice is folded from — no
 /// decoder arm feeds it to the wire (ADR-0019 amendment, #222).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public entry point called by the composition root with one value per setting"
+)]
 pub fn queue_built(
     count: u64,
     order: &str,

@@ -114,6 +114,14 @@ async fn the_four_write_verbs_carry_their_own_argv_and_worktree_add_keeps_its_ou
         axum::serve(listener, app).await.unwrap();
     });
 
+    each_verb_relays_its_own_argv(port, slug).await;
+    a_malformed_payload_spawns_nothing(port, slug).await;
+    each_verb_answers_a_bare_ok(port, slug).await;
+    worktree_add_keeps_its_output(port, slug).await;
+}
+
+/// Each of the four verbs relays a refusal that echoes its own argv only.
+async fn each_verb_relays_its_own_argv(port: u16, slug: &str) {
     let staged = ask(
         port,
         1,
@@ -185,7 +193,10 @@ async fn the_four_write_verbs_carry_their_own_argv_and_worktree_add_keeps_its_ou
         !msg.contains("stage") && !msg.contains("commit"),
         "no sibling's argv leaked into the discard leg: {msg:?}"
     );
+}
 
+/// A malformed payload is refused by the daemon itself.
+async fn a_malformed_payload_spawns_nothing(port: u16, slug: &str) {
     // The no-argv path: a malformed payload is refused BY THE DAEMON, so the
     // reply is its own fixed prose and no child echo appears in it.
     let refused = ask(
@@ -224,7 +235,10 @@ async fn the_four_write_verbs_carry_their_own_argv_and_worktree_add_keeps_its_ou
         no_message["message"], "invalid mutation options",
         "an absent message never reaches a child: {no_message}"
     );
+}
 
+/// The success shape of the four verbs: a bare `ok`.
+async fn each_verb_answers_a_bare_ok(port: u16, slug: &str) {
     // The SUCCESS shape, for each of the four rows. Without this leg a Mutate
     // branch that could only ever answer `error` would satisfy every assertion
     // above — the child's exit code is re-set here because it is read at spawn.
@@ -264,7 +278,10 @@ async fn the_four_write_verbs_carry_their_own_argv_and_worktree_add_keeps_its_ou
             "a Mutate reply carries no read field: {ok}"
         );
     }
+}
 
+/// `worktree.add` answers `ok` with the child's trimmed output.
+async fn worktree_add_keeps_its_output(port: u16, slug: &str) {
     let added = ask(
         port,
         12,

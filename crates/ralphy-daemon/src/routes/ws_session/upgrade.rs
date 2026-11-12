@@ -246,7 +246,7 @@ impl Open {
     /// serves it. The claim is held until the caller drops it, which is after
     /// the spawn that does not join.
     pub(super) async fn claim_and_join(&self) -> (Option<session::RecordClaim>, Option<Opened>) {
-        let claim = claim_for(&self.sessions, &self.record).await;
+        let claim = claim_for(&self.sessions, self.record.as_deref()).await;
         let joined = join(
             &self.sessions,
             claim.as_ref(),

@@ -46,37 +46,7 @@ async fn the_process_stop_waits_for_an_open_page_socket() {
     listener.set_nonblocking(true).unwrap();
     let port = listener.local_addr().unwrap().port();
     let (stop_tx, stop) = tokio::sync::watch::channel(false);
-    let daemon = std::thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        let served = runtime.block_on(async move {
-            let (sockets, drain) = mux::tracked();
-            let app = router_tracking(
-                None,
-                registry_path,
-                PathBuf::from("does-not-exist"),
-                StorePaths::default(),
-                Instant::now(),
-                stop.clone(),
-                auth::AuthState::localhost(),
-                sockets,
-            );
-            let tcp = tokio::net::TcpListener::from_std(listener).unwrap();
-            serve_until_stopped(
-                Some(tcp),
-                #[cfg(unix)]
-                None,
-                app,
-                stop,
-                drain,
-            )
-            .await
-        });
-        drop(runtime);
-        served
-    });
+    let daemon = spawn_daemon(registry_path, listener, stop);
 
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws"))
         .await
@@ -145,4 +115,44 @@ async fn the_process_stop_waits_for_an_open_page_socket() {
         .expect("the daemon stops within the bound")
         .unwrap();
     served.unwrap().unwrap();
+}
+
+/// The daemon on a thread and a runtime of its own, serving `listener` until
+/// `stop`; the thread ends when `run` would drop the runtime.
+fn spawn_daemon(
+    registry_path: PathBuf,
+    listener: std::net::TcpListener,
+    stop: tokio::sync::watch::Receiver<bool>,
+) -> std::thread::JoinHandle<Result<()>> {
+    std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let served = runtime.block_on(async move {
+            let (sockets, drain) = mux::tracked();
+            let app = router_tracking(
+                None,
+                registry_path,
+                PathBuf::from("does-not-exist"),
+                StorePaths::default(),
+                Instant::now(),
+                stop.clone(),
+                auth::AuthState::localhost(),
+                sockets,
+            );
+            let tcp = tokio::net::TcpListener::from_std(listener).unwrap();
+            serve_until_stopped(
+                Some(tcp),
+                #[cfg(unix)]
+                None,
+                app,
+                stop,
+                drain,
+            )
+            .await
+        });
+        drop(runtime);
+        served
+    })
 }

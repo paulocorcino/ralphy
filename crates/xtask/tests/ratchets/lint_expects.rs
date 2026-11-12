@@ -15,6 +15,7 @@ const EXPECTS: &[(&str, usize)] = &[
     ("cast_sign_loss", 2),
     ("panic", 0),
     ("string_slice", 0),
+    ("too_many_arguments", 43),
     ("undocumented_unsafe_blocks", 0),
 ];
 

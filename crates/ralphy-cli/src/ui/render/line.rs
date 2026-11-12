@@ -137,6 +137,10 @@ pub(crate) fn render_active_line(
 /// Render a [`RunEvent`] to a single line, or `None` for live-region-only events.
 /// The local timestamp and the outcome glyph are always present on a surfaced
 /// line; colour is applied only when `opts.color` is set.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one flat arm per RunEvent variant, matched exhaustively; a split loses that check"
+)]
 pub(crate) fn render_line(
     event: &RunEvent,
     ts: &DateTime<Local>,
@@ -161,17 +165,6 @@ pub(crate) fn render_line(
             Style::new().cyan(),
             format!("queue built: {count} issue(s)"),
         ),
-        // Live-region only: the active line carries the planning/execution phase
-        // and its model/effort; no permanent scroll-up line is drawn for them.
-        RunEvent::Executing { .. } | RunEvent::Planning { .. } => return None,
-        // The ADR-0019 run-boundary events and the raw plan snapshots (#96) are for
-        // the CloudEvents sink only; the console already draws its own header/panel,
-        // so no scroll-up line here.
-        RunEvent::RunStarted { .. }
-        | RunEvent::RunFinished { .. }
-        | RunEvent::RunSkipped { .. }
-        | RunEvent::PlanOpened { .. }
-        | RunEvent::PlanClosed { .. } => return None,
         RunEvent::IssueStarted { number, title } => (
             pick("🧠", "[plan]", opts.emoji),
             Style::new().cyan(),
@@ -288,7 +281,19 @@ pub(crate) fn render_line(
                 detail.as_deref().unwrap_or("input needed")
             ),
         ),
-        RunEvent::AgentState { .. } => return None,
+        // Live-region only: the active line carries the planning/execution phase
+        // and its model/effort; no permanent scroll-up line is drawn for them.
+        // The ADR-0019 run-boundary events and the raw plan snapshots (#96) are for
+        // the CloudEvents sink only; the console already draws its own header/panel,
+        // so no scroll-up line here.
+        RunEvent::Executing { .. }
+        | RunEvent::Planning { .. }
+        | RunEvent::RunStarted { .. }
+        | RunEvent::RunFinished { .. }
+        | RunEvent::RunSkipped { .. }
+        | RunEvent::PlanOpened { .. }
+        | RunEvent::PlanClosed { .. }
+        | RunEvent::AgentState { .. } => return None,
         RunEvent::DeadlinePassed { number } => (
             pick("⏱️", "[timeout]", opts.emoji),
             Style::new().yellow(),

@@ -183,11 +183,10 @@ fn console_request(info: &SessionInfo) -> Option<AttentionRequest> {
     let state = info.agent_state.as_ref()?;
     let (kind, detail) = match state.source {
         Some(Unreported::Silent) => (Kind::ConsoleSilent, state.reason.clone()),
-        Some(Unreported::NoSource) => return None,
         None if state.state.as_deref() == Some("waiting") => {
             (Kind::ConsoleWaiting, state.detail.clone())
         }
-        None => return None,
+        Some(Unreported::NoSource) | None => return None,
     };
     Some(AttentionRequest {
         id: format!("console:{}", info.id),

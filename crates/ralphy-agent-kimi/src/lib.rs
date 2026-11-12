@@ -220,7 +220,7 @@ impl Agent for KimiAgent {
         // fold, so report zero planning tokens.
         let (usage, session_id) = match session {
             Some((r, (before, after))) => (
-                fold_wire_usage(&before, &after, Some(model)),
+                fold_wire_usage(&before, &after, Some(&model)),
                 resume_hint_session_id(&r.stdout),
             ),
             None => (Usage::default(), None),
@@ -284,14 +284,7 @@ impl Agent for KimiAgent {
         let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         let committed = before_sha != after_sha;
         let final_text = kimi_final_text(&r.stdout);
-        let outcome = classify_kimi_outcome(
-            r.exited_cleanly,
-            r.timed_out,
-            committed,
-            r.exit_code,
-            &final_text,
-            &r.log,
-        );
+        let outcome = classify_kimi_outcome(&r, committed, &final_text);
         info!(
             ?outcome,
             exited_cleanly = r.exited_cleanly,
@@ -302,7 +295,7 @@ impl Agent for KimiAgent {
         );
         Ok(Execution {
             outcome,
-            usage: fold_wire_usage(&before, &after, Some(model)),
+            usage: fold_wire_usage(&before, &after, Some(&model)),
             session_id: resume_hint_session_id(&r.stdout),
         })
     }

@@ -75,9 +75,11 @@ fn compute_policy_gates_loopback_only_when_opted_in() {
     // Default loopback: no gate.
     let p = compute_policy(
         loop_ip,
-        None,
-        None,
-        None,
+        Credentials {
+            token: None,
+            totp: None,
+            password: None,
+        },
         Requirements::default(),
         test_epoch(),
     )
@@ -90,9 +92,11 @@ fn compute_policy_gates_loopback_only_when_opted_in() {
     // Opted in + seed + token → gated Session even on loopback.
     let p = compute_policy(
         loop_ip,
-        Some("k".into()),
-        Some(seed()),
-        None,
+        Credentials {
+            token: Some("k".into()),
+            totp: Some(seed()),
+            password: None,
+        },
         Requirements {
             login: true,
             token: false,
@@ -109,9 +113,11 @@ fn compute_policy_gates_loopback_only_when_opted_in() {
     // is loopback; the enable route mints a token so this is transient).
     let p = compute_policy(
         loop_ip,
-        None,
-        Some(seed()),
-        None,
+        Credentials {
+            token: None,
+            totp: Some(seed()),
+            password: None,
+        },
         Requirements {
             login: true,
             token: false,
@@ -132,9 +138,11 @@ fn compute_policy_keeps_network_rules() {
     // Network + no token → fail closed (the §4 invariant).
     assert!(compute_policy(
         net_ip,
-        None,
-        None,
-        None,
+        Credentials {
+            token: None,
+            totp: None,
+            password: None,
+        },
         Requirements::default(),
         test_epoch()
     )
@@ -142,9 +150,11 @@ fn compute_policy_keeps_network_rules() {
     // Network + token, no seed → Bearer.
     let p = compute_policy(
         net_ip,
-        Some("t".into()),
-        None,
-        None,
+        Credentials {
+            token: Some("t".into()),
+            totp: None,
+            password: None,
+        },
         Requirements::default(),
         test_epoch(),
     )
@@ -153,9 +163,11 @@ fn compute_policy_keeps_network_rules() {
     // Network + token + seed → Session (unchanged §4 derived behavior).
     let p = compute_policy(
         net_ip,
-        Some("t".into()),
-        Some(seed()),
-        None,
+        Credentials {
+            token: Some("t".into()),
+            totp: Some(seed()),
+            password: None,
+        },
         Requirements::default(),
         test_epoch(),
     )
@@ -170,9 +182,11 @@ fn compute_policy_requires_the_token_on_loopback_when_marked() {
 
     let p = compute_policy(
         loop_ip,
-        Some("k".into()),
-        None,
-        None,
+        Credentials {
+            token: Some("k".into()),
+            totp: None,
+            password: None,
+        },
         Requirements {
             login: false,
             token: true,
@@ -187,9 +201,11 @@ fn compute_policy_requires_the_token_on_loopback_when_marked() {
 
     let p = compute_policy(
         loop_ip,
-        Some("k".into()),
-        Some(seed()),
-        None,
+        Credentials {
+            token: Some("k".into()),
+            totp: Some(seed()),
+            password: None,
+        },
         Requirements {
             login: false,
             token: true,
@@ -204,9 +220,11 @@ fn compute_policy_requires_the_token_on_loopback_when_marked() {
 
     let Err(err) = compute_policy(
         loop_ip,
-        None,
-        None,
-        None,
+        Credentials {
+            token: None,
+            totp: None,
+            password: None,
+        },
         Requirements {
             login: false,
             token: true,
@@ -221,9 +239,11 @@ fn compute_policy_requires_the_token_on_loopback_when_marked() {
     );
     let empty = compute_policy(
         loop_ip,
-        Some(String::new()),
-        None,
-        None,
+        Credentials {
+            token: Some(String::new()),
+            totp: None,
+            password: None,
+        },
         Requirements {
             login: false,
             token: true,
@@ -234,9 +254,11 @@ fn compute_policy_requires_the_token_on_loopback_when_marked() {
 
     let p = compute_policy(
         loop_ip,
-        Some("k".into()),
-        None,
-        None,
+        Credentials {
+            token: Some("k".into()),
+            totp: None,
+            password: None,
+        },
         Requirements::default(),
         test_epoch(),
     )

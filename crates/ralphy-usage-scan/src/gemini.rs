@@ -88,25 +88,21 @@ fn project_records(
         if input.run_session_ids.contains(&fold.session_id) {
             continue;
         }
-        out.extend(records_of(fold, &slug, &actor_email));
+        out.extend(records_of(fold, slug.as_deref(), actor_email.as_deref()));
     }
     out
 }
 
 /// One record per model of a folded session.
-fn records_of(
-    fold: Fold,
-    slug: &Option<String>,
-    actor_email: &Option<String>,
-) -> Vec<InteractiveRecord> {
+fn records_of(fold: Fold, slug: Option<&str>, actor_email: Option<&str>) -> Vec<InteractiveRecord> {
     fold.by_model
         .into_iter()
         .map(|(model, tokens)| InteractiveRecord {
             agent: "gemini".to_owned(),
             model,
             session_id: fold.session_id.clone(),
-            project: slug.clone(),
-            actor_email: actor_email.clone(),
+            project: slug.map(str::to_owned),
+            actor_email: actor_email.map(str::to_owned),
             tokens: Some(tokens),
             first_ts: fold.first_ts.clone(),
             last_ts: fold.last_ts.clone(),

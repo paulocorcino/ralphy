@@ -300,9 +300,10 @@ fn place(
     let target = fswrite::confine_outside_protected(root, &to_rel).map_err(UploadError::Write)?;
     let (rel, target, placed) = match (exists(&target)?, mode) {
         (None, _) => (to_rel, target, Placed::Created),
-        (Some(_), OnConflict::Fail) => return Err(UploadError::Conflict),
         (Some(true), OnConflict::Replace) => (to_rel, target, Placed::Replaced),
-        (Some(false), OnConflict::Replace) => return Err(UploadError::Conflict),
+        (Some(_), OnConflict::Fail) | (Some(false), OnConflict::Replace) => {
+            return Err(UploadError::Conflict)
+        }
         (Some(_), OnConflict::KeepBoth) => {
             let (rel, target) = free_copy_name(root, &to_rel)?;
             (rel, target, Placed::Created)

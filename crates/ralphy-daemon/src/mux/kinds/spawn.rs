@@ -29,13 +29,12 @@ pub(super) fn open(
     command: CommandCtx,
     who: SocketAudit,
     run_exits: broadcast::Sender<String>,
-    bound_port: u16,
 ) -> Result<Channel, CloseReason> {
     let cmd = command_of(&opening.payload).ok_or(CloseReason::Refused)?;
     Ok(Channel::spawn(move |frames| async move {
         let mut wire = Wire::on_channel(opening.out.clone(), frames);
         let work = tokio::spawn(async move {
-            serve_command(&mut wire, cmd, command, run_exits, bound_port, who).await;
+            serve_command(&mut wire, cmd, command, run_exits, who).await;
         });
         // The work holds the channel's queue and the page's frames; the end
         // below needs the queue free, so it waits for the work to be done.

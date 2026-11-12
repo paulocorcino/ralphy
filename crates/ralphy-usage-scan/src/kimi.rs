@@ -260,12 +260,12 @@ fn read_usage_record(line: &str) -> Option<UsageRecord> {
 
 impl Agg {
     /// Set the project and actor only while they are empty.
-    fn attribute(&mut self, project: &Option<String>, actor_email: &Option<String>) {
+    fn attribute(&mut self, project: Option<&str>, actor_email: Option<&str>) {
         if self.project.is_none() {
-            self.project = project.clone();
+            self.project = project.map(str::to_owned);
         }
         if self.actor_email.is_none() {
-            self.actor_email = actor_email.clone();
+            self.actor_email = actor_email.map(str::to_owned);
         }
     }
 }
@@ -300,7 +300,7 @@ fn scan_kimi_code(
         for rec in text.lines().filter_map(read_usage_record) {
             let agg = out.entry((session_id.clone(), rec.model)).or_default();
             agg.add(&rec.tokens, rec.ts_ms);
-            agg.attribute(&project, &actor_email);
+            agg.attribute(project.as_deref(), actor_email.as_deref());
         }
     }
 }

@@ -3,14 +3,14 @@ use super::*;
 #[test]
 fn effort_translation_preserves_each_resolved_phase() {
     assert_eq!(
-        effort_strings(&ResolvedEffort {
+        effort_strings(ResolvedEffort {
             plan: Some(Effort::High),
             exec: Some(Effort::Low),
         }),
         (Some("high".into()), Some("low".into()))
     );
     assert_eq!(
-        effort_strings(&ResolvedEffort {
+        effort_strings(ResolvedEffort {
             plan: None,
             exec: None,
         }),
@@ -357,7 +357,7 @@ fn build_agent_builds_every_agent_the_cli_accepts() {
             None,
             None,
             &claude,
-            &ResolvedEffort {
+            ResolvedEffort {
                 plan: None,
                 exec: None,
             },

@@ -31,8 +31,8 @@ pub(crate) use phases::{
     verify_gate, ExecPhase, IssueCtx, PlanPhase, Prepared, ProtocolGate, VerifyGate,
 };
 use queue_run::{Early, QueueRun};
-pub(crate) use types::RunLedger;
 pub use types::{IssueResult, QueueConfig, QueueReport, ResultStatus, SkipReason, StopReason};
+pub(crate) use types::{PhaseSpend, RunLedger};
 
 /// The label that pauses the run before the tagged issue (flow-control, not triage).
 pub const STOP_BEFORE_LABEL: &str = "stop-before";

@@ -1,3 +1,5 @@
+use crate::WRITE_TO_STRING;
+use std::fmt::Write as _;
 use std::path::Path;
 use std::process::Stdio;
 
@@ -128,8 +130,8 @@ pub(crate) fn format_report(f: &EnvFindings, fails: &[HardFail]) -> String {
     let mut out = tool_lines(f);
     out.push_str("agents:\n");
     for agent in &Agent::ALL {
-        let (name, status) = (agent.cli_name(), agent_status(f, agent));
-        out.push_str(&format!("  {name}: {status}\n"));
+        let (name, status) = (agent.cli_name(), agent_status(f, *agent));
+        writeln!(out, "  {name}: {status}").expect(WRITE_TO_STRING);
     }
     out.push_str(&notes(f));
     out.push_str(&result_line(fails));
@@ -156,10 +158,10 @@ fn tool_lines(f: &EnvFindings) -> String {
 }
 
 /// What the report says of one agent: `absent`, `logged in` or `not logged in`.
-fn agent_status(f: &EnvFindings, agent: &Agent) -> &'static str {
-    if !f.agents_present.contains(agent) {
+fn agent_status(f: &EnvFindings, agent: Agent) -> &'static str {
+    if !f.agents_present.contains(&agent) {
         "absent"
-    } else if f.agents_logged_in.contains(agent) {
+    } else if f.agents_logged_in.contains(&agent) {
         "logged in"
     } else {
         "not logged in"
@@ -213,7 +215,7 @@ pub(crate) fn findings_from(machine: &crate::doctor::MachineFacts, repo: &Path) 
     let agents_logged_in = agents_present
         .iter()
         .copied()
-        .filter(agent_logged_in)
+        .filter(|a| agent_logged_in(*a))
         .collect();
     EnvFindings {
         git: machine.git.is_some(),
@@ -230,7 +232,7 @@ pub(crate) fn findings_from(machine: &crate::doctor::MachineFacts, repo: &Path) 
 /// account may pin a model. An `Err` carries `COPILOT_CATALOG_ERROR_MSG` (or the
 /// billed-probe refusal); the gate reports only the boolean, and the message is
 /// surfaced by the report the operator reads.
-fn copilot_logged_in(probe: anyhow::Result<ralphy_agent_copilot::CopilotCatalog>) -> bool {
+fn copilot_logged_in(probe: &anyhow::Result<ralphy_agent_copilot::CopilotCatalog>) -> bool {
     probe.is_ok()
 }
 
@@ -242,7 +244,7 @@ fn cursor_logged_in(authenticated: bool) -> bool {
     authenticated
 }
 
-pub(crate) fn agent_logged_in(a: &Agent) -> bool {
+pub(crate) fn agent_logged_in(a: Agent) -> bool {
     let hello = "hello";
     // Built up front for the arms that fall through to the shared
     // `status().success()` tail. The two early-returning arms below (Copilot,
@@ -269,7 +271,7 @@ pub(crate) fn agent_logged_in(a: &Agent) -> bool {
         // still scrubs the three token vars (ADR-0041 D8: an ambient token would
         // authenticate the child and make a logged-out operator look logged in) —
         // that now happens inside `fetch_catalog`.
-        Agent::Copilot => return copilot_logged_in(ralphy_agent_copilot::fetch_catalog()),
+        Agent::Copilot => return copilot_logged_in(&ralphy_agent_copilot::fetch_catalog()),
 
         // The second early return, for the opposite reason to Copilot's: Cursor
         // answers authentication free and machine-readably, and its `status` verb

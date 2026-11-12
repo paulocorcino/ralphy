@@ -37,11 +37,11 @@ impl StepPoller {
     /// step whose status moved TO `checked`/`noticed` (relative to the last snapshot)
     /// deliver a `dev.ralphy.plan.step` for the active issue. Best-effort — a stat or
     /// read failure is a silent no-op (the plan may not exist yet between issues).
+    /// `run` is what each envelope is built from.
     pub(super) fn poll<T: EventSink>(
         &mut self,
         transport: &T,
-        ctx: &EventCtx,
-        state: &RunState,
+        (ctx, state): (&EventCtx, &RunState),
         plan_path: &Path,
         warned: &AtomicBool,
     ) {
@@ -117,7 +117,7 @@ mod tests {
         let mut poller = StepPoller::default();
 
         // First poll seeds the snapshot (both steps open → nothing emitted).
-        poller.poll(&sink, &test_ctx(), &state, &plan_path, &warned);
+        poller.poll(&sink, (&test_ctx(), &state), &plan_path, &warned);
         assert!(
             sink.0.lock().unwrap().is_empty(),
             "no transitions on the seeding poll"
@@ -130,7 +130,7 @@ mod tests {
         )
         .unwrap();
         plan_progress::testutil::advance_mtime(&plan_path);
-        poller.poll(&sink, &test_ctx(), &state, &plan_path, &warned);
+        poller.poll(&sink, (&test_ctx(), &state), &plan_path, &warned);
 
         let delivered = sink.0.lock().unwrap();
         assert_eq!(delivered.len(), 1, "exactly one plan.step: {delivered:?}");
@@ -174,7 +174,7 @@ mod tests {
             ("do a **thing**".to_owned(), "checked".to_owned()),
             ("surprised".to_owned(), "noticed".to_owned()),
         ]);
-        poller.poll(&sink, &test_ctx(), &state, &plan_path, &warned);
+        poller.poll(&sink, (&test_ctx(), &state), &plan_path, &warned);
         assert!(
             sink.0.lock().unwrap().is_empty(),
             "the fold's baseline suppresses both: {:?}",
@@ -183,7 +183,7 @@ mod tests {
 
         // The control: the SAME first poll without a seeded baseline emits both.
         let fresh = RecordingSink(std::sync::Mutex::new(Vec::new()));
-        StepPoller::default().poll(&fresh, &test_ctx(), &state, &plan_path, &warned);
+        StepPoller::default().poll(&fresh, (&test_ctx(), &state), &plan_path, &warned);
         assert_eq!(fresh.0.lock().unwrap().len(), 2);
 
         #[expect(clippy::unused_result_ok, reason = "the scratch directory may be gone")]

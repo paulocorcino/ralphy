@@ -8,9 +8,10 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 
 use super::{
-    failed, former_slug_aliases, history_dir, now_ms, refuse_records, unreadable, DESK_WRITE,
+    failed, former_slug_aliases, history_dir, now_ms, refuse_records, unreadable, DeskFiles,
+    DESK_WRITE,
 };
-use crate::routes::{push, PeerRepoCache, Push};
+use crate::routes::{push, Push};
 use crate::{desk, rekey, session};
 
 /// Query for `GET /api/desk/history`: one version, or the list.
@@ -27,14 +28,14 @@ pub(crate) async fn desk_history_get_route(path: PathBuf, id: Option<i64>) -> Re
     match id {
         None => match desk::history::list(&dir) {
             Ok(rows) => Json(rows).into_response(),
-            Err(e) => failed(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")),
+            Err(e) => failed(StatusCode::INTERNAL_SERVER_ERROR, &format!("{e:#}")),
         },
         Some(id) => match desk::history::load(&dir, id) {
             Ok(version) => Json(version).into_response(),
             Err(e) if desk::history::is_not_found(&e) => {
-                failed(StatusCode::NOT_FOUND, format!("no desk version {id}"))
+                failed(StatusCode::NOT_FOUND, &format!("no desk version {id}"))
             }
-            Err(e) => failed(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")),
+            Err(e) => failed(StatusCode::INTERNAL_SERVER_ERROR, &format!("{e:#}")),
         },
     }
 }
@@ -62,18 +63,18 @@ fn restore_source(
             Ok(v) => Ok((v.desk, Reason::Restore)),
             Err(e) if history::is_not_found(&e) => Err(Box::new(failed(
                 StatusCode::NOT_FOUND,
-                format!("no desk version {id}"),
+                &format!("no desk version {id}"),
             ))),
             Err(e) => Err(Box::new(failed(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("{e:#}"),
+                &format!("{e:#}"),
             ))),
         },
         (None, Some(v)) => {
             if v.kind != history::VERSION_KIND {
                 return Err(Box::new(failed(
                     StatusCode::BAD_REQUEST,
-                    "the file is not a desk version".to_owned(),
+                    "the file is not a desk version",
                 )));
             }
             let d = &v.desk;
@@ -84,7 +85,7 @@ fn restore_source(
         }
         _ => Err(Box::new(failed(
             StatusCode::BAD_REQUEST,
-            "send either `id` or `version`".to_owned(),
+            "send either `id` or `version`",
         ))),
     }
 }
@@ -99,14 +100,17 @@ fn restore_source(
 /// saved as a `restore` or `upload` version, and `desk.dirty` is pushed. An
 /// upload passes the same checks as a PUT body. Replies `{ generation }`.
 pub(crate) async fn desk_history_restore_route(
-    path: PathBuf,
-    registry_path: PathBuf,
-    peers: PeerRepoCache,
+    files: DeskFiles,
     pushes: tokio::sync::broadcast::Sender<Push>,
     sessions: Arc<session::SessionManager>,
     body: RestoreBody,
 ) -> Response {
     use desk::history::{self, Reason};
+    let DeskFiles {
+        desk: path,
+        registry: registry_path,
+        peers,
+    } = files;
     let dir = history_dir(&path);
     let _held = DESK_WRITE.lock().await;
     let (saved, reason) = match restore_source(&dir, body) {
@@ -121,7 +125,7 @@ pub(crate) async fn desk_history_restore_route(
     if let Err(e) = history::append(&dir, &current, Reason::BeforeRestore, now) {
         return failed(
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("could not save the current desk before the restore: {e:#}"),
+            &format!("could not save the current desk before the restore: {e:#}"),
         );
     }
     let (restored, mut pinned) = history::restore(current, saved, now);
@@ -139,7 +143,7 @@ pub(crate) async fn desk_history_restore_route(
         &former_slug_aliases(&registry_path, &peers),
     );
     if let Err(e) = desk::save_to(&store, &path) {
-        return failed(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}"));
+        return failed(StatusCode::INTERNAL_SERVER_ERROR, &format!("{e:#}"));
     }
     if let Err(e) = history::append(&dir, &store, reason, now) {
         tracing::warn!(error = %format!("{e:#}"), "desk history not written after a restore");

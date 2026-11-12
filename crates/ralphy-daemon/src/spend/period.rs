@@ -107,8 +107,7 @@ impl Period {
 /// (`+00:00`) and the route derives `since` the same way.
 pub(crate) fn in_window(ts: Option<&str>, since: Option<&str>) -> bool {
     match (ts, since) {
-        (_, None) => true,
-        (None, Some(_)) => true,
+        (_, None) | (None, Some(_)) => true,
         (Some(ts), Some(since)) => ts >= since,
     }
 }

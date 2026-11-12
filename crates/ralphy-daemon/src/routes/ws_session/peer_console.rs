@@ -52,8 +52,7 @@ impl PeerConsole<'_> {
             launcher,
             &nudge.distro,
             Path::new(&folder),
-            24,
-            80,
+            (24, 80),
             self.command.as_deref(),
         );
         self.spawn(spec).await
@@ -180,7 +179,7 @@ impl PeerConsole<'_> {
             record,
             ..
         } = self;
-        let claim = claim_for(&sessions, &record).await;
+        let claim = claim_for(&sessions, record.as_deref()).await;
         if let Some(joined) = join(
             &sessions,
             claim.as_ref(),

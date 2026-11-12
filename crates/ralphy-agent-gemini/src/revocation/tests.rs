@@ -97,16 +97,22 @@ fn vendor_line_returns_the_whole_matching_line() {
     // The LIVE capture (2026-07-21, `gemini -p hello` from a repo root, exit
     // 55): the vendor colours this line, and the escape bytes must not reach
     // the run report the runner publishes on the issue.
-    const LIVE: &str = "\u{1b}[31mGemini CLI is not running in a trusted directory. To \
+    let captured = "\u{1b}[31mGemini CLI is not running in a trusted directory. To \
          proceed, either use `--skip-trust`, set the `GEMINI_CLI_TRUST_WORKSPACE=true` \
          environment variable, or trust this directory in interactive mode. For more \
          details, see https://geminicli.com/docs/cli/trusted-folders/\u{1b}[0m";
-    let live = vendor_line(LIVE, "not running in a trusted directory").expect("matches");
-    assert!(!live.contains('\u{1b}'), "escape bytes survived: {live:?}");
-    assert!(live.starts_with("Gemini CLI is not running"), "{live:?}");
-    assert!(live.ends_with("trusted-folders/"), "{live:?}");
+    let stripped = vendor_line(captured, "not running in a trusted directory").expect("matches");
+    assert!(
+        !stripped.contains('\u{1b}'),
+        "escape bytes survived: {stripped:?}"
+    );
+    assert!(
+        stripped.starts_with("Gemini CLI is not running"),
+        "{stripped:?}"
+    );
+    assert!(stripped.ends_with("trusted-folders/"), "{stripped:?}");
     assert_eq!(
-        detect_revocation(LIVE),
+        detect_revocation(captured),
         Some(Revocation::UntrustedWorkspace),
         "colour must not defeat detection"
     );
@@ -181,8 +187,8 @@ fn admin_tier_controls_are_reported_never_worked_around() {
 /// `GEMINI_`-prefixed override the child would not see.
 #[test]
 fn the_system_settings_path_is_the_os_default_never_the_env_override() {
-    let settings = system_settings_path().expect("every supported OS has a default");
-    let policies = admin_policy_dir().expect("…and a policy directory beside it");
+    let settings = system_settings_path();
+    let policies = admin_policy_dir();
     assert!(settings.ends_with("settings.json"), "{settings:?}");
     assert!(policies.ends_with("policies"), "{policies:?}");
     assert_eq!(settings.parent(), policies.parent());

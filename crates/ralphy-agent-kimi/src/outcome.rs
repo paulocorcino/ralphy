@@ -88,18 +88,15 @@ pub(crate) fn kimi_final_text(stdout: &str) -> String {
 /// only trusted on a non-clean exit — a genuine limit fails the process, so a clean
 /// exit is itself the proof the phrase was merely echoed, not a real limit.
 pub(crate) fn classify_kimi_outcome(
-    exited_cleanly: bool,
-    timed_out: bool,
+    run: &HeadlessRun,
     committed: bool,
-    exit_code: Option<i32>,
     final_text: &str,
-    log: &str,
 ) -> Outcome {
-    let limit = if exit_code == Some(75) {
+    let limit = if run.exit_code == Some(75) {
         Some(None)
-    } else if !exited_cleanly {
+    } else if !run.exited_cleanly {
         // No reset hint: Kimi's 403 body only promises "the next cycle", no timestamp.
-        ralphy_adapter_support::detect_limit(log, crate::auth::is_kimi_limit_text, |_| None)
+        ralphy_adapter_support::detect_limit(&run.log, crate::auth::is_kimi_limit_text, |_| None)
     } else {
         None
     };
@@ -108,8 +105,8 @@ pub(crate) fn classify_kimi_outcome(
         blocked: ralphy_adapter_support::blocked_reason(final_text),
         limit,
         committed,
-        timed_out,
-        exited_ok: exited_cleanly,
+        timed_out: run.timed_out,
+        exited_ok: run.exited_cleanly,
         errored: false,
     })
 }
@@ -239,10 +236,28 @@ mod tests {
         assert!(!is_kimi_api_degraded("'type': 'access_terminated_error'}}"));
     }
 
+    /// A run that ended with these facts; nothing else about it is read.
+    fn ended(
+        exited_cleanly: bool,
+        timed_out: bool,
+        exit_code: Option<i32>,
+        log: &str,
+    ) -> HeadlessRun {
+        HeadlessRun {
+            stdout: String::new(),
+            log: log.to_owned(),
+            exited_cleanly,
+            timed_out,
+            idle_killed: false,
+            stopped: false,
+            exit_code,
+        }
+    }
+
     #[test]
     fn classify_stuck_on_non_zero_exit() {
         assert_eq!(
-            classify_kimi_outcome(false, false, true, Some(1), "RALPHY_DONE_EXIT", ""),
+            classify_kimi_outcome(&ended(false, false, Some(1), ""), true, "RALPHY_DONE_EXIT"),
             Outcome::Stuck
         );
     }
@@ -251,7 +266,11 @@ mod tests {
     fn classify_limit_on_exit_75() {
         // The literal DONE sentinel is present, proving the limit outranks a would-be Done.
         assert_eq!(
-            classify_kimi_outcome(false, false, false, Some(75), "RALPHY_DONE_EXIT", ""),
+            classify_kimi_outcome(
+                &ended(false, false, Some(75), ""),
+                false,
+                "RALPHY_DONE_EXIT"
+            ),
             Outcome::Limit(None)
         );
     }
@@ -259,7 +278,7 @@ mod tests {
     #[test]
     fn classify_limit_beats_timeout() {
         assert_eq!(
-            classify_kimi_outcome(false, true, false, Some(75), "", ""),
+            classify_kimi_outcome(&ended(false, true, Some(75), ""), false, ""),
             Outcome::Limit(None)
         );
     }
@@ -271,7 +290,7 @@ mod tests {
         // DONE sentinel is present. Without the log scan this is misread as Stuck.
         let log = "…{'type': 'access_terminated_error'}}\nTo resume: kimi -r abc";
         assert_eq!(
-            classify_kimi_outcome(false, false, false, Some(1), "", log),
+            classify_kimi_outcome(&ended(false, false, Some(1), log), false, ""),
             Outcome::Limit(None)
         );
     }
@@ -282,7 +301,7 @@ mod tests {
         // the DONE sentinel then wins (mirrors Codex's non-clean-exit trust guard).
         let log = "…{'type': 'access_terminated_error'}}";
         assert_eq!(
-            classify_kimi_outcome(true, false, true, Some(0), "RALPHY_DONE_EXIT", log),
+            classify_kimi_outcome(&ended(true, false, Some(0), log), true, "RALPHY_DONE_EXIT"),
             Outcome::Done
         );
     }

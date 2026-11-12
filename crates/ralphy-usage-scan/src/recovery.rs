@@ -244,13 +244,8 @@ mod tests {
         std::fs::write(path, content).unwrap();
     }
 
-    #[test]
-    fn a_codex_candidate_may_name_the_session_meta_id() {
-        let temp = tempfile::tempdir().unwrap();
-        let stores = RecoveryStores {
-            codex_dir: temp.path().join("codex"),
-            ..RecoveryStores::default()
-        };
+    /// One Codex rollout whose meta id differs from its file stem.
+    fn write_codex_rollout(stores: &RecoveryStores) {
         write(
             &stores.codex_dir.join("sessions/rollout-codex.jsonl"),
             concat!(
@@ -264,6 +259,51 @@ mod tests {
                 "\"output_tokens\":2}}}}\n",
             ),
         );
+    }
+
+    /// The Copilot and `OpenCode` stores: one session each, in a SQLite file.
+    fn seed_databases(stores: &RecoveryStores) {
+        let copilot = Connection::open(&stores.copilot_db).expect("the copilot fixture opens");
+        copilot
+            .execute_batch(
+                "CREATE TABLE assistant_usage_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, turn_index INTEGER,
+                    model TEXT, input_tokens INTEGER, output_tokens INTEGER,
+                    cache_read_tokens INTEGER, cache_write_tokens INTEGER,
+                    reasoning_tokens INTEGER, reasoning_effort TEXT,
+                    token_details_json TEXT, created_at TEXT);
+                 CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT);
+                 INSERT INTO assistant_usage_events
+                    (session_id, turn_index, model, input_tokens, output_tokens,
+                     cache_read_tokens, cache_write_tokens, reasoning_tokens, created_at)
+                 VALUES ('sess-copilot', 0, 'claude-sonnet-5', 10, 2, 0, 0, 0,
+                         '2026-07-29T00:00:00Z');",
+            )
+            .expect("the fixture schema runs");
+        drop(copilot);
+        let opencode = Connection::open(&stores.opencode_db).expect("the opencode fixture opens");
+        opencode
+            .execute_batch(
+                "CREATE TABLE message (id TEXT, session_id TEXT, data TEXT);
+                 CREATE TABLE session (id TEXT, directory TEXT);
+                 INSERT INTO message VALUES (
+                    'm1', 'sess-opencode',
+                    '{\"role\":\"assistant\",\"modelID\":\"k2p6\",\"tokens\":{\"input\":10,\
+                    \"output\":2}}'
+                 );",
+            )
+            .expect("the fixture schema runs");
+        drop(opencode);
+    }
+
+    #[test]
+    fn a_codex_candidate_may_name_the_session_meta_id() {
+        let temp = tempfile::tempdir().expect("a temp dir");
+        let stores = RecoveryStores {
+            codex_dir: temp.path().join("codex"),
+            ..RecoveryStores::default()
+        };
+        write_codex_rollout(&stores);
 
         let results = resolve_models(&[RecoveryCandidate::new("codex", "codex-meta")], &stores);
 
@@ -295,37 +335,7 @@ mod tests {
                 r#""cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}"#
             ),
         );
-        write(
-            &stores.codex_dir.join("sessions/rollout-codex.jsonl"),
-            concat!(
-                "{\"timestamp\":\"2026-07-29T00:00:00Z\",\"type\":\"session_meta\",",
-                "\"payload\":{\"id\":\"codex-meta\",\"cwd\":\"C:\\\\repo\"}}\n",
-                "{\"timestamp\":\"2026-07-29T00:00:01Z\",\"type\":\"turn_context\",",
-                "\"payload\":{\"model\":\"gpt-5-codex\"}}\n",
-                "{\"timestamp\":\"2026-07-29T00:00:02Z\",\"type\":\"event_msg\",",
-                "\"payload\":{\"type\":\"token_count\",",
-                "\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,",
-                "\"output_tokens\":2}}}}\n",
-            ),
-        );
-        let copilot = Connection::open(&stores.copilot_db).unwrap();
-        copilot
-            .execute_batch(
-                "CREATE TABLE assistant_usage_events (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, turn_index INTEGER,
-                    model TEXT, input_tokens INTEGER, output_tokens INTEGER,
-                    cache_read_tokens INTEGER, cache_write_tokens INTEGER,
-                    reasoning_tokens INTEGER, reasoning_effort TEXT,
-                    token_details_json TEXT, created_at TEXT);
-                 CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT);
-                 INSERT INTO assistant_usage_events
-                    (session_id, turn_index, model, input_tokens, output_tokens,
-                     cache_read_tokens, cache_write_tokens, reasoning_tokens, created_at)
-                 VALUES ('sess-copilot', 0, 'claude-sonnet-5', 10, 2, 0, 0, 0,
-                         '2026-07-29T00:00:00Z');",
-            )
-            .unwrap();
-        drop(copilot);
+        write_codex_rollout(&stores);
         write(
             &stores.cursor_dir.join("chats/hash/sess-cursor/meta.json"),
             concat!(
@@ -360,19 +370,7 @@ mod tests {
                 r#""usageScope":"turn","time":1780319377010}"#
             ),
         );
-        let opencode = Connection::open(&stores.opencode_db).unwrap();
-        opencode
-            .execute_batch(
-                "CREATE TABLE message (id TEXT, session_id TEXT, data TEXT);
-                 CREATE TABLE session (id TEXT, directory TEXT);
-                 INSERT INTO message VALUES (
-                    'm1', 'sess-opencode',
-                    '{\"role\":\"assistant\",\"modelID\":\"k2p6\",\"tokens\":{\"input\":10,\
-                    \"output\":2}}'
-                 );",
-            )
-            .unwrap();
-        drop(opencode);
+        seed_databases(&stores);
 
         let candidates = [
             ("claude", "sess-claude", Some("claude-opus-4-8")),

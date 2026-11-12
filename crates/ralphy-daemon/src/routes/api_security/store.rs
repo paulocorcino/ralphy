@@ -15,6 +15,10 @@ use crate::{auth, password, totp};
 /// `daemon-require-login` flag (ADR-0032 amendment §A): an operator opt-in that
 /// gates the browser UI even on a loopback bind, no longer derived from the seed.
 #[derive(serde::Serialize)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independent fact of the reply the browser reads, not a state"
+)]
 pub(crate) struct SecurityState {
     pub(crate) token_set: bool,
     pub(crate) password_set: bool,

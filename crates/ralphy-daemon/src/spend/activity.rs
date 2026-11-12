@@ -72,12 +72,12 @@ pub(crate) fn fold(
     let peak_deliveries = days.values().map(|d| d.issues.len()).max().unwrap_or(0);
     let peak_deliveries = u64::try_from(peak_deliveries).unwrap_or(u64::MAX);
     days.into_iter()
-        .map(|(date, day)| activity_day(date, day, peak_usd, peak_deliveries))
+        .map(|(date, day)| activity_day(date, &day, peak_usd, peak_deliveries))
         .collect()
 }
 
 /// One day of the band, with its bars relative to the peak days.
-fn activity_day(date: String, day: Day, peak_usd: f64, peak_deliveries: u64) -> ActivityDay {
+fn activity_day(date: String, day: &Day, peak_usd: f64, peak_deliveries: u64) -> ActivityDay {
     let deliveries = u64::try_from(day.issues.len()).unwrap_or(u64::MAX);
     ActivityDay {
         date,

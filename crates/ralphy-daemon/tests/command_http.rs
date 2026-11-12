@@ -81,7 +81,7 @@ async fn serve_app(app: axum::Router) -> u16 {
     port
 }
 
-fn command_body(verb: &str, payload: serde_json::Value) -> String {
+fn command_body(verb: &str, payload: &serde_json::Value) -> String {
     serde_json::json!({ "id": 1, "verb": verb, "payload": payload }).to_string()
 }
 
@@ -92,17 +92,18 @@ async fn over_http(
     payload: serde_json::Value,
     headers: &[(&str, &str)],
 ) -> (u16, serde_json::Value) {
-    let body = command_body(verb, payload);
-    let mut extra = String::new();
-    for (name, value) in headers {
-        extra.push_str(&format!("{name}: {value}\r\n"));
-    }
+    let body = command_body(verb, &payload);
+    let mut lines: Vec<String> = headers
+        .iter()
+        .map(|(name, value)| format!("{name}: {value}\r\n"))
+        .collect();
     if !headers
         .iter()
         .any(|(name, _)| name.eq_ignore_ascii_case("host"))
     {
-        extra.push_str(&format!("Host: 127.0.0.1:{port}\r\n"));
+        lines.push(format!("Host: 127.0.0.1:{port}\r\n"));
     }
+    let extra = lines.concat();
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
         .expect("the test socket connects");
@@ -277,7 +278,10 @@ async fn a_command_over_the_cap_is_answered_413() {
 #[tokio::test]
 async fn a_command_from_another_origin_is_refused() {
     let dir = tempfile::tempdir().unwrap();
-    let body = command_body("tree.list", serde_json::json!({ "repo": SLUG, "path": "" }));
+    let body = command_body(
+        "tree.list",
+        &serde_json::json!({ "repo": SLUG, "path": "" }),
+    );
     let status = app(registered(dir.path()))
         .oneshot(
             Request::builder()

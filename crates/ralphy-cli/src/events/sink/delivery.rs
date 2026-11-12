@@ -147,8 +147,7 @@ impl<T: EventSink> DeliveryEngine for CloudEventsEngine<T> {
         // plan is unchanged (an mtime stat), emitting only on a checkbox transition.
         self.poller.poll(
             &self.transport,
-            &self.ctx,
-            &self.state,
+            (&self.ctx, &self.state),
             &self.plan_path,
             &self.warned,
         );
@@ -189,8 +188,9 @@ pub(super) fn deliver<T: EventSink>(
     for attempt in 1..=MAX_ATTEMPTS {
         match transport.post(cloudevent) {
             Ok(PostOutcome::Delivered) => return attempt,
-            // A 4xx is a configuration error: drop without retry.
-            Ok(PostOutcome::Permanent) => {
+            // A 4xx is a configuration error, and a transport-level error (e.g. a body
+            // that failed to serialize) will not fix on retry: drop without retry.
+            Ok(PostOutcome::Permanent) | Err(_) => {
                 warn_dropped(warned);
                 return attempt;
             }
@@ -201,12 +201,6 @@ pub(super) fn deliver<T: EventSink>(
                 }
                 std::thread::sleep(backoff);
                 backoff = backoff.saturating_mul(2);
-            }
-            // A transport-level error (e.g. a body that failed to serialize) will
-            // not fix on retry: drop it once, like a permanent failure.
-            Err(_) => {
-                warn_dropped(warned);
-                return attempt;
             }
         }
     }

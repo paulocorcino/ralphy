@@ -15,8 +15,7 @@ fn interactive_command_maps_high_and_omits_unset() {
         Path::new("plugin"),
         "sonnet",
         Some("high"),
-        false,
-        "ralphy-1",
+        None,
     ));
     assert_eq!(
         set.windows(2)
@@ -29,8 +28,7 @@ fn interactive_command_maps_high_and_omits_unset() {
         Path::new("plugin"),
         "sonnet",
         None,
-        false,
-        "ralphy-1",
+        None,
     ));
     assert!(!unset.iter().any(|arg| arg == "--effort"));
 }

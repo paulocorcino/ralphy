@@ -38,21 +38,30 @@ fn a_launchd_agent_reports_its_pid_only_while_it_runs() {
 
 #[test]
 fn a_daemon_outside_a_loaded_agent_is_stopped_before_the_kickstart() {
-    assert_eq!(launchd_plan(Some(3136), None), LaunchdPlan::NotTheAgent);
     assert_eq!(
-        launchd_plan(Some(3136), Some(Some(3136))),
+        launchd_plan(Some(3136), LaunchdAgent::NotLoaded),
+        LaunchdPlan::NotTheAgent
+    );
+    assert_eq!(
+        launchd_plan(Some(3136), LaunchdAgent::Loaded { pid: Some(3136) }),
         LaunchdPlan::Kickstart
     );
     // What a restart before this fix left: the agent retrying, not running.
     assert_eq!(
-        launchd_plan(Some(3061), Some(None)),
+        launchd_plan(Some(3061), LaunchdAgent::Loaded { pid: None }),
         LaunchdPlan::StopThenKickstart
     );
     assert_eq!(
-        launchd_plan(Some(3061), Some(Some(3136))),
+        launchd_plan(Some(3061), LaunchdAgent::Loaded { pid: Some(3136) }),
         LaunchdPlan::StopThenKickstart
     );
     // The record was erased while the agent's daemon serves (rc.31 on the Mac).
-    assert_eq!(launchd_plan(None, Some(Some(3307))), LaunchdPlan::Kickstart);
-    assert_eq!(launchd_plan(None, Some(None)), LaunchdPlan::NotTheAgent);
+    assert_eq!(
+        launchd_plan(None, LaunchdAgent::Loaded { pid: Some(3307) }),
+        LaunchdPlan::Kickstart
+    );
+    assert_eq!(
+        launchd_plan(None, LaunchdAgent::Loaded { pid: None }),
+        LaunchdPlan::NotTheAgent
+    );
 }

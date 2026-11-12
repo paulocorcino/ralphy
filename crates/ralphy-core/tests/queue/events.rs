@@ -166,7 +166,10 @@ fn pins_skip_and_stop_vocabulary() {
         "2"
     );
     remove_scratch(&repo);
+}
 
+#[test]
+fn pins_skip_and_continue_vocabulary() {
     // Human-return label on #1; the queue continues to #2.
     let repo = init_repo("pins-humanreturn");
     let queue = vec![issue_labeled(1, &["AFK", "needs-info"]), issue(2)];

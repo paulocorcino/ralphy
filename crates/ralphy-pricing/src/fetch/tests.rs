@@ -65,9 +65,8 @@ fn read_request_line(stream: &mut std::net::TcpStream) -> String {
             break;
         }
         let n = match stream.read(&mut chunk) {
-            Ok(0) => break,
+            Ok(0) | Err(_) => break,
             Ok(n) => n,
-            Err(_) => break,
         };
         buf.extend_from_slice(&chunk[..n]);
     }

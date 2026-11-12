@@ -71,7 +71,7 @@ async fn drain_capturing_announcement(ws: &mut Ws, secs: u64) -> (bool, Option<S
                     }
                 }
                 Ok(Message::Close(_)) | Err(_) => break,
-                Ok(_) => continue,
+                Ok(_) => {}
             }
         }
     })

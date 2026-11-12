@@ -33,7 +33,7 @@ use ralphy_core::{
 };
 
 use crate::auth::{is_gemini_auth_error, GEMINI_AUTH_ERROR_MSG};
-use crate::command::{self, build_gemini_command, check_stdin_ceiling, mint_session_id};
+use crate::command::{self, build_gemini_command, check_stdin_ceiling, mint_session_id, RootArgs};
 use crate::{outcome, revocation, PreparedRoot};
 
 /// The spawn-failure sentence every verb shares, matching the run path's.
@@ -84,9 +84,11 @@ pub(crate) fn one_shot_command(
         &mint_session_id(),
         model,
         work_dir,
-        &root.home,
-        &policy_path,
-        auth_type.as_deref(),
+        RootArgs {
+            home: &root.home,
+            policy: &policy_path,
+            auth_type: auth_type.as_deref(),
+        },
     ))
 }
 
@@ -276,6 +278,10 @@ pub fn diagnose_repo(
 /// repo's domain glossary/ADRs and (on the milestone path) writes a PRD under
 /// `docs/prd/`. Never publishes to GitHub: that is the cli's job after the
 /// operator confirms.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public entry point called by the composition root with one value per setting"
+)]
 pub fn draft_issues(
     repo: &Path,
     out_path: &Path,
@@ -327,6 +333,10 @@ pub(crate) fn triage_prompt(repo: &Path, req: &TriageRequest, out_path: &Path) -
 /// [`draft_issues`] but drives the triage charter over each `triage-agent` issue's
 /// body + full comment thread, writing a [`TriageDraft`] JSON to `out_path` for the
 /// cli to apply after the operator confirms.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public entry point called by the composition root with one value per setting"
+)]
 pub fn triage_issues(
     repo: &Path,
     out_path: &Path,

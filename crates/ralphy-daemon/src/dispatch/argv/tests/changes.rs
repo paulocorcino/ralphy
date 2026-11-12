@@ -180,7 +180,10 @@ fn changes_mutate_argv_composes_exact_vectors_and_refuses() {
         3,
         "the message is ONE token — a split one dies in clap"
     );
+}
 
+#[test]
+fn changes_paths_argv_refuses_bad_paths_with_no_argv() {
     // Refusals, each with NO argv.
     for bad in ["/etc/passwd", "C:\\x", "../x", "-rf", ":(glob)x", ":!x", ""] {
         assert_eq!(
@@ -247,6 +250,10 @@ fn changes_mutate_argv_composes_exact_vectors_and_refuses() {
         Err(ArgvError::BadParam("paths")),
         "257 paths is over MAX_STAGE_PATHS"
     );
+}
+
+#[test]
+fn changes_paths_argv_accepts_paths_at_the_bound() {
     let at_bound: Vec<String> = (0..MAX_STAGE_PATHS).map(|i| format!("f{i}.txt")).collect();
     assert_eq!(
         changes_paths_argv(Verb::ChangesStage, &json!({ "paths": at_bound }))
@@ -255,7 +262,10 @@ fn changes_mutate_argv_composes_exact_vectors_and_refuses() {
         MAX_STAGE_PATHS + 2,
         "the bound is the bound: 256 paths are accepted"
     );
+}
 
+#[test]
+fn changes_commit_argv_refuses_an_empty_or_long_message() {
     for bad in [
         json!({}),
         json!({ "message": "" }),
@@ -276,7 +286,10 @@ fn changes_mutate_argv_composes_exact_vectors_and_refuses() {
         changes_commit_argv(&json!({ "message": "x".repeat(MAX_COMMIT_MESSAGE) })).is_ok(),
         "the bound is the bound: 4096 chars are accepted"
     );
+}
 
+#[test]
+fn changes_mutate_argv_refuses_a_wrong_verb() {
     // The verb is a parameter too, and a wrong one yields no argv.
     assert_eq!(
         changes_paths_argv(Verb::ChangesCommit, &json!({ "paths": ["a.txt"] })),

@@ -33,6 +33,8 @@ pub(crate) struct CommandCtx {
     pub(crate) daemon_id: Option<String>,
     pub(crate) sessions: Arc<session::SessionManager>,
     pub(crate) secret_ok: bool,
+    /// The port this daemon listens on, which a command sent to a peer names.
+    pub(crate) bound_port: u16,
 }
 
 /// How a command is answered: one reply, or a run whose output streams.
@@ -96,9 +98,15 @@ async fn local_reply(
     };
     let daemon_id = ctx.daemon_id.as_deref();
     // `None` only for an effect class no verb has today (`Native`).
-    execute_oneshot(verb, cmd, &path, daemon_id, slug, &ctx.sessions)
-        .await
-        .unwrap_or_else(|| serde_json::json!({ "status": "error", "message": "unknown verb" }))
+    execute_oneshot(
+        verb,
+        cmd,
+        OneshotRepo { slug, path: &path },
+        daemon_id,
+        &ctx.sessions,
+    )
+    .await
+    .unwrap_or_else(|| serde_json::json!({ "status": "error", "message": "unknown verb" }))
 }
 
 /// The checkout of the registered repo `slug`. `Err` is the one error reply.
@@ -150,7 +158,6 @@ pub(crate) async fn serve_command(
     cmd: Command,
     ctx: CommandCtx,
     run_exits: tokio::sync::broadcast::Sender<String>,
-    bound_port: u16,
     who: SocketAudit,
 ) {
     let verb = match answer_one(&ctx, &cmd, &who).await {
@@ -175,7 +182,7 @@ pub(crate) async fn serve_command(
         }
         fleet::Route::Peer { peer, slug } => {
             let me = peer::client::SelfRef {
-                port: bound_port,
+                port: ctx.bound_port,
                 daemon_id: daemon_id.unwrap_or(""),
             };
             proxy_peer_command(wire, peer, for_peer(&cmd, slug), me).await;

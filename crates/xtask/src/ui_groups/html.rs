@@ -36,7 +36,9 @@ pub(super) fn scan_bindings(html: &str, known: &BTreeSet<String>) -> Vec<Binding
         } else if starts(&cs, i, "</") {
             i = end_tag(&cs, i, &mut line, &mut stack);
         } else if cs[i] == '<' && cs.get(i + 1).is_some_and(char::is_ascii_alphabetic) {
-            i = start_tag(&cs, i, &mut line, &mut stack, known, &mut out);
+            let (end, found) = start_tag(&cs, i, &mut line, &mut stack, known);
+            out.extend(found);
+            i = end;
         } else {
             if cs[i] == '\n' {
                 line += 1;
@@ -64,34 +66,38 @@ fn end_tag(cs: &[char], i: usize, line: &mut usize, stack: &mut Vec<Open>) -> us
     end
 }
 
-/// Read the start tag at `i`, add its bindings to `out` when it is in the
-/// scope of `shell`, and return the index after it. The body of a `script`
-/// or `style` is skipped; an element that has a body is pushed on `stack`.
+/// Read the start tag at `i` and return the index after it, with its
+/// bindings when it is in the scope of `shell`. The body of a `script` or
+/// `style` is skipped; an element that has a body is pushed on `stack`.
 fn start_tag(
     cs: &[char],
     i: usize,
     line: &mut usize,
     stack: &mut Vec<Open>,
     known: &BTreeSet<String>,
-    out: &mut Vec<Binding>,
-) -> usize {
+) -> (usize, Vec<Binding>) {
     const VOID: &[&str] = &[
         "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source",
         "track", "wbr",
     ];
     let (tag, attrs, self_closing, end) = read_tag(cs, i + 1, line);
     let open = scope(tag, &attrs, stack.last());
-    if open.in_shell {
-        out.extend(attrs.iter().filter_map(|a| binding(a, &open.vars, known)));
-    }
+    let found = if open.in_shell {
+        attrs
+            .iter()
+            .filter_map(|a| binding(a, &open.vars, known))
+            .collect()
+    } else {
+        Vec::new()
+    };
     if open.tag == "script" || open.tag == "style" {
         let body_end = skip_past(cs, end, &format!("</{}", open.tag), line);
-        return skip_past(cs, body_end, ">", line);
+        return (skip_past(cs, body_end, ">", line), found);
     }
     if !self_closing && !VOID.contains(&open.tag.as_str()) {
         stack.push(open);
     }
-    end
+    (end, found)
 }
 
 /// The scope a start tag opens. It is in `shell` when its own `x-data` is

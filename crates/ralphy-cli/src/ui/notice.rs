@@ -38,7 +38,7 @@ impl EdgeNoticeState {
     /// else is a no-op.
     fn fold(&mut self, ev: &RunEvent) {
         match ev {
-            RunEvent::QueueBuilt { scope, .. } => self.scope = scope.clone(),
+            RunEvent::QueueBuilt { scope, .. } => self.scope.clone_from(scope),
             RunEvent::RunFinished { outcome, .. } if outcome == "no_work" => {
                 // An absent scope phrase would leave a double space and a dangling
                 // preposition, so drop the whole clause instead.

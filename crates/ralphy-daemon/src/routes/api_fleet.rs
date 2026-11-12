@@ -104,11 +104,14 @@ pub(crate) struct PeerView {
 pub(crate) async fn fleet_route(
     registry_path: PathBuf,
     peers_dir: PathBuf,
-    identity: Option<identity::Identity>,
-    environment: String,
+    this: ThisDaemon,
     repo_cache: PeerRepoCache,
     bound_port: u16,
 ) -> Response {
+    let ThisDaemon {
+        identity,
+        environment,
+    } = this;
     let (mut descriptors, rejects) = read_peer_store(peers_dir.clone()).await;
     let probe_id = identity
         .as_ref()
@@ -260,7 +263,7 @@ fn recall_repos(
             let memory = cache.entry(d.daemon_id.clone()).or_default();
             memory.remember(slot.as_ref());
             if let Some(environment) = &memory.environment {
-                d.environment = environment.clone();
+                d.environment.clone_from(environment);
             }
             memory.repos.clone()
         })
@@ -273,10 +276,10 @@ impl PeerMemory {
     fn remember(&mut self, probed: Option<&Probed>) {
         if let Some((_, live, fresh)) = probed {
             if live.is_some() {
-                self.environment = live.clone();
+                self.environment.clone_from(live);
             }
             if fresh.is_some() {
-                self.repos = fresh.clone();
+                self.repos.clone_from(fresh);
             }
         }
     }
@@ -389,6 +392,13 @@ async fn local_rows(
     }
 }
 
+/// Who this daemon is: its identity, when it has one, and its environment.
+#[derive(Clone)]
+pub(crate) struct ThisDaemon {
+    pub(crate) identity: Option<identity::Identity>,
+    pub(crate) environment: String,
+}
+
 /// `/api/fleet*`: the federated repo list and the nudge.
 pub(crate) fn fleet_routes(s: &RouterShared) -> Router {
     let bound_port = s.bound_port;
@@ -398,15 +408,16 @@ pub(crate) fn fleet_routes(s: &RouterShared) -> Router {
             get({
                 let registry = s.registry_path.clone();
                 let peers = s.peers_dir.clone();
-                let id = s.identity.clone();
-                let env = s.environment.clone();
+                let this = ThisDaemon {
+                    identity: s.identity.clone(),
+                    environment: s.environment.clone(),
+                };
                 let cache = s.peer_repo_cache.clone();
                 move || {
                     fleet_route(
                         registry.clone(),
                         peers.clone(),
-                        id.clone(),
-                        env.clone(),
+                        this.clone(),
                         cache.clone(),
                         bound_port,
                     )

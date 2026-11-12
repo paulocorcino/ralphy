@@ -17,7 +17,7 @@
 #![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -60,21 +60,21 @@ pub use effort::is_known_effort;
 pub const ACCEPTS_IMAGES: bool = true;
 
 use auth::{is_copilot_auth_error, COPILOT_AUTH_ERROR_MSG};
-use command::{build_copilot_command, mint_session_id};
+use command::{build_copilot_command, mint_session_id, ModelChoice};
 use outcome::{classify_copilot_outcome, copilot_final_text};
 use skills::materialize_copilot_skills;
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issues};
 use usage::copilot_usage;
+
+/// `copilot skill list` makes no model call; a minute is far above its measured
+/// run time (about 0.6 s on Windows, CLI 1.0.90, 2026-10-01).
+pub(crate) const SKILL_LIST_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// The Copilot planning prompt, embedded so the binary is self-contained as a
 /// global tool. A variant of `prompt.plan.md` with no `## Execution model` tier
 /// line (Copilot's model is the operator's account default, ADR-0041 D6). Copied
 /// to `.ralphy/plan-charter.md` for the session to read; only a one-line pointer
 /// is piped on stdin. Single source of truth lives at `assets/prompts/`.
-/// `copilot skill list` makes no model call; a minute is far above its measured
-/// run time (about 0.6 s on Windows, CLI 1.0.90, 2026-10-01).
-const SKILL_LIST_TIMEOUT: Duration = Duration::from_secs(60);
-
 const PROMPT_PLAN_COPILOT: &str = include_str!("../../../assets/prompts/prompt.plan.copilot.md");
 
 /// The two phases a `CopilotAgent` drives, each with its own model source
@@ -161,40 +161,6 @@ impl CopilotAgent {
             return Ok(());
         }
         match guards::builtin_mcp_violation(stdout, require_receipt) {
-            Some(msg) => Err(anyhow::anyhow!("{msg}")),
-            None => Ok(()),
-        }
-    }
-
-    /// D9's in-band load receipt, the single seam both phases call. `Err` aborts
-    /// the run: a charter whose skill invocations silently do nothing is a run that
-    /// only looks like it worked. No escape hatch — unlike D7's builtin MCPs, a
-    /// missing skill grants the operator no capability worth opting into.
-    pub(crate) fn check_skills_loaded(&self, stdout: &str, required: &[String]) -> Result<()> {
-        match skills::skills_load_violation(stdout, required) {
-            Some(msg) => Err(anyhow::anyhow!("{msg}")),
-            None => Ok(()),
-        }
-    }
-
-    /// D9's check before the session: `copilot skill list --json` in the repo
-    /// must list every Ralphy skill as enabled. It runs before any billed turn,
-    /// so a run with missing skills costs nothing.
-    pub(crate) fn check_skills_listed(&self, repo: &Path, required: &[String]) -> Result<()> {
-        let out = ralphy_adapter_support::run_headless(
-            command::build_copilot_skill_list_command(repo),
-            "",
-            SKILL_LIST_TIMEOUT,
-        )
-        .context("running `copilot skill list`")?;
-        if out.timed_out || !out.exit.is_some_and(|e| e.success()) {
-            anyhow::bail!(
-                "`copilot skill list` failed, so Ralphy cannot confirm that its skills \
-                 are there; stopping to be safe: {}",
-                out.stderr.trim()
-            );
-        }
-        match skills::skill_list_violation(&out.stdout, required) {
             Some(msg) => Err(anyhow::anyhow!("{msg}")),
             None => Ok(()),
         }
@@ -313,8 +279,10 @@ impl Agent for CopilotAgent {
         let run = || {
             let cmd = build_copilot_command(
                 &session_id,
-                model,
-                effort.as_deref(),
+                ModelChoice {
+                    model,
+                    effort: effort.as_deref(),
+                },
                 ws.repo_root(),
                 self.allow_builtin_mcps,
                 &[],
@@ -416,8 +384,10 @@ impl Agent for CopilotAgent {
         let run = || {
             let cmd = build_copilot_command(
                 &session_id,
-                model,
-                effort.as_deref(),
+                ModelChoice {
+                    model,
+                    effort: effort.as_deref(),
+                },
                 ws.repo_root(),
                 self.allow_builtin_mcps,
                 &[],
@@ -465,7 +435,6 @@ impl Agent for CopilotAgent {
             r.exited_cleanly,
             r.timed_out,
             committed,
-            r.exit_code,
             &final_text,
             &r.log,
         );
