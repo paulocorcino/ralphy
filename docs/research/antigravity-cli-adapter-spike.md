@@ -41,10 +41,47 @@ Session date: 2026-11-12.
 | Parity 13: read a gitignored `.ralphy/` file | Windows | `gemini-3.8-flash-low` | 16 766 in, 107 out |
 | Parity 14: read a PNG by path | Windows | `gemini-3.8-flash-low` | 17 854 in, 52 out |
 | Four slash-command probes lost to Git Bash path rewriting (`/quota` became `C:/Program Files/Git/quota`) and sent without `--model`, so the default model answered them as prompts | Windows | `gemini-4-argon-medium` (default) | 13 635 in, 504 out, 14 378 cache read; 8 295 in, 53 out; 8 287 in, 131 out; 13 731 in, 648 out (314 thinking), 14 386 cache read |
+| Hook probes H1–H4 and H6 in `-p`: quoted path, every event, veto, workspace allow against global deny (hooks) | Windows | `gemini-3.8-flash-low` | 8 263 in, 39 out; 16 593 in, 41 out; 16 654 in, 40 out; 16 634 in, 57 out; 17 206 in, 79 out |
+| Interactive console: one turn with a tool call, then one resumed turn (hooks, resume) | Windows | `gemini-3.8-flash-low` | 25 272 in, 45 out for the two turns (the conversation total less the headless resume) |
+| Headless resume with `--conversation` (resume) | Windows | `gemini-3.8-flash-low` | 8 835 in, 4 out (the stream's one call; `result.usage` showed the conversation total, 34 107 in) |
+| `--input-format stream-json` with a late first message; `CTRL_BREAK_EVENT` stop (hooks) | Windows | `gemini-3.8-flash-low` | 8 248 in, 1 out; 8 275 in, 55 out |
+| C8 marker skills and rules, three runs (skills) | Windows | `gemini-3.8-flash-low` | 8 842 in, 63 out; 8 584 in, 22 out; 8 588 in, 22 out |
+| `--mode plan` asked to write `.ralphy/plan.md` (skills) | Windows | `gemini-3.8-flash-low` | 19 075 in, 370 out |
+| `--sandbox`: file writes, then a network call (hooks) | Windows | `gemini-3.8-flash-low` | 29 399 in, 183 out; 19 468 in, 117 out |
+| `-p /skills`, `/hooks`, `/permissions`, `/config`, `/context`; `--settings` refusals; `--remote-control` and plain consoles with no prompt; `remote-control start`/`stop`; `mic-serve`; WSL logged-out hook load (C8, C9, hooks) | Windows, WSL | none | 0 |
 
 ## 0. Executive summary
 
-Filled by Stage 5.
+One line per question; the evidence is in the section named.
+
+- **C1 invocation:** headless print mode with the prompt on stdin and no `-p`; full autonomy is `--dangerously-skip-permissions`; no cwd flag, no PTY needed (§1).
+- **C2 stream:** `--output-format stream-json`, NDJSON `init` / `step_update` / one terminal `result`; the final message is `result.response`; no progress field (§2).
+- **C3 completion:** the `RALPHY_DONE_EXIT` last line held 5 of 5; exit 0/1/2/3 plus a JSON `AGY_ERROR:` stderr line; exit 0 is not success alone; all six hook events fire, but no hook fires before the first prompt (§3, _Hooks and integrations_).
+- **C4 models:** one sign-in, 13 ids from Google, Anthropic and OpenAI, effort as id suffix or `--effort`, unknown id refused before any call; the stream does not name the answering model (§4).
+- **C5 auth:** login is `agy` with no arguments; logged out (WSL) exits 1 after a fixed 60 s wait with `Authentication required…`; the Windows logged-out exit code is not observed (§5).
+- **C6 usage:** per-call, incremental counts (input without cache, output with thinking, cache read; no cache creation); the model per call is only in the SQLite store; the id is the first stream line (§6).
+- **C7 limits:** no limit reached; free reset times from `-p /quota --output-format json`; limit strings read from the binary (§7).
+- **C8 skills:** skills from `.agents/skills` and the owned root, rules from `AGENTS.md` and `GEMINI.md`, nothing from `.claude` or `.codex`; `--gemini_dir` replaces the global layer; native plan mode rejected (§8).
+- **C9 blast radius:** no MCP server, but built-in skills and the `swarm` plugin are always on; a detached updater outlives each run; remote control is off by default (§9).
+- **C10 platforms:** one binary per OS, off `PATH`, explicit probe list; UTF-8 on Windows pipes (§10).
+- **C11 state:** `--gemini_dir=<absolute path>` moves all state; the Windows credential stays in the keyring; the self-updater rewrites the shared binary (§11).
+- **Hooks:** six events, workspace and global `hooks.json`; a pre-tool hook can veto and fails closed; shell form only.
+- **Resume (#758):** `--conversation <id>` reopens a conversation in a console and in `-p`; the id cannot be chosen, but the first hook event carries it.
+- **Vendor shape:** one vendor with many models.
+
+Open risks for the ADR:
+
+- **Guard hook in shell form on Windows.** agy runs a hook with `cmd /c` and Go's quoting, so a quoted program path fails; a path with a space is unproven, and ADR-0040 C12 rule 4 refuses a shell form for an unattended session unless the operator allows it.
+- **A non-UTF-8 hook error ends the run.** A hook that fails with cmd's localized message ended the whole run with exit 3 (`invalid UTF-8`).
+- **No readiness proof before the prompt.** `SessionStart` comes with the first prompt; a console gives no event before it (C12 rule 5 needs another proof, such as the `init` line in headless mode).
+- **The repository's own `.agents/hooks.json` runs** as the operator in headless mode, with no trust question.
+- **Self-update has no opt-out**, and it rewrites the binary that every root and the operator share (§11).
+- **Built-in subagent skills cannot be turned off** in the main CLI (`native_swarm`, `run-workflow`), so "no delegation" is a charter rule only.
+- **WSL is covered only logged out.** Hooks, usage and the execute path were probed on Windows; a signed-in WSL probe needs the operator's real `~/.gemini`.
+- **Windows logged-out signature and a real limit** (C5, C7) are not observed.
+- **On resume, `result.usage` is the conversation total**, not the run's: sum the step records.
+- **First console launch in a new root** shows the Terms of Service with data collection pre-checked; a Ralphy-owned root shows it once per root.
+- **No price rows** exist for any of the 13 ids (parity 2).
 
 ## 1. C1 — Invocation and the headless contract
 
@@ -170,8 +207,9 @@ Raw logs: `antigravity-782-plan.log`, `antigravity-782-execute.log`,
   stderr said `terminating 1 background task(s) on exit`, and no `PING.EXE`
   was left. The default is `0s` (no limit).
 - Hooks as a completion signal: the hook probes are in _Hooks and
-  integrations_ (Stage 5). 🔎 The changelog names `Stop`, `PreInvocation`,
-  `PostInvocation`, `PreToolUse`, `PostToolUse` and `SessionStart`.
+  integrations_: all six events fired in `-p`, `Stop` with
+  `terminationReason:"NO_TOOL_CALL"` at the end of a turn (🔬), but not after a
+  `CTRL_BREAK_EVENT` stop, so `Stop` is a completion hint, not the sentinel.
 - `CompletionSignals` (ADR-0023) from the stream 🔬: `done` = last line of
   `result.response` is the sentinel; `blocked` = the blocked sentinel in the
   same text; `timed_out` = `finished_reason:"print_timeout"` or exit 3 with
@@ -435,9 +473,61 @@ failure and take the `reset_time` of the exhausted bucket (the one with
 
 ## 8. C8 — Skills and prompts
 
-Filled by Stage 4 or 5.
+Raw log: `docs/spike/live/antigravity-782-skills.log`. Host: Windows, agy
+1.5.6. A marker `SKILL.md` was planted in every candidate root, and a
+`MARKER-` word in every candidate instruction file. `agy -p /skills` lists the
+skills for free (0 tokens); one Flash turn then asked the model which marker
+skills, rule words and commands it had.
 
-**C8 answer:** _Stage 4/5_
+### Which roots it reads 🔬
+
+| Root | Skills | Instructions |
+| --- | --- | --- |
+| Repo `.agents/skills`, `.agent/skills`, `_agents/skills` | read | — |
+| Repo `.claude/skills`, `.codex/skills`, `.gemini/skills`, `.cursor/skills` | not read | — |
+| Repo `AGENTS.md`, `GEMINI.md` (§9) | — | read |
+| Repo `CLAUDE.md` (§9), `.agents/rules/r.md` (no front matter) | — | not read |
+| Global `~/.gemini/skills`, `~/.gemini/config/skills`, `~/.gemini/antigravity-cli/skills` | read | — |
+| Global `~/.gemini/GEMINI.md`, `~/.gemini/AGENTS.md` | — | read |
+| `~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills`, `~/.claude/CLAUDE.md` | not read | not read |
+| Workflows `.agents/workflows/*.md`, `~/.gemini/config/global_workflows/*.md`, `~/.claude/commands/*.md` | not offered as commands | — |
+
+- 🔬 **`--gemini_dir` replaces the whole global layer.** With
+  `--gemini_dir=<gd>`, the global roots are `<gd>/skills`, `<gd>/config/skills`,
+  `<gd>/antigravity-cli/skills`, `<gd>/GEMINI.md` and `<gd>/config/AGENTS.md`;
+  with a home that held other markers, none of the home's `~/.gemini` skills or
+  rules were read. So Ralphy materializes its skills into the root it owns and
+  the operator's own `~/.gemini` library does not leak in. The repo layer
+  (`.agents/` and `AGENTS.md`, `GEMINI.md`) is still read.
+- 🔬 **No cross-vendor leakage.** Unlike Cursor, agy does not read
+  `.claude/skills` or `.codex/skills`; the bundled `migrate-agent-settings`
+  skill copies them only when asked.
+- 🔬 **Built-in skills are always on.** Every run lists 6 built-in skills and
+  the `swarm` plugin (`agy-customizations`, `antigravity-guide`, `automation`,
+  `migrate-agent-settings`, `migrate-workflows`, `run-workflow`, `swarm`). The
+  switch `--include-default-customizations` exists only on `agy acp`; the main
+  CLI refuses it (exit 2).
+- 🔎 Skills load by progressive disclosure: only the name and description are
+  in the prompt, and the body is read when the model activates the skill
+  (bundled `agy-customizations` docs). A named skill is therefore discovered
+  by name, as the Gemini overlay's `skill-invocation` slot already says.
+- 🔬 **Native plan mode does not fit.** `--mode plan
+  --dangerously-skip-permissions`, asked to write `.ralphy/plan.md`, wrote
+  nothing in the repo: the plan went to the vendor-private
+  `<root>/brain/<id>/plan.md` (with `plan.md.metadata.json`) and the reply asked
+  for approval. Ralphy's plan pass must run in the ordinary mode and write
+  `.ralphy/plan.md` itself; the Gemini overlay's `mode-rules` slot states this
+  already, and fits agy as written.
+- **Overlay slots** for `overlay.antigravity.md` (from the Gemini overlay and
+  the facts above): `execution-model` — one piped turn on stdin;
+  `self-review-step` and `self-review-guidance` — the review runs in the turn,
+  because subagents are on by default (`native_swarm`, `run-workflow`, C9) and
+  no flag to turn them off was found; `skill-invocation` — skills by name from
+  the owned root; `mode-rules` — "native plan mode is not in use, write
+  `.ralphy/plan.md` yourself"; `ledger-example` as Gemini's;
+  `planning-mode-intro` and `stages-section` empty (no staged charter yet).
+
+**C8 answer:** agy reads skills from the repo's `.agents/skills`, `.agent/skills` and `_agents/skills` and from the global `skills`, `config/skills` and `antigravity-cli/skills` folders of its root, and reads `AGENTS.md` and `GEMINI.md` from the repo and the root, never `.claude`, `.codex`, `.cursor` or `CLAUDE.md` (🔬 marker skills, `-p /skills` and a Flash turn); `--gemini_dir=<owned root>` replaces the whole global layer, so Ralphy can materialize its skills there and the operator's `~/.gemini` library is not read, while 6 built-in skills and the `swarm` plugin are always listed with no CLI switch to drop them; native plan mode (`--mode plan`) writes its plan to the vendor-private `brain/<id>/plan.md` and asks for approval, so it is rejected and the plan pass runs in the ordinary mode and writes `.ralphy/plan.md` itself (🔬); the overlay fills `execution-model`, `self-review-step`, `self-review-guidance`, `ledger-example`, `skill-invocation` and `mode-rules`, and leaves `planning-mode-intro` and `stages-section` empty.
 
 ## 9. C9 — Blast radius and the product ethos
 
@@ -592,7 +682,158 @@ strings); `agy --version` does not spawn it.
 
 ## Hooks and integrations
 
-Filled by Stage 5.
+Raw logs: `docs/spike/live/antigravity-782-hooks.log`,
+`antigravity-782-remote.log`, `antigravity-782-resume.log`. Host: Windows,
+agy 1.5.6, isolated root `--gemini_dir=<gd>`, Flash. The event list is the one
+of the bundled `agy-customizations/docs/hooks.md`; the changelog names no
+other. Each event was registered twice, in `<repo>/.agents/hooks.json` (tag
+`ws`) and in `<gd>/config/hooks.json` (tag `gl`), with a command that appends
+one JSON line per call. The interactive turn ran in a ConPTY (`pywinpty`,
+140×40, the screen read with `pyte`) with no `-p`.
+
+| Event | Registered in | Fired in -p | Fired interactive | Command |
+| --- | --- | --- | --- | --- |
+| `SessionStart` | `<repo>/.agents/hooks.json` and `<gd>/config/hooks.json` | 🔬 yes, both files, once per new conversation, when the first prompt arrives (with a stream-json message written at +10 s, it fired at +10.2 s) | 🔬 yes, both, 0.3 s after the first prompt was submitted; not at launch, not after the trust answer, and not on a resumed conversation | shell form `<python> -I <hook.py> <tag> <log>`, run by `cmd /c` on Windows (🔎 `sh -c` on Unix) |
+| `PreInvocation` | both | 🔬 yes, before each model call (2 per tool turn) | 🔬 yes, before each model call | same |
+| `PreToolUse` (matcher `*`) | both | 🔬 yes, before `run_command`; the answer decides: `{"decision":"allow"}` runs the tool, `{}` or a hook that fails **denies** it | 🔬 yes, before `run_command` | same; stdout must be `{"decision":"allow"}` |
+| `PostToolUse` (matcher `*`) | both | 🔬 yes, after the tool, not after a denied one | 🔬 yes | same |
+| `PostInvocation` | both | 🔬 yes, after each model call | 🔬 yes | same |
+| `Stop` | both | 🔬 yes, `terminationReason:"NO_TOOL_CALL"` at the end of the turn; not after a `CTRL_BREAK_EVENT` stop | 🔬 yes, `NO_TOOL_CALL`, also on the resumed conversation | same |
+| Every event, WSL | `~/.gemini/config/hooks.json` of a temp `HOME` | not observable — the temp root is logged out; the file loaded (`loaded 1 named hooks`) but nothing fired before sign-in, and a signed-in probe needs the operator's real `~/.gemini` (H10) | not observable — same reason | shell form `echo <Event> >> <file>` |
+
+### What the hook probes show
+
+- 🔬 **Payload.** Every call gets JSON on stdin with `conversationId`,
+  `workspacePaths`, `transcriptPath`, `artifactDirectoryPath`, `modelName`
+  (the real id, `gemini-3.8-flash-low`), `lastUserInput`, `hookEventName` and
+  `cwd`; `PreToolUse` adds `toolCall` and `stepIdx`, `Stop` adds
+  `terminationReason`, `fullyIdle`, `continuationActive`, `executionNum`,
+  `error`. The hook process's environment has
+  `ANTIGRAVITY_CONVERSATION_ID`, and its working directory is the folder of
+  its `hooks.json`.
+- 🔬 **Shell form only, and Windows quoting breaks a quoted path.** A handler
+  has only `type: "command"` and a `command` string (🔎 docs: `cmd /c` on
+  Windows, `sh -c` on Unix); there is no exec form with `args`, and
+  `--settings` refuses a `hooks` key (`unknown setting "hooks"`, exit 1). With
+  the program path in double quotes (ADR-0040 C12 rule 3), agy passed it to
+  `cmd /c` with Go's argv escaping, so cmd saw `\"…\"` and every hook failed
+  (`'\"…python.exe\"' não é reconhecido…`). The same path without quotes ran.
+  A program path with a space is therefore not proven to work on Windows.
+- 🔬 **A pre-tool hook fails closed.** A `PreToolUse` hook that could not start
+  (exit 1) denied the tool (`JSON hook … failed` as a `TOOL_ERROR`), and a hook
+  that printed `{}` denied it too (`tool call denied by pre-tool hook:`). This
+  is the opposite of Claude Code (M1 of the Claude hook probes, where a guard
+  that cannot start lets the tool run). Other events that fail are logged and
+  the turn goes on. One trap: cmd's error text on this Portuguese-locale host
+  was not UTF-8, and agy then ended the whole run with exit 3 and
+  `proto: field google.protobuf.Value.string_value contains invalid UTF-8`.
+- 🔬 **Order and merge.** The two files' handlers run one after another (about
+  0.1 s each; the hooks block the loop), in an order that changed between runs.
+  A workspace hook that answered `allow` did not override a global hook that
+  answered `deny`: the tool was denied (H6). After a `deny`, the next
+  `PreToolUse` handler did not run.
+- 🔬 **A repository's own hooks run.** `<repo>/.agents/hooks.json` ran in
+  headless mode with no trust question; in a console it ran after the folder
+  trust answer. So a repository Ralphy works on can run commands as the
+  operator through agy, as it can through a Claude Code project settings file.
+- 🔬 **No hook proves readiness before the prompt** (ADR-0040 C12 rule 5).
+  `SessionStart` fires when the conversation is created, which is when the
+  first prompt arrives, in `-p`, in `--input-format stream-json` and in a
+  console. In headless mode the readiness signal is the `init` line (at +2.3 s,
+  before any prompt); a console gives no hook event before its first prompt.
+
+### Veto of a tool call (parity 18) 🔬
+
+With `--dangerously-skip-permissions` (`permission_mode:"always-proceed"`), a
+`PreToolUse` hook that printed
+`{"decision":"deny","reason":"blocked-by-ralphy-probe"}` for `echo VETOME >
+vetoed.txt` stopped it: the tool step ended `ERROR` with `tool call denied by
+pre-tool hook: blocked-by-ralphy-probe`, `vetoed.txt` was not created, and the
+model replied `REFUSED: blocked-by-ralphy-probe`. The run exited 0 with
+`status:"SUCCESS"`; the veto is not in `denied_actions`, only in the tool step.
+
+### `stream-json` input 🔬
+
+`--input-format stream-json --output-format stream-json`: the `init` line (with
+the conversation id) arrived at +2.3 s with no input; a user message written at
++10 s ran a turn and gave a `result` at +13.3 s, and the process kept running
+until stdin closed (exit 0). So one process takes several turns, one NDJSON
+line each, and Stage 4's note holds: under this input format, exit 0 does not
+mean success.
+
+### Cooperative stop (parity 19) 🔬
+
+`CTRL_BREAK_EVENT` to the process group 8 s into a `ping -n 40` turn: within
+10 ms, stderr `error: interrupted`, one `result` line with `status:"ERROR"`,
+`error:"interrupted"`, `finished_reason:"interrupted"` and the usage so far,
+exit **1**; no `PING.EXE` was left, and no `PostToolUse` or `Stop` hook ran. In
+a console, Ctrl+C twice exits and prints `Resume with -c (or command below):
+agy --conversation=<id>`. On WSL, `timeout` (SIGTERM) during the logged-out
+wait still printed the JSON `result` envelope (H10).
+
+### MCP servers, plugins and agents in a fresh root 🔬
+
+`agy mcp list`: `No MCP servers configured.`; `agy plugin list`: `No plugins
+installed.`; `agy agents`: empty. But `-p /skills` lists 6 built-in skills
+and the built-in `swarm` plugin (C8, C9). `agy acp` (the Agent Client Protocol
+over stdio) has switches the main CLI lacks: `--include-default-customizations`,
+`--disable-telemetry`, `--login` (📖 `agy acp --help`).
+
+### Remote control and the microphone server
+
+| Command | What it opened 🔬 | Reading under ADR-0072 |
+| --- | --- | --- |
+| `--remote-control` on a console | printed `Remote control on for this session`, the machine's host name, and a take-over link `https://antigravity.google.com/r/<id>`; sockets of its PID: outbound to Google `:443` only (the rows in state Listen carried a remote Google `:443` address, a socket mid-connect); none without the flag | Opens the session to the operator's Google account (D1: inside the operator zone, like Claude's `remote_control`), but the link on screen is a take-over; Ralphy never passes it unless the operator asks |
+| `remote-control start --session` | wrote `HKCU\…\Run\AntigravityCliDaemon = agy.exe --gemini_dir=<gd> remote-control serve` (the logon task was refused: `Acesso negado`) and left a detached `remote-control serve` process, outbound `:443` only; `remote-control stop` removed both | A persistent autostart outside Ralphy's tree; Ralphy must never run it |
+| `mic-serve` | `127.0.0.1:4713` listening (default `--addr`; the help says keep it on loopback) | Loopback, but a child must never run it; a voice channel is out of Ralphy's scope |
+
+### `--sandbox` and `--mode`
+
+- 🔬 `--sandbox` with `--dangerously-skip-permissions`: the CLI log says
+  `Print mode: enabling terminal sandbox for this session`. A write inside the
+  repo and a write under `%TEMP%` outside it both ran; `curl
+  https://example.com` printed `000` and exited 1, and the model said it had no
+  network. So the sandbox blocks the network, which would also block the
+  `gh` and `git fetch` calls the charters run (ADR-0072 D6a); it is no default
+  for Ralphy.
+- 🔬 `--mode plan` is rejected (C8). 📖 `--mode accept-edits` and `--mode auto`
+  exist; 🔎 Auto mode needs Windows 11 24H2 and a personal account, and has a
+  second model review commands that leave the sandbox. Not run: the unattended
+  path is `--dangerously-skip-permissions` (C1).
+- 🔬 First interactive launch in a new root shows a colour-scheme screen, then
+  _Terms of Service & Data Use_ with the data-collection box **already
+  checked**, then the folder trust question (default `Yes, I trust this
+  folder`). The probe unchecked the box. Headless runs skip all three.
+
+### Resume (#758 and parity 21) 🔬
+
+- An interactive turn, ended with Ctrl+C twice, printed
+  `agy --conversation=6be64d5a-…`. A new console with `--conversation=<that
+  id>` reopened it: the old turn was on screen, and asked which command it had
+  run, the model answered `echo hook-probe`. The hooks saw the same
+  `conversationId`, and `SessionStart` did not fire again.
+- The same id in a headless run (`--conversation <id>`, prompt on stdin)
+  continued the same conversation too (`init.conversation_id` unchanged, the
+  answer right). But its `result.usage` was the **conversation's** total
+  (34 107 input, `num_turns` 3, 70 s) while its one model call used 8 835: on
+  resume, sum the step records, not `result.usage`.
+- A chosen id cannot be given (Stage 4: `--conversation <unknown>` warns and
+  starts a new UUID). The id is known without a launch gate: the first stream
+  line in `-p`, and in a console the `conversationId` of every hook payload
+  (the hook's environment carries it too), plus `cache/last_conversations.json`
+  per workspace.
+
+**Resume answer (#758):** The id cannot be chosen before launch (`--conversation <unknown id>` warns and starts a new CLI-made UUID), but `--conversation <id>` reopens an existing conversation both in a new console and in a headless run (🔬 the model recalled the earlier turn, and the hooks saw the same id); for a console, the new id reaches Ralphy in the `conversationId` of the first hook event (the first prompt's `SessionStart`), so no list-and-guess launch gate is needed if the console carries Ralphy's hooks.
+
+### Vendor shape
+
+agy routes one sign-in to 13 model ids from three providers (Google, Anthropic,
+OpenAI open-weight), groups them into two quota buckets, picks the effort by
+id suffix or `--effort`, and refuses an unknown id before any model call
+(C4, C7). The list depends on the plan (`gemini-4-argon-trial`) and changes
+with CLI updates.
+
+**Vendor shape:** one vendor with many models — `agy models` lists 13 ids from Google, Anthropic and OpenAI behind one sign-in and one quota read-out, the list is plan-scoped and changes with self-updates, so Ralphy reads the list (free, deterministic) instead of pinning a set, and keys prices by base id with the effort suffix removed.
 
 ## Feature parity
 
@@ -614,21 +855,21 @@ from #782; the answer column is filled by Stages 4 and 5.
 | 9 | A | Budgets: per issue, idle, run deadline (ADR-0038) | Whether `--print-timeout` helps, and whether the output stops when the agent hangs | 🔬 `--print-timeout 30s` ended a hung turn at 33 s with exit 3, `finished_reason:"print_timeout"`, and killed its background task; stdout is silent while the agent waits on a background command (25 s here), so an idle budget must allow it (C3) |
 | 10 | A | Effort ladder (ADR-0044) | The map from `low`..`max` to `--effort` and the id suffix | 🔬 `--effort` (`low`, `medium`, `high`, `xhigh`, `max`) = the id suffix; a base id plus `--effort` selects the variant, a base id alone takes the model's default (medium); a conflicting pair or a missing level is refused with exit 1; no listed model has `xhigh` or `max`, `gpt-oss-120b` has `medium` only (C4) |
 | 11 | A | The five roles and the four one-shots | `plan`, `execute`, `diagnose_repo`, `draft_issues`, `triage_issues`, `consolidate_knowledge` | 🔬 `plan` ran with `--mode plan` (read-only plan, no file changed) and `execute` with `--dangerously-skip-permissions` (wrote a file, ran a command); the four one-shots use the same stdin + `stream-json` path and were not run one by one |
-| 12 | A | Overlay slots and plan charters | `overlay.antigravity.md`, including the `stagedplan` charter | |
+| 12 | A | Overlay slots and plan charters | `overlay.antigravity.md`, including the `stagedplan` charter | 🔬 Needs its own `overlay.antigravity.md`: `execution-model` (one piped turn on stdin), `self-review-step` and `self-review-guidance` (review in the turn), `ledger-example`, `skill-invocation` (skills by name from the owned `--gemini_dir` root) and `mode-rules` (native plan mode writes to `brain/<id>/plan.md`, so write `.ralphy/plan.md` yourself); `planning-mode-intro` and `stages-section` empty. The `stagedplan` charter is Claude-only today; nothing seen blocks it (its skill is found by name), left to the adapter issue (C8) |
 | 13 | A | Run artifacts under `.ralphy/` | Whether the agent can read gitignored files. Gemini could not (the inlining in `crates/ralphy-agent-gemini/src/context.rs`) | 🔬 Yes: with `.ralphy/` in `.gitignore`, `read_file` read `.ralphy/note.md` and the reply quoted its marker; no inlining is needed |
 | 14 | A | Images (ADR-0025) | Whether headless mode accepts an attachment | 🔬 No attachment channel headless: the NDJSON input refuses an `image` block (`only "text"`, exit 1); but the agent read a PNG by path with `read_file` and named its color, so an image saved in the repo (for example under `.ralphy/`) and named in the prompt works |
-| 15 | A | Autonomy revocation | Whether an administrator or a policy can silently turn off auto-approve, as detected in `crates/ralphy-agent-gemini/src/revocation.rs` | |
-| 16 | A | Wiring of ADR-0040: five tiers, three agent enums, `config.rs`, the daemon roster and keyboard digit | `ralphy config set` works for every axis | |
-| 17 | B | Agent state by hooks (ADR-0059) | The hook events of section 2 | |
-| 18 | B | Guard on every tool call (ADR-0072) | A hook or a policy that can veto | |
-| 19 | B | Cooperative stop (ADR-0054) | Which signal makes the agent end cleanly | |
-| 20 | B | Degraded API state | A banner or a record for a failing API, and a restart path (compare `crates/ralphy-agent-claude/src/api_watch.rs`) | |
-| 21 | B | Resume with context | `--continue` and `--conversation <id>` for a retry, and whether the id can be chosen first | |
-| 22 | B | Context window and compaction | Whether the CLI compacts on its own, and whether the used share of the window is readable | |
-| 23 | B | Account rotation on a limit (ADR-0060) | Whether more than one account can be used, and how one is chosen | |
-| 24 | B | Complexity routing (CONTEXT.md) | Whether the planner can pick the model, with the multi-vendor catalog | |
-| 25 | B | Review role (ADR-0077) | Whether `agy` can act as reviewer | |
-| 26 | C | Interactive console on a PTY, screen snapshot, image paste (ADR-0079, ADR-0055) | The console runs, and the screen can be read | |
-| 27 | C | Notes on the stage and review notes on a diff (ADR-0064, ADR-0061) | What the console needs from the agent | |
-| 28 | C | Supervised session and peers | `SessionSpec` carries both `args` and `env`, so a launch is as contained as a run | |
-| 29 | C | Doorbell and letters (ADR-0076) | A documented way into a running session | |
+| 15 | A | Autonomy revocation | Whether an administrator or a policy can silently turn off auto-approve, as detected in `crates/ralphy-agent-gemini/src/revocation.rs` | 🔬 Partly: a tool the CLI will not approve shows as `denied_actions` in `result`, with exit 0, an empty response and the stderr line `… auto-denied`, and `init.permission_mode` names the mode the run got (`always-proceed` with `--dangerously-skip-permissions`); 🔎 the changelog says an Enterprise administrator's review rule now makes such headless runs deny those commands. The administrator path itself was not observed (one personal account) |
+| 16 | A | Wiring of ADR-0040: five tiers, three agent enums, `config.rs`, the daemon roster and keyboard digit | `ralphy config set` works for every axis | Not observable in a spike (it is code). The CLI offers every axis `ralphy config set` sets: the agent binary (explicit probe list, C10), `--model` (13 ids), `--effort`, and the owned root `--gemini_dir`; no blocker was found for the five tiers |
+| 17 | B | Agent state by hooks (ADR-0059) | The hook events of section 2 | 🔬 Yes on Windows: all six events (`SessionStart`, `PreInvocation`, `PreToolUse`, `PostToolUse`, `PostInvocation`, `Stop`) fired in `-p` and in a console, with the conversation id; `SessionStart` comes only with the first prompt, and no event reports a permission wait. WSL not observed (logged-out root). See _Hooks and integrations_ |
+| 18 | B | Guard on every tool call (ADR-0072) | A hook or a policy that can veto | 🔬 Yes: a `PreToolUse` hook's `deny` stopped a command under `--dangerously-skip-permissions`; a hook that fails or prints `{}` also denies (fails closed); a global deny beats a workspace allow. Shell form only (`cmd /c`), and a quoted program path failed on Windows |
+| 19 | B | Cooperative stop (ADR-0054) | Which signal makes the agent end cleanly | 🔬 `CTRL_BREAK_EVENT`: exit 1 within 10 ms, one `result` with `finished_reason:"interrupted"` and usage, the running command killed, no `Stop` hook; a console exits on Ctrl+C twice and prints its resume command; WSL SIGTERM still printed the `result` envelope |
+| 20 | B | Degraded API state | A banner or a record for a failing API, and a restart path (compare `crates/ralphy-agent-claude/src/api_watch.rs`) | Not observed (no API failure happened). 🔎 The CLI retries `429` and `5xx` itself and a console's status line shows `Model unavailable (attempt 2/10), retrying in 12s`; a final failure is exit 3 with an `AGY_ERROR:` line (C3, C7). No stream record during retries is known, so a degraded state would be read from the console screen, as for Claude |
+| 21 | B | Resume with context | `--continue` and `--conversation <id>` for a retry, and whether the id can be chosen first | 🔬 `--conversation <id>` reopens a conversation in a console and in `-p` (the model recalled the earlier turn); the id cannot be chosen first, but comes from the `init` line or the first hook payload; 📖 `-c` continues the latest one in the workspace. After a resume, `result.usage` is the conversation total, so sum the step records |
+| 22 | B | Context window and compaction | Whether the CLI compacts on its own, and whether the used share of the window is readable | 🔎 Yes, the CLI compacts on its own and has `/compact`, and `/config` has a `contextWindow` key; the used share is in the interactive `/context` panel (refused in `-p`, exit 2) and in the custom status line JSON (`context_window_size`); the `-p` stream gives none. Compaction not observed |
+| 23 | B | Account rotation on a limit (ADR-0060) | Whether more than one account can be used, and how one is chosen | 🔬 Windows: no — the credential is the fixed keyring target `gemini:antigravity`, the same for every root, so one account per OS user; Linux: yes — the token file is inside the root, so one account per `--gemini_dir` root (an isolated root is logged out). 📖 `GEMINI_API_KEY` or `AGY_ADC_AUTH` are other sign-ins |
+| 24 | B | Complexity routing (CONTEXT.md) | Whether the planner can pick the model, with the multi-vendor catalog | 🔬 Yes: `--model` takes any of 13 ids from three providers per run, and `--effort` the level; a wrong pair is refused before any model call. The price table has no row yet (row 2) |
+| 25 | B | Review role (ADR-0077) | Whether `agy` can act as reviewer | 🔬 Likely yes: a headless turn reads the repo with its tools and writes no file unless asked (plan probe, C1); 📖 `--json-schema` forces a structured final answer. A review itself was not run |
+| 26 | C | Interactive console on a PTY, screen snapshot, image paste (ADR-0079, ADR-0055) | The console runs, and the screen can be read | 🔬 Yes: the console runs in a ConPTY (140×40) and a VT emulator read its screen (prompt, `● Ran (echo hook-probe)`, the reply). Text typed, a 0.5 s pause, then Enter submitted the prompt. A new root first shows a colour screen, the Terms of Service with data collection pre-checked, and the folder trust question. 🔎 Image paste via the terminal's paste key or `alt+v` on Windows |
+| 27 | C | Notes on the stage and review notes on a diff (ADR-0064, ADR-0061) | What the console needs from the agent | 🔬 What the console needs is there: text written into the PTY reaches the prompt, and the hooks (row 17) tell when a turn starts and ends; no other channel into a console exists |
+| 28 | C | Supervised session and peers | `SessionSpec` carries both `args` and `env`, so a launch is as contained as a run | 🔬 Yes: the console took the same argv as a run (`--gemini_dir=<owned root>`, `--model`, `--dangerously-skip-permissions`) and the owned root's hooks fired; the auth is the OS keyring on Windows, and on Linux the root's token file, so the env needs no secret |
+| 29 | C | Doorbell and letters (ADR-0076) | A documented way into a running session | 🔬 A headless session takes more turns as NDJSON lines on stdin (`--input-format stream-json`, the process waits for EOF); 📖 `agy acp` (Agent Client Protocol over stdio) can steer a running turn; a console has only its PTY; `--remote-control` is a take-over through Google's site, not a way in for Ralphy |
