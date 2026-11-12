@@ -24,6 +24,7 @@
    `wb-viewer-markdown.ts`, `-find.ts`, `-encoding.ts` and `-save.ts`; it
    builds them in `createViewer`.
 --------------------------------------------------------------------------- */
+import { setMarkup } from "./wb-html.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { sendDocument } from "./wb-events.ts";
@@ -61,8 +62,7 @@ export type ViewerDeps = {
 // A caption swap keeps the button's shape: icon, then the label span a narrow
 // pane hides, and the same words in `title`/`aria-label` for when it does.
 function setCaption(btn: HTMLElement, icon: string, caption: string) {
-  // oxlint-disable-next-line no-restricted-properties -- a fixed icon, no outside text
-  btn.innerHTML = `<i class="bi ${icon}"></i><span class="vbtn-label"></span>`;
+  setMarkup(btn, `<i class="bi ${icon}"></i><span class="vbtn-label"></span>`);
   need(btn, ".vbtn-label").textContent = caption;
   btn.title = caption;
   btn.setAttribute("aria-label", caption);

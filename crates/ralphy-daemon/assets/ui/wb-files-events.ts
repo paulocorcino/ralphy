@@ -3,11 +3,11 @@
    added once by `init()` of wb-files.ts.
    --------------------------------------------------------------------------- */
 import type { TreeSub } from "./wb-files-mount.ts";
+import { devError } from "./wb-log.ts";
 
 // Where a Promise nobody awaits reports its failure: the console, tagged.
 export const logFailure = (what: string) => (err: unknown) => {
-  // oxlint-disable-next-line no-console -- the failure is for a developer
-  console.error(`[workbench] ${what}`, err);
+  devError(`[workbench] ${what}`, err);
 };
 
 /** What the listeners call on the files component. */

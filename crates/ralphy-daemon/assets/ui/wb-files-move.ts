@@ -8,6 +8,7 @@
 import { WBFail } from "./wb-fail.ts";
 import { parentRel } from "./wb-file-paths.ts";
 import type { AlpineMagics } from "./wb-alpine.ts";
+import { devError } from "./wb-log.ts";
 
 /** What a move reads or calls on the files component. */
 type MoveFiles = {
@@ -42,6 +43,6 @@ export async function moveEntry(files: MoveFiles, from: string, to: string) {
     // LAST, so its `setActive()` is the final write.
     await files.revealRel(to);
   } catch (err) {
-    console.error("[workbench] the move did not finish", err);
+    devError("[workbench] the move did not finish", err);
   }
 }

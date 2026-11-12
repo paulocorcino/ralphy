@@ -1,5 +1,6 @@
 // The source-code pane: its tab, the Monaco editor in it, the Save key and the
 // pane-width rule that trims the editor's gutter.
+import { setMarkup } from "./wb-html.ts";
 import { WBMonaco } from "./wb-monaco.ts";
 import { need, required } from "./wb-dom-need.ts";
 import { encodingBtnHtml } from "./wb-viewer-encoding.ts";
@@ -11,6 +12,7 @@ import type { ViewerEncoding } from "./wb-viewer-encoding.ts";
 import { wireFileButtons } from "./wb-viewer-save.ts";
 import type { ViewerSave } from "./wb-viewer-save.ts";
 import type { MermaidWindow } from "./wb-dbml-draw.ts";
+import { devError, devWarn } from "./wb-log.ts";
 
 /** What `createViewer` hands the code pane. */
 export type ViewerCodeDeps = {
@@ -104,7 +106,7 @@ export function createViewerCode(deps: ViewerCodeDeps) {
         pre.textContent = rec.content;
         container.append(pre);
         rec.fallbackEl = pre;
-        console.warn("[workbench] monaco did not boot; read-only fallback", err);
+        devWarn("[workbench] monaco did not boot; read-only fallback", err);
         return null;
       })
       .then((monaco) => {
@@ -144,7 +146,7 @@ export function createViewerCode(deps: ViewerCodeDeps) {
         // A create()/wiring failure is NOT a boot failure: the pane would look
         // editable while nothing is wired, so say so instead of degrading.
         rec.mounting = false;
-        console.error("[workbench] monaco editor failed to mount", err);
+        devError("[workbench] monaco editor failed to mount", err);
         messages.flash("Could not open the editor.");
       });
   }
@@ -155,7 +157,9 @@ export function createViewerCode(deps: ViewerCodeDeps) {
     el.className = "viewer code-viewer";
     el.dataset["tabId"] = rec.id;
     el.style.display = "none";
-    el.innerHTML = `
+    setMarkup(
+      el,
+      `
       <div class="viewer-toolbar">
         <span class="viewer-path"></span>
         <span class="spacer"></span>
@@ -174,7 +178,8 @@ export function createViewerCode(deps: ViewerCodeDeps) {
           ><i class="bi bi-save"></i><span class="vbtn-label">Save</span></button>
         ${detachBtnHtml(rec)}
       </div>
-      <div class="viewer-body"></div>`;
+      <div class="viewer-body"></div>`,
+    );
     setPathLabel(el, rec);
     required(viewers, "the element that holds the panes").append(el);
     wireEncodingMenu(rec, el);
@@ -186,8 +191,7 @@ export function createViewerCode(deps: ViewerCodeDeps) {
         ?.getAction("actions.find")
         ?.run()
         .catch((err: unknown) => {
-          // oxlint-disable-next-line no-console -- the failure is for a developer
-          console.error("[workbench] monaco find failed", err);
+          devError("[workbench] monaco find failed", err);
         });
     });
     const mirrorBtn = el.querySelector<HTMLElement>('[data-act="mirror"]');

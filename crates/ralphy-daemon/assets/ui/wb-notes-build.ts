@@ -2,6 +2,7 @@
 // and the keys the card answers to (ADR-0064 §§8, 13). `createNotes` builds it
 // with the card's closure names as typed deps; the text of each function is the
 // one it had in `wb-notes.ts`.
+import { setMarkup } from "./wb-html.ts";
 import {
   DEFAULT_FILL,
   DEFAULT_INK,
@@ -55,8 +56,7 @@ function applyLock(el: NoteCard, locked: boolean) {
   if (btn) {
     // The console's own two glyphs, verbatim (`wb-console.ts`'s `applyLock`):
     // one lock on the plane, not one per surface.
-    // oxlint-disable-next-line no-restricted-properties -- a fixed icon, no outside text
-    btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
+    setMarkup(btn, locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>');
     btn.title = locked ? "Unlock this note" : "Lock this note in place";
   }
 }

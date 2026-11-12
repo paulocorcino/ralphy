@@ -6,6 +6,7 @@
 import type { WBDeskSink } from "./wb-desk-sink.ts";
 import type { WBDeskSync } from "./wb-desk-sync.ts";
 import type { DeskReply } from "./wb-types.d.ts";
+import { devWarn } from "./wb-log.ts";
 
 // Where an upload goes. The sink never rejects, and a network failure is one
 // more answer to `flushed`.
@@ -83,8 +84,7 @@ export function createDeskFlush(deps: FlushDeps) {
   // The daemon took the batch: the desk it sent is the view now.
   function flushedOk(out: FlushAnswer) {
     flushBackoff = 1000;
-    // oxlint-disable-next-line no-console -- the daemon's text is for a developer
-    for (const r of out.reply?.refused ?? []) console.warn("desk change refused:", r.error);
+    for (const r of out.reply?.refused ?? []) devWarn("desk change refused:", r.error);
     const verdict = sync.acked(out.reply);
     if (verdict === "reload") {
       reloadForRestoredDesk();
@@ -106,7 +106,7 @@ export function createDeskFlush(deps: FlushDeps) {
     }
     // The daemon will never accept this batch.
     if (out.status === 400 || out.status === 422) {
-      console.warn("desk changes refused:", out.reply?.error);
+      devWarn("desk changes refused:", out.reply?.error);
       sync.dropped();
       if (sync.hasPending()) scheduleDeskFlush();
       return true;

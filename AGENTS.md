@@ -288,6 +288,9 @@ The lint rules, their debt and the plan that turns the rest on are in
   - a duplicated block that is one rule becomes one function named for the
     rule; two rules that only look alike stay two, with the ignore marker and
     its reason.
+- In the workbench, HTML and logs go through `wb-html.ts` and `wb-log.ts`:
+  `setMarkup`, `setSanitizedHtml` or `setSanitizedSvg` writes `innerHTML`,
+  and `devLog` and its siblings write the browser console.
 - An exception is the last resort, with a reason that says why the rule is
   wrong at that line: `#[expect(<lint>, reason = "...")]` in Rust,
   `// oxlint-disable-next-line <rule> -- <reason>` in TypeScript,

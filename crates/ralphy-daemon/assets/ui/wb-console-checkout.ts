@@ -7,6 +7,7 @@
    `createTitle` in `wb-console-title.ts` builds it and keeps the title's text,
    the rename and the restart.
    --------------------------------------------------------------------------- */
+import { setMarkup } from "./wb-html.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
@@ -229,8 +230,10 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
       const create = document.createElement("button");
       create.type = "button";
       create.className = "session-checkout-item create";
-      create.innerHTML =
-        '<i class="bi bi-folder-plus"></i><span class="session-checkout-name">New worktree…</span>';
+      setMarkup(
+        create,
+        '<i class="bi bi-folder-plus"></i><span class="session-checkout-name">New worktree…</span>',
+      );
       create.title = "Create a worktree and restart this console in it";
       create.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -309,7 +312,7 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     trash.tabIndex = 0;
     trash.className = "session-checkout-remove";
     trash.title = "Delete this worktree";
-    trash.innerHTML = '<i class="bi bi-trash3"></i>';
+    setMarkup(trash, '<i class="bi bi-trash3"></i>');
     // The trash must not also PICK the row it sits on.
     trash.addEventListener("click", (e) => {
       e.stopPropagation();

@@ -9,6 +9,7 @@
    lists every read. `wb-console.ts` creates one per console; the fence list is
    `wb-stage-fence-list.ts`.
    --------------------------------------------------------------------------- */
+import { setMarkup } from "./wb-html.ts";
 import { WBGeometry } from "./wb-geometry.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { DIRS } from "./wb-stage-chrome.ts";
@@ -295,7 +296,7 @@ export function createFences(deps: FenceDeps) {
     columns.className = "fence-columns";
     columns.type = "button";
     columns.title = "Open this fence's consoles as columns";
-    columns.innerHTML = '<i class="bi bi-layout-three-columns"></i>';
+    setMarkup(columns, '<i class="bi bi-layout-three-columns"></i>');
     columns.addEventListener("click", () => {
       const st = stage();
       if (!st || popups.isDetached(f.id)) return;

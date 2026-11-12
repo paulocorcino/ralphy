@@ -1,6 +1,7 @@
 // The Markdown pane (and the Mermaid and DBML panes that share it): its
 // toolbar, links, images, outline and the edit/preview toggle. The rendered
 // body itself is `wb-viewer-render.ts`.
+import { setMarkup, setSanitizedSvg } from "./wb-html.ts";
 import { sendDocument } from "./wb-events.ts";
 import { inPane, isElement, need, needInput, required, targetClosest } from "./wb-dom-need.ts";
 import { decorateZoomable } from "./wb-zoom-overlay.ts";
@@ -149,7 +150,9 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     el.dataset["tabId"] = rec.id;
     el.dataset["kind"] = rec.kind;
     el.style.display = "none";
-    el.innerHTML = `
+    setMarkup(
+      el,
+      `
       <div class="viewer-toolbar">
         <span class="viewer-path"></span>
         <button class="vbtn md-toc-btn" data-act="outline" title="Contents"
@@ -185,7 +188,8 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
         <nav class="md-outline"></nav>
         <div class="md-scroll"><article class="md-body"></article></div>
         <div class="md-editor" style="display:none"></div>
-      </div>`;
+      </div>`,
+    );
     setPathLabel(el, rec);
     required(viewers, "the element that holds the panes").append(el);
     wireEncodingMenu(rec, el);
@@ -345,7 +349,10 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     pending.forEach((holder) => {
       // `drawDiagram` returns the SVG already sanitized.
       drawDiagram(window, holder.id + "-svg", holder.dataset["src"] ?? "")
-        .then((svg) => (holder.innerHTML = svg))
+        .then((svg) => {
+          setSanitizedSvg(holder, svg);
+          return svg;
+        })
         .catch((err: unknown) => {
           holder.classList.add("mermaid-error");
           holder.textContent =
@@ -357,10 +364,10 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   // Heading outline: the jump index, one entry per heading, indented by level.
   function buildOutline(rec: ViewerRecord, article: Element) {
     const nav = inPane(rec, ".md-outline");
-    nav.innerHTML = "";
+    setMarkup(nav, "");
     const heads = article.querySelectorAll("h1, h2, h3, h4");
     if (heads.length === 0) {
-      nav.innerHTML = '<div class="outline-empty">No headings</div>';
+      setMarkup(nav, '<div class="outline-empty">No headings</div>');
       return;
     }
     heads.forEach((h, i) => {

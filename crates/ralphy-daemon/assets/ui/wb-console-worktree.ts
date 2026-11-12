@@ -3,6 +3,7 @@
    answer. `createCheckoutSwitcher` (`wb-console-checkout.ts`) asks it and
    makes the worktree.
    --------------------------------------------------------------------------- */
+import { setMarkup } from "./wb-html.ts";
 import { WBProject } from "./wb-project.ts";
 import type { Listing } from "./wb-project.ts";
 
@@ -33,7 +34,7 @@ export function askWorktree(
   modal.setAttribute("aria-label", "New worktree");
   const head = document.createElement("div");
   head.className = "modal-head";
-  head.innerHTML = '<i class="bi bi-folder-plus"></i>';
+  setMarkup(head, '<i class="bi bi-folder-plus"></i>');
   const heading = document.createElement("span");
   heading.className = "modal-title";
   heading.textContent = "New worktree";

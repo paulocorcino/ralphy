@@ -29,6 +29,7 @@ import { createLink } from "./wb-console-terminal-link.ts";
 import type { TerminalLinkState } from "./wb-console-terminal-link.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { TerminalDeps, TerminalOpts } from "./wb-console-terminal-types.d.ts";
+import { devWarn } from "./wb-log.ts";
 
 const { barKey, applyCtrlLatch, isTerminalReply } = WBConsoleInput;
 
@@ -59,7 +60,7 @@ const SCROLLBAR_VISIBLE = 3;
 function showScrollbarWhileNeeded(term: XtermTerminal) {
   const scrollable = term._core?._viewport?._scrollableElement;
   if (!scrollable) {
-    console.warn("console scrollbar: xterm has no scrollable element at the expected path");
+    devWarn("console scrollbar: xterm has no scrollable element at the expected path");
     return;
   }
   scrollable.updateOptions({ vertical: SCROLLBAR_VISIBLE });
