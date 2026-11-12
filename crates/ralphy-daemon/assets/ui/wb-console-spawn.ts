@@ -15,7 +15,7 @@ import { WBFleet } from "./wb-fleet.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { DESK_MAX } from "./wb-desk-folds.ts";
 import { createSpawnRecords } from "./wb-console-spawn-records.ts";
-import { showParked, showPeerDown } from "./wb-console-strips.ts";
+import { showLinkLost, showParked, showPeerDown } from "./wb-console-strips.ts";
 import type { Group } from "./wb-fleet.ts";
 import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
@@ -306,17 +306,13 @@ export function createSpawn(deps: SpawnDeps) {
           }
         : {}),
       onPeerHold: (group) => {
-        showPeerDown(peerStrip, win, body, group);
+        showPeerDown(peerStrip, win, group);
       },
       onPeerBack: () => win.querySelector(".session-peer-down")?.remove(),
       onLink: (state) => {
         switch (state) {
           case "lost": {
-            if (win.querySelector(".session-link-lost")) return;
-            const strip = document.createElement("div");
-            strip.className = "session-link-lost";
-            strip.textContent = "Connection lost. Reconnecting…";
-            win.insertBefore(strip, body);
+            showLinkLost(document, win);
             return;
           }
           case "back":

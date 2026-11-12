@@ -48,6 +48,7 @@ import "./wb-desk-popups.test.mjs";
 import "./wb-console-session.test.mjs";
 import "./wb-console-terminal.test.mjs";
 import "./wb-console-title.test.mjs";
+import "./wb-console-strips.test.mjs";
 import "./wb-stage-view.test.mjs";
 import "./wb-stage-window.test.mjs";
 import "./wb-console.test.mjs";
