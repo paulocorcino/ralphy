@@ -43,18 +43,23 @@ export function encodingLabel(name: string | null | undefined, bom: boolean) {
   return bom ? `${text} BOM` : text;
 }
 
-export function encodingBtnHtml(rec: ViewerRecord) {
+// The label is filled as text by `paintEncodingLabel`: the name comes from the file.
+export function encodingBtnHtml() {
   return (
     `<button class="vbtn viewer-enc" data-act="encoding" ` +
     `title="Encoding — reopen or save with another" aria-label="Encoding">` +
-    `<span class="viewer-enc-label">${encodingLabel(rec.encoding, rec.bom)}</span>` +
+    `<span class="viewer-enc-label"></span>` +
     `</button>`
   );
 }
 
-export function refreshEncodingPill(rec: ViewerRecord) {
-  const label = rec.el?.querySelector<HTMLElement>(".viewer-enc-label");
+function paintEncodingLabel(rec: ViewerRecord, root: HTMLElement | null | undefined) {
+  const label = root?.querySelector<HTMLElement>(".viewer-enc-label");
   if (label) label.textContent = encodingLabel(rec.encoding, rec.bom);
+}
+
+export function refreshEncodingPill(rec: ViewerRecord) {
+  paintEncodingLabel(rec, rec.el);
 }
 
 function markCurrentEncoding(rec: ViewerRecord, menu: HTMLElement) {
@@ -92,6 +97,7 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
   const { readWith, showSaveError, applyFresh, save } = saver;
 
   function wireEncodingMenu(rec: ViewerRecord, el: HTMLElement) {
+    paintEncodingLabel(rec, el);
     const btn = el.querySelector<HTMLElement>('[data-act="encoding"]');
     if (!btn) return;
     const menu = document.createElement("div");
