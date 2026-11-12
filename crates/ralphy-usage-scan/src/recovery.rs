@@ -4,9 +4,10 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 
 use crate::{
-    claude::scan_claude, codex::scan_codex_with_stems, copilot::scan_copilot, cursor::scan_cursor,
-    gemini::scan_gemini, kimi::scan_kimi, opencode::scan_opencode, ClaudeScan, CodexScan,
-    CopilotScan, CursorScan, GeminiScan, InteractiveRecord, KimiScan, OpenCodeScan,
+    antigravity::scan_antigravity, claude::scan_claude, codex::scan_codex_with_stems,
+    copilot::scan_copilot, cursor::scan_cursor, gemini::scan_gemini, kimi::scan_kimi,
+    opencode::scan_opencode, AntigravityScan, ClaudeScan, CodexScan, CopilotScan, CursorScan,
+    GeminiScan, InteractiveRecord, KimiScan, OpenCodeScan,
 };
 
 /// A ledger identity whose model is unknown.
@@ -37,6 +38,8 @@ pub struct RecoveryStores {
     pub kimi_dir: PathBuf,
     pub kimi_code_dir: PathBuf,
     pub opencode_db: PathBuf,
+    /// The root `agy` gets as `--gemini_dir`.
+    pub antigravity_root: PathBuf,
 }
 
 /// One attempted recovery. `None` means the store has no usable model fact.
@@ -105,6 +108,12 @@ fn scan_agent(agent: &str, stores: &RecoveryStores) -> Vec<InteractiveRecord> {
         }),
         "opencode" => scan_opencode(&OpenCodeScan {
             db_path: &stores.opencode_db,
+            run_session_ids: &no_runs,
+            repos: &[],
+            since: None,
+        }),
+        "antigravity" => scan_antigravity(&AntigravityScan {
+            root: &stores.antigravity_root,
             run_session_ids: &no_runs,
             repos: &[],
             since: None,
@@ -323,6 +332,7 @@ mod tests {
             kimi_dir: root.join("kimi"),
             kimi_code_dir: root.join("kimi-code"),
             opencode_db: root.join("opencode.db"),
+            antigravity_root: root.join("antigravity"),
         };
 
         write(
@@ -396,5 +406,31 @@ mod tests {
                 result.candidate
             );
         }
+    }
+
+    #[test]
+    fn recovery_reads_the_model_of_an_antigravity_run_from_its_store() {
+        use crate::antigravity::tests::{row, seed_conversation, ARGON};
+        let temp = tempfile::tempdir().expect("a temp dir");
+        let stores = RecoveryStores {
+            antigravity_root: temp.path().join("antigravity-root"),
+            ..RecoveryStores::default()
+        };
+        seed_conversation(
+            &stores.antigravity_root,
+            "4c15e3f1",
+            &[row(8293, 196, 0, ARGON)],
+        );
+
+        let results = resolve_models(
+            &[
+                RecoveryCandidate::new("antigravity", "4c15e3f1"),
+                RecoveryCandidate::new("antigravity", "absent"),
+            ],
+            &stores,
+        );
+
+        assert_eq!(results[0].model.as_deref(), Some("gemini-4-argon-medium"));
+        assert_eq!(results[1].model, None);
     }
 }
