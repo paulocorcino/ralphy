@@ -21,7 +21,7 @@ use crate::runner::{IssueResult, ResultStatus, NEEDS_HUMAN_REVIEW_LABEL};
     reason = "the closed issue with its plan and reports, one usage per phase, and the results list"
 )]
 pub(crate) fn close_and_record(
-    cx: &IssueCtx,
+    cx: &IssueCtx<'_>,
     issue: &Issue,
     plan: &Plan,
     lint: &protocol::ProtocolReport,
@@ -113,7 +113,7 @@ pub(crate) fn close_and_record(
 /// the acceptance evidence, the session handoff report, and the knowledge note
 /// with its citations.
 fn publish_plan_record(
-    cx: &IssueCtx,
+    cx: &IssueCtx<'_>,
     issue: &Issue,
     plan_md: &str,
     verdicts: &[acceptance::Verdict],
@@ -139,7 +139,7 @@ fn publish_plan_record(
 
 /// Cache the plan's knowledge note and record its `Knowledge used` citations.
 /// A handoff that carries neither block is warned about, never an error.
-fn record_knowledge(cx: &IssueCtx, issue: &Issue, plan_md: &str) {
+fn record_knowledge(cx: &IssueCtx<'_>, issue: &Issue, plan_md: &str) {
     if let Some(note) = handoff::knowledge_note(plan_md) {
         write_knowledge(cx.ws, issue, &cx.cfg.stamp, &note);
     } else if handoff::has_handoff(plan_md) {

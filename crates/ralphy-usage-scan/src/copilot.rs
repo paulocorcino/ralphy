@@ -189,7 +189,7 @@ fn read_session_effort(db: &Path, session_id: &str) -> rusqlite::Result<Option<S
 /// yields an empty vec via the single `read_copilot` error funnel. `since` drops
 /// records whose `last_ts` is strictly before it (§6: an unparseable bound or
 /// record keeps the record).
-pub fn scan_copilot(input: &CopilotScan) -> Vec<InteractiveRecord> {
+pub fn scan_copilot(input: &CopilotScan<'_>) -> Vec<InteractiveRecord> {
     read_copilot(input).unwrap_or_default()
 }
 
@@ -219,7 +219,7 @@ impl ModelAgg {
 /// one `unwrap_or_default`. Reads the private copy, joins the usage rows to their
 /// `sessions.cwd`, and aggregates per session × model. Falls back to a cwd-less
 /// query when the `sessions` table / its `cwd` column is absent (ADR-0033 §6).
-fn read_copilot(input: &CopilotScan) -> rusqlite::Result<Vec<InteractiveRecord>> {
+fn read_copilot(input: &CopilotScan<'_>) -> rusqlite::Result<Vec<InteractiveRecord>> {
     use rusqlite::Connection;
 
     let copy = copy_store(input.db_path)

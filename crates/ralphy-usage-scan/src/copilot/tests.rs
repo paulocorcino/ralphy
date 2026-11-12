@@ -34,7 +34,7 @@ struct Row<'a> {
     created_at: &'a str,
 }
 
-fn insert(conn: &Connection, r: &Row) {
+fn insert(conn: &Connection, r: &Row<'_>) {
     conn.execute(
         "INSERT INTO assistant_usage_events (session_id, turn_index, model, input_tokens, \
              output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, created_at) \

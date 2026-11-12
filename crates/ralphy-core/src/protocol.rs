@@ -64,6 +64,10 @@ impl ProtocolReport {
 ///
 /// Presence and shape only — a present-but-false section passes; catching that
 /// is the human reviewer's job, not this lint's.
+///
+/// # Panics
+///
+/// Never: each regex is a valid literal, and a write to a `String` does not fail.
 pub fn lint(plan_md: &str) -> ProtocolReport {
     let steps = section(plan_md, r"(?im)^##\s+Steps\s*$");
     let unticked = steps

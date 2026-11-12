@@ -29,6 +29,10 @@ pub struct Verdict {
 ///
 /// A dash (`—` U+2014, `–` U+2013, `--`, or `-`) separates the criterion from
 /// the evidence key. Evidence text may be empty.
+///
+/// # Panics
+///
+/// Never: each regex is a valid literal.
 pub fn parse_ledger(md: &str) -> Vec<Verdict> {
     let heading_re = Regex::new(r"(?im)^##\s+Acceptance ledger\s*$").expect("valid regex");
     let section = crate::markdown::section_after_heading(md, &heading_re);
@@ -61,6 +65,7 @@ pub fn parse_ledger(md: &str) -> Vec<Verdict> {
 }
 
 /// Result of applying a ledger to an issue body.
+#[derive(Debug)]
 pub struct TickResult {
     /// The updated issue body with verified criteria ticked.
     pub new_body: String,

@@ -9,6 +9,10 @@ use regex::Regex;
 
 /// Ensure the repo's `.gitignore` ignores `.ralphy/`. Returns `true` if the file
 /// was modified, `false` if the entry was already present.
+///
+/// # Panics
+///
+/// Never: each regex is a valid literal.
 pub fn ensure_ralphy_ignored(repo_root: &Path) -> Result<bool> {
     let path = repo_root.join(".gitignore");
     let mut text = if path.exists() {

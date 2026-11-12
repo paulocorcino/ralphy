@@ -6,6 +6,10 @@
 use regex::Regex;
 
 /// Count open `- [ ]` checklist steps. Checked (`- [x]`) steps do not count.
+///
+/// # Panics
+///
+/// Never: each regex is a valid literal.
 pub fn count_open_steps(md: &str) -> usize {
     let re = Regex::new(r"(?m)^\s*-\s*\[ \]").expect("valid regex");
     re.find_iter(md).count()

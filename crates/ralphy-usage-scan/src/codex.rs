@@ -28,7 +28,7 @@ use crate::{CodexScan, InteractiveRecord, Tokens};
 /// never interactive, and are excluded. Cross-dir dedup is first-wins on the
 /// record `session_id`. `since` drops records whose `last_ts` is strictly before
 /// it (§6: an unparseable bound or record keeps the record).
-pub fn scan_codex(input: &CodexScan) -> Vec<InteractiveRecord> {
+pub fn scan_codex(input: &CodexScan<'_>) -> Vec<InteractiveRecord> {
     scan_codex_with_stems(input)
         .into_iter()
         .map(|(_, record)| record)
@@ -37,7 +37,7 @@ pub fn scan_codex(input: &CodexScan) -> Vec<InteractiveRecord> {
 
 /// Recovery needs the rollout stem as an alias because run ledger rows use it,
 /// while interactive records keep `session_meta.id` as their identity.
-pub(crate) fn scan_codex_with_stems(input: &CodexScan) -> Vec<(String, InteractiveRecord)> {
+pub(crate) fn scan_codex_with_stems(input: &CodexScan<'_>) -> Vec<(String, InteractiveRecord)> {
     let mut records = Vec::new();
     // slug → resolved git actor email, computed at most once per attributed repo.
     let mut email_cache: HashMap<String, Option<String>> = HashMap::new();
@@ -68,7 +68,7 @@ pub(crate) fn scan_codex_with_stems(input: &CodexScan) -> Vec<(String, Interacti
 /// One rollout file that passed the exclusions and the dedup.
 struct Session {
     stem: String,
-    session_id: String,
+    id: String,
     cwd: Option<String>,
     models: BTreeMap<String, ModelAgg>,
 }
@@ -77,7 +77,7 @@ struct Session {
 /// stem, then by `session_meta.id`), and a `session_id` already emitted.
 /// `seen.insert` runs after both exclusions, so an excluded session never
 /// shadows a later copy.
-fn read_session(file: &Path, input: &CodexScan, seen: &mut HashSet<String>) -> Option<Session> {
+fn read_session(file: &Path, input: &CodexScan<'_>, seen: &mut HashSet<String>) -> Option<Session> {
     let stem = file.file_stem().and_then(|s| s.to_str())?.to_owned();
     // Run-owned exclusion, primary key: the rollout file stem (ADR-0033 §5).
     if input.run_session_ids.contains(&stem) {
@@ -98,7 +98,7 @@ fn read_session(file: &Path, input: &CodexScan, seen: &mut HashSet<String>) -> O
     }
     Some(Session {
         stem,
-        session_id,
+        id: session_id,
         cwd,
         models,
     })
@@ -131,7 +131,7 @@ impl Session {
     ) -> Vec<(String, InteractiveRecord)> {
         let Session {
             stem,
-            session_id,
+            id: session_id,
             models,
             ..
         } = self;

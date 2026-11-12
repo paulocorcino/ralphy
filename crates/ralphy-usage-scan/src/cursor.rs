@@ -21,7 +21,7 @@ use crate::{CursorScan, InteractiveRecord};
 /// an error). Sessions whose id is in `run_session_ids` are Ralphy runs', never
 /// interactive, and are excluded. `since` drops records whose `last_ts` is
 /// strictly before it (§6: an unparseable bound or record keeps the record).
-pub fn scan_cursor(input: &CursorScan) -> Vec<InteractiveRecord> {
+pub fn scan_cursor(input: &CursorScan<'_>) -> Vec<InteractiveRecord> {
     // Keyed by session id so the two stores union rather than duplicate.
     let mut by_id: BTreeMap<String, InteractiveRecord> = BTreeMap::new();
     // slug → resolved git actor email, computed at most once per attributed repo
@@ -50,7 +50,7 @@ pub fn scan_cursor(input: &CursorScan) -> Vec<InteractiveRecord> {
 /// timestamps and the verbatim `cwd`, so its record wins any collision with the
 /// transcripts store.
 fn scan_chats(
-    input: &CursorScan,
+    input: &CursorScan<'_>,
     out: &mut BTreeMap<String, InteractiveRecord>,
     email_cache: &mut HashMap<String, Option<String>>,
 ) {
@@ -75,7 +75,7 @@ fn scan_chats(
 /// The record of one `chats/<hash>/<sid>/` session from its `meta.json`, or
 /// `None` when the file is missing or is not JSON.
 fn chat_record(
-    input: &CursorScan,
+    input: &CursorScan<'_>,
     email_cache: &mut HashMap<String, Option<String>>,
     session_dir: &Path,
     session_id: String,
@@ -105,7 +105,7 @@ fn chat_record(
 /// timestamp is human prose inside a user message — so the `<sid>.jsonl` mtime is
 /// the honest cross-platform floor for both ends of the span.
 fn scan_transcripts(
-    input: &CursorScan,
+    input: &CursorScan<'_>,
     out: &mut BTreeMap<String, InteractiveRecord>,
     email_cache: &mut HashMap<String, Option<String>>,
 ) {
@@ -121,7 +121,7 @@ fn scan_transcripts(
 /// earlier record claimed. Every session of the dir shares the attribution of
 /// the repo whose slug matches `<slug>`.
 fn scan_project_transcripts(
-    input: &CursorScan,
+    input: &CursorScan<'_>,
     out: &mut BTreeMap<String, InteractiveRecord>,
     email_cache: &mut HashMap<String, Option<String>>,
     project_dir: &Path,

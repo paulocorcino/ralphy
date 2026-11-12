@@ -116,7 +116,7 @@ fn install_global_capture() {
 pub(crate) fn capture_run<T>(f: impl FnOnce() -> T) -> (T, Vec<CapturedFields>) {
     install_global_capture();
     let sink = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    CAPTURE_TARGET.with(|t| *t.borrow_mut() = Some(sink.clone()));
+    CAPTURE_TARGET.with(|t| *t.borrow_mut() = Some(std::sync::Arc::clone(&sink)));
     let out = f();
     CAPTURE_TARGET.with(|t| *t.borrow_mut() = None);
     let events = std::mem::take(&mut *sink.lock().expect("lock the capture sink"));

@@ -47,10 +47,10 @@ pub(crate) enum ExecPhase {
 /// abandoned without first burning another reset window. An `execute()` error
 /// propagates without a restore, exactly like the pre-extraction loop.
 pub(crate) fn execute_phase(
-    cx: &IssueCtx,
+    cx: &IssueCtx<'_>,
     issue: &Issue,
     plan: &Plan,
-    ledger: &mut RunLedger,
+    ledger: &mut RunLedger<'_>,
 ) -> Result<ExecPhase> {
     // Start each issue with no repair brief on disk: the gates only write one
     // when *this* run's verify or protocol lint fails, so a brief left by a
@@ -129,7 +129,7 @@ pub(crate) fn execute_phase(
 /// a non-empty vendor session replaces `exec_session_id`, and the no-commit
 /// streak advances or resets by whether HEAD moved.
 fn execute_once(
-    cx: &IssueCtx,
+    cx: &IssueCtx<'_>,
     plan: &Plan,
     exec_attempts: &mut Vec<Usage>,
     exec_session_id: &mut Option<String>,
@@ -205,7 +205,7 @@ enum Resume {
 
 /// Apply the progress-aware cap, then wait for `reset`.
 fn keep_resuming(
-    cx: &IssueCtx,
+    cx: &IssueCtx<'_>,
     issue: &Issue,
     reset: &ResetAt,
     synthetic: bool,

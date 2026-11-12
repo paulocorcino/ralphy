@@ -19,7 +19,7 @@ use crate::{since, ClaudeScan, InteractiveRecord, Tokens};
 /// interactive, and are excluded. `since` drops records whose `last_ts` is
 /// strictly before it (§6: reported, never dropped — the filter is payload
 /// economy, so an unparseable bound or record keeps the record).
-pub fn scan_claude(input: &ClaudeScan) -> Vec<InteractiveRecord> {
+pub fn scan_claude(input: &ClaudeScan<'_>) -> Vec<InteractiveRecord> {
     let mut records = Vec::new();
     let Ok(entries) = fs::read_dir(input.projects_dir) else {
         return records;
@@ -66,7 +66,7 @@ fn workspace_keys(repos: &[crate::RegisteredRepo]) -> Vec<(String, &crate::Regis
 /// The interactive records of one workspace directory `ws_path` (named
 /// `ws_key`), skipping the sessions that are Ralphy runs'.
 fn scan_workspace(
-    input: &ClaudeScan,
+    input: &ClaudeScan<'_>,
     keys: &[(String, &crate::RegisteredRepo)],
     email_cache: &mut HashMap<String, Option<String>>,
     ws_path: &Path,

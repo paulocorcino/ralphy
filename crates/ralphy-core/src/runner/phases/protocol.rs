@@ -32,10 +32,10 @@ pub(crate) enum ProtocolGate {
 /// verify-failure mechanism); a second violation falls back to closing with
 /// the lint report and a loud warning in the close comment.
 pub(crate) fn protocol_gate(
-    cx: &IssueCtx,
+    cx: &IssueCtx<'_>,
     issue: &Issue,
     plan: &Plan,
-    ledger: &mut RunLedger,
+    ledger: &mut RunLedger<'_>,
 ) -> Result<ProtocolGate> {
     let mut plan_md = std::fs::read_to_string(cx.ws.plan_path()).unwrap_or_default();
     let mut lint = protocol::lint(&plan_md);

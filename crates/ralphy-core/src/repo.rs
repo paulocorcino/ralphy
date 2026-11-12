@@ -98,6 +98,7 @@ pub trait Repo {
 }
 
 /// The production [`Repo`]: the `git::*` free functions over a fixed root.
+#[derive(Debug)]
 pub struct GitRepo {
     repo_root: PathBuf,
 }

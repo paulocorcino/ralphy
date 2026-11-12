@@ -128,7 +128,7 @@ pub(crate) enum Prepared {
 /// classification, the comment-thread enrichment, and the `.ralphy/` staging
 /// writes (`issue.json`, handoffs, references). An `Err` is fatal to the run —
 /// the caller restores the branch and propagates.
-pub(crate) fn prepare_issue(cx: &IssueCtx, issue: &Issue) -> Result<Prepared> {
+pub(crate) fn prepare_issue(cx: &IssueCtx<'_>, issue: &Issue) -> Result<Prepared> {
     // Attach the issue's own comment thread up front, before the blocked-by
     // gate: a `## Blocked by` inside the marked consolidated-spec comment
     // (ADR-0017) gates the queue exactly like one in the body, so the gate must

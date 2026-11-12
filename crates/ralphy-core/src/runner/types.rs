@@ -20,6 +20,7 @@ use crate::{Outcome, ResetAt, Usage};
     clippy::struct_excessive_bools,
     reason = "each bool is one independent run option the caller sets, not a state"
 )]
+#[derive(Debug)]
 pub struct QueueConfig {
     pub repo_root: std::path::PathBuf,
     pub base_branch: String,
