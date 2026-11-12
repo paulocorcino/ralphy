@@ -1,0 +1,79 @@
+# agy skills, rules, plan mode and bundled extensions, ADR-0040 C8, C9 (stage 5 of the agy spike, 2026-11-12).
+# Windows 11, agy 1.5.6, isolated root --gemini_dir=<tmp>\gd (auth from the Windows keyring)
+# unless marked WSL. Model: gemini-3.8-flash-low. Paths: <home> = %USERPROFILE%.
+# Hook command = <python> -I <tmp>\tools\hook.py <tag> <tmp>\hooks.log; the script appends one
+# JSON line per call (event, tool, conversationId, its own cwd) and prints {} (PreToolUse:
+# {"decision":"allow"}, or deny when the probe asks for it).
+
+## S1 markers planted (one SKILL.md per candidate root; rules/instructions with a MARKER- word)
+repo: .agents/skills, .agent/skills, _agents/skills, .claude/skills, .codex/skills, .gemini/skills,
+      .cursor/skills; .agents/rules/r.md; .agents/workflows/marker-ws-workflow.md
+home (temp USERPROFILE=HOME=<tmp>\home, no --gemini_dir): ~/.gemini/config/skills, ~/.gemini/skills,
+      ~/.gemini/antigravity-cli/skills, ~/.claude/skills, ~/.codex/skills, ~/.agents/skills;
+      ~/.gemini/GEMINI.md, ~/.gemini/AGENTS.md, ~/.claude/CLAUDE.md,
+      ~/.gemini/config/global_workflows/marker-global-workflow.md, ~/.claude/commands/*.md
+
+$ MSYS_NO_PATHCONV=1 agy -p /skills --model gemini-3.8-flash-low   (0 tokens; names only)
+exit=0
+agy-customizations
+antigravity-guide
+automation
+marker-home-agycli
+marker-home-gemini
+marker-home-gemini-config
+marker-ws-agent
+marker-ws-agents
+marker-ws-underscore
+migrate-agent-settings
+migrate-workflows
+run-workflow
+swarm
+
+$ agy … --output-format json < p10.txt  (asks for marker skills, MARKER- rule words, marker commands)
+{"conversation_id":"d16b4561-4741-407b-b144-38a5cad78f5d","status":"SUCCESS","response":"marker-home-agycli, marker-home-gemini, marker-home-gemini-config, marker-ws-agent, marker-ws-agents, marker-ws-underscore\nMARKER-HOME-AGENTS-MD, MARKER-HOME-GEMINI-MD\nnone\n","duration_seconds":3.234285,"num_turns":1,"usage":{"input_tokens":8842,"output_tokens":63,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8905}}
+
+## S2 with --gemini_dir=<gd>: markers in <gd>/skills, <gd>/config/skills,
+## <gd>/antigravity-cli/skills, <gd>/GEMINI.md, <gd>/config/AGENTS.md
+$ agy --gemini_dir=<gd> -p /skills
+agy-customizations antigravity-guide automation marker-gd-agycli marker-gd-config marker-gd-skills migrate-agent-settings migrate-workflows run-workflow swarm
+$ agy --gemini_dir=<gd> … < p11.txt
+{"conversation_id":"7ef9fc03-b567-4e19-ae17-ffa85f76ce55","status":"SUCCESS","response":"MARKER-GD-GEMINI-MD MARKER-GD-CONFIG-AGENTS-MD\nnone\n","duration_seconds":3.140022,"num_turns":1,"usage":{"input_tokens":8584,"output_tokens":22,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8606}}
+## S3 the same, with USERPROFILE=HOME=<tmp>\home too (its ~/.gemini holds the home markers)
+$ -p /skills -> identical to S2 (no marker-home-*)
+{"conversation_id":"0c150d14-6c5c-406d-8d92-ddeea28fd4e8","status":"SUCCESS","response":"MARKER-GD-GEMINI-MD MARKER-GD-CONFIG-AGENTS-MD\nnone\n","duration_seconds":3.204809,"num_turns":1,"usage":{"input_tokens":8588,"output_tokens":22,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8610}}
+## --gemini_dir replaces the whole global layer: the home ~/.gemini rules and skills are not read.
+
+## S4 native plan mode: --mode plan --dangerously-skip-permissions, asked to write .ralphy/plan.md
+{"event":"init","conversation_id":"ef8d8feb-6fec-4da8-9f95-b41b052c41cf","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy5\\repo","tools":["ask_custom_permission","ask_permission","ask_question","browser_click_element","browser_drag_pixel_to_pixel","browser_get_dom","browser_get_network_request","browser_input","browser_list_network_requests","browser_mouse_down","browser_mouse_up","browser_move_mouse","browser_press_key","browser_refresh_page","browser_resize_window","browser_scroll","browser_scroll_dom","browser_select_option","browser_subagent","call_mcp_tool","capture_browser_console_logs","capture_browser_screenshot","click_browser_pixel","comma …(cut)
+{"event":"step_update","step_update":{"conversation_id":"ef8d8feb-6fec-4da8-9f95-b41b052c41cf","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"ef8d8feb-6fec-4da8-9f95-b41b052c41cf","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":7.1567888,"usage":{"input_tokens":9342,"output_tokens":290,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":9632}}}
+{"event":"step_update","step_update":{"conversation_id":"ef8d8feb-6fec-4da8-9f95-b41b052c41cf","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"write_file","tool_info":{"name":"write_file","parameters":{"Path":"<home>\\AppData\\Local\\Temp\\agy5\\gd\\antigravity-cli\\brain\\ef8d8feb-6fec-4da8-9f95-b41b052c41cf\\plan.md"}}}}
+{"event":"step_update","step_update":{"conversation_id":"ef8d8feb-6fec-4da8-9f95-b41b052c41cf","step_index":2,"state":"DONE","step_type":"tool","tool_name":"write_file","duration_seconds":0.3822651,"tool_info":{"name":"write_file","parameters":{"Path":"<home>\\AppData\\Local\\Temp\\agy5\\gd\\antigravity-cli\\brain\\ef8d8feb-6fec-4da8-9f95-b41b052c41cf\\plan.md"}}}}
+{"event":"step_update","step_update":{"conversation_id":"ef8d8feb-6fec-4da8-9f95-b41b052c41cf","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"I have"}}
+{"event":"step_update","step_update":{"conversation_id":"ef8d8feb-6fec-4da8-9f95-b41b052c41cf","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":" created the implementation plan artifact for cr"}}
+{"event":"step_update","step_update":{"conversation_id":"ef8d8feb-6fec-4da8-9f95-b41b052c41cf","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"eating [.ralphy/plan.md]"}}
+{"event":"step_update","step_update":{"conversation_id":"ef8d8feb-6fec-4da8-9f95-b41b052c41cf","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"(file"}}
+{"event":"step_update","step_update":{"conversation_id":"ef8d8feb-6fec-4da8-9f95-b41b052c41cf","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":":///<home>/AppData/Local/Temp/agy5/repo"}}
+{"event":"step_update","step_update":{"conversation_id":"ef8d8feb-6fec-4da8-9f95-b41b052c41cf","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"/.ralphy/pla"}}
+{"event":"step_update","step_update":{"conversation_id":"ef8d8feb-6fec-4da8-9f95-b41b052c41cf","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"n"}}
+{"event":"step_update","step_update":{"conversation_id":"ef8d8feb-6fec-4da8-9f95-b41b052c41cf","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":".md). Please review and approve the plan so I can proceed to execution.\n\nMARKER-GD-G"}}
+{"event":"step_update","step_update":{"conversation_id":"ef8d8feb-6fec-4da8-9f95-b41b052c41cf","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"EMINI-MD\nMARKER-GD-CONFIG-AGENTS-MD"}}
+{"event":"step_update","step_update":{"conversation_id":"ef8d8feb-6fec-4da8-9f95-b41b052c41cf","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":3.2537523999999998,"usage":{"input_tokens":9733,"output_tokens":80,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":9813}}}
+{"event":"result","result":{"conversation_id":"ef8d8feb-6fec-4da8-9f95-b41b052c41cf","status":"SUCCESS","response":"I have created the implementation plan artifact for creating [.ralphy/plan.md](file:///<home>/AppData/Local/Temp/agy5/repo/.ralphy/plan.md). Please review and approve the plan so I can proceed to execution.\n\nMARKER-GD-GEMINI-MD\nMARKER-GD-CONFIG-AGENTS-MD\n","duration_seconds":11.6228027,"num_turns":1,"usage":{"input_tokens":19075,"output_tokens":370,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":19445}}}
+--- after: <repo>/.ralphy does not exist; new files: <gd>/antigravity-cli/brain/<id>/plan.md and
+    plan.md.metadata.json (the plan went to a vendor-private artifact, and the reply asks for approval)
+
+## S5 read-only slash commands in print mode (0 tokens)
+$ -p /hooks   (temp home, no hooks) -> exit 0, empty
+$ -p /permissions -> exit 0, empty
+$ -p /context -> exit 2: error: /context is not available in print mode (it opens the interactive
+  context breakdown); pass --disable-slash-commands to send /context to the model as literal text
+$ -p /config -> exit 0, one key per line (the keys --settings accepts):
+
+
+## S6 bundled extensions in a fresh root
+$ agy agents -> exit 0, empty
+$ agy mcp list -> No MCP servers configured.
+$ agy plugin list -> No plugins installed.   (but /skills lists `swarm` from builtin/plugins)
+$ agy --include-default-customizations=false … -> exit 2: flags provided but not defined
+  (the flag exists only on `agy acp`, with --disable-telemetry and --login)

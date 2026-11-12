@@ -1,0 +1,179 @@
+# agy logged-out probes, ADR-0040 C5 (stage 3 of the agy spike, 2026-11-12)
+# Every probe runs in a scratch git repo under a temp dir, with an isolated state root.
+# No model call is made by any probe in this file.
+
+## WSL: Linux 6.6.87.2-microsoft-standard-WSL2, agy 1.5.6, ~/.local/bin/agy
+## DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+## Each probe: HOME=<tmp> setsid timeout -k 5 90 agy ... </dev/null
+isolated HOME=/tmp/<tmp>/home
+
+$ HOME=<tmp> agy models
+exit=1
+--- stdout:
+
+--- stderr:
+Fetching available models...
+Error: Please sign in to view available models. Launch the CLI without arguments to sign in.
+
+
+$ HOME=<tmp> agy -p Reply with OK --print-timeout 60s
+exit=1
+--- stdout:
+
+--- stderr:
+Authentication required. Please visit the URL to log in:
+  https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=<redacted>&code_challenge=<redacted>&code_challenge_method=S256&prompt=consent&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback&response_type=code&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcclog+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fexperimentsandconfigs+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Faicode+openid&state=<redacted>
+
+Waiting for authentication (timeout 60s)...
+Or, paste the authorization code here and press Enter:
+Error: authentication timed out.
+error: authentication failed or timed out
+
+
+$ HOME=<tmp> agy -p Reply with OK --output-format json --print-timeout 60s
+exit=1
+--- stdout:
+{"conversation_id":"","status":"ERROR","response":"","error":"authentication failed or timed out","duration_seconds":0,"num_turns":0,"usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":0},"finished_reason":"error"}
+
+--- stderr:
+Authentication required. Please visit the URL to log in:
+  https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=<redacted>&code_challenge=<redacted>&code_challenge_method=S256&prompt=consent&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback&response_type=code&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcclog+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fexperimentsandconfigs+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Faicode+openid&state=<redacted>
+
+Waiting for authentication (timeout 60s)...
+Or, paste the authorization code here and press Enter:
+Error: authentication timed out.
+error: authentication failed or timed out
+
+
+$ HOME=<tmp> agy -p Reply with OK --output-format stream-json --print-timeout 60s
+exit=1
+--- stdout:
+{"event":"result","result":{"conversation_id":"","status":"ERROR","response":"","error":"authentication failed or timed out","duration_seconds":0,"num_turns":0,"usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":0},"finished_reason":"error"}}
+
+--- stderr:
+Authentication required. Please visit the URL to log in:
+  https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=<redacted>&code_challenge=<redacted>&code_challenge_method=S256&prompt=consent&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback&response_type=code&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcclog+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fexperimentsandconfigs+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Faicode+openid&state=<redacted>
+
+Waiting for authentication (timeout 60s)...
+Or, paste the authorization code here and press Enter:
+Error: authentication timed out.
+error: authentication failed or timed out
+
+
+$ HOME=<tmp> agy -p < prompt.txt
+exit=2
+
+Error: -p took "--print-timeout" as its prompt, so the intended prompt was left as an argument and ignored.
+Attach the prompt to the flag (-p='your prompt') and move --print-timeout elsewhere on the command line.
+
+
+--- files written under the isolated HOME:
+.
+./.gemini
+./.gemini/antigravity-cli
+./.gemini/antigravity-cli/brain
+./.gemini/antigravity-cli/builtin
+./.gemini/antigravity-cli/cache
+./.gemini/antigravity-cli/cli.log
+./.gemini/antigravity-cli/conversation_summaries.db
+./.gemini/antigravity-cli/conversations
+./.gemini/antigravity-cli/crashes
+./.gemini/antigravity-cli/installation_id
+./.gemini/antigravity-cli/jetski_state.pbtxt
+./.gemini/antigravity-cli/last_check.timestamp
+./.gemini/antigravity-cli/log
+./.gemini/antigravity-cli/updater
+./.gemini/config
+./.gemini/config/.migrated
+./.gemini/config/config.json
+./.gemini/config/mcp_config.json
+./.gemini/config/projects
+
+--- agy processes after exit:
+95493 95491     220 bash -l /mnt/c/Users/PICHAU/AppData/Local/Temp/agyprobe/wsl-loggedout.sh
+--- isolated cli.log auth lines:
+E1112 08:25:54.553670      55 errorreport.go:273] error getting token source: You are not logged into Antigravity.
+E1112 08:25:54.554694      76 errorreport.go:273] Failed to poll ListExperiments: error getting token source: You are not logged into Antigravity.
+E1112 08:25:54.618940      95 errorreport.go:273] error getting token source: You are not logged into Antigravity.
+E1112 08:25:54.740197     181 errorreport.go:273] error getting token source: You are not logged into Antigravity.
+E1112 08:25:54.740235     180 errorreport.go:273] error getting token source: You are not logged into Antigravity.
+E1112 08:25:54.740350      10 errorreport.go:273] Failed to poll ListExperiments: error getting token source: You are not logged into Antigravity.
+E1112 08:25:56.599065      46 errorreport.go:273] Failed to poll ListExperiments: error getting token source: You are not logged into Antigravity.
+E1112 08:25:56.647442     101 errorreport.go:273] error getting token source: You are not logged into Antigravity.
+E1112 08:25:56.740695     131 errorreport.go:273] error getting token source: You are not logged into Antigravity.
+E1112 08:25:56.740984      55 errorreport.go:273] Failed to poll ListExperiments: error getting token source: You are not logged into Antigravity.
+E1112 08:25:56.741339     130 errorreport.go:273] error getting token source: You are not logged into Antigravity.
+E1112 08:27:01.204903     330 errorreport.go:273] error getting token source: You are not logged into Antigravity.
+E1112 08:27:01.205187      46 errorreport.go:273] Failed to poll ListExperiments: error getting token source: You are not logged into Antigravity.
+E1112 08:27:26.698084      74 errorreport.go:273] Failed to poll ListExperiments: error getting token source: You are not logged into Antigravity.
+E1112 08:27:26.707062      46 errorreport.go:273] error getting token source: You are not logged into Antigravity.
+TMP=/tmp/<tmp>
+
+## Note: the last probe above (`-p --print-timeout 60s < prompt.txt`) is a usage error, not a
+## logged-out signature: -p takes the next argument as its prompt (exit 2).
+
+## WSL: how long a logged-out -p blocks
+$ HOME=<tmp> agy -p "Reply with OK" --print-timeout 5s   (stdin /dev/null, setsid, outer timeout 60s)
+exit=124 elapsed=65s
+Authentication required. Please visit the URL to log in:
+
+Waiting for authentication (timeout 60s)...
+Or, paste the authorization code here and press Enter:
+
+Error: authentication interrupted.
+error: authentication failed or timed out
+
+$ HOME=<tmp> agy -p "Reply with OK"   (no --print-timeout; outer timeout 30s)
+exit=124 elapsed=33s (124 = killed by the outer timeout)
+Authentication required. Please visit the URL to log in:
+
+Waiting for authentication (timeout 60s)...
+Or, paste the authorization code here and press Enter:
+
+Error: authentication interrupted.
+error: authentication failed or timed out
+
+--- agy processes after exit:
+none
+
+## A first attempt without setsid and with stdin on the terminal left agy in state `Tl`
+## (stopped by SIGTTIN/SIGTTOU while it waited for the sign-in code); it was killed by PID.
+
+## Windows 11: agy 1.4.9 (the binary updated itself to 1.5.6 during this probe, see the state log)
+## USERPROFILE=<tmp> HOME=<tmp> agy models   (cwd: scratch repo)
+exit=0
+--- stdout (first 3 of 13 lines):
+gemini-4-argon-medium	Gemini 4 Argon (Medium)
+gemini-4-argon-high	Gemini 4 Argon (High)
+gemini-4-argon-low	Gemini 4 Argon (Low)
+--- stderr:
+Fetching available models...
+--- the temp root's cli.log:
+I1112 08:16:55.865462       1 common.go:188] CLI app data directory: C:\Users\PICHAU\AppData\Local\Temp\agyprobe\winhome\.gemini\antigravity-cli
+I1112 08:16:56.611439     308 keyring.go:64] keyringAuth: loaded token, expiry=<redacted> expired=false
+I1112 08:16:56.611439       1 auth.go:157] ChainedAuth: authenticated via keyring (effective: keyring)
+I1112 08:16:56.611439       1 server_oauth.go:229] OAuth: authenticated successfully as <redacted>
+
+## The Windows credential is in Windows Credential Manager, which a temp USERPROFILE does not change:
+PS> cmdkey /list | Select-String Target | Select-String 'antigrav|gemini'
+    Destino: LegacyGeneric:target=gemini:antigravity
+    Destino: LegacyGeneric:target=gemini-cli-api-key/default-api-key
+## The target is fixed (service "gemini", user "antigravity"); no variable or flag of agy 1.5.6
+## moves it (strings of agy.exe: no keyring env var; `shouldBypassKeyring` is Linux D-Bus only).
+## The Windows logged-out state is therefore not reachable without the operator's /logout.
+
+## Windows: the same isolation with the hidden flag --gemini_dir=<abs tmp>
+$ agy --gemini_dir=C:\...\Temp\agyprobe\gd models
+exit=0  (13 ids; cli.log: "CLI app data directory: ...\agyprobe\gd\antigravity-cli",
+         "ChainedAuth: authenticated via keyring (effective: keyring)")
+
+## After every probe: the operator's login on both hosts
+$ agy models            (Windows, real root)   exit=0, 13 ids
+$ ~/.local/bin/agy models   (WSL, real root)   exit=0, 13 ids
+
+## Windows: the logged-out strings are in agy.exe 1.5.6 (strings of the binary, count of hits)
+Authentication required. Please visit the URL to log in: 1
+authentication failed or timed out: 1
+Please sign in to view available models: 1
+Waiting for authentication (timeout: 1
+Authentication expired. Please log back in: 2

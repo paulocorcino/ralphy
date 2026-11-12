@@ -1,0 +1,391 @@
+# agy hooks, veto, sandbox and stop signal, ADR-0040 C3/C12, parity 17-19 (stage 5 of the agy spike, 2026-11-12).
+# Windows 11, agy 1.5.6, isolated root --gemini_dir=<tmp>\gd (auth from the Windows keyring)
+# unless marked WSL. Model: gemini-3.8-flash-low. Paths: <home> = %USERPROFILE%.
+# Hook command = <python> -I <tmp>\tools\hook.py <tag> <tmp>\hooks.log; the script appends one
+# JSON line per call (event, tool, conversationId, its own cwd) and prints {} (PreToolUse:
+# {"decision":"allow"}, or deny when the probe asks for it).
+
+## H0 Registration: <repo>\.agents\hooks.json (tag ws) and <gd>\config\hooks.json (tag gl),
+## every event of the bundled agy-customizations/docs/hooks.md: SessionStart, PreInvocation,
+## PreToolUse (matcher *), PostToolUse (matcher *), PostInvocation, Stop.
+## cli.log: hooks_manager.go:53] loaded 2 named hooks from 2 hooks.json file(s)
+
+## H1 quoted program path (shell form as C12 rule 3 would write it), workspace .agents/hooks.json + global <gd>/config/hooks.json
+$ agy --gemini_dir=<tmp>\gd --model gemini-3.8-flash-low --output-format stream-json --dangerously-skip-permissions --print-timeout 120s < p1.txt
+prompt: Run the shell command `echo hook-probe` with your command tool, then reply with the single word DONE.
+exit=3  wall 6.6s
+--- hooks.json command (each handler; the program path in double quotes, as a shell form quotes it):
+"<home>\AppData\Local\Programs\Python\Python311\python.exe" -I "<tmp>\tools\hook.py" ws "<tmp>\hooks.log"
+## agy runs it with `cmd /c` and Go's argv quoting, so cmd receives \"…\": the quoted path is not found.
+--- stdout:
+{"event":"init","conversation_id":"1c2fb181-2da4-404a-8c46-13451e896040","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy5\\repo","tools":["ask_custom_permission","ask_permission","ask_question","browser_click_element","browser_drag_pixel_to_pixel","browser_get_dom","browser_get_network_request","browser_input","browser_list_network_requests","browser_mouse_down","browser_mouse_up","browser_move_mouse","browser_press_key","browser_refresh_page","browser_resize_window","browser_scroll","browser_scroll_dom","browser_select_option","browser_subagent","call_mcp_tool","capture_browser_console_logs","capture_browser_screenshot","click_browser_pixel","comma …(cut)
+{"event":"step_update","step_update":{"conversation_id":"1c2fb181-2da4-404a-8c46-13451e896040","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"1c2fb181-2da4-404a-8c46-13451e896040","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":2.3416416,"usage":{"input_tokens":8263,"output_tokens":39,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8302}}}
+{"event":"step_update","step_update":{"conversation_id":"1c2fb181-2da4-404a-8c46-13451e896040","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo hook-probe"}}}}
+{"event":"step_update","step_update":{"conversation_id":"1c2fb181-2da4-404a-8c46-13451e896040","step_index":2,"state":"ERROR","step_type":"tool","tool_name":"run_command","duration_seconds":0.0950681,"tool_info":{"name":"run_command","parameters":{"CommandLine":"echo hook-probe"},"error":{"type":"TOOL_ERROR","message":"JSON hook \"jsonhook__ralphy-probe-ws_PreToolUse_0_0\" failed: command failed: exit status 1, stderr: '\\\"<home>\\AppData\\Local\\Programs\\Python\\Python311\\python.exe\\\"' n�o � reconhecido como um comando interno\r\nou externo, um programa oper�vel ou um arquivo em lotes."}}}}
+{"event":"step_update","step_update":{"conversation_id":"1c2fb181-2da4-404a-8c46-13451e896040","step_index":3,"state":"DONE","step_type":"error_message"}}
+{"event":"result","result":{"conversation_id":"1c2fb181-2da4-404a-8c46-13451e896040","status":"ERROR","response":"","error":"agent executor error: generating and executing: proto: field google.protobuf.Value.string_value contains invalid UTF-8","duration_seconds":2.5477629,"num_turns":1,"usage":{"input_tokens":8263,"output_tokens":39,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8302},"finished_reason":"error"}}
+--- stderr:
+error: agent executor error: generating and executing: proto: field google.protobuf.Value.string_value contains invalid UTF-8
+AGY_ERROR: {"short_error":"agent executor error: generating and executing: proto: field google.protobuf.Value.string_value contains invalid UTF-8","status":"UNKNOWN","error_code":2,"code_kind":"grpc","retryable":false,"error_id":"<redacted>"}
+--- cli.log hook lines:
+I1112 09:53:57.466387       1 hooks_manager.go:53] loaded 1 named hooks from 1 hooks.json file(s)
+I1112 09:53:57.507107       1 hooks_manager.go:53] loaded 2 named hooks from 2 hooks.json file(s)
+I1112 09:54:00.168482     378 command_hook_executor.go:92] JSON hook command stderr: '\"<home>\AppData\Local\Programs\Python\Python311\python.exe\"' n�o � reconhecido como um comando interno
+E1112 09:54:00.168482     378 provider.go:80] session start hook "jsonhook__ralphy-probe-ws_SessionStart_0_0" failed: JSON hook "jsonhook__ralphy-probe-ws_SessionStart_0_0" failed: command failed: exit status 1, stderr: '\"<home>\AppData\Local\Programs\Python\Python311\python.exe\"' n�o � reconhecido como um comando interno
+I1112 09:54:02.624616     378 command_hook_executor.go:92] JSON hook command stderr: '\"<home>\AppData\Local\Programs\Python\Python311\python.exe\"' n�o � reconhecido como um comando interno
+E1112 09:54:02.624616     378 posthooks.go:47] failed to call custom post-invocation hook jsonhook__ralphy-probe-ws_PostInvocation_0_0: JSON hook "jsonhook__ralphy-probe-ws_PostInvocation_0_0" failed: command failed: exit status 1, stderr: '\"<home>\AppData\Local\Programs\Python\Python311\python.exe\"' n�o � reconhecido como um comando interno
+I1112 09:54:02.706474     378 command_hook_executor.go:92] JSON hook command stderr: '\"<home>\AppData\Local\Programs\Python\Python311\python.exe\"' n�o � reconhecido como um comando interno
+E1112 09:54:02.706474     378 provider.go:47] stop hook "jsonhook__ralphy-probe-ws_Stop_0_0" failed: JSON hook "jsonhook__ralphy-probe-ws_Stop_0_0" failed: command failed: exit status 1, stderr: '\"<home>\AppData\Local\Programs\Python\Python311\python.exe\"' n�o � reconhecido como um comando interno
+I1112 09:54:02.724346     378 command_hook_executor.go:92] JSON hook command stderr: '\"<home>\AppData\Local\Programs\Python\Python311\python.exe\"' n�o � reconhecido como um comando interno
+E1112 09:54:02.724346     378 provider.go:47] stop hook "jsonhook__ralphy-probe-gl_Stop_0_0" failed: JSON hook "jsonhook__ralphy-probe-gl_Stop_0_0" failed: command failed: exit status 1, stderr: '\"<home>\AppData\Local\Programs\Python\Python311\python.exe\"' n�o � reconhecido como um comando interno
+
+## H2 bare program path (no quotes), same two hooks.json files; PreToolUse hook prints {}
+exit=0 wall 12.0s
+--- stdout:
+{"event":"init","conversation_id":"5b569080-aba1-49e2-8d93-447534a6af02","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy5\\repo","tools":["ask_custom_permission","ask_permission","ask_question","browser_click_element","browser_drag_pixel_to_pixel","browser_get_dom","browser_get_network_request","browser_input","browser_list_network_requests","browser_mouse_down","browser_mouse_up","browser_move_mouse","browser_press_key","browser_refresh_page","browser_resize_window","browser_scroll","browser_scroll_dom","browser_select_option","browser_subagent","call_mcp_tool","capture_browser_console_logs","capture_browser_screenshot","click_browser_pixel","comma …(cut)
+{"event":"step_update","step_update":{"conversation_id":"5b569080-aba1-49e2-8d93-447534a6af02","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"5b569080-aba1-49e2-8d93-447534a6af02","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":3.4671656,"usage":{"input_tokens":8261,"output_tokens":40,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8301}}}
+{"event":"step_update","step_update":{"conversation_id":"5b569080-aba1-49e2-8d93-447534a6af02","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo hook-probe"}}}}
+{"event":"step_update","step_update":{"conversation_id":"5b569080-aba1-49e2-8d93-447534a6af02","step_index":2,"state":"ERROR","step_type":"tool","tool_name":"run_command","duration_seconds":0.1369298,"tool_info":{"name":"run_command","parameters":{"CommandLine":"echo hook-probe"},"error":{"type":"TOOL_ERROR","message":"tool call denied by pre-tool hook:"}}}}
+{"event":"step_update","step_update":{"conversation_id":"5b569080-aba1-49e2-8d93-447534a6af02","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"DONE"}}
+{"event":"step_update","step_update":{"conversation_id":"5b569080-aba1-49e2-8d93-447534a6af02","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":2.9112514000000003,"usage":{"input_tokens":8332,"output_tokens":1,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8333}}}
+{"event":"result","result":{"conversation_id":"5b569080-aba1-49e2-8d93-447534a6af02","status":"SUCCESS","response":"DONE\n","duration_seconds":7.3603787,"num_turns":1,"usage":{"input_tokens":16593,"output_tokens":41,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":16634}}}
+--- hooks.log (one line per hook process):
+{"t": 1794488066.093, "tag": "ws", "event": "SessionStart", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "5b569080-aba1-49e2-8d93-447534a6af02", "model": "gemini-3.8-flash-low", "env_conv": "5b569080-aba1-49e2-8d93-447534a6af02"}
+{"t": 1794488066.181, "tag": "gl", "event": "SessionStart", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "5b569080-aba1-49e2-8d93-447534a6af02", "model": "gemini-3.8-flash-low", "env_conv": "5b569080-aba1-49e2-8d93-447534a6af02"}
+{"t": 1794488066.265, "tag": "ws", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "5b569080-aba1-49e2-8d93-447534a6af02", "model": "gemini-3.8-flash-low", "env_conv": "5b569080-aba1-49e2-8d93-447534a6af02"}
+{"t": 1794488066.363, "tag": "gl", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "5b569080-aba1-49e2-8d93-447534a6af02", "model": "gemini-3.8-flash-low", "env_conv": "5b569080-aba1-49e2-8d93-447534a6af02"}
+{"t": 1794488069.925, "tag": "ws", "event": "PreToolUse", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "stepIdx", "toolCall", "transcriptPath", "workspacePaths"], "tool": "run_command", "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "5b569080-aba1-49e2-8d93-447534a6af02", "model": "gemini-3.8-flash-low", "env_conv": "5b569080-aba1-49e2-8d93-447534a6af02"}
+{"t": 1794488070.015, "tag": "ws", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "5b569080-aba1-49e2-8d93-447534a6af02", "model": "gemini-3.8-flash-low", "env_conv": "5b569080-aba1-49e2-8d93-447534a6af02"}
+{"t": 1794488070.096, "tag": "gl", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "5b569080-aba1-49e2-8d93-447534a6af02", "model": "gemini-3.8-flash-low", "env_conv": "5b569080-aba1-49e2-8d93-447534a6af02"}
+{"t": 1794488070.179, "tag": "ws", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "5b569080-aba1-49e2-8d93-447534a6af02", "model": "gemini-3.8-flash-low", "env_conv": "5b569080-aba1-49e2-8d93-447534a6af02"}
+{"t": 1794488070.379, "tag": "gl", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "5b569080-aba1-49e2-8d93-447534a6af02", "model": "gemini-3.8-flash-low", "env_conv": "5b569080-aba1-49e2-8d93-447534a6af02"}
+{"t": 1794488073.395, "tag": "ws", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "5b569080-aba1-49e2-8d93-447534a6af02", "model": "gemini-3.8-flash-low", "env_conv": "5b569080-aba1-49e2-8d93-447534a6af02"}
+{"t": 1794488073.489, "tag": "gl", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "5b569080-aba1-49e2-8d93-447534a6af02", "model": "gemini-3.8-flash-low", "env_conv": "5b569080-aba1-49e2-8d93-447534a6af02"}
+{"t": 1794488073.596, "tag": "ws", "event": "Stop", "keys": ["artifactDirectoryPath", "continuationActive", "conversationId", "cwd", "error", "executionNum", "fullyIdle", "hookEventName", "lastUserInput", "modelName", "terminationReason", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": "NO_TOOL_CALL", "conv": "5b569080-aba1-49e2-8d93-447534a6af02", "model": "gemini-3.8-flash-low", "env_conv": "5b569080-aba1-49e2-8d93-447534a6af02"}
+{"t": 1794488073.701, "tag": "gl", "event": "Stop", "keys": ["artifactDirectoryPath", "continuationActive", "conversationId", "cwd", "error", "executionNum", "fullyIdle", "hookEventName", "lastUserInput", "modelName", "terminationReason", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": "NO_TOOL_CALL", "conv": "5b569080-aba1-49e2-8d93-447534a6af02", "model": "gemini-3.8-flash-low", "env_conv": "5b569080-aba1-49e2-8d93-447534a6af02"}
+
+## H3 PreToolUse hook prints {"decision":"allow"}; all six events, -p
+exit=0
+--- stdout:
+{"event":"init","conversation_id":"57b3c8f1-287d-448b-a70e-81fb3764ee93","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy5\\repo","tools":["ask_custom_permission","ask_permission","ask_question","browser_click_element","browser_drag_pixel_to_pixel","browser_get_dom","browser_get_network_request","browser_input","browser_list_network_requests","browser_mouse_down","browser_mouse_up","browser_move_mouse","browser_press_key","browser_refresh_page","browser_resize_window","browser_scroll","browser_scroll_dom","browser_select_option","browser_subagent","call_mcp_tool","capture_browser_console_logs","capture_browser_screenshot","click_browser_pixel","comma …(cut)
+{"event":"step_update","step_update":{"conversation_id":"57b3c8f1-287d-448b-a70e-81fb3764ee93","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"57b3c8f1-287d-448b-a70e-81fb3764ee93","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":2.7016674,"usage":{"input_tokens":8263,"output_tokens":39,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8302}}}
+{"event":"step_update","step_update":{"conversation_id":"57b3c8f1-287d-448b-a70e-81fb3764ee93","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo hook-probe"}}}}
+{"event":"step_update","step_update":{"conversation_id":"57b3c8f1-287d-448b-a70e-81fb3764ee93","step_index":2,"state":"DONE","step_type":"tool","tool_name":"run_command","duration_seconds":1.1341859,"tool_info":{"name":"run_command","parameters":{"CommandLine":"echo hook-probe"},"output":"Created At: 2026-11-12T09:54:52-03:00\nCompleted At: 2026-11-12T09:54:53-03:00\nCommand exited with code 0.\n\nCommand output:\nhook-probe\r\n"}}}
+{"event":"step_update","step_update":{"conversation_id":"57b3c8f1-287d-448b-a70e-81fb3764ee93","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"DONE"}}
+{"event":"step_update","step_update":{"conversation_id":"57b3c8f1-287d-448b-a70e-81fb3764ee93","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":2.1590867,"usage":{"input_tokens":8391,"output_tokens":1,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8392}}}
+{"event":"result","result":{"conversation_id":"57b3c8f1-287d-448b-a70e-81fb3764ee93","status":"SUCCESS","response":"DONE\n","duration_seconds":6.7477336999999995,"num_turns":1,"usage":{"input_tokens":16654,"output_tokens":40,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":16694}}}
+--- hooks.log:
+{"t": 1794488089.892, "tag": "gl", "event": "SessionStart", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93", "model": "gemini-3.8-flash-low", "env_conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93"}
+{"t": 1794488089.979, "tag": "ws", "event": "SessionStart", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93", "model": "gemini-3.8-flash-low", "env_conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93"}
+{"t": 1794488090.07, "tag": "gl", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93", "model": "gemini-3.8-flash-low", "env_conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93"}
+{"t": 1794488090.17, "tag": "ws", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93", "model": "gemini-3.8-flash-low", "env_conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93"}
+{"t": 1794488092.957, "tag": "gl", "event": "PreToolUse", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "stepIdx", "toolCall", "transcriptPath", "workspacePaths"], "tool": "run_command", "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93", "model": "gemini-3.8-flash-low", "env_conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93"}
+{"t": 1794488093.036, "tag": "ws", "event": "PreToolUse", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "stepIdx", "toolCall", "transcriptPath", "workspacePaths"], "tool": "run_command", "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93", "model": "gemini-3.8-flash-low", "env_conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93"}
+{"t": 1794488093.856, "tag": "gl", "event": "PostToolUse", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "error", "hookEventName", "lastUserInput", "modelName", "stepIdx", "toolCall", "transcriptPath", "workspacePaths"], "tool": "run_command", "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93", "model": "gemini-3.8-flash-low", "env_conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93"}
+{"t": 1794488093.948, "tag": "ws", "event": "PostToolUse", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "error", "hookEventName", "lastUserInput", "modelName", "stepIdx", "toolCall", "transcriptPath", "workspacePaths"], "tool": "run_command", "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93", "model": "gemini-3.8-flash-low", "env_conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93"}
+{"t": 1794488094.048, "tag": "gl", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93", "model": "gemini-3.8-flash-low", "env_conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93"}
+{"t": 1794488094.13, "tag": "ws", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93", "model": "gemini-3.8-flash-low", "env_conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93"}
+{"t": 1794488094.21, "tag": "gl", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93", "model": "gemini-3.8-flash-low", "env_conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93"}
+{"t": 1794488094.291, "tag": "ws", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93", "model": "gemini-3.8-flash-low", "env_conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93"}
+{"t": 1794488096.557, "tag": "gl", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93", "model": "gemini-3.8-flash-low", "env_conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93"}
+{"t": 1794488096.651, "tag": "ws", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93", "model": "gemini-3.8-flash-low", "env_conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93"}
+{"t": 1794488096.742, "tag": "gl", "event": "Stop", "keys": ["artifactDirectoryPath", "continuationActive", "conversationId", "cwd", "error", "executionNum", "fullyIdle", "hookEventName", "lastUserInput", "modelName", "terminationReason", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": "NO_TOOL_CALL", "conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93", "model": "gemini-3.8-flash-low", "env_conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93"}
+{"t": 1794488096.825, "tag": "ws", "event": "Stop", "keys": ["artifactDirectoryPath", "continuationActive", "conversationId", "cwd", "error", "executionNum", "fullyIdle", "hookEventName", "lastUserInput", "modelName", "terminationReason", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": "NO_TOOL_CALL", "conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93", "model": "gemini-3.8-flash-low", "env_conv": "57b3c8f1-287d-448b-a70e-81fb3764ee93"}
+
+## H4 veto: PreToolUse hook prints {"decision":"deny","reason":"blocked-by-ralphy-probe"} when the args hold VETOME (workspace hook only; the global one did not run after the deny)
+prompt: Run the shell command `echo VETOME > vetoed.txt` with your command tool. If it is refused, reply with the single word REFUSED and the reason you were given; otherwise reply DONE.
+exit=0; vetoed.txt was not created (ls of the repo: README.md only)
+--- stdout:
+{"event":"init","conversation_id":"472c2afc-acb7-43a9-aff0-8fb3779f39fe","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy5\\repo","tools":["ask_custom_permission","ask_permission","ask_question","browser_click_element","browser_drag_pixel_to_pixel","browser_get_dom","browser_get_network_request","browser_input","browser_list_network_requests","browser_mouse_down","browser_mouse_up","browser_move_mouse","browser_press_key","browser_refresh_page","browser_resize_window","browser_scroll","browser_scroll_dom","browser_select_option","browser_subagent","call_mcp_tool","capture_browser_console_logs","capture_browser_screenshot","click_browser_pixel","comma …(cut)
+{"event":"step_update","step_update":{"conversation_id":"472c2afc-acb7-43a9-aff0-8fb3779f39fe","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"472c2afc-acb7-43a9-aff0-8fb3779f39fe","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":2.9805656000000003,"usage":{"input_tokens":8275,"output_tokens":46,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8321}}}
+{"event":"step_update","step_update":{"conversation_id":"472c2afc-acb7-43a9-aff0-8fb3779f39fe","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo VETOME \u003e vetoed.txt"}}}}
+{"event":"step_update","step_update":{"conversation_id":"472c2afc-acb7-43a9-aff0-8fb3779f39fe","step_index":2,"state":"ERROR","step_type":"tool","tool_name":"run_command","duration_seconds":0.1405292,"tool_info":{"name":"run_command","parameters":{"CommandLine":"echo VETOME \u003e vetoed.txt"},"error":{"type":"TOOL_ERROR","message":"tool call denied by pre-tool hook: blocked-by-ralphy-probe"}}}}
+{"event":"step_update","step_update":{"conversation_id":"472c2afc-acb7-43a9-aff0-8fb3779f39fe","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"REFUSED: blocked-by-ralphy-probe"}}
+{"event":"step_update","step_update":{"conversation_id":"472c2afc-acb7-43a9-aff0-8fb3779f39fe","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":2.7122436,"usage":{"input_tokens":8359,"output_tokens":11,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8370}}}
+{"event":"result","result":{"conversation_id":"472c2afc-acb7-43a9-aff0-8fb3779f39fe","status":"SUCCESS","response":"REFUSED: blocked-by-ralphy-probe\n","duration_seconds":6.6470999,"num_turns":1,"usage":{"input_tokens":16634,"output_tokens":57,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":16691}}}
+--- hooks.log:
+{"t": 1794488109.202, "tag": "ws", "event": "SessionStart", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe", "model": "gemini-3.8-flash-low", "env_conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe"}
+{"t": 1794488109.314, "tag": "gl", "event": "SessionStart", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe", "model": "gemini-3.8-flash-low", "env_conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe"}
+{"t": 1794488109.417, "tag": "ws", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe", "model": "gemini-3.8-flash-low", "env_conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe"}
+{"t": 1794488109.517, "tag": "gl", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe", "model": "gemini-3.8-flash-low", "env_conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe"}
+{"t": 1794488112.603, "tag": "ws", "event": "PreToolUse", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "stepIdx", "toolCall", "transcriptPath", "workspacePaths"], "tool": "run_command", "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe", "model": "gemini-3.8-flash-low", "env_conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe"}
+{"t": 1794488112.693, "tag": "ws", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe", "model": "gemini-3.8-flash-low", "env_conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe"}
+{"t": 1794488112.771, "tag": "gl", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe", "model": "gemini-3.8-flash-low", "env_conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe"}
+{"t": 1794488112.847, "tag": "ws", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe", "model": "gemini-3.8-flash-low", "env_conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe"}
+{"t": 1794488112.923, "tag": "gl", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe", "model": "gemini-3.8-flash-low", "env_conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe"}
+{"t": 1794488115.721, "tag": "ws", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe", "model": "gemini-3.8-flash-low", "env_conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe"}
+{"t": 1794488115.824, "tag": "gl", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe", "model": "gemini-3.8-flash-low", "env_conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe"}
+{"t": 1794488115.935, "tag": "ws", "event": "Stop", "keys": ["artifactDirectoryPath", "continuationActive", "conversationId", "cwd", "error", "executionNum", "fullyIdle", "hookEventName", "lastUserInput", "modelName", "terminationReason", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": "NO_TOOL_CALL", "conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe", "model": "gemini-3.8-flash-low", "env_conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe"}
+{"t": 1794488116.022, "tag": "gl", "event": "Stop", "keys": ["artifactDirectoryPath", "continuationActive", "conversationId", "cwd", "error", "executionNum", "fullyIdle", "hookEventName", "lastUserInput", "modelName", "terminationReason", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": "NO_TOOL_CALL", "conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe", "model": "gemini-3.8-flash-low", "env_conv": "472c2afc-acb7-43a9-aff0-8fb3779f39fe"}
+
+## H5 --settings cannot carry hooks
+$ agy --gemini_dir=<gd> --settings <tmp>\settings-hooks.json -p … (file = {"hooks": {…same spec…}})
+Error: --settings: unknown setting "hooks"
+exit=1
+$ agy --gemini_dir=<gd> --settings '{"zzz":1}' …
+Error: --settings: unknown setting "zzz"
+exit=1
+
+## H6 workspace hook answers allow, global hook answers deny (VETOME): deny wins
+exit=0; vetoed.txt not created
+--- stdout:
+{"event":"init","conversation_id":"3fd82439-25ef-45d5-9033-cc41c66b1ae9","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy5\\repo","tools":["ask_custom_permission","ask_permission","ask_question","browser_click_element","browser_drag_pixel_to_pixel","browser_get_dom","browser_get_network_request","browser_input","browser_list_network_requests","browser_mouse_down","browser_mouse_up","browser_move_mouse","browser_press_key","browser_refresh_page","browser_resize_window","browser_scroll","browser_scroll_dom","browser_select_option","browser_subagent","call_mcp_tool","capture_browser_console_logs","capture_browser_screenshot","click_browser_pixel","comma …(cut)
+{"event":"step_update","step_update":{"conversation_id":"3fd82439-25ef-45d5-9033-cc41c66b1ae9","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"3fd82439-25ef-45d5-9033-cc41c66b1ae9","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":3.2836335,"usage":{"input_tokens":8561,"output_tokens":46,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8607}}}
+{"event":"step_update","step_update":{"conversation_id":"3fd82439-25ef-45d5-9033-cc41c66b1ae9","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo VETOME \u003e vetoed.txt"}}}}
+{"event":"step_update","step_update":{"conversation_id":"3fd82439-25ef-45d5-9033-cc41c66b1ae9","step_index":2,"state":"ERROR","step_type":"tool","tool_name":"run_command","duration_seconds":0.2202194,"tool_info":{"name":"run_command","parameters":{"CommandLine":"echo VETOME \u003e vetoed.txt"},"error":{"type":"TOOL_ERROR","message":"tool call denied by pre-tool hook: blocked-by-ralphy-probe"}}}}
+{"event":"step_update","step_update":{"conversation_id":"3fd82439-25ef-45d5-9033-cc41c66b1ae9","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"REFUSED"}}
+{"event":"step_update","step_update":{"conversation_id":"3fd82439-25ef-45d5-9033-cc41c66b1ae9","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":": blocked-by-ralphy-probe\n\nMARKER-GD"}}
+{"event":"step_update","step_update":{"conversation_id":"3fd82439-25ef-45d5-9033-cc41c66b1ae9","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"-GEMINI-MD\nMARKER-GD-CONFIG-AGENTS-MD"}}
+{"event":"step_update","step_update":{"conversation_id":"3fd82439-25ef-45d5-9033-cc41c66b1ae9","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":2.2983061,"usage":{"input_tokens":8645,"output_tokens":33,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8678}}}
+{"event":"result","result":{"conversation_id":"3fd82439-25ef-45d5-9033-cc41c66b1ae9","status":"SUCCESS","response":"REFUSED: blocked-by-ralphy-probe\n\nMARKER-GD-GEMINI-MD\nMARKER-GD-CONFIG-AGENTS-MD\n","duration_seconds":6.9198201,"num_turns":1,"usage":{"input_tokens":17206,"output_tokens":79,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":17285}}}
+
+## H7 interactive console (ConPTY 40x140 via pywinpty, no -p), same two hooks.json files
+## argv: agy --gemini_dir=<gd> --model gemini-3.8-flash-low --dangerously-skip-permissions
+## First launch in a new root: colour-scheme screen, then Terms of Service & Data Use with the
+## data-collection box PRE-CHECKED (unchecked by the probe), then the folder-trust question.
+## No hook ran during onboarding (pty1-pty4, no hooks.log).
+spawned pid=6988 argv=['<home>/AppData/Local/agy/bin/agy.exe', '--gemini_dir=<home>/AppData/Local/Temp/agy5/gd', '--model', 'gemini-3.8-flash-low', '--dangerously-skip-permissions']
+>>> wrote '\r' @10.0s
+>>> wrote '\r' @13.0s
+>>> wrote '\x1b[B' @15.0s
+>>> wrote '\x1b[C' @16.0s
+===== screen @17.0s right
+Terms of Service & Data Use
+AI coding agents are known to have certain security risks, including autonomous code execution, data exfiltration, prompt injection and
+supply chain risks. Ensure that you monitor and verify all actions taken by the agent.
+--------------------------------------------------------------------------------------------------------------------------------------------
+    [ ] Yes, I agree to help improve Antigravity CLI by allowing
+      Google to collect and use my Interactions data,
+      subject to the Google Antigravity CLI Terms of Service
+      and Google Privacy Policy. I understand I can
+      choose to opt out later whenever I want via my
+      settings.
+      Links:
+      - Terms of Service: https://antigravity.google/terms
+      - Privacy Policy: https://policies.google.com/privacy
+    [Previous]    >  Done
+  ↑/↓ Navigate · enter Confirm
+                                                                                                                      Gemini 3.8 Flash · low
+>>> wrote '\r' @17.0s
+===== screen @22.0s after done
+Accessing workspace:
+<home>\AppData\Local\Temp\agy5\repo
+Do you trust the contents of this project?
+Antigravity CLI requires permission to read, edit, and execute files here.
+> Yes, I trust this folder
+  No, exit
+  ↑/↓ Navigate · enter Confirm
+                                                                                                                      Gemini 3.8 Flash · low
+===== screen @27.0s after 5s
+Accessing workspace:
+<home>\AppData\Local\Temp\agy5\repo
+Do you trust the contents of this project?
+Antigravity CLI requires permission to read, edit, and execute files here.
+> Yes, I trust this folder
+  No, exit
+  ↑/↓ Navigate · enter Confirm
+                                                                                                                      Gemini 3.8 Flash · low
+===== screen @27.0s final
+Accessing workspace:
+<home>\AppData\Local\Temp\agy5\repo
+Do you trust the contents of this project?
+Antigravity CLI requires permission to read, edit, and execute files here.
+> Yes, I trust this folder
+  No, exit
+  ↑/↓ Navigate · enter Confirm
+                                                                                                                      Gemini 3.8 Flash · low
+alive at end=True
+terminated by own handle
+
+## H7b the turn: trust answered, wait 30 s for SessionStart, then type the prompt, Enter
+spawned pid=37624 argv=['<home>/AppData/Local/agy/bin/agy.exe', '--gemini_dir=<home>/AppData/Local/Temp/agy5/gd', '--model', 'gemini-3.8-flash-low', '--dangerously-skip-permissions']
+... waitfor 'trust the contents' -> found @0.5s
+===== screen @0.5s trust dialog
+Accessing workspace:
+<home>\AppData\Local\Temp\agy5\repo
+Do you trust the contents of this project?
+Antigravity CLI requires permission to read, edit, and execute files here.
+> Yes, I trust this folder
+  No, exit
+  ↑/↓ Navigate · enter Confirm
+>>> wrote '\r' @0.5s
+... waitfile 'SessionStart' -> False @30.5s
+===== screen @32.5s after trust
+Accessing workspace:
+<home>\AppData\Local\Temp\agy5\repo
+Do you trust the contents of this project?
+Antigravity CLI requires permission to read, edit, and execute files here.
+> Yes, I trust this folder
+  No, exit
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                                                                                                       Gemini 3.8 Flash · low
+>>> wrote 'Run the shell command `echo hook-probe` with your command tool, then reply with the single word DONE.' @32.5s
+>>> wrote '\r' @33.0s
+... waitfile '"Stop"' -> True @44.6s
+===== screen @47.6s after Stop
+Accessing workspace:
+<home>\AppData\Local\Temp\agy5\repo
+Do you trust the contents of this project?
+Antigravity CLI requires permission to read, edit, and execute files here.
+> Yes, I trust this folder
+  No, exit
+────────────────────────────────────────────────────────────
+> Run the shell command `echo hook-probe` with your command tool, then reply with the single word DONE.
+● Ran (echo hook-probe) (ctrl+o to expand)
+  DONE
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                                                                                                       Gemini 3.8 Flash · low
+>>> wrote '\x03' @47.6s
+>>> wrote '\x03' @48.6s
+===== screen @52.6s after ctrl-c x2
+Accessing workspace:
+<home>\AppData\Local\Temp\agy5\repo
+Do you trust the contents of this project?
+Antigravity CLI requires permission to read, edit, and execute files here.
+> Yes, I trust this folder
+  No, exit
+Resume with -c (or command below):
+agy --conversation=6be64d5a-0e58-4d92-b209-765241155d97
+────────────────────────────────────────────────────────────
+> Run the shell command `echo hook-probe` with your command tool, then reply with the single word DONE.
+● Ran (echo hook-probe) (ctrl+o to expand)
+  DONE
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+> 1u
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Resume with -c (or command below):
+agy --conversation=6be64d5a-0e58-4d92-b209-765241155d97
+===== screen @52.6s final
+Accessing workspace:
+<home>\AppData\Local\Temp\agy5\repo
+Do you trust the contents of this project?
+Antigravity CLI requires permission to read, edit, and execute files here.
+> Yes, I trust this folder
+  No, exit
+Resume with -c (or command below):
+agy --conversation=6be64d5a-0e58-4d92-b209-765241155d97
+────────────────────────────────────────────────────────────
+> Run the shell command `echo hook-probe` with your command tool, then reply with the single word DONE.
+● Ran (echo hook-probe) (ctrl+o to expand)
+  DONE
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+> 1u
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Resume with -c (or command below):
+agy --conversation=6be64d5a-0e58-4d92-b209-765241155d97
+alive at end=False
+--- hooks.log (t = epoch seconds; the driver started at 1794488353.2, prompt Enter at +33.0 s):
+{"t": 1794488386.499, "tag": "ws", "event": "SessionStart", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488386.658, "tag": "gl", "event": "SessionStart", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488386.782, "tag": "ws", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488386.9, "tag": "gl", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488391.283, "tag": "ws", "event": "PreToolUse", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "stepIdx", "toolCall", "transcriptPath", "workspacePaths"], "tool": "run_command", "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488391.362, "tag": "gl", "event": "PreToolUse", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "stepIdx", "toolCall", "transcriptPath", "workspacePaths"], "tool": "run_command", "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488392.445, "tag": "ws", "event": "PostToolUse", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "error", "hookEventName", "lastUserInput", "modelName", "stepIdx", "toolCall", "transcriptPath", "workspacePaths"], "tool": "run_command", "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488392.527, "tag": "gl", "event": "PostToolUse", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "error", "hookEventName", "lastUserInput", "modelName", "stepIdx", "toolCall", "transcriptPath", "workspacePaths"], "tool": "run_command", "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488392.64, "tag": "ws", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488392.744, "tag": "gl", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488392.838, "tag": "ws", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488392.922, "tag": "gl", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488397.354, "tag": "ws", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488397.53, "tag": "gl", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488397.611, "tag": "ws", "event": "Stop", "keys": ["artifactDirectoryPath", "continuationActive", "conversationId", "cwd", "error", "executionNum", "fullyIdle", "hookEventName", "lastUserInput", "modelName", "terminationReason", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": "NO_TOOL_CALL", "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488397.685, "tag": "gl", "event": "Stop", "keys": ["artifactDirectoryPath", "continuationActive", "conversationId", "cwd", "error", "executionNum", "fullyIdle", "hookEventName", "lastUserInput", "modelName", "terminationReason", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": "NO_TOOL_CALL", "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+## SessionStart fired at +33.3 s, 0.3 s after the prompt: not at launch, not after the trust answer.
+
+## H8 headless --input-format stream-json, first message written at +10 s
+t0=1794488477.85 exit=0
+   2.32 out: {"event":"init","conversation_id":"f178d605-cc41-47e1-8567-1b9e882b5e06","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy5\\repo","tools":["ask_custom_permission","ask_permission","ask_question","browser_click_element","browser_drag_pixel_to_pixel","browser_get_dom","browser_get_network_request","browser_input","browser_list_network_requests","browser_mouse_down","browser_mouse_up","browser_move_mouse","browser_press_key","browser_refresh_page","browser_resize_window","browser_scroll","browser_scroll_dom","browser_select_option","browser_subagent","cal
+  10.00 in: {"event":"user","message":{"role":"user","content":"Reply with the single word OK."}}
+  10.14 out: {"event":"step_update","step_update":{"conversation_id":"f178d605-cc41-47e1-8567-1b9e882b5e06","step_index":0,"state":"DONE","step_type":"user_input"}}
+  12.85 out: {"event":"step_update","step_update":{"conversation_id":"f178d605-cc41-47e1-8567-1b9e882b5e06","step_index":1,"state":"ACTIVE","step_type":"agent_response","text_delta":"OK"}}
+  12.87 out: {"event":"step_update","step_update":{"conversation_id":"f178d605-cc41-47e1-8567-1b9e882b5e06","step_index":1,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":2.3821195,"usage":{"input_tokens":8248,"output_tokens":1,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8249}}}
+  13.25 out: {"event":"result","result":{"conversation_id":"f178d605-cc41-47e1-8567-1b9e882b5e06","status":"SUCCESS","response":"OK\n","duration_seconds":2.8277967,"num_turns":1,"usage":{"input_tokens":8248,"output_tokens":1,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8249}}}
+  25.00 in: <close stdin>
+--- hooks.log (driver t0 = 1794488477.85): SessionStart at +10.2 s, after the message
+{"t": 1794488488.07, "tag": "ws", "event": "SessionStart", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "f178d605-cc41-47e1-8567-1b9e882b5e06", "model": "gemini-3.8-flash-low", "env_conv": "f178d605-cc41-47e1-8567-1b9e882b5e06"}
+{"t": 1794488488.157, "tag": "gl", "event": "SessionStart", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "f178d605-cc41-47e1-8567-1b9e882b5e06", "model": "gemini-3.8-flash-low", "env_conv": "f178d605-cc41-47e1-8567-1b9e882b5e06"}
+{"t": 1794488488.248, "tag": "ws", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "f178d605-cc41-47e1-8567-1b9e882b5e06", "model": "gemini-3.8-flash-low", "env_conv": "f178d605-cc41-47e1-8567-1b9e882b5e06"}
+{"t": 1794488488.331, "tag": "gl", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "f178d605-cc41-47e1-8567-1b9e882b5e06", "model": "gemini-3.8-flash-low", "env_conv": "f178d605-cc41-47e1-8567-1b9e882b5e06"}
+{"t": 1794488490.811, "tag": "ws", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "f178d605-cc41-47e1-8567-1b9e882b5e06", "model": "gemini-3.8-flash-low", "env_conv": "f178d605-cc41-47e1-8567-1b9e882b5e06"}
+{"t": 1794488490.899, "tag": "gl", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "f178d605-cc41-47e1-8567-1b9e882b5e06", "model": "gemini-3.8-flash-low", "env_conv": "f178d605-cc41-47e1-8567-1b9e882b5e06"}
+{"t": 1794488490.987, "tag": "ws", "event": "Stop", "keys": ["artifactDirectoryPath", "continuationActive", "conversationId", "cwd", "error", "executionNum", "fullyIdle", "hookEventName", "lastUserInput", "modelName", "terminationReason", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": "NO_TOOL_CALL", "conv": "f178d605-cc41-47e1-8567-1b9e882b5e06", "model": "gemini-3.8-flash-low", "env_conv": "f178d605-cc41-47e1-8567-1b9e882b5e06"}
+{"t": 1794488491.072, "tag": "gl", "event": "Stop", "keys": ["artifactDirectoryPath", "continuationActive", "conversationId", "cwd", "error", "executionNum", "fullyIdle", "hookEventName", "lastUserInput", "modelName", "terminationReason", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": "NO_TOOL_CALL", "conv": "f178d605-cc41-47e1-8567-1b9e882b5e06", "model": "gemini-3.8-flash-low", "env_conv": "f178d605-cc41-47e1-8567-1b9e882b5e06"}
+
+## H9 cooperative stop: CTRL_BREAK_EVENT to the process group 8 s into a `ping -n 40`
+t0=1794488512.74 exit=1
+   0.00 in: Run the shell command `ping -n 40 127.0.0.1` in the foreground with your command tool and wait for it to finish, then reply DONE.
+   0.00 in: <close stdin>
+   2.71 out: {"event":"init","conversation_id":"ef456e10-62d3-4732-98c2-bdc7aa9014ff","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy5\\repo","tools":["ask_custom_permission","ask_permission","ask_question","browser_click_element","browser_drag_pixel_to_pixel","browser_get_dom","browser_get_network_request","browser_input","browser_list_network_requests","browser_mouse_down","browser_mouse_up","browser_move_mouse","browser_press_key","browser_refresh_page","browser_resize_window","browser_scroll","browser_scroll_dom","browser_select_option","browser_subagent","cal
+   2.79 out: {"event":"step_update","step_update":{"conversation_id":"ef456e10-62d3-4732-98c2-bdc7aa9014ff","step_index":0,"state":"DONE","step_type":"user_input"}}
+   5.85 out: {"event":"step_update","step_update":{"conversation_id":"ef456e10-62d3-4732-98c2-bdc7aa9014ff","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":2.59045,"usage":{"input_tokens":8275,"output_tokens":55,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8330}}}
+   5.85 out: {"event":"step_update","step_update":{"conversation_id":"ef456e10-62d3-4732-98c2-bdc7aa9014ff","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"ping -n 40 127.0.0.1"}}}}
+  14.00 sig: CTRL_BREAK_EVENT
+  14.01 err: error: interrupted
+  14.01 out: {"event":"result","result":{"conversation_id":"ef456e10-62d3-4732-98c2-bdc7aa9014ff","status":"ERROR","response":"","error":"interrupted","duration_seconds":3.1255507,"num_turns":1,"usage":{"input_tokens":8275,"output_tokens":55,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8330},"finished_reason":"interrupted"}}
+--- after exit: Win32_Process Name='PING.EXE' -> none
+--- hooks.log: no PostToolUse, no PostInvocation, no Stop
+{"t": 1794488515.612, "tag": "ws", "event": "SessionStart", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "ef456e10-62d3-4732-98c2-bdc7aa9014ff", "model": "gemini-3.8-flash-low", "env_conv": "ef456e10-62d3-4732-98c2-bdc7aa9014ff"}
+{"t": 1794488515.704, "tag": "gl", "event": "SessionStart", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "ef456e10-62d3-4732-98c2-bdc7aa9014ff", "model": "gemini-3.8-flash-low", "env_conv": "ef456e10-62d3-4732-98c2-bdc7aa9014ff"}
+{"t": 1794488515.779, "tag": "ws", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "ef456e10-62d3-4732-98c2-bdc7aa9014ff", "model": "gemini-3.8-flash-low", "env_conv": "ef456e10-62d3-4732-98c2-bdc7aa9014ff"}
+{"t": 1794488515.98, "tag": "gl", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "ef456e10-62d3-4732-98c2-bdc7aa9014ff", "model": "gemini-3.8-flash-low", "env_conv": "ef456e10-62d3-4732-98c2-bdc7aa9014ff"}
+{"t": 1794488518.659, "tag": "ws", "event": "PreToolUse", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "stepIdx", "toolCall", "transcriptPath", "workspacePaths"], "tool": "run_command", "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "ef456e10-62d3-4732-98c2-bdc7aa9014ff", "model": "gemini-3.8-flash-low", "env_conv": "ef456e10-62d3-4732-98c2-bdc7aa9014ff"}
+{"t": 1794488518.754, "tag": "gl", "event": "PreToolUse", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "lastUserInput", "modelName", "stepIdx", "toolCall", "transcriptPath", "workspacePaths"], "tool": "run_command", "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "ef456e10-62d3-4732-98c2-bdc7aa9014ff", "model": "gemini-3.8-flash-low", "env_conv": "ef456e10-62d3-4732-98c2-bdc7aa9014ff"}
+
+## H10 WSL, isolated HOME (logged out), ~/.gemini/config/hooks.json with SessionStart,
+## PreInvocation, Stop (shell form `echo <Event> >> <file>`); `timeout 15 agy -p`
+root=/tmp/agy5wsl.gTdz
+1.5.6
+exit=124
+{"conversation_id":"","status":"ERROR","response":"","error":"authentication failed or timed out","duration_seconds":0,"num_turns":0,"usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":0},"finished_reason":"error"}
+
+Authentication required. Please visit the URL to log in:
+  <redacted url>
+
+hooks.log:
+cat: /tmp/agy5wsl.gTdz/hooks.log: No such file or directory
+I1112 10:09:18.836515       1 hooks_manager.go:53] loaded 1 named hooks from 1 hooks.json file(s)
+I1112 10:09:18.839259       1 hooks_manager.go:53] loaded 1 named hooks from 1 hooks.json file(s)
+removed /tmp/agy5wsl.gTdz
+## The file was loaded, no hook ran before sign-in; a signed-in WSL probe would need the
+## operator's real ~/.gemini token, so WSL firing is not observed.
+
+## H11 --sandbox --dangerously-skip-permissions (cli.log: Print mode: enabling terminal sandbox)
+--- write inside the repo and under %TEMP% outside it: both ran, exit 0
+{"event":"init","conversation_id":"79d263de-6484-4674-9556-de07a82791ff","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy5\\repo","tools":["ask_custom_permission","ask_permission","ask_question","browser_click_element","browser_drag_pixel_to_pixel","browser_get_dom","browser_get_network_request","browser_input","browser_list_network_requests","browser_mouse_down","browser_mouse_up","browser_move_mouse","browser_press_key","browser_refresh_page","browser_resize_window","browser_scroll","browser_scroll_dom","browser_select_option","browser_subagent","call_mcp_tool","capture_browser_console_logs","capture_browser_screenshot","click_browser_pixel","comma …(cut)
+{"event":"step_update","step_update":{"conversation_id":"79d263de-6484-4674-9556-de07a82791ff","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"79d263de-6484-4674-9556-de07a82791ff","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":2.7070134,"usage":{"input_tokens":9666,"output_tokens":41,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":9707}}}
+{"event":"step_update","step_update":{"conversation_id":"79d263de-6484-4674-9556-de07a82791ff","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo IN \u003e inside.txt"}}}}
+{"event":"step_update","step_update":{"conversation_id":"79d263de-6484-4674-9556-de07a82791ff","step_index":2,"state":"DONE","step_type":"tool","tool_name":"run_command","duration_seconds":1.4642335,"tool_info":{"name":"run_command","parameters":{"CommandLine":"echo IN \u003e inside.txt"},"output":"Created At: 2026-11-12T10:04:56-03:00\nCompleted At: 2026-11-12T10:04:57-03:00\nCommand exited with code 0.\n\nNo output from the command."}}}
+{"event":"step_update","step_update":{"conversation_id":"79d263de-6484-4674-9556-de07a82791ff","step_index":3,"state":"DONE","step_type":"agent_response","duration_seconds":3.6161526999999998,"usage":{"input_tokens":9794,"output_tokens":58,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":9852}}}
+{"event":"step_update","step_update":{"conversation_id":"79d263de-6484-4674-9556-de07a82791ff","step_index":4,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo OUT \u003e <home>\\AppData\\Local\\Temp\\agy5\\outside.txt"}}}}
+{"event":"step_update","step_update":{"conversation_id":"79d263de-6484-4674-9556-de07a82791ff","step_index":4,"state":"DONE","step_type":"tool","tool_name":"run_command","duration_seconds":1.4627502,"tool_info":{"name":"run_command","parameters":{"CommandLine":"echo OUT \u003e <home>\\AppData\\Local\\Temp\\agy5\\outside.txt"},"output":"Created At: 2026-11-12T10:05:01-03:00\nCompleted At: 2026-11-12T10:05:03-03:00\nCommand exited with code 0.\n\nNo output from the command."}}}
+{"event":"step_update","step_update":{"conversation_id":"79d263de-6484-4674-9556-de07a82791ff","step_index":5,"state":"ACTIVE","step_type":"agent_response","text_delta":"Both"}}
+{"event":"step_update","step_update":{"conversation_id":"79d263de-6484-4674-9556-de07a82791ff","step_index":5,"state":"ACTIVE","step_type":"agent_response","text_delta":" commands succeeded:\n\n1. `echo IN \u003e inside.txt`: Succeeded ("}}
+{"event":"step_update","step_update":{"conversation_id":"79d263de-6484-4674-9556-de07a82791ff","step_index":5,"state":"ACTIVE","step_type":"agent_response","text_delta":"exit code 0"}}
+{"event":"step_update","step_update":{"conversation_id":"79d263de-6484-4674-9556-de07a82791ff","step_index":5,"state":"ACTIVE","step_type":"agent_response","text_delta":").\n2. `echo OUT \u003e <home>\\AppData\\Local\\"}}
+{"event":"step_update","step_update":{"conversation_id":"79d263de-6484-4674-9556-de07a82791ff","step_index":5,"state":"ACTIVE","step_type":"agent_response","text_delta":"Temp\\agy5\\outside.txt`: Succeeded (exit code "}}
+{"event":"step_update","step_update":{"conversation_id":"79d263de-6484-4674-9556-de07a82791ff","step_index":5,"state":"ACTIVE","step_type":"agent_response","text_delta":"0).\n\nDONE.\n\nMARKER-GD-GEMINI-MD\nMARKER-GD-CONFIG-AGENTS-MD"}}
+{"event":"step_update","step_update":{"conversation_id":"79d263de-6484-4674-9556-de07a82791ff","step_index":5,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":2.5822452,"usage":{"input_tokens":9939,"output_tokens":84,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":10023}}}
+{"event":"result","result":{"conversation_id":"79d263de-6484-4674-9556-de07a82791ff","status":"SUCCESS","response":"Both commands succeeded:\n\n1. `echo IN \u003e inside.txt`: Succeeded (exit code 0).\n2. `echo OUT \u003e <home>\\AppData\\Local\\Temp\\agy5\\outside.txt`: Succeeded (exit code 0).\n\nDONE.\n\nMARKER-GD-GEMINI-MD\nMARKER-GD-CONFIG-AGENTS-MD\n","duration_seconds":12.8468793,"num_turns":1,"usage":{"input_tokens":29399,"output_tokens":183,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":29582}}}
+--- network: curl https://example.com -> 000, exit 1
+{"event":"init","conversation_id":"041ff992-2f95-4438-80ff-3efc121958f9","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy5\\repo","tools":["ask_custom_permission","ask_permission","ask_question","browser_click_element","browser_drag_pixel_to_pixel","browser_get_dom","browser_get_network_request","browser_input","browser_list_network_requests","browser_mouse_down","browser_mouse_up","browser_move_mouse","browser_press_key","browser_refresh_page","browser_resize_window","browser_scroll","browser_scroll_dom","browser_select_option","browser_subagent","call_mcp_tool","capture_browser_console_logs","capture_browser_screenshot","click_browser_pixel","comma …(cut)
+{"event":"step_update","step_update":{"conversation_id":"041ff992-2f95-4438-80ff-3efc121958f9","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"041ff992-2f95-4438-80ff-3efc121958f9","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":4.5052221,"usage":{"input_tokens":9662,"output_tokens":56,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":9718}}}
+{"event":"step_update","step_update":{"conversation_id":"041ff992-2f95-4438-80ff-3efc121958f9","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"curl.exe -s -o NUL -w \"%{http_code}\" https://example.com"}}}}
+{"event":"step_update","step_update":{"conversation_id":"041ff992-2f95-4438-80ff-3efc121958f9","step_index":2,"state":"DONE","step_type":"tool","tool_name":"run_command","duration_seconds":1.2790135,"tool_info":{"name":"run_command","parameters":{"CommandLine":"curl.exe -s -o NUL -w \"%{http_code}\" https://example.com"},"output":"Created At: 2026-11-12T10:05:30-03:00\nCompleted At: 2026-11-12T10:05:31-03:00\nCommand exited with code 1.\n\nCommand output:\n000"}}}
+{"event":"step_update","step_update":{"conversation_id":"041ff992-2f95-4438-80ff-3efc121958f9","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"Exact output"}}
+{"event":"step_update","step_update":{"conversation_id":"041ff992-2f95-4438-80ff-3efc121958f9","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":":\n`000`\n\nThe command ran inside a sa"}}
+{"event":"step_update","step_update":{"conversation_id":"041ff992-2f95-4438-80ff-3efc121958f9","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"ndbox (with no network"}}
+{"event":"step_update","step_update":{"conversation_id":"041ff992-2f95-4438-80ff-3efc121958f9","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":" access, resulting in HTTP code `000` and exit code 1).\n\nDONE\n\nMARKER-GD-GEMINI-MD\nMARKER-GD-CONFIG-AGENTS-MD"}}
+{"event":"step_update","step_update":{"conversation_id":"041ff992-2f95-4438-80ff-3efc121958f9","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":3.5580776,"usage":{"input_tokens":9806,"output_tokens":61,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":9867}}}
+{"event":"result","result":{"conversation_id":"041ff992-2f95-4438-80ff-3efc121958f9","status":"SUCCESS","response":"Exact output:\n`000`\n\nThe command ran inside a sandbox (with no network access, resulting in HTTP code `000` and exit code 1).\n\nDONE\n\nMARKER-GD-GEMINI-MD\nMARKER-GD-CONFIG-AGENTS-MD\n","duration_seconds":10.2752211,"num_turns":1,"usage":{"input_tokens":19468,"output_tokens":117,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":19585}}}

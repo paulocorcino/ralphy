@@ -1,0 +1,140 @@
+# agy remote control and microphone server, ADR-0040 C9, parity 28-29 (stage 5 of the agy spike, 2026-11-12).
+# Windows 11, agy 1.5.6, isolated root --gemini_dir=<tmp>\gd (auth from the Windows keyring)
+# unless marked WSL. Model: gemini-3.8-flash-low. Paths: <home> = %USERPROFILE%.
+# Hook command = <python> -I <tmp>\tools\hook.py <tag> <tmp>\hooks.log; the script appends one
+# JSON line per call (event, tool, conversationId, its own cwd) and prints {} (PreToolUse:
+# {"decision":"allow"}, or deny when the probe asks for it).
+
+## R1 --remote-control on an interactive console (ConPTY), sockets read by the PID
+spawned pid=13616 argv=['<home>/AppData/Local/agy/bin/agy.exe', '--gemini_dir=<home>/AppData/Local/Temp/agy5/gd', '--model', 'gemini-3.8-flash-low', '--remote-control']
+===== screen @15.0s started with --remote-control
+> /remote-control
+  ⎿  Remote control on for this session.
+     Hostname: <redacted hostname>
+     Open https://antigravity.google.com/r/<redacted> on another device to take over.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                                                                                                       Gemini 3.8 Flash · low
+### exec & '<home>/AppData/Local/Temp/agy5/tools/net.ps1' -Root {pid}
+process tree: 13616 agy.exe
+listening (TCP):
+  <lan-ip>:57677 pid=13616
+established (TCP), remote addresses:
+  <lan-ip>:57698 -> 172.217.114.4:443 pid=13616
+  <lan-ip>:57697 -> 172.217.119.4:443 pid=13616
+  <lan-ip>:57690 -> 142.251.155.120:443 pid=13616
+  <lan-ip>:57686 -> 172.217.117.4:443 pid=13616
+  <lan-ip>:57681 -> 172.217.172.161:443 pid=13616
+  <lan-ip>:57680 -> 172.217.117.4:443 pid=13616
+  <lan-ip>:57676 -> 34.143.78.2:443 pid=13616
+UDP:
+===== screen @28.1s 25s
+> /remote-control
+  ⎿  Remote control on for this session.
+     Hostname: <redacted hostname>
+     Open https://antigravity.google.com/r/<redacted> on another device to take over.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                                                                                                       Gemini 3.8 Flash · low
+### exec & '<home>/AppData/Local/Temp/agy5/tools/net.ps1' -Root {pid}
+process tree: 13616 agy.exe
+listening (TCP):
+  <lan-ip>:57677 pid=13616
+established (TCP), remote addresses:
+  <lan-ip>:57698 -> 172.217.114.4:443 pid=13616
+  <lan-ip>:57697 -> 172.217.119.4:443 pid=13616
+  <lan-ip>:57690 -> 142.251.155.120:443 pid=13616
+  <lan-ip>:57686 -> 172.217.117.4:443 pid=13616
+  <lan-ip>:57681 -> 172.217.172.161:443 pid=13616
+  <lan-ip>:57680 -> 172.217.117.4:443 pid=13616
+  <lan-ip>:57676 -> 34.143.78.2:443 pid=13616
+UDP:
+>>> wrote '\x03' @29.8s
+>>> wrote '\x03' @30.8s
+===== screen @34.8s exit
+Resume with -c (or command below):
+agy --conversation=bda3d76a-79ff-43a3-9833-04ba782556c2
+> /remote-control
+  ⎿  Remote control on for this session.
+     Hostname: <redacted hostname>
+     Open https://antigravity.google.com/r/<redacted> on another device to take over.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+> 1u
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Resume with -c (or command below):
+agy --conversation=bda3d76a-79ff-43a3-9833-04ba782556c2
+2026/11/12 10:07:09 Read loop (req 3): err=context canceled
+===== screen @34.8s final
+Resume with -c (or command below):
+agy --conversation=bda3d76a-79ff-43a3-9833-04ba782556c2
+> /remote-control
+  ⎿  Remote control on for this session.
+     Hostname: <redacted hostname>
+     Open https://antigravity.google.com/r/<redacted> on another device to take over.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+> 1u
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Resume with -c (or command below):
+agy --conversation=bda3d76a-79ff-43a3-9833-04ba782556c2
+2026/11/12 10:07:09 Read loop (req 3): err=context canceled
+alive at end=False
+## The rows in state Listen carry a remote address of Google :443 when read with
+## Get-NetTCPConnection (R3 shows it): a socket mid-connect, not an inbound listener.
+
+## R2 the same console without --remote-control (no Listen rows, outbound :443 only)
+spawned pid=35452 argv=['<home>/AppData/Local/agy/bin/agy.exe', '--gemini_dir=<home>/AppData/Local/Temp/agy5/gd', '--model', 'gemini-3.8-flash-low']
+
+      ▄▀▀▄        Antigravity CLI 1.5.6
+     ▀▀▀▀▀▀       <redacted email> (Google AI Pro)
+    ▀▀▀▀▀▀▀▀      Gemini 3.8 Flash (Low)
+   ▄▀▀    ▀▀▄     ~/AppData/Local/Temp/agy5/repo
+  ▄▀▀      ▀▀▄
+### exec & '<home>/AppData/Local/Temp/agy5/tools/net.ps1' -Root {pid}
+process tree: 35452 agy.exe
+listening (TCP):
+established (TCP), remote addresses:
+  <lan-ip>:51580 -> 172.217.119.4:443 pid=35452
+  <lan-ip>:51570 -> 172.217.117.4:443 pid=35452
+  <lan-ip>:51565 -> 172.217.172.161:443 pid=35452
+  <lan-ip>:51564 -> 172.217.112.4:443 pid=35452
+  <lan-ip>:51563 -> 172.217.117.4:443 pid=35452
+UDP:
+      ▄▀▀▄        Antigravity CLI 1.5.6
+     ▀▀▀▀▀▀       <redacted email> (Google AI Pro)
+    ▀▀▀▀▀▀▀▀      Gemini 3.8 Flash (Low)
+   ▄▀▀    ▀▀▄     ~/AppData/Local/Temp/agy5/repo
+  ▄▀▀      ▀▀▄
+
+## R3 `remote-control start --session --name ralphy-spike-probe` in the isolated root
+Instance name set to "ralphy-spike-probe".
+Warning: failed to create logon task, falling back to a registry Run key: exit status 1 (output: ERRO: Acesso negado.)
+Remote-control daemon started.
+Open https://antigravity.google.com and look for "ralphy-spike-probe".
+--- HKCU\Software\Microsoft\Windows\CurrentVersion\Run gained:
+AntigravityCliDaemon = <home>\AppData\Local\agy\bin\agy.exe --gemini_dir=<tmp>/gd remote-control serve
+--- process: agy.exe … remote-control serve (detached; parent = the exited start command)
+--- netstat -ano for its PID: ESTABLISHED to Google :443 (64.233.186.95, 172.217.x.x, 142.251.155.120);
+    one row LISTENING <lan-ip>:54244 172.217.114.4:0, which Get-NetTCPConnection shows as FinWait1 to
+    172.217.114.4:443; 5 s later Get-NetTCPConnection -State Listen gave only <lan-ip>:54240 with
+    remote 172.217.117.4:443. No loopback or 0.0.0.0 listener; no UDP endpoint.
+$ agy remote-control status -> Daemon status: not registered / Instance name: ralphy-spike-probe
+
+## R4 `remote-control stop` in the same root
+Warning: failed to end scheduled task: exit status 1 (output: ERRO: O sistema n�o pode encontrar o arquivo especificado.)
+Remote-control daemon stopped.
+--- after: the Run value is gone, no agy.exe process, no agy scheduled task
+
+## R5 mic-serve (default --addr 127.0.0.1:4713), stopped by its own handle after 6 s
+pid 51540 alive True exit None
+process tree: 51540 agy.exe
+listening (TCP):
+established (TCP), remote addresses:
+UDP:
+ 
+killed by own handle
+output: Serving the microphone on 127.0.0.1:4713. Press ctrl+c to stop.
+Note: Ensure this terminal has microphone access.
+
+--- netstat -ano for its PID: TCP 127.0.0.1:4713 0.0.0.0:0 LISTENING

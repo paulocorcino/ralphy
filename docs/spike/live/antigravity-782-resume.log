@@ -1,0 +1,100 @@
+# agy resume by conversation id, ADR-0040 parity 21, #758 (stage 5 of the agy spike, 2026-11-12).
+# Windows 11, agy 1.5.6, isolated root --gemini_dir=<tmp>\gd (auth from the Windows keyring)
+# unless marked WSL. Model: gemini-3.8-flash-low. Paths: <home> = %USERPROFILE%.
+# Hook command = <python> -I <tmp>\tools\hook.py <tag> <tmp>\hooks.log; the script appends one
+# JSON line per call (event, tool, conversationId, its own cwd) and prints {} (PreToolUse:
+# {"decision":"allow"}, or deny when the probe asks for it).
+
+## U1 an interactive turn (H7b of the hooks log), then Ctrl+C twice; the exit screen prints:
+Resume with -c (or command below):
+agy --conversation=6be64d5a-0e58-4d92-b209-765241155d97
+
+## U2 interactive resume: agy … --conversation=6be64d5a-…, ask for the command run earlier
+spawned pid=52028 argv=['<home>/AppData/Local/agy/bin/agy.exe', '--gemini_dir=<home>/AppData/Local/Temp/agy5/gd', '--model', 'gemini-3.8-flash-low', '--dangerously-skip-permissions', '--conversation=6be64d5a-0e58-4d92-b209-765241155d97']
+===== screen @10.0s resumed
+────────────────────────────────────────────────────────────
+> Run the shell command `echo hook-probe` with your command tool, then reply with the single word DONE.
+● Ran (echo hook-probe) (ctrl+o to expand)
+  DONE
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                                                                                                       Gemini 3.8 Flash · low
+>>> wrote 'What exact shell command did you run earlier in this conversation? Reply with the command only.' @10.0s
+>>> wrote '\r' @10.5s
+... waitfile '"Stop"' -> True @15.0s
+===== screen @18.0s after Stop
+────────────────────────────────────────────────────────────
+> Run the shell command `echo hook-probe` with your command tool, then reply with the single word DONE.
+● Ran (echo hook-probe) (ctrl+o to expand)
+  DONE
+────────────────────────────────────────────────────────────
+> What exact shell command did you run earlier in this conversation? Reply with the command only.
+  echo hook-probe
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                                                                                                       Gemini 3.8 Flash · low
+>>> wrote '\x03' @18.0s
+>>> wrote '\x03' @19.0s
+===== screen @23.0s exit
+Resume with -c (or command below):
+agy --conversation=6be64d5a-0e58-4d92-b209-765241155d97
+────────────────────────────────────────────────────────────
+> Run the shell command `echo hook-probe` with your command tool, then reply with the single word DONE.
+● Ran (echo hook-probe) (ctrl+o to expand)
+  DONE
+────────────────────────────────────────────────────────────
+> What exact shell command did you run earlier in this conversation? Reply with the command only.
+  echo hook-probe
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+> 1u
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Resume with -c (or command below):
+agy --conversation=6be64d5a-0e58-4d92-b209-765241155d97
+===== screen @23.0s final
+Resume with -c (or command below):
+agy --conversation=6be64d5a-0e58-4d92-b209-765241155d97
+────────────────────────────────────────────────────────────
+> Run the shell command `echo hook-probe` with your command tool, then reply with the single word DONE.
+● Ran (echo hook-probe) (ctrl+o to expand)
+  DONE
+────────────────────────────────────────────────────────────
+> What exact shell command did you run earlier in this conversation? Reply with the command only.
+  echo hook-probe
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+> 1u
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Resume with -c (or command below):
+agy --conversation=6be64d5a-0e58-4d92-b209-765241155d97
+alive at end=False
+--- hooks.log: same conversationId; no SessionStart on resume
+{"t": 1794488432.241, "tag": "ws", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488432.329, "tag": "gl", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488436.268, "tag": "ws", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488436.343, "tag": "gl", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488436.418, "tag": "ws", "event": "Stop", "keys": ["artifactDirectoryPath", "continuationActive", "conversationId", "cwd", "error", "executionNum", "fullyIdle", "hookEventName", "lastUserInput", "modelName", "terminationReason", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": "NO_TOOL_CALL", "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488436.508, "tag": "gl", "event": "Stop", "keys": ["artifactDirectoryPath", "continuationActive", "conversationId", "cwd", "error", "executionNum", "fullyIdle", "hookEventName", "lastUserInput", "modelName", "terminationReason", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": "NO_TOOL_CALL", "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+
+## U3 headless resume of the same conversation: stdin prompt, --conversation 6be64d5a-…
+exit=0
+{"event":"init","conversation_id":"6be64d5a-0e58-4d92-b209-765241155d97","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy5\\repo","tools":["ask_custom_permission","ask_permission","ask_question","browser_click_element","browser_drag_pixel_to_pixel","browser_get_dom","browser_get_network_request","browser_input","browser_list_network_requests","browser_mouse_down","browser_mouse_up","browser_move_mouse","browser_press_key","browser_refresh_page","browser_resize_window","browser_scroll","browser_scroll_dom","browser_select_option","browser_subagent","call_mcp_tool","capture_browser_console_logs","capture_browser_screenshot","click_browser_pixel","comma …(cut)
+{"event":"step_update","step_update":{"conversation_id":"6be64d5a-0e58-4d92-b209-765241155d97","step_index":7,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"6be64d5a-0e58-4d92-b209-765241155d97","step_index":8,"state":"DONE","step_type":"system_message","duration_seconds":0.0005062}}
+{"event":"step_update","step_update":{"conversation_id":"6be64d5a-0e58-4d92-b209-765241155d97","step_index":9,"state":"ACTIVE","step_type":"agent_response","text_delta":"echo hook-probe"}}
+{"event":"step_update","step_update":{"conversation_id":"6be64d5a-0e58-4d92-b209-765241155d97","step_index":9,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":2.6656331,"usage":{"input_tokens":8835,"output_tokens":4,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8839}}}
+{"event":"result","result":{"conversation_id":"6be64d5a-0e58-4d92-b209-765241155d97","status":"SUCCESS","response":"echo hook-probe\n","duration_seconds":70.4137327,"num_turns":3,"usage":{"input_tokens":34107,"output_tokens":49,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":34156}}}
+## The one model call of this run used 8 835 input tokens (step 9); result.usage says 34 107
+## input, num_turns 3, duration 70 s: on a resumed conversation the result envelope is the
+## conversation's total, not this run's.
+--- hooks.log:
+{"t": 1794488453.935, "tag": "ws", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488454.054, "tag": "gl", "event": "PreInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488456.835, "tag": "ws", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488456.917, "tag": "gl", "event": "PostInvocation", "keys": ["artifactDirectoryPath", "conversationId", "cwd", "hookEventName", "initialNumSteps", "invocationNum", "lastUserInput", "modelName", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": null, "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488457.0, "tag": "ws", "event": "Stop", "keys": ["artifactDirectoryPath", "continuationActive", "conversationId", "cwd", "error", "executionNum", "fullyIdle", "hookEventName", "lastUserInput", "modelName", "terminationReason", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\repo\\.agents", "term": "NO_TOOL_CALL", "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+{"t": 1794488457.077, "tag": "gl", "event": "Stop", "keys": ["artifactDirectoryPath", "continuationActive", "conversationId", "cwd", "error", "executionNum", "fullyIdle", "hookEventName", "lastUserInput", "modelName", "terminationReason", "transcriptPath", "workspacePaths"], "tool": null, "cwd_proc": "<home>\\AppData\\Local\\Temp\\agy5\\gd\\config", "term": "NO_TOOL_CALL", "conv": "6be64d5a-0e58-4d92-b209-765241155d97", "model": "gemini-3.8-flash-low", "env_conv": "6be64d5a-0e58-4d92-b209-765241155d97"}
+
+## U4 a chosen id: see antigravity-782-plan.log (--conversation <unknown> warns and starts a new
+## conversation with a CLI-made UUID). The id of a new console is in every hook payload
+## (conversationId) and in the hook's env ANTIGRAVITY_CONVERSATION_ID (hooks log, H2).

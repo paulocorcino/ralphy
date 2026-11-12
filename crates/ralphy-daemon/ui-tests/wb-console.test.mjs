@@ -7,6 +7,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { WBColumns } from "../assets/ui/wb-columns.ts";
 import { createConsole } from "../assets/ui/wb-console.ts";
+import { createSpawn } from "../assets/ui/wb-console-spawn.ts";
 import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
 import { idLookups } from "./fake-document.mjs";
 
@@ -814,6 +815,80 @@ test("a restart and a placeholder's Launch mark the console as relaunching", () 
   assert.match(SRC, /markRelaunch\(carry\.id, discard\);/u);
   assert.match(SRC, /markRelaunch\(carry\.id, \(\) => \{\s*drop\(true\);\s*\}\);/u);
   assert.match(SRC, /\} finally \{\s*relaunching\.delete\(carry\.id\);/u);
+});
+
+// The layout after a take-down wakes the siblings the old window covered, and
+// a sibling may throw there: the restart still builds its new window (#904).
+const noop = () => {};
+test("a restart survives a layout throw", (t) => {
+  const { markRelaunch } = load();
+  const button = () => ({ addEventListener: noop });
+  const win = {
+    _deskId: "w-a",
+    _deskKind: "console",
+    classList: { contains: () => false, add: noop, remove: noop },
+    querySelector: () => null,
+    remove() {
+      this.removed = true;
+    },
+  };
+  let layoutThrows = false;
+  const spawned = [];
+  const wins = new Set();
+  const spawn = createSpawn({
+    document: {},
+    wins,
+    peerGroups: new Map(),
+    wakePeerNow: () => null,
+    readFleetNow: () => null,
+    buildChrome: () => ({ win, body: {}, title: {}, restartBtn: button(), closeBtn: button() }),
+    sessionPresentation: () => ({}),
+    renderTitle: noop,
+    closeCheckoutMenu: noop,
+    restartWin: () => Promise.resolve(),
+    ensureListing: noop,
+    buildKeyBar: () => ({ ctrlBtn: null, shiftBtn: null, selBtn: null }),
+    applyDormancy: noop,
+    attachTerminal: () => ({ dispose: noop }),
+    budget: { dormancyWatch: () => null, trackDormancy: noop, untrackDormancy: noop },
+    askConfirm: () => Promise.resolve(false),
+    toast: noop,
+    createRecord: noop,
+    atDeskCap: () => false,
+    setWin: noop,
+    forgetRecord: noop,
+    currentDesk: () => [],
+    reloadDesk: () => Promise.resolve(),
+    recordLeft: noop,
+    restoreRect: () => ({ left: 0, top: 0, width: 10, height: 10 }),
+    applyExtent: () => {
+      if (layoutThrows) throw new Error("a sibling's wake failed");
+    },
+    changed: noop,
+    spawnPlaceholder: () => win,
+    spawnOrMissing: (req, label, repo, carry) => {
+      spawned.push(carry.id);
+      return Promise.resolve(win);
+    },
+    markRelaunch,
+  });
+  const realWB = globalThis.WB;
+  const logged = t.mock.method(console, "error", noop);
+  globalThis.WB = { emit: noop };
+  try {
+    spawn.spawnWindow({ console: true, repo: "o/r" }, "console", "o/r");
+    layoutThrows = true;
+    assert.doesNotThrow(() => win._relaunchIn());
+  } finally {
+    globalThis.WB = realWB;
+  }
+  assert.equal(win.removed, true, "the old window left the page");
+  assert.equal(wins.has(win), false, "the old window is no longer tracked");
+  assert.deepEqual(spawned, ["w-a"], "the new window is spawned under the same id");
+  assert.ok(
+    logged.mock.calls.some((c) => c.arguments.some((a) => a instanceof Error && /sibling/u.test(a.message))),
+    "the layout's error reaches the browser console",
+  );
 });
 
 // The torn-off fence window's grid is never stored (ADR-0051 §8, amended

@@ -1,0 +1,112 @@
+# agy state, background processes, auto-update and instruction files, ADR-0040 C9/C11
+# (stage 3 of the agy spike, 2026-11-12). Windows 11 unless marked WSL.
+
+## 1. Auto-update: a plain run spawns a background updater that replaces the shared binary
+$ USERPROFILE=<tmp> HOME=<tmp> agy models          (cwd: scratch repo; agy 1.4.9)
+exit=0
+--- the temp root's cli.log:
+I1112 08:16:55.863447       1 auto_updater.go:334] Spawned background update process with PID 8872
+--- processes after agy exited (Win32_Process, Name='agy.exe'):
+ProcessId       : 8872
+ParentProcessId : 51920      (the exited agy)
+CommandLine     : C:\Users\PICHAU\AppData\Local\agy\bin\agy.exe --bg-updater --app_data_dir=antigravity-cli --gemini_dir=.gemini
+--- 3 minutes later: PID 8872 had written 210124800 bytes and held a TLS connection to 172.217.172.187:443
+--- at 08:19:51 PID 8872 exited; %LOCALAPPDATA%\agy\bin:
+agy.exe                         242141336 12/11/2026 08:19:51
+agy.exe.1794482221548117500.old 208545432 28/10/2026 17:02:03
+<tmp>\.gemini\antigravity-cli\updater\update_status.json:
+{"success":true,"message":"Update successful, restart CLI to use"}
+$ agy --version
+1.5.6
+## The updater wrote its status into the isolated root, but replaced the one binary in
+## %LOCALAPPDATA%\agy\bin that every root shares.
+
+## The check is rate limited per state root (cli.log of the --gemini_dir root):
+I1112 08:32:23.729048       1 auto_updater.go:334] Spawned background update process with PID 32964
+I1112 08:34:22.185635       1 auto_updater.go:281] Last check was less than 15 minutes ago, skipping update (fast path)
+## The timestamp is <root>/antigravity-cli/last_check.timestamp. `agy --version` spawned no updater.
+
+## Evidence the operator's own launches update too (real roots, before this stage):
+WSL     ~/.gemini/antigravity-cli/updater/update_status.json  {"success":true,"message":"Update successful, restart CLI to use"}  (07:47)
+Windows %USERPROFILE%\.gemini\antigravity-cli\updater\update_status.json  {"success":false,"message":"Update failed, please install from website"}  (07:46)
+## No flag, setting or environment variable to turn the updater off was found: strings of
+## agy.exe 1.5.6 (AUTO_UPDATER_TEST_MODE is the only updater name), `agy --help`, the docs.
+
+## 2. A config-root flag: --gemini_dir=<absolute path> (hidden; not in `agy --help`)
+$ agy --gemini_dir=C:\...\Temp\agyprobe\gd models
+exit=0
+--- cli.log: CLI app data directory: C:\Users\PICHAU\AppData\Local\Temp\agyprobe\gd\antigravity-cli
+--- tree written: gd/antigravity-cli/ (state) and gd/config/ (config.json, mcp_config.json, projects/)
+## A relative value is rejected and falls back to the default (operator's log, 07:45):
+E1112 07:45:56.542130       1 launchsteps.go:95] Failed to resolve GeminiDir ".gemini": .gemini must be an absolute path: path is not absolute, falling back to default
+## Auth still comes from the OS keyring on Windows (see the logged-out log).
+
+## 3. What one headless run writes (the one model call of this stage, Flash, isolated root)
+$ cd <scratch repo with AGENTS.md, GEMINI.md, CLAUDE.md, README.md>
+$ agy --gemini_dir=<tmp>\gd2 -p "Reply in one line. Start with the exact text: ação ✓ 日本. Then list every word that starts with MARKER- that your instructions tell you to include." --model gemini-3.8-flash-low --output-format json --print-timeout 150s </dev/null
+exit=0   wall time 63s (the cli.log covers 08:32:22 to 08:32:43; the rest is not explained here)
+{"conversation_id":"<id>","status":"SUCCESS","response":"ação ✓ 日本 MARKER-AGENTS-MD MARKER-GEMINI-MD\n","duration_seconds":9.8518609,"num_turns":1,"usage":{"input_tokens":8475,"output_tokens":17,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8492}}
+## Repo-local instruction files: AGENTS.md and GEMINI.md were read; CLAUDE.md was not.
+## The scratch repo was unchanged (git status empty; no file added).
+--- files the run wrote under the root (builtin/ omitted):
+antigravity-cli/bin/webm_encoder.exe
+antigravity-cli/brain/<id>/.system_generated/logs/chunks/transcript/00000000.jsonl
+antigravity-cli/brain/<id>/.system_generated/logs/chunks/transcript_full/00000000.jsonl
+antigravity-cli/brain/<id>/.system_generated/logs/transcript.jsonl
+antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl
+antigravity-cli/cache/default_project_id.txt
+antigravity-cli/cache/last_conversations.json      {"C:\\...\\agyprobe\\repo2": "<id>"}
+antigravity-cli/cache/onboarding.json
+antigravity-cli/conversation_summaries.db
+antigravity-cli/conversations/<id>.db
+antigravity-cli/implicit/<id>.pb
+antigravity-cli/installation_id
+antigravity-cli/jetbox_summaries_proto.pb
+antigravity-cli/jetski_state.pbtxt
+antigravity-cli/last_check.timestamp
+antigravity-cli/log/cli-20261112_083222.log
+antigravity-cli/presence/<id>.lock                  (left after exit)
+antigravity-cli/updater/update.lock
+antigravity-cli/updater/update_status.json
+config/.migrated
+config/config.json                                  {"plugins": {"swarm": {"enabled": true}}}
+config/mcp_config.json                              (empty)
+config/projects/default-cli-project.json
+## Size of the root after one run: 14M (mostly builtin/). No settings.json was written:
+## --model did not write back, and -p did not add the repo to trustedWorkspaces.
+## Nothing under the real %USERPROFILE%\.gemini changed during the run (find -newer: empty).
+--- endpoints in the run's cli.log:
+      1 URL: https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels
+      4 URL: https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist
+      1 URL: https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse
+E1112 08:32:43.540978    1128 telemetry.go:141] error recording trajectory segment analytics: Post "https://daily-cloudcode-pa.googleapis.com/v1internal:recordTrajectoryAnalytics": context canceled
+## No indexing or upload endpoint in a one-turn run with no tool call.
+--- processes after exit: none (Win32_Process, Name='agy.exe'); the updater of this run exited at 08:32:42.
+
+## 4. Bundled skills, plugins, MCP servers (fresh root, agy 1.5.6)
+$ agy --gemini_dir=<tmp> plugin list --json
+[]
+$ agy --gemini_dir=<tmp> mcp list
+No MCP servers configured.
+$ agy --gemini_dir=<tmp> agents
+(no output) exit=0
+$ find <root>/antigravity-cli/builtin -maxdepth 2
+plugins/swarm (plugin.json, README.md, sidecars/swarm_board)
+skills/agy-customizations skills/antigravity_guide skills/automation skills/generative_ui
+skills/migrate-agent-settings skills/migrate-workflows skills/native_swarm skills/permissioned-github
+skills/plugin skills/run-workflow skills/swarm_monitor skills/swarm_narrator skills/ui-plugin-navigation
+$ head builtin/skills/permissioned-github/SKILL.md
+name: permissioned-github
+description: Guidelines for interacting with GitHub and request permissions from the user when commands fail due to restrictions in the agent environment.
+## cli.log at startup (operator's root): "Detecting Gemini extensions in C:\Users\PICHAU\.gemini\extensions",
+## "config.json not found or unreadable ... open C:/Users/PICHAU/.gemini/config/config.json",
+## "loaded 0 named hooks from 0 hooks.json file(s)".
+
+## 5. Remote control daemon
+$ agy --gemini_dir=<tmp> remote-control status        (Windows)
+Daemon status: not registered
+$ HOME=<tmp> agy remote-control status                (WSL)
+Instance name: not assigned yet; the daemon generates one on its first start.
+$ systemctl --user list-units | grep -i agy            (WSL)  no agy systemd user unit
+Windows: no scheduled task and no HKCU Run entry named agy or antigravity.
+## Every operator launch logs: "[RemoteControl] RemoteControlEnabled value: false ... staying disconnected".
