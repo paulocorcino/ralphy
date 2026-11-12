@@ -2,6 +2,7 @@
 //! for a person or as JSON for the daemon's config Query verb.
 
 use anyhow::Result;
+use ralphy_agent_antigravity::AntigravitySettings;
 use ralphy_agent_claude::ClaudeSettings;
 use ralphy_agent_copilot::CopilotSettings;
 use ralphy_agent_cursor::CursorSettings;
@@ -9,17 +10,43 @@ use ralphy_agent_gemini::GeminiSettings;
 use ralphy_agent_opencode::OpenCodeSettings;
 use ralphy_core::{git, Settings, Workspace};
 
+/// Every agent section of the settings, read once for the two views.
+struct AgentSections {
+    opencode: OpenCodeSettings,
+    claude: ClaudeSettings,
+    copilot: CopilotSettings,
+    cursor: CursorSettings,
+    gemini: GeminiSettings,
+    agy: AntigravitySettings,
+}
+
+impl AgentSections {
+    fn load(s: &Settings) -> Result<Self> {
+        Ok(Self {
+            opencode: s.agent_settings(OpenCodeSettings::SECTION)?,
+            claude: s.agent_settings(ClaudeSettings::SECTION)?,
+            copilot: s.agent_settings(CopilotSettings::SECTION)?,
+            cursor: s.agent_settings(CursorSettings::SECTION)?,
+            gemini: s.agent_settings(GeminiSettings::SECTION)?,
+            agy: s.agent_settings(AntigravitySettings::SECTION)?,
+        })
+    }
+}
+
 pub(crate) fn get(ws: &Workspace, json: bool) -> Result<()> {
     if json {
         outln!("{}", serde_json::to_string(&config_json(ws)?)?);
         return Ok(());
     }
     let s = Settings::load(ws)?;
-    let opencode: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION)?;
-    let claude: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION)?;
-    let copilot: CopilotSettings = s.agent_settings(CopilotSettings::SECTION)?;
-    let cursor: CursorSettings = s.agent_settings(CursorSettings::SECTION)?;
-    let gemini: GeminiSettings = s.agent_settings(GeminiSettings::SECTION)?;
+    let AgentSections {
+        opencode,
+        claude,
+        copilot,
+        cursor,
+        gemini,
+        agy,
+    } = AgentSections::load(&s)?;
     print_str("opencode.model", opencode.model);
     print_str("verify.command", s.verify.command);
     match s.verify.require_verify_gate {
@@ -75,6 +102,14 @@ pub(crate) fn get(ws: &Workspace, json: bool) -> Result<()> {
         "cursor.allow_codebase_indexing_i_understand_the_risk = {}",
         cursor.allow_codebase_indexing_i_understand_the_risk
     );
+    print_str("antigravity.plan_model", agy.plan_model);
+    print_str("antigravity.exec_model", agy.exec_model);
+    print_str("antigravity.plan_effort", agy.plan_effort);
+    print_str("antigravity.exec_effort", agy.exec_effort);
+    outln!(
+        "antigravity.run_without_guard_proof_i_understand_the_risk = {}",
+        agy.run_without_guard_proof_i_understand_the_risk
+    );
     print_str("gemini.plan_model", gemini.plan_model);
     print_str("gemini.exec_model", gemini.exec_model);
     // The CloudEvents sink knobs come from the global per-repo store, printed for
@@ -99,11 +134,14 @@ pub(crate) fn get(ws: &Workspace, json: bool) -> Result<()> {
 /// [`super::SUPPORTED_KEYS`]; the daemon parses this verbatim.
 pub(super) fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
     let s = Settings::load(ws)?;
-    let opencode: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION)?;
-    let claude: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION)?;
-    let copilot: CopilotSettings = s.agent_settings(CopilotSettings::SECTION)?;
-    let cursor: CursorSettings = s.agent_settings(CursorSettings::SECTION)?;
-    let gemini: GeminiSettings = s.agent_settings(GeminiSettings::SECTION)?;
+    let AgentSections {
+        opencode,
+        claude,
+        copilot,
+        cursor,
+        gemini,
+        agy,
+    } = AgentSections::load(&s)?;
     let slug = git::project_slug(ws.repo_root());
     let events = crate::events::config::EventsStore::load().unwrap_or_default();
     let entry = events.entry(&slug);
@@ -141,6 +179,12 @@ pub(super) fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
             copilot.allow_builtin_mcp_servers_i_understand_the_risk,
         "cursor.allow_codebase_indexing_i_understand_the_risk":
             cursor.allow_codebase_indexing_i_understand_the_risk,
+        "antigravity.plan_model": agy.plan_model,
+        "antigravity.exec_model": agy.exec_model,
+        "antigravity.plan_effort": agy.plan_effort,
+        "antigravity.exec_effort": agy.exec_effort,
+        "antigravity.run_without_guard_proof_i_understand_the_risk":
+            agy.run_without_guard_proof_i_understand_the_risk,
         "gemini.plan_model": gemini.plan_model,
         "gemini.exec_model": gemini.exec_model,
     }))

@@ -122,6 +122,11 @@ const SUPPORTED_KEYS: &[&str] = &[
     "copilot.exec_effort",
     "copilot.allow_builtin_mcp_servers_i_understand_the_risk",
     "cursor.allow_codebase_indexing_i_understand_the_risk",
+    "antigravity.plan_model",
+    "antigravity.exec_model",
+    "antigravity.plan_effort",
+    "antigravity.exec_effort",
+    "antigravity.run_without_guard_proof_i_understand_the_risk",
     "gemini.plan_model",
     "gemini.exec_model",
 ];
@@ -165,6 +170,12 @@ claude.run_without_guard_proof_i_understand_the_risk=true lets a Claude session 
 on when Ralphy cannot prove that its hooks run, so the guard may not run. Each such \
 session writes a warning to the run. Only `ralphy config set` on this machine can \
 turn it on. \
+antigravity.plan_model and antigravity.exec_model set the Antigravity model for \
+each phase, as one word such as gemini-3.8-flash; antigravity.plan_effort and \
+antigravity.exec_effort set its effort. \
+antigravity.run_without_guard_proof_i_understand_the_risk=true lets an Antigravity \
+session go on when Ralphy cannot prove that its hooks run, so the guard may not run. \
+Only `ralphy config set` on this machine can turn it on. \
 gemini.plan_model and gemini.exec_model set Gemini's model for each phase; \
 without them, Gemini makes one extra, billed call per turn to choose a model.)";
 

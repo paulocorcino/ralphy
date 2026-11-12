@@ -2,6 +2,7 @@
 //! `.ralphy/settings.json`, or to the global events store for `events.*`.
 
 use anyhow::{anyhow, bail, Context, Result};
+use ralphy_agent_antigravity::AntigravitySettings;
 use ralphy_agent_claude::ClaudeSettings;
 use ralphy_agent_copilot::CopilotSettings;
 use ralphy_agent_cursor::CursorSettings;
@@ -32,6 +33,13 @@ fn with_copilot(s: &mut Settings, f: impl FnOnce(&mut CopilotSettings)) -> Resul
     let mut c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION)?;
     f(&mut c);
     s.set_agent_settings(CopilotSettings::SECTION, &c)
+}
+
+/// Load-mutate-store the Antigravity section; same contract as [`with_claude`].
+fn with_antigravity(s: &mut Settings, f: impl FnOnce(&mut AntigravitySettings)) -> Result<()> {
+    let mut a: AntigravitySettings = s.agent_settings(AntigravitySettings::SECTION)?;
+    f(&mut a);
+    s.set_agent_settings(AntigravitySettings::SECTION, &a)
 }
 
 /// Load-mutate-store the Cursor section; same contract as [`with_claude`].
@@ -207,6 +215,19 @@ fn set_agent_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
                 .with_context(|| format!("{key} must be 'true' or 'false', got '{value}'"))?;
             with_copilot(s, |c| c.allow_builtin_mcp_servers_i_understand_the_risk = b)?;
         }
+        "antigravity.plan_model" | "antigravity.exec_model" => {
+            set_antigravity_model(s, key, value)?;
+        }
+        "antigravity.plan_effort" | "antigravity.exec_effort" => {
+            set_antigravity_effort(s, key, value)?;
+        }
+        // The escape of the hook proof: local-only, the daemon refuses to set it.
+        "antigravity.run_without_guard_proof_i_understand_the_risk" => {
+            let b = value
+                .parse::<bool>()
+                .with_context(|| format!("{key} must be 'true' or 'false', got '{value}'"))?;
+            with_antigravity(s, |a| a.run_without_guard_proof_i_understand_the_risk = b)?;
+        }
         "gemini.plan_model" | "gemini.exec_model" => set_gemini_model(s, key, value)?,
         // Same reasoning, a different capability (ADR-0042 D6): the hatch lets a
         // run upload the operator's repository to the vendor. Ralphy never denies
@@ -231,6 +252,45 @@ fn set_claude_effort(s: &mut Settings, key: &str, value: &str) -> Result<()> {
             &mut c.plan_effort
         } else {
             &mut c.exec_effort
+        };
+        *slot = Some(value.to_owned());
+    })
+}
+
+/// Set `antigravity.plan_effort` or `antigravity.exec_effort` to a core effort level.
+fn set_antigravity_effort(s: &mut Settings, key: &str, value: &str) -> Result<()> {
+    value.parse::<Effort>().map_err(anyhow::Error::msg)?;
+    let plan = key == "antigravity.plan_effort";
+    with_antigravity(s, |a| {
+        let slot = if plan {
+            &mut a.plan_effort
+        } else {
+            &mut a.exec_effort
+        };
+        *slot = Some(value.to_owned());
+    })
+}
+
+/// Set `antigravity.plan_model` or `antigravity.exec_model`. The id list changes
+/// with each agy update, so only the shape is checked: one word of `[a-z0-9.-]`.
+/// The CLI refuses an unknown id itself.
+fn set_antigravity_model(s: &mut Settings, key: &str, value: &str) -> Result<()> {
+    let value = value.trim();
+    let one_word = !value.is_empty()
+        && value
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-');
+    if !one_word {
+        bail!(
+            "{key} must be one model id of lowercase letters, digits, '.' and '-', got '{value}'"
+        );
+    }
+    let plan = key == "antigravity.plan_model";
+    with_antigravity(s, |a| {
+        let slot = if plan {
+            &mut a.plan_model
+        } else {
+            &mut a.exec_model
         };
         *slot = Some(value.to_owned());
     })
@@ -331,6 +391,15 @@ pub(crate) fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "cursor.allow_codebase_indexing_i_understand_the_risk" => with_cursor(&mut s, |c| {
             c.allow_codebase_indexing_i_understand_the_risk = false;
         })?,
+        "antigravity.plan_model" => with_antigravity(&mut s, |a| a.plan_model = None)?,
+        "antigravity.exec_model" => with_antigravity(&mut s, |a| a.exec_model = None)?,
+        "antigravity.plan_effort" => with_antigravity(&mut s, |a| a.plan_effort = None)?,
+        "antigravity.exec_effort" => with_antigravity(&mut s, |a| a.exec_effort = None)?,
+        "antigravity.run_without_guard_proof_i_understand_the_risk" => {
+            with_antigravity(&mut s, |a| {
+                a.run_without_guard_proof_i_understand_the_risk = false;
+            })?;
+        }
         "gemini.plan_model" => with_gemini(&mut s, |g| g.plan_model = None)?,
         "gemini.exec_model" => with_gemini(&mut s, |g| g.exec_model = None)?,
         _ => unreachable!(),

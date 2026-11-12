@@ -275,7 +275,8 @@ fn every_registry_key_is_handled_by_all_subcommands() {
             | "claude.console_classic_screen"
             | "copilot.allow_builtin_mcp_servers_i_understand_the_risk"
             | "cursor.allow_codebase_indexing_i_understand_the_risk"
-            | "claude.run_without_guard_proof_i_understand_the_risk" => "true",
+            | "claude.run_without_guard_proof_i_understand_the_risk"
+            | "antigravity.run_without_guard_proof_i_understand_the_risk" => "true",
             "claude.max_minutes_per_issue" => "45",
             "runs.keep" => "50",
             "files.upload_max_mb" => "25",
@@ -283,7 +284,9 @@ fn every_registry_key_is_handled_by_all_subcommands() {
             "claude.plan_effort"
             | "claude.exec_effort"
             | "copilot.plan_effort"
-            | "copilot.exec_effort" => "high",
+            | "copilot.exec_effort"
+            | "antigravity.plan_effort"
+            | "antigravity.exec_effort" => "high",
             // Validated against the vendor's id set, so `x` is refused.
             "gemini.plan_model" | "gemini.exec_model" => "gemini-3.5-flash",
             _ => "x",
