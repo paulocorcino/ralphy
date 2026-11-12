@@ -71,6 +71,15 @@ async fn security_routes_reflect_and_gate_the_real_stores() {
     // Sole test in this file → no intra-process env race.
     std::env::set_var("RALPHY_DAEMON_DIR", dir.path());
 
+    no_armed_seed_gates_nothing().await;
+    an_armed_seed_allows_require_login(&dir).await;
+    require_login_gates_the_next_request(&dir).await;
+
+    std::env::remove_var("RALPHY_DAEMON_DIR");
+}
+
+/// Steps 1-5: with no armed seed, nothing is enrolled and require-login is refused.
+async fn no_armed_seed_gates_nothing() {
     // 1. Empty store → every factor unset.
     let resp = fresh_router()
         .oneshot(get("/api/security/state"))
@@ -139,14 +148,17 @@ async fn security_routes_reflect_and_gate_the_real_stores() {
         body_string(resp).await.contains("\"confirmed\":false"),
         "a wrong code does not confirm"
     );
+}
 
+/// Steps 6-7: an armed seed lets require-login turn on and persist.
+async fn an_armed_seed_allows_require_login(dir: &tempfile::TempDir) {
     // 6. Arm the live seed directly (a confirmed enrolment): totp is enrolled, but
     //    require_login is the PERSISTED flag — still off until the operator opts in.
     ralphy_daemon::totp::save_seed_to(
         &ralphy_daemon::totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
         &ralphy_daemon::totp::seed_path_in(dir.path()),
     )
-    .unwrap();
+    .expect("save the seed");
     let resp = fresh_router()
         .oneshot(get("/api/security/state"))
         .await
@@ -171,12 +183,15 @@ async fn security_routes_reflect_and_gate_the_real_stores() {
         body_string(resp).await.contains("\"require_login\":true"),
         "require-login flag now reads back on"
     );
+}
 
+/// Step 8: turning require-login on gates the next request of the same router.
+async fn require_login_gates_the_next_request(dir: &tempfile::TempDir) {
     // 8. The live runtime swap (amendment §A): one ROUTER instance (one shared
     //    AuthState) starts on localhost (open), and enabling require-login through
     //    it gates the very next request — no restart. Disable the flag first so the
     //    router boots open.
-    ralphy_daemon::auth::set_require_login_in(dir.path(), false).unwrap();
+    ralphy_daemon::auth::set_require_login_in(dir.path(), false).expect("turn require-login off");
     let app = fresh_router();
     // Before: a gated route is authorized without any credential (Localhost).
     let resp = app
@@ -207,6 +222,4 @@ async fn security_routes_reflect_and_gate_the_real_stores() {
         StatusCode::UNAUTHORIZED,
         "the gate engaged immediately for the next request"
     );
-
-    std::env::remove_var("RALPHY_DAEMON_DIR");
 }

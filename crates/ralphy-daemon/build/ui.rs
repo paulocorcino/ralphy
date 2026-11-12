@@ -76,7 +76,7 @@ fn copy_dir(src: &Path, out: &Path, top: bool) -> Result<()> {
         if path.is_dir() {
             copy_dir(&path, &out.join(&name), false)?;
         } else if is_left_out(&name, top) {
-            continue;
+            // A left-out file is not copied.
         } else if let Some(stem) = name.strip_suffix(".ts") {
             let js = format!("{stem}.js");
             if src.join(&js).exists() {

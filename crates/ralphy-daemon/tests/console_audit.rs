@@ -116,7 +116,7 @@ async fn open(port: u16, fields: serde_json::Value, cookie: &str) -> Option<Ws> 
             match channel.next().await {
                 Some(Ok(Message::Binary(_))) => return Ok(true),
                 Some(Ok(Message::Close(_))) | None => return Ok(false),
-                Some(Ok(_)) => continue,
+                Some(Ok(_)) => {}
                 Some(Err(error)) => {
                     return Err(format!("the channel failed on the socket: {error:?}"))
                 }

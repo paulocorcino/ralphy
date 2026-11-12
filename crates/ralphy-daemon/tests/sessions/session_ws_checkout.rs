@@ -168,6 +168,42 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
     });
     let repo = "owner/wtlab";
 
+    let (ws_a, id_a) = a_console_runs_in_the_worktree(port, repo).await;
+    an_unknown_checkout_is_refused(port, repo, &root, &wt).await;
+    let (mut ws_c, id_c) =
+        a_console_with_no_checkout_runs_at_the_root(port, repo, &root, id_a).await;
+    let mut ws_d = a_reattach_names_the_checkout_again(port, repo, id_a).await;
+
+    // --- (e) the sessions listing carries the key only where it applies.
+    let rows = sessions(port).await;
+    let row_a = rows
+        .iter()
+        .find(|r| r["id"].as_u64() == Some(id_a))
+        .unwrap_or_else(|| panic!("row for {id_a} in {rows:?}"));
+    let row_c = rows
+        .iter()
+        .find(|r| r["id"].as_u64() == Some(id_c))
+        .unwrap_or_else(|| panic!("row for {id_c} in {rows:?}"));
+    assert_eq!(
+        row_a["checkout"], "wt-a",
+        "(e) row a carries the name; {row_a}"
+    );
+    assert!(
+        row_c.get("checkout").is_none(),
+        "(e) row c has NO checkout key (serialised only when present); {row_c}"
+    );
+
+    let mut ws_f = a_cursor_console_writes_the_opt_out_in_the_worktree(port, repo, &wt).await;
+
+    // `ws_a` was evicted by the takeover; `ws_d` now writes for that child.
+    drop(ws_a);
+    for ws in [&mut ws_c, &mut ws_d, &mut ws_f] {
+        ws.send(terminal(b"quit\r")).await.unwrap();
+    }
+}
+
+/// (a) A console with a checkout runs in the worktree and names it.
+async fn a_console_runs_in_the_worktree(port: u16, repo: &str) -> (page::Channel, u64) {
     // --- (a) a claude console with `checkout=wt-a` runs IN the worktree and
     // announces the name.
     let mut ws_a = page::console(
@@ -191,7 +227,11 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
         "(a) the child must run in the worktree; CWD was {cwd:?}"
     );
     let id_a = open["session"].as_u64().expect("a numeric session id");
+    (ws_a, id_a)
+}
 
+/// (b) An unknown checkout is refused before any session or file exists.
+async fn an_unknown_checkout_is_refused(port: u16, repo: &str, root: &Path, wt: &Path) {
     // --- (b) an unknown name is refused and leaves no session row.
     let refusal = page::refused(
         port,
@@ -220,11 +260,19 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
         "(b') the one refusal text"
     );
     assert!(
-        no_opt_out_anywhere(&root, &wt),
+        no_opt_out_anywhere(root, wt),
         "(b') a bad name must not write .cursorindexingignore at the root or the worktree"
     );
     assert_eq!(sessions(port).await.len(), 1, "(b') no session row either");
+}
 
+/// (c) A console with no checkout runs at the registry path.
+async fn a_console_with_no_checkout_runs_at_the_root(
+    port: u16,
+    repo: &str,
+    root: &Path,
+    id_a: u64,
+) -> (page::Channel, u64) {
     // --- (c) no key: the primary tree, no `checkout` announced.
     let mut ws_c =
         page::console(port, serde_json::json!({ "repo": repo, "agent": "claude" })).await;
@@ -239,18 +287,27 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
     // runner the temp dir is `RUNNER~1` — an 8.3 alias of `runneradmin` — so
     // BOTH sides go through `canonicalize` before they meet.
     let canonical = |path: &Path| {
-        flatten(&path.canonicalize().unwrap().to_string_lossy())
-            .trim_start_matches("//?/")
-            .to_owned()
+        flatten(
+            &path
+                .canonicalize()
+                .expect("the path exists")
+                .to_string_lossy(),
+        )
+        .trim_start_matches("//?/")
+        .to_owned()
     };
     assert_eq!(
         canonical(Path::new(&cwd)),
-        canonical(&root),
+        canonical(root),
         "(c) the child must run at the registry path"
     );
     let id_c = open["session"].as_u64().expect("a numeric session id");
     assert_ne!(id_a, id_c);
+    (ws_c, id_c)
+}
 
+/// (d) A reattach announces the checkout again from the record.
+async fn a_reattach_names_the_checkout_again(port: u16, repo: &str, id_a: u64) -> page::Channel {
     // --- (d) a reattach re-announces the checkout from the record (`takeover`:
     // leg (a)'s socket still holds the writer slot; the snapshot replays `READY`).
     let mut ws_d = page::console(
@@ -266,26 +323,15 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
     );
     // A relaying daemon reads `replay` to count the next frame as a replay.
     assert_eq!(open["replay"], true, "(d) a replay follows; got {open}");
+    ws_d
+}
 
-    // --- (e) the sessions listing carries the key only where it applies.
-    let rows = sessions(port).await;
-    let row_a = rows
-        .iter()
-        .find(|r| r["id"].as_u64() == Some(id_a))
-        .unwrap_or_else(|| panic!("row for {id_a} in {rows:?}"));
-    let row_c = rows
-        .iter()
-        .find(|r| r["id"].as_u64() == Some(id_c))
-        .unwrap_or_else(|| panic!("row for {id_c} in {rows:?}"));
-    assert_eq!(
-        row_a["checkout"], "wt-a",
-        "(e) row a carries the name; {row_a}"
-    );
-    assert!(
-        row_c.get("checkout").is_none(),
-        "(e) row c has NO checkout key (serialised only when present); {row_c}"
-    );
-
+/// (f) A Cursor console in a worktree writes its opt-out there.
+async fn a_cursor_console_writes_the_opt_out_in_the_worktree(
+    port: u16,
+    repo: &str,
+    wt: &Path,
+) -> page::Channel {
     // --- (f) a Cursor console in the worktree writes the opt-out IN the worktree.
     let mut ws_f = page::console(
         port,
@@ -295,14 +341,9 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
     let (_, open) = read_until(&mut ws_f, "READY").await;
     assert_eq!(open.expect("session-open")["checkout"], "wt-a");
     assert_eq!(
-        std::fs::read_to_string(wt.join(".cursorindexingignore")).unwrap(),
+        std::fs::read_to_string(wt.join(".cursorindexingignore")).expect("read the file"),
         "*\n",
         "(f) the indexing gate protects the worktree the console lives in"
     );
-
-    // `ws_a` was evicted by the takeover; `ws_d` now writes for that child.
-    drop(ws_a);
-    for ws in [&mut ws_c, &mut ws_d, &mut ws_f] {
-        ws.send(terminal(b"quit\r")).await.unwrap();
-    }
+    ws_f
 }

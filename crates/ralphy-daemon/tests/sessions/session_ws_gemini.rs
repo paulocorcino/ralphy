@@ -59,6 +59,15 @@ async fn http_get(port: u16, path: &str) -> String {
         .unwrap_or(raw)
 }
 
+/// The PTY wraps and reflows, so every comparison runs on a separator-
+/// normalized, whitespace-stripped view.
+fn flatten(s: &str) -> String {
+    s.replace('\\', "/")
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect()
+}
+
 /// Open a gemini console in `owner/geminilab`, read back the env var and argv
 /// the LIVE child was spawned with, and assert both halves of the containment:
 /// the repo's own `GEMINI_CLI_HOME` and `--policy` pointing at the owned root's
@@ -70,15 +79,6 @@ async fn assert_launches_contained(port: u16, home: &Path, policy: &Path) {
         .await
         .expect("send the frame");
     ws.send(terminal(b"argv\r")).await.expect("send the frame");
-
-    // The PTY wraps and reflows, so every comparison runs on a separator-
-    // normalized, whitespace-stripped view.
-    fn flatten(s: &str) -> String {
-        s.replace('\\', "/")
-            .chars()
-            .filter(|c| !c.is_whitespace())
-            .collect()
-    }
     let want_env = flatten(&format!("ENV:GEMINI_CLI_HOME={}", home.to_string_lossy()));
     let want_argv = flatten(&format!("ARGV:--policy {}", policy.to_string_lossy()));
 

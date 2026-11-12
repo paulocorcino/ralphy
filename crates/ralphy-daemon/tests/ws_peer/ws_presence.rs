@@ -122,9 +122,8 @@ async fn ws_loop_stops_on_shutdown() {
         // Drain until the stream closes (a Close frame, then None).
         loop {
             match ws.next().await {
-                None | Some(Ok(Message::Close(_))) => break,
-                Some(Ok(_)) => continue,
-                Some(Err(_)) => break,
+                None | Some(Ok(Message::Close(_)) | Err(_)) => break,
+                Some(Ok(_)) => {}
             }
         }
     })
