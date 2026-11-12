@@ -112,7 +112,8 @@ fn assert_in_worktree(text: &str, leg: &str) {
     let cwd = cwd_of(text);
     assert!(
         cwd.ends_with(".ralphy/worktrees/wt-a"),
-        "{leg}: the child must run in the worktree; cwd was {cwd:?}"
+        "{leg}: the child must run in the worktree; cwd was {}",
+        cwd.display()
     );
 }
 
@@ -124,7 +125,8 @@ fn assert_at_root(text: &str, root: &Path, leg: &str) {
     assert_eq!(
         cwd.canonicalize().expect("the path exists"),
         root.canonicalize().expect("the path exists"),
-        "{leg}: the child must run at the registry path; cwd was {cwd:?}"
+        "{leg}: the child must run at the registry path; cwd was {}",
+        cwd.display()
     );
 }
 
@@ -390,7 +392,8 @@ async fn an_unknown_checkout_spawns_nothing(port: u16, slug: &str, root: &Path) 
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert!(
         !sentinel.exists(),
-        "an unknown checkout must spawn nothing (sentinel found at {sentinel:?})"
+        "an unknown checkout must spawn nothing (sentinel found at {})",
+        sentinel.display()
     );
     std::env::remove_var("RALPHY_TEST_DONE_FILE");
 }

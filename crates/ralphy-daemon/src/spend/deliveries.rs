@@ -127,7 +127,7 @@ struct Accum {
 }
 
 impl Accum {
-    fn add(&mut self, row: &Priced) {
+    fn add(&mut self, row: &Priced<'_>) {
         self.seen = true;
         self.tokens += row.tokens.total();
         // A row with no cost carries no volume and no verdict of its own.
@@ -159,7 +159,7 @@ impl Accum {
 }
 
 /// Group the classified rows into the delivery column and the overhead lines.
-pub(crate) fn fold(classified: &Classified) -> Folded {
+pub(crate) fn fold(classified: &Classified<'_>) -> Folded {
     let mut deliveries: BTreeMap<u64, Accum> = BTreeMap::new();
     let mut consolidation = Accum::default();
     let mut interactive = Accum::default();
@@ -261,7 +261,7 @@ fn delivery_row(issue: u64, accum: &Accum, column_usd: f64) -> DeliveryRow {
 
 /// The tile strip's five figures, over the same rows and the same grouping the
 /// grid uses.
-fn kpis(classified: &Classified, deliveries: &BTreeMap<u64, Accum>) -> Kpis {
+fn kpis(classified: &Classified<'_>, deliveries: &BTreeMap<u64, Accum>) -> Kpis {
     // EVERY delivery counts, including one whose whole volume was unpriceable:
     // dropping it would inflate the typical cost and hide the gap.
     let mut costs = deliveries

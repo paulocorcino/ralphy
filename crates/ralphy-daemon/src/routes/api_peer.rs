@@ -287,15 +287,15 @@ pub(crate) fn peer_routes(s: &RouterShared) -> Router {
             post({
                 let registry = s.registry_path.clone();
                 let daemon_id = s.daemon_id.clone();
-                let sessions = s.sessions.clone();
-                let audit = s.audit.clone();
+                let sessions = Arc::clone(&s.sessions);
+                let audit = Arc::clone(&s.audit);
                 move |caller: Option<axum::Extension<super::audit_layer::Caller>>,
                       body: Json<protocol::Command>| {
-                    let who = super::audit_layer::SocketAudit::of(audit.clone(), caller);
+                    let who = super::audit_layer::SocketAudit::of(Arc::clone(&audit), caller);
                     peer_command_route(
                         registry.clone(),
                         daemon_id.clone(),
-                        sessions.clone(),
+                        Arc::clone(&sessions),
                         who,
                         body,
                     )
@@ -310,16 +310,16 @@ pub(crate) fn peer_routes(s: &RouterShared) -> Router {
             "/api/peer/tree/poll",
             post({
                 let registry = s.registry_path.clone();
-                let subs = s.peer_watch_subs.clone();
+                let subs = Arc::clone(&s.peer_watch_subs);
                 move |body: Json<PeerTreePoll>| {
-                    peer_tree_poll_route(registry.clone(), subs.clone(), body)
+                    peer_tree_poll_route(registry.clone(), Arc::clone(&subs), body)
                 }
             }),
         )
         .route(
             "/api/peer/tree/close",
             post({
-                let subs = s.peer_watch_subs.clone();
+                let subs = Arc::clone(&s.peer_watch_subs);
                 move |body: Json<PeerTreeClose>| {
                     std::future::ready(peer_tree_close_route(&subs, body))
                 }

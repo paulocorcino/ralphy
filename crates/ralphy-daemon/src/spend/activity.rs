@@ -45,7 +45,7 @@ struct Day {
 /// quiet rather than as missing; `all` emits only days with activity, so a long
 /// history cannot make the response unbounded.
 pub(crate) fn fold(
-    classified: &Classified,
+    classified: &Classified<'_>,
     window: Window,
     since: Option<&str>,
 ) -> Vec<ActivityDay> {

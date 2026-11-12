@@ -203,12 +203,12 @@ async fn post_dismiss(
 }
 
 pub(crate) fn audit_routes(s: &RouterShared) -> Router {
-    let facts_audit = s.audit.clone();
-    let devices_audit = s.audit.clone();
-    let events_audit = s.audit.clone();
-    let notices_audit = s.audit.clone();
-    let notices_auth = s.auth.clone();
-    let dismiss_audit = s.audit.clone();
+    let facts_audit = Arc::clone(&s.audit);
+    let devices_audit = Arc::clone(&s.audit);
+    let events_audit = Arc::clone(&s.audit);
+    let notices_audit = Arc::clone(&s.audit);
+    let notices_auth = Arc::clone(&s.auth);
+    let dismiss_audit = Arc::clone(&s.audit);
     let registry_path = s.registry_path.clone();
     Router::new()
         .route(
@@ -216,7 +216,7 @@ pub(crate) fn audit_routes(s: &RouterShared) -> Router {
             post(
                 move |caller: Option<Extension<super::audit_layer::Caller>>,
                       Json(client): Json<ClientFacts>| {
-                    post_facts(facts_audit.clone(), caller, client)
+                    post_facts(Arc::clone(&facts_audit), caller, client)
                 },
             ),
         )
@@ -224,19 +224,23 @@ pub(crate) fn audit_routes(s: &RouterShared) -> Router {
         .route(
             "/api/audit/devices",
             get(move |device: Option<Extension<DeviceId>>| {
-                get_devices(devices_audit.clone(), device)
+                get_devices(Arc::clone(&devices_audit), device)
             }),
         )
         .route(
             "/api/audit/events",
             get(move |Query(q): Query<EventsQuery>| {
-                get_events(events_audit.clone(), registry_path.clone(), q)
+                get_events(Arc::clone(&events_audit), registry_path.clone(), q)
             }),
         )
         .route(
             "/api/audit/logins/notices",
             get(move |device: Option<Extension<DeviceId>>| {
-                get_notices(notices_audit.clone(), notices_auth.clone(), device)
+                get_notices(
+                    Arc::clone(&notices_audit),
+                    Arc::clone(&notices_auth),
+                    device,
+                )
             }),
         )
         .route(
@@ -244,7 +248,7 @@ pub(crate) fn audit_routes(s: &RouterShared) -> Router {
             post(
                 move |caller: Option<Extension<super::audit_layer::Caller>>,
                       Form(form): Form<DismissForm>| {
-                    post_dismiss(dismiss_audit.clone(), caller, form)
+                    post_dismiss(Arc::clone(&dismiss_audit), caller, form)
                 },
             ),
         )

@@ -84,7 +84,7 @@ fn a_publish_between_the_replay_and_the_subscribe_waits_for_the_lock() {
     publish(&kept, &tx, b"before\r\n".to_vec());
     let waited = std::rc::Rc::new(std::cell::Cell::new(false));
     between_replay_and_subscribe::set({
-        let (kept, tx, waited) = (kept.clone(), tx.clone(), waited.clone());
+        let (kept, tx, waited) = (Arc::clone(&kept), tx.clone(), std::rc::Rc::clone(&waited));
         // A publish takes the lock; a busy lock makes it wait.
         move || match kept.try_lock() {
             Ok(free) => {
@@ -226,7 +226,7 @@ async fn a_resize_gives_the_screen_the_clamped_session_size() {
             console_spec(std::env::temp_dir(), 24, 80, None),
         )
         .expect("the platform shell must spawn");
-    let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
+    let sess = Arc::clone(&manager.sessions.lock().expect("sessions mutex")[&id]);
     let size = || {
         sess.kept
             .lock()
@@ -286,7 +286,7 @@ async fn a_resize_by_the_writer_reaches_every_attachment() {
         "the same size is not sent again"
     );
 
-    let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
+    let sess = Arc::clone(&manager.sessions.lock().expect("sessions mutex")[&id]);
     let mut kept = sess.kept.lock().expect("kept output mutex");
     assert!(kept.on_screen(|_| panic!("a test panic")).is_none());
     drop(kept);

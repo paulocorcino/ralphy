@@ -24,6 +24,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
+mod rel;
+pub use rel::{is_head_rel, norm_rel};
+
 use anyhow::{Context, Result};
 use notify::event::ModifyKind;
 use notify::{EventKind, PollWatcher, RecursiveMode};
@@ -113,7 +116,7 @@ impl RepoWatcher {
             WatchMode::Native,
             repo.to_owned(),
             canon_root.clone(),
-            watch_set.clone(),
+            Arc::clone(&watch_set),
             tx.clone(),
         )?;
         Ok(Self {
@@ -147,7 +150,7 @@ impl RepoWatcher {
             WatchMode::Poll,
             self.repo.clone(),
             self.root.clone(),
-            self.watch_set.clone(),
+            Arc::clone(&self.watch_set),
             self.tx.clone(),
         )?;
         let dirs: Vec<String> = self.watches.keys().cloned().collect();
@@ -172,6 +175,14 @@ pub struct WatcherManager {
     // `poll.rs`), so a test makes the next degrade fail by hand.
     #[cfg(test)]
     fail_next_degrade: std::sync::atomic::AtomicBool,
+}
+
+impl std::fmt::Debug for WatcherManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WatcherManager")
+            .field("max_watches", &self.max_watches)
+            .finish_non_exhaustive()
+    }
 }
 
 impl WatcherManager {
@@ -470,26 +481,6 @@ fn rel_to_slug(rel: &Path) -> String {
         .map(|c| c.as_os_str().to_string_lossy())
         .collect::<Vec<_>>()
         .join("/")
-}
-
-/// Normalize an incoming rel dir to the watch-set form: `/`-separated, no leading
-/// or trailing slash; `""` stays the root. Public so a tree connection stores
-/// a connection's watched dirs in the SAME form the nudges carry, so its
-/// per-connection filter matches.
-pub fn norm_rel(rel: &str) -> String {
-    rel.replace('\\', "/").trim_matches('/').to_owned()
-}
-
-/// Whether `rel` is a dir the HEAD watch holds: a gitdir in the standard
-/// layout (`.git`, `.git/worktrees/<name>`) or its `logs/`. Lexical only.
-pub fn is_head_rel(rel: &str) -> bool {
-    let gitdir = rel.strip_suffix("/logs").unwrap_or(rel);
-    if gitdir == ".git" {
-        return true;
-    }
-    gitdir
-        .strip_prefix(".git/worktrees/")
-        .is_some_and(|name| !name.is_empty() && !name.contains('/'))
 }
 
 #[cfg(test)]

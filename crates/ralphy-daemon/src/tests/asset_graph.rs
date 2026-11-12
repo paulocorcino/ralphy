@@ -20,7 +20,7 @@ fn every_shell_links_the_whole_cascade() {
         // `.css` only, matching `served_css()`: anything else dropped into
         // `styles/` is not part of the cascade and must not be demanded as a
         // `<link>` in all three documents.
-        .filter(|path| path.ends_with(".css"))
+        .filter(|path| has_extension(path, "css"))
         .collect();
     expected.sort();
 
@@ -58,7 +58,7 @@ fn the_sweep_set_covers_every_asset_we_wrote() {
             "{shell} must be swept — it is a served document this repo wrote"
         );
     }
-    let js = swept.iter().filter(|p| p.ends_with(".js")).count();
+    let js = swept.iter().filter(|p| has_extension(p, "js")).count();
     assert!(
         js >= 19,
         "expected at least the 19 non-vendor .js assets the tree held when \
@@ -227,7 +227,7 @@ fn the_desk_loads_every_asset_it_embeds() {
         if path.starts_with("vendor/") || popup_entries.contains(&path.as_str()) {
             continue;
         }
-        if !path.ends_with(".js") && !path.ends_with(".css") {
+        if !has_extension(&path, "js") && !has_extension(&path, "css") {
             continue;
         }
         assert!(

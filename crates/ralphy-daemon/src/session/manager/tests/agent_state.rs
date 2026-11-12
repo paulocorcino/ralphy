@@ -53,7 +53,7 @@ fn hooked_console(
             spec,
         )
         .expect("the platform shell must spawn");
-    let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
+    let sess = Arc::clone(&manager.sessions.lock().expect("sessions mutex")[&id]);
     (id, att, sess, status)
 }
 
@@ -187,7 +187,7 @@ fn waiting_for_a_permission(
             spec,
         )
         .expect("the platform shell must spawn");
-    let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
+    let sess = Arc::clone(&manager.sessions.lock().expect("sessions mutex")[&id]);
     sess.poll_status(SystemTime::now(), None);
     (id, att, sess)
 }
@@ -343,7 +343,7 @@ async fn a_failed_start_check_silences_only_a_vendor_that_runs_ralphy() {
                 spec,
             )
             .expect("the platform shell must spawn");
-        let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
+        let sess = Arc::clone(&manager.sessions.lock().expect("sessions mutex")[&id]);
         sess.poll_status(SystemTime::now(), Some("exit 127"));
         let shown = block_at(&sess, SystemTime::now());
         let got = shown.is_some_and(|b| b.source == Some(crate::agent_state::Unreported::Silent));

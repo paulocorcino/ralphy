@@ -56,8 +56,18 @@ pub struct Attachment {
     pub(crate) replay_size: (u16, u16),
     pub evict: Arc<EvictToken>,
     pub writer: bool,
-    _guard: AttachGuard,
+    guard: AttachGuard,
     pub(super) sess: Arc<ManagedSession>,
+}
+
+impl std::fmt::Debug for Attachment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Attachment")
+            .field("offset", &self.offset)
+            .field("resume", &self.resume)
+            .field("writer", &self.writer)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Attachment {
@@ -74,10 +84,10 @@ impl Attachment {
             rx: subscribed.rx,
             size: subscribed.size,
             replay_size: subscribed.replay_size,
-            evict: token.clone(),
+            evict: Arc::clone(&token),
             writer,
-            _guard: AttachGuard {
-                sess: sess.clone(),
+            guard: AttachGuard {
+                sess: Arc::clone(&sess),
                 token,
                 writer,
             },
@@ -129,13 +139,17 @@ impl Attachment {
     /// holds — how a fresh launch, which claims its slot inside the spawn,
     /// names its holder. A no-op for a watcher and for a slot another
     /// attachment has since taken.
+    ///
+    /// # Panics
+    ///
+    /// When the writer slot lock was poisoned by a panic in another thread.
     pub fn hold_as(&self, holder: &str, attempt: Option<u64>) {
         if !self.writer {
             return;
         }
         let mut slot = self.sess.attached.lock().expect("attached mutex");
         if let Some(writer) = slot.as_mut() {
-            if Arc::ptr_eq(&writer.token, &self._guard.token) {
+            if Arc::ptr_eq(&writer.token, &self.guard.token) {
                 writer.holder = Some(holder.to_owned());
                 writer.attempt = attempt;
             }

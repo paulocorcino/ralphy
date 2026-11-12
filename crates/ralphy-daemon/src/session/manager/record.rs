@@ -18,12 +18,24 @@ pub struct RecordClaim {
     guard: Option<tokio::sync::OwnedMutexGuard<()>>,
 }
 
+impl std::fmt::Debug for RecordClaim {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RecordClaim")
+            .field("record", &self.record)
+            .finish_non_exhaustive()
+    }
+}
+
 impl RecordClaim {
     pub fn record(&self) -> &str {
         &self.record
     }
 
     /// The live session that already serves this record, if any.
+    ///
+    /// # Panics
+    ///
+    /// When the sessions lock was poisoned by a panic in another thread.
     pub fn live(&self) -> Option<SessionId> {
         self.manager
             .sessions
@@ -51,17 +63,21 @@ impl SessionManager {
     /// Hold `record` until the returned claim is dropped. A launch that names
     /// its record takes this BEFORE it looks for a live session, and keeps it
     /// until the session it spawns is in the list.
+    ///
+    /// # Panics
+    ///
+    /// When the records lock was poisoned by a panic in another thread.
     pub async fn claim_record(self: &Arc<Self>, record: &str) -> RecordClaim {
-        let gate = self
-            .records
-            .lock()
-            .expect("records mutex")
-            .entry(record.to_owned())
-            .or_default()
-            .clone();
-        let guard = gate.clone().lock_owned().await;
+        let gate = Arc::clone(
+            self.records
+                .lock()
+                .expect("records mutex")
+                .entry(record.to_owned())
+                .or_default(),
+        );
+        let guard = Arc::clone(&gate).lock_owned().await;
         RecordClaim {
-            manager: self.clone(),
+            manager: Arc::clone(self),
             record: record.to_owned(),
             gate,
             guard: Some(guard),

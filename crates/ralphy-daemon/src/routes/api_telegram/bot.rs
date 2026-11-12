@@ -223,23 +223,25 @@ fn answer(done: Option<Result<BotReply, Refusal>>) -> Response {
 
 /// The setup routes over `b`.
 pub(crate) fn bot_routes(b: BotShared) -> Router {
-    let (r, s, d, c, t) = (b.clone(), b.clone(), b.clone(), b.clone(), b);
-    let token =
-        move |headers: HeaderMap, Json(body): Json<TokenBody>| set_token(s.clone(), headers, body);
-    let bot = get(move || read(r.clone()))
+    let (reader, setter, remover) = (b.clone(), b.clone(), b.clone());
+    let (chats, tester) = (b.clone(), b);
+    let token = move |headers: HeaderMap, Json(body): Json<TokenBody>| {
+        set_token(setter.clone(), headers, body)
+    };
+    let bot = get(move || read(reader.clone()))
         .post(token)
         .delete(move || {
-            let d = d.clone();
-            async move { answer(blocking_read(move || remove(&d)).await) }
+            let remover = remover.clone();
+            async move { answer(blocking_read(move || remove(&remover)).await) }
         })
         .layer(DefaultBodyLimit::max(TOKEN_BODY_MAX_BYTES));
     let chat = move || {
-        let c = c.clone();
-        async move { answer(blocking_read(move || find_chat(&c)).await) }
+        let chats = chats.clone();
+        async move { answer(blocking_read(move || find_chat(&chats)).await) }
     };
     let test = move || {
-        let t = t.clone();
-        async move { answer(blocking_read(move || send_test(&t)).await) }
+        let tester = tester.clone();
+        async move { answer(blocking_read(move || send_test(&tester)).await) }
     };
     Router::new()
         .route("/api/telegram/bot", bot)

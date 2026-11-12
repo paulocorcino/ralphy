@@ -35,6 +35,14 @@ pub struct Hash {
     dk: [u8; DK_LEN],
 }
 
+impl std::fmt::Debug for Hash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Hash")
+            .field("iterations", &self.iterations)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Derive the PBKDF2-HMAC-SHA1 key for `pw` under `salt`/`iterations`.
 fn derive(pw: &str, salt: &[u8], iterations: u32) -> [u8; DK_LEN] {
     let mut dk = [0u8; DK_LEN];
@@ -44,6 +52,10 @@ fn derive(pw: &str, salt: &[u8], iterations: u32) -> [u8; DK_LEN] {
 
 impl Hash {
     /// Hash `pw` with a fresh CSPRNG salt at the fixed iteration count.
+    ///
+    /// # Panics
+    ///
+    /// When the OS random source is not available.
     pub fn hash_password(pw: &str) -> Hash {
         let mut salt = [0u8; SALT_LEN];
         getrandom::fill(&mut salt).expect("the OS CSPRNG must be available to salt a password");

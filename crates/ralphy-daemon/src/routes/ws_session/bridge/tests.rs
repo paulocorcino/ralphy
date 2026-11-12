@@ -146,8 +146,8 @@ async fn join_pieces(mut stream: SplitStream<WebSocket>, inbound: mpsc::Sender<V
         else {
             panic!("the client sends only pieces of channel {CHANNEL}");
         };
-        let joined = joiner.push(more, &piece).expect("a frame within the cap");
-        if let Some(inner) = joined {
+        let whole = joiner.push(more, &piece).expect("a frame within the cap");
+        if let Some(inner) = whole {
             if inbound.send(inner).await.is_err() {
                 return;
             }

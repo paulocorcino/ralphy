@@ -214,11 +214,16 @@ fn served_css() -> String {
 /// hardcoded lists these replaced went stale within a week of being written
 /// (`wb-release.js` landed in #391 and was born unswept), and a list that
 /// only grows by someone remembering is not a gate.
+/// Whether the last `.`-part of `name` is `ext`, compared as written.
+fn has_extension(name: &str, ext: &str) -> bool {
+    Path::new(name).extension().is_some_and(|e| e == ext)
+}
+
 fn swept_ui_assets() -> Vec<String> {
     let mut out: Vec<String> = embedded_ui_paths()
         .into_iter()
         .filter(|p| !p.starts_with("vendor/"))
-        .filter(|p| p.ends_with(".js") || p.ends_with(".html") || p.ends_with(".css"))
+        .filter(|p| has_extension(p, "js") || has_extension(p, "html") || has_extension(p, "css"))
         // A page is fetched at its route; its file name is a 404.
         .map(
             |p| match assets::Shell::ALL.iter().find(|s| s.file() == p) {

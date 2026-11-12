@@ -57,7 +57,7 @@ pub(crate) struct TelegramShared {
 
 /// The state of this daemon now, read off the runtime: the config is a file.
 async fn own_state(t: &TelegramShared) -> Option<TelegramState> {
-    let (config, claim) = (t.config.clone(), t.claim.clone());
+    let (config, claim) = (t.config.clone(), std::sync::Arc::clone(&t.claim));
     super::blocking_read(move || telegram_state::state_with(&config, &claim, SystemTime::now()))
         .await
 }
@@ -225,7 +225,7 @@ fn is_machine_bearer(policy: &crate::auth::AuthPolicy, header: Option<&str>) -> 
 pub(crate) fn telegram_routes(s: &RouterShared) -> Router {
     let t = TelegramShared {
         config: s.stores.telegram_config.clone(),
-        claim: s.telegram_claim.clone(),
+        claim: std::sync::Arc::clone(&s.telegram_claim),
         peers_dir: s.peers_dir.clone(),
         daemon_id: s.daemon_id.clone(),
         name: s.identity.as_ref().map(|i| i.name.clone()),
@@ -236,7 +236,7 @@ pub(crate) fn telegram_routes(s: &RouterShared) -> Router {
         runtime.spawn(telegram_claim::run(
             telegram_claim::Claimer {
                 config: t.config.clone(),
-                claim: t.claim.clone(),
+                claim: std::sync::Arc::clone(&t.claim),
                 peers_dir: t.peers_dir.clone(),
                 daemon_id,
             },
@@ -245,14 +245,14 @@ pub(crate) fn telegram_routes(s: &RouterShared) -> Router {
     }
     let bot = bot::BotShared {
         config: t.config.clone(),
-        claim: t.claim.clone(),
+        claim: std::sync::Arc::clone(&t.claim),
         transport: crate::attention::telegram::api_transports(),
     };
     let read = {
         let t = t.clone();
         move |Query(query): Query<TelegramQuery>| telegram_route(t.clone(), query.local == Some(1))
     };
-    let auth = s.auth.clone();
+    let auth = std::sync::Arc::clone(&s.auth);
     let claim = move |headers: HeaderMap, Json(body): Json<ClaimBody>| {
         let t = t.clone();
         let machine = is_machine_bearer(

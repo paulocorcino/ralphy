@@ -188,7 +188,7 @@ impl Attached {
         // leaks the writer slot AND hangs the bridge forever (the
         // `Attachment` keeps `tx` alive, so `rx.recv()` never returns
         // `Closed`).
-        let evict = self.attach.evict.clone();
+        let evict = std::sync::Arc::clone(&self.attach.evict);
         let notified = evict.notify.notified();
         tokio::pin!(notified);
         notified.as_mut().enable();

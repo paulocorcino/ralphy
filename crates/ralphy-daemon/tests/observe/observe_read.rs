@@ -104,7 +104,11 @@ pub(super) async fn serve_git_repo() -> (u16, String) {
         .current_dir(dir.path())
         .status()
         .expect("git must be installed to run this test (see environment.md)");
-    assert!(status.success(), "git init failed in {:?}", dir.path());
+    assert!(
+        status.success(),
+        "git init failed in {}",
+        dir.path().display()
+    );
 
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();

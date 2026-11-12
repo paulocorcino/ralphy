@@ -33,6 +33,10 @@ pub fn url(port: u16) -> String {
 }
 
 /// Connect a page socket to the daemon on `127.0.0.1:<port>`.
+///
+/// # Panics
+///
+/// When the daemon does not answer as the test expects.
 pub async fn connect(port: u16) -> Ws {
     let (ws, _resp) = tokio_tungstenite::connect_async(url(port))
         .await
@@ -42,6 +46,10 @@ pub async fn connect(port: u16) -> Ws {
 
 /// Connect a page socket with a request the test built for [`url`], with its
 /// own headers.
+///
+/// # Panics
+///
+/// When the daemon does not answer as the test expects.
 pub async fn connect_request(request: Request) -> Ws {
     let (ws, _resp) = tokio_tungstenite::connect_async(request)
         .await
@@ -80,6 +88,15 @@ pub struct Channel {
     ended: bool,
 }
 
+impl std::fmt::Debug for Channel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Channel")
+            .field("closed", &self.closed)
+            .field("ended", &self.ended)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Channel {
     fn on(ws: Ws, open_on_send: bool) -> Channel {
         Channel {
@@ -93,6 +110,10 @@ impl Channel {
 
     /// Open channel 1 of `kind` on `ws`. The keys of `fields`, a JSON object,
     /// go into the open payload beside `channel` and `kind`.
+    ///
+    /// # Panics
+    ///
+    /// When the daemon does not answer as the test expects.
     pub async fn open(mut ws: Ws, kind: &str, fields: serde_json::Value) -> Channel {
         ws.send(open_frame(kind, fields))
             .await
@@ -272,6 +293,10 @@ pub async fn changes(port: u16) -> Channel {
 /// of its refusal: exactly one `session-end` with `reason: "refused"` and a
 /// string `message`, then `channel.closed` with reason `refused`. Any other
 /// frame panics.
+///
+/// # Panics
+///
+/// When the daemon does not answer as the test expects.
 pub async fn refused(port: u16, fields: serde_json::Value) -> serde_json::Value {
     let mut channel = console(port, fields).await;
     let mut payload = None;
@@ -309,6 +334,10 @@ pub async fn refused(port: u16, fields: serde_json::Value) -> serde_json::Value 
 
 /// `POST /api/command` with `command` over a plain HTTP/1.1 connection, and
 /// the reply payload the daemon answers.
+///
+/// # Panics
+///
+/// When the daemon does not answer as the test expects.
 pub async fn post_command(port: u16, command: &Command) -> serde_json::Value {
     let body = serde_json::to_string(command).expect("a command serializes to JSON");
     let request = format!(

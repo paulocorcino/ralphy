@@ -104,7 +104,7 @@ async fn the_marker_requires_the_token_on_loopback_and_the_fleet_still_reaches_t
     let mut store = registry::RegistryStore::default();
     store.upsert("owner/theirs", &peer_dir.to_string_lossy());
     registry::save_to(&store, &registry_path).unwrap();
-    let peer_app = app(PEER_ID, registry_path, peer_auth.clone());
+    let peer_app = app(PEER_ID, registry_path, Arc::clone(&peer_auth));
 
     let (status, _) = get(peer_app.clone(), "/api/repos", None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "no token on loopback");

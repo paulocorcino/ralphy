@@ -42,6 +42,20 @@ fn session_module_references_no_http_transport() {
             )),
         ),
         (
+            "session/manager/query.rs",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/session/manager/query.rs"
+            )),
+        ),
+        (
+            "session/spec/naming.rs",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/session/spec/naming.rs"
+            )),
+        ),
+        (
             "session/spec/console.rs",
             include_str!(concat!(
                 env!("CARGO_MANIFEST_DIR"),

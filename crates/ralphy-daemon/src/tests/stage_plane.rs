@@ -483,7 +483,7 @@ fn shell_stores_only_the_view_in_the_browser() {
     // is swept too, so a store cannot come back as an inline `<script>`
     // block without touching a single `.js`.
     for path in embedded_ui_paths() {
-        let scanned = path.ends_with(".js") || path.ends_with(".html");
+        let scanned = has_extension(&path, "js") || has_extension(&path, "html");
         if !scanned || path.starts_with("vendor/") || path == "wb-client-view.js" {
             continue;
         }

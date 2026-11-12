@@ -51,9 +51,9 @@ fn first_party_scripts_move_to_typescript_and_never_back() {
             .file_name()
             .to_string_lossy()
             .into_owned();
-        if name.ends_with(".js") {
+        if has_extension(&name, "js") {
             classic.push(name);
-        } else if name.ends_with(".ts") && !name.ends_with(".d.ts") {
+        } else if has_extension(&name, "ts") && !name.ends_with(".d.ts") {
             modules.push(name);
         }
     }
@@ -148,7 +148,7 @@ fn every_workbench_event_name_is_in_the_typed_list() {
             .file_name()
             .to_string_lossy()
             .into_owned();
-        let module = name.ends_with(".ts") && !name.ends_with(".d.ts");
+        let module = has_extension(&name, "ts") && !name.ends_with(".d.ts");
         if !module && name != "index.html" {
             continue;
         }
@@ -298,7 +298,7 @@ fn each_page_starts_from_one_entry_module() {
         "main.js imports the vendored Alpine ES module build, at its own path"
     );
     for path in embedded_ui_paths() {
-        if path.starts_with("vendor/") || !path.ends_with(".js") || path == "main.js" {
+        if path.starts_with("vendor/") || !has_extension(&path, "js") || path == "main.js" {
             continue;
         }
         let text = UI

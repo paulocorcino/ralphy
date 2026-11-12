@@ -299,7 +299,7 @@ mod tests {
         let reads = Arc::new(AtomicUsize::new(0));
         let reader = Counting {
             left: 1000,
-            reads: reads.clone(),
+            reads: Arc::clone(&reads),
         };
         let (tx, rx) = mpsc::channel(OUTPUT_CHANNEL_CAP);
         let (done_tx, done) = std::sync::mpsc::channel();

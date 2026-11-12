@@ -81,6 +81,7 @@ impl SizeError {
 }
 
 /// A place for one walk at a time.
+#[derive(Debug)]
 pub struct Slot(AtomicBool);
 
 /// A taken slot, given back when it is dropped, also on a panic.

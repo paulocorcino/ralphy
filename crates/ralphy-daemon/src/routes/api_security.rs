@@ -382,7 +382,7 @@ pub(crate) fn security_routes(s: &RouterShared) -> Router {
         .route(
             "/api/login",
             post({
-                let auth = auth.clone();
+                let auth = std::sync::Arc::clone(auth);
                 move |headers: axum::http::HeaderMap, form: Form<LoginForm>| {
                     std::future::ready(login_submit(&auth, &headers, form))
                 }
@@ -391,7 +391,7 @@ pub(crate) fn security_routes(s: &RouterShared) -> Router {
         .route(
             "/api/session",
             get({
-                let auth = auth.clone();
+                let auth = std::sync::Arc::clone(auth);
                 let avatar = session_avatar.clone();
                 move |headers: axum::http::HeaderMap| {
                     std::future::ready(session_state_route(&auth, avatar.clone(), &headers))
@@ -401,7 +401,7 @@ pub(crate) fn security_routes(s: &RouterShared) -> Router {
         .route(
             "/api/logout",
             post({
-                let auth = auth.clone();
+                let auth = std::sync::Arc::clone(auth);
                 move |headers: axum::http::HeaderMap| {
                     std::future::ready(logout_route(&auth, &headers))
                 }
@@ -415,7 +415,7 @@ pub(crate) fn security_routes(s: &RouterShared) -> Router {
         .route(
             "/api/security/totp/confirm",
             post({
-                let auth = auth.clone();
+                let auth = std::sync::Arc::clone(auth);
                 move |form: Form<ConfirmForm>| {
                     std::future::ready(security_totp_confirm_route(&auth, form))
                 }
@@ -424,7 +424,7 @@ pub(crate) fn security_routes(s: &RouterShared) -> Router {
         .route(
             "/api/security/totp/revoke",
             post({
-                let auth = auth.clone();
+                let auth = std::sync::Arc::clone(auth);
                 move |form: Form<RevokeForm>| {
                     std::future::ready(security_totp_revoke_route(&auth, form))
                 }
@@ -433,7 +433,7 @@ pub(crate) fn security_routes(s: &RouterShared) -> Router {
         .route(
             "/api/security/password",
             post({
-                let auth = auth.clone();
+                let auth = std::sync::Arc::clone(auth);
                 move |form: Form<PasswordForm>| {
                     std::future::ready(security_password_route(&auth, form))
                 }
@@ -442,7 +442,7 @@ pub(crate) fn security_routes(s: &RouterShared) -> Router {
         .route(
             "/api/security/token/remint",
             post({
-                let auth = auth.clone();
+                let auth = std::sync::Arc::clone(auth);
                 move |form: Form<RemintForm>| {
                     std::future::ready(security_token_remint_route(&auth, form))
                 }
@@ -451,7 +451,7 @@ pub(crate) fn security_routes(s: &RouterShared) -> Router {
         .route(
             "/api/security/require-login",
             post({
-                let auth = auth.clone();
+                let auth = std::sync::Arc::clone(auth);
                 move |form: Form<RequireLoginForm>| {
                     std::future::ready(security_require_login_route(&auth, form))
                 }
@@ -460,7 +460,7 @@ pub(crate) fn security_routes(s: &RouterShared) -> Router {
         .route(
             "/api/security/remote-images",
             post({
-                let auth = auth.clone();
+                let auth = std::sync::Arc::clone(auth);
                 move |form: Form<RemoteImagesForm>| {
                     std::future::ready(security_remote_images_route(&auth, form))
                 }
@@ -469,7 +469,7 @@ pub(crate) fn security_routes(s: &RouterShared) -> Router {
         .route(
             "/api/security/logins/revoke",
             post({
-                let auth = auth.clone();
+                let auth = std::sync::Arc::clone(auth);
                 let pushes = s.pushes.clone();
                 move |form: Form<RevokeLoginForm>| {
                     std::future::ready(security_logins_revoke_route(&auth, &pushes, form))

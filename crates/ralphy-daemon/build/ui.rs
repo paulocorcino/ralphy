@@ -30,11 +30,16 @@ fn is_type_only(name: &str) -> bool {
     name == "tsconfig.json" || name.ends_with(".d.ts")
 }
 
+/// Whether the last `.`-part of `name` is `ext`, compared as written.
+fn has_extension(name: &str, ext: &str) -> bool {
+    Path::new(name).extension().is_some_and(|e| e == ext)
+}
+
 /// A source file `copy_dir` leaves for another step: a type-only file is not
 /// served, and a top-level `.html` file is a page or a part, which `put_pages`
 /// writes.
 fn is_left_out(name: &str, top: bool) -> bool {
-    is_type_only(name) || (top && name.ends_with(".html"))
+    is_type_only(name) || (top && has_extension(name, "html"))
 }
 
 /// Build `out` from `src`: an exact copy, except that a `.ts` file becomes a
@@ -55,7 +60,7 @@ fn put_pages(src: &Path, out: &Path) -> Result<()> {
     for entry in fs::read_dir(src).with_context(|| format!("read {}", src.display()))? {
         let entry = entry.with_context(|| format!("read an entry of {}", src.display()))?;
         let name = entry.file_name().to_string_lossy().into_owned();
-        if entry.path().is_file() && name.ends_with(".html") {
+        if entry.path().is_file() && has_extension(&name, "html") {
             let text = fs::read_to_string(entry.path())
                 .with_context(|| format!("read {}", entry.path().display()))?;
             files.insert(name, text);
@@ -99,8 +104,11 @@ fn copy_dir(src: &Path, out: &Path, top: bool) -> Result<()> {
 
 /// One `.ts` module as JavaScript, line for line.
 fn strip(name: &str, code: String) -> Result<String> {
-    let cm: Lrc<SourceMap> = Default::default();
-    let handler = Handler::with_emitter_writer(Box::new(std::io::stderr()), Some(cm.clone()));
+    let cm = Lrc::new(SourceMap::default());
+    let handler = Handler::with_emitter_writer(
+        Box::new(std::io::stderr()),
+        Some(Lrc::<SourceMap>::clone(&cm)),
+    );
     let options = Options {
         module: Some(true),
         filename: Some(name.to_owned()),
@@ -118,7 +126,7 @@ fn strip(name: &str, code: String) -> Result<String> {
 /// name a `.ts` file (ADR-0075 D2), because Node runs the tests on the `.ts`
 /// source and the browser loads the `.js` output.
 fn rewrite_imports(name: &str, code: String) -> Result<String> {
-    let cm: Lrc<SourceMap> = Default::default();
+    let cm = Lrc::new(SourceMap::default());
     let fm = cm.new_source_file(Lrc::new(FileName::Custom(name.to_owned())), code.clone());
     let mut recovered = Vec::new();
     let module = parse_file_as_module(
@@ -152,10 +160,10 @@ fn rewrite_imports(name: &str, code: String) -> Result<String> {
             continue;
         }
         // A vendored file is served as it is, so its path stays (ADR-0075 D5).
-        if path.starts_with("./vendor/") && path.ends_with(".js") {
+        if path.starts_with("./vendor/") && has_extension(path, "js") {
             continue;
         }
-        if !path.ends_with(".ts") {
+        if !has_extension(path, "ts") {
             bail!("the import {literal} must name a .ts file or a .js file under ./vendor/");
         }
         out[hi - 3..hi - 1].copy_from_slice(b"js");

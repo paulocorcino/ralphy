@@ -74,7 +74,7 @@ async fn open_spawn(ws: &mut Ws, channel: u32) {
 #[tokio::test]
 async fn an_open_after_a_logout_is_refused_and_ends_the_socket() {
     let auth = AuthState::localhost();
-    let daemon = serve_with_auth(auth.clone()).await;
+    let daemon = serve_with_auth(Arc::clone(&auth)).await;
     let mut ws = connect(&daemon).await;
     auth.invalidate_sessions().expect("bump the session epoch");
 
@@ -198,9 +198,9 @@ async fn an_open_after_a_revoke_of_its_login_is_refused_and_ends_the_socket() {
         epoch: epoch.clone(),
         revoked: RevokedLogins::default(),
     });
-    let policy = AuthPolicy::Session(session.clone());
+    let policy = AuthPolicy::Session(Arc::clone(&session));
     let auth = AuthState::fixed(policy, epoch);
-    let daemon = serve_with_auth(auth.clone()).await;
+    let daemon = serve_with_auth(Arc::clone(&auth)).await;
     let cookie = sign_in(daemon.port).await;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

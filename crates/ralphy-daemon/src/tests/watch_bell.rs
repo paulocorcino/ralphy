@@ -9,7 +9,7 @@ use super::*;
 #[tokio::test]
 async fn a_watch_added_after_the_first_poll_rings_the_bell() {
     let set = PeerWatchSet::new("", false);
-    let bell = set.changed.clone();
+    let bell = Arc::clone(&set.changed);
     let waiting = tokio::spawn(async move { bell.notified().await });
     tokio::task::yield_now().await;
 

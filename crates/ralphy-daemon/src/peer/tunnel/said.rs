@@ -39,7 +39,7 @@ impl Said {
 pub(super) fn watch_stderr(child: &mut Child) -> Said {
     let line = Arc::new(Mutex::new(None));
     let reader = child.stderr.take().and_then(|stderr| {
-        let slot = line.clone();
+        let slot = Arc::clone(&line);
         let started = std::thread::Builder::new()
             .name("tunnel-stderr".into())
             .spawn(move || keep_last_line(stderr, &slot));

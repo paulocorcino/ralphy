@@ -39,8 +39,8 @@ pub(crate) fn command_http_routes(s: &RouterShared) -> Router {
     let registry_path = s.registry_path.clone();
     let peers_dir = s.peers_dir.clone();
     let daemon_id = s.daemon_id.clone();
-    let sessions = s.sessions.clone();
-    let audit = s.audit.clone();
+    let sessions = std::sync::Arc::clone(&s.sessions);
+    let audit = std::sync::Arc::clone(&s.audit);
     let bound_port = s.bound_port;
     Router::new()
         .route(
@@ -53,11 +53,11 @@ pub(crate) fn command_http_routes(s: &RouterShared) -> Router {
                         registry_path: registry_path.clone(),
                         peers_dir: peers_dir.clone(),
                         daemon_id: daemon_id.clone(),
-                        sessions: sessions.clone(),
+                        sessions: std::sync::Arc::clone(&sessions),
                         secret_ok: request_may_carry_a_secret(&headers),
                         bound_port,
                     };
-                    let who = SocketAudit::of(audit.clone(), caller);
+                    let who = SocketAudit::of(std::sync::Arc::clone(&audit), caller);
                     async move { Json(reply(&ctx, &cmd, &who).await) }
                 },
             ),

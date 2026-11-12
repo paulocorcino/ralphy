@@ -56,7 +56,7 @@ fn monaco_replaced_codemirror_in_the_embedded_ui() {
     let typed: Vec<_> = paths
         .iter()
         .filter(|p| {
-            p.starts_with("vendor/monaco/") && (p.ends_with(".d.ts") || p.ends_with(".map"))
+            p.starts_with("vendor/monaco/") && (p.ends_with(".d.ts") || has_extension(p, "map"))
         })
         .collect();
     assert!(

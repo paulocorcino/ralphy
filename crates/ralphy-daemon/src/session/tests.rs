@@ -15,7 +15,7 @@ async fn evict_token_carries_its_reason_before_waking() {
     // `fire` returned would pass even with the order reversed, since both
     // writes are complete by then.
     let waiter = {
-        let token = token.clone();
+        let token = Arc::clone(&token);
         tokio::spawn(async move {
             token.notify.notified().await;
             token.reason()
@@ -90,7 +90,7 @@ fn input_send_does_not_wait_for_a_child_that_does_not_read() {
     let sink = Arc::new(Mutex::new(Vec::new()));
     let input = Input::start(Box::new(Stuck {
         gate: Some(gate),
-        sink: sink.clone(),
+        sink: Arc::clone(&sink),
     }))
     .unwrap();
     let (sent_tx, sent) = std::sync::mpsc::channel();

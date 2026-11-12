@@ -33,6 +33,10 @@ pub struct TurnEnd {
 
 impl SessionManager {
     /// The consoles that finished a turn, in session order.
+    ///
+    /// # Panics
+    ///
+    /// When the sessions or agent status lock was poisoned by a panic in another thread.
     pub fn turn_ends(&self) -> Vec<TurnEnd> {
         let sessions = self.sessions.lock().expect("sessions mutex");
         sessions
