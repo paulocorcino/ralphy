@@ -12,6 +12,12 @@
 //! deterministically (sorted keys) so its diff is reviewable, and a scheduled CI
 //! job opens a PR only when the seed actually changes.
 
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "a command-line tool: the gate, CI and people read what each command prints"
+)]
+
 mod asset_pins;
 mod capabilities;
 mod changelog;
