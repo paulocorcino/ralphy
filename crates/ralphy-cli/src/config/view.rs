@@ -11,7 +11,7 @@ use ralphy_core::{git, Settings, Workspace};
 
 pub(crate) fn get(ws: &Workspace, json: bool) -> Result<()> {
     if json {
-        println!("{}", serde_json::to_string(&config_json(ws)?)?);
+        outln!("{}", serde_json::to_string(&config_json(ws)?)?);
         return Ok(());
     }
     let s = Settings::load(ws)?;
@@ -23,43 +23,43 @@ pub(crate) fn get(ws: &Workspace, json: bool) -> Result<()> {
     print_str("opencode.model", opencode.model);
     print_str("verify.command", s.verify.command);
     match s.verify.require_verify_gate {
-        Some(b) => println!("verify.require_verify_gate = {b}"),
-        None => println!("verify.require_verify_gate: not set"),
+        Some(b) => outln!("verify.require_verify_gate = {b}"),
+        None => outln!("verify.require_verify_gate: not set"),
     }
     print_str("base_branch", s.base_branch);
     print_str("branch_mode", s.branch_mode);
     print_str("files.encoding", s.files.encoding);
     match s.files.upload_max_mb {
-        Some(n) => println!("files.upload_max_mb = {n}"),
-        None => println!("files.upload_max_mb: not set"),
+        Some(n) => outln!("files.upload_max_mb = {n}"),
+        None => outln!("files.upload_max_mb: not set"),
     }
     match s.runs.keep {
-        Some(n) => println!("runs.keep = {n}"),
-        None => println!("runs.keep: not set"),
+        Some(n) => outln!("runs.keep = {n}"),
+        None => outln!("runs.keep: not set"),
     }
     match s.remote_control {
-        Some(b) => println!("remote_control = {b}"),
-        None => println!("remote_control: not set"),
+        Some(b) => outln!("remote_control = {b}"),
+        None => outln!("remote_control: not set"),
     }
     print_str("queue.assignee", s.queue.assignee);
     match s.queue.trust_all_comments {
-        Some(b) => println!("queue.trust_all_comments = {b}"),
-        None => println!("queue.trust_all_comments: not set"),
+        Some(b) => outln!("queue.trust_all_comments = {b}"),
+        None => outln!("queue.trust_all_comments: not set"),
     }
     print_str("claude.plan_model", claude.plan_model);
     print_str("claude.plan_effort", claude.plan_effort);
     print_str("claude.default_exec_model", claude.default_exec_model);
     print_str("claude.exec_effort", claude.exec_effort);
     match claude.max_minutes_per_issue {
-        Some(n) => println!("claude.max_minutes_per_issue = {n}"),
-        None => println!("claude.max_minutes_per_issue: not set"),
+        Some(n) => outln!("claude.max_minutes_per_issue = {n}"),
+        None => outln!("claude.max_minutes_per_issue: not set"),
     }
-    println!("claude.console_name = {}", claude.console_name);
-    println!(
+    outln!("claude.console_name = {}", claude.console_name);
+    outln!(
         "claude.console_classic_screen = {}",
         claude.console_classic_screen
     );
-    println!(
+    outln!(
         "claude.run_without_guard_proof_i_understand_the_risk = {}",
         claude.run_without_guard_proof_i_understand_the_risk
     );
@@ -67,11 +67,11 @@ pub(crate) fn get(ws: &Workspace, json: bool) -> Result<()> {
     print_str("copilot.exec_model", copilot.exec_model);
     print_str("copilot.plan_effort", copilot.plan_effort);
     print_str("copilot.exec_effort", copilot.exec_effort);
-    println!(
+    outln!(
         "copilot.allow_builtin_mcp_servers_i_understand_the_risk = {}",
         copilot.allow_builtin_mcp_servers_i_understand_the_risk
     );
-    println!(
+    outln!(
         "cursor.allow_codebase_indexing_i_understand_the_risk = {}",
         cursor.allow_codebase_indexing_i_understand_the_risk
     );
@@ -84,11 +84,11 @@ pub(crate) fn get(ws: &Workspace, json: bool) -> Result<()> {
     let entry = events.entry(&slug);
     print_str("events.url", entry.and_then(|e| e.url.clone()));
     match entry.and_then(|e| e.token.as_deref()) {
-        Some(t) => println!(
+        Some(t) => outln!(
             "events.token = {}",
             crate::telegram::config::masked_token(t)
         ),
-        None => println!("events.token: not set"),
+        None => outln!("events.token: not set"),
     }
     Ok(())
 }
@@ -150,7 +150,7 @@ pub(super) fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
 /// treating an empty string as unset.
 fn print_str(key: &str, value: Option<String>) {
     match value.filter(|v| !v.is_empty()) {
-        Some(v) => println!("{key} = {v}"),
-        None => println!("{key}: not set"),
+        Some(v) => outln!("{key} = {v}"),
+        None => outln!("{key}: not set"),
     }
 }

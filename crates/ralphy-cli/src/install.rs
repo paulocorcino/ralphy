@@ -67,7 +67,7 @@ fn elevated_warning(elevated: bool) -> Option<&'static str> {
 
 pub(crate) fn warn_if_elevated() {
     if let Some(warning) = elevated_warning(ralphy_proc_util::elevated::runs_elevated()) {
-        eprintln!("{warning}");
+        eoutln!("{warning}");
     }
 }
 
@@ -77,7 +77,7 @@ pub(crate) fn run(args: &InstallArgs) -> Result<()> {
         None => default_bin_dir()?,
     };
     if args.print_path {
-        println!("{}", dir.join(binary_name()).display());
+        outln!("{}", dir.join(binary_name()).display());
         return Ok(());
     }
     warn_if_elevated();
@@ -92,7 +92,7 @@ pub(crate) fn run(args: &InstallArgs) -> Result<()> {
 
     // Re-running install onto our own location is a no-op, not an error.
     if std::fs::canonicalize(&dest).is_ok_and(|d| d == exe) {
-        println!("ralphy is already installed at {}", dest.display());
+        outln!("ralphy is already installed at {}", dest.display());
         put_on_path(&dir, args.no_modify_path);
         return Ok(());
     }
@@ -107,7 +107,7 @@ pub(crate) fn run(args: &InstallArgs) -> Result<()> {
 
     let parked = if args.copy {
         let parked = replace_binary(&dest, &exe)?;
-        println!("Copied ralphy to {}", dest.display());
+        outln!("Copied ralphy to {}", dest.display());
         parked
     } else {
         link_over(&dest, &exe)?
@@ -137,12 +137,12 @@ fn link_over(dest: &Path, exe: &Path) -> Result<Option<PathBuf>> {
     let parked = park_existing(dest)?;
     match symlink(exe, dest) {
         Ok(()) => {
-            println!("Linked {} -> {}", dest.display(), exe.display());
+            outln!("Linked {} -> {}", dest.display(), exe.display());
             Ok(parked)
         }
         Err(e) if cfg!(windows) => match std::fs::copy(exe, dest) {
             Ok(_) => {
-                println!(
+                outln!(
                     "Symlink unavailable ({e}); copied ralphy to {} instead",
                     dest.display()
                 );
@@ -222,7 +222,7 @@ pub(crate) fn restore_parked(parked: Option<&Path>, dest: &Path) {
         // The caller returns the error that made it restore, so this one is only
         // printed.
         if let Err(e) = std::fs::rename(parked, dest) {
-            eprintln!(
+            eoutln!(
                 "Could not put the previous binary back from {}: {e}",
                 parked.display()
             );
@@ -253,7 +253,7 @@ pub(crate) fn replace_binary(dest: &Path, src: &Path) -> Result<Option<PathBuf>>
 /// is exactly the case where a daemon is still executing it.
 fn report_parked(parked: &Path) {
     if std::fs::remove_file(parked).is_err() {
-        println!(
+        outln!(
             "The previous binary is parked at {} — still in use, so it goes on the next install.",
             parked.display()
         );
@@ -297,7 +297,7 @@ fn put_on_path(dir: &Path, no_modify_path: bool) {
         return;
     }
     if no_modify_path {
-        println!(
+        outln!(
             "Note: {} is not on your PATH — add it so `ralphy` resolves from any directory.",
             dir.display()
         );
@@ -305,7 +305,7 @@ fn put_on_path(dir: &Path, no_modify_path: bool) {
     }
     match user_path::add_to_user_path(dir) {
         Ok(added) => print_path_added(dir, &added),
-        Err(e) => println!(
+        Err(e) => outln!(
             "Note: could not add {} to your PATH ({e:#}). \
              Add it by hand so `ralphy` resolves from any directory.",
             dir.display()
@@ -316,11 +316,11 @@ fn put_on_path(dir: &Path, no_modify_path: bool) {
 /// Tell the operator where `dir` was added to `PATH` and how to use it now.
 fn print_path_added(dir: &Path, added: &user_path::Added) {
     if added.places.is_empty() {
-        println!("{} is already set to be on your PATH.", dir.display());
+        outln!("{} is already set to be on your PATH.", dir.display());
     } else {
-        println!("Added {} to your PATH in:", dir.display());
+        outln!("Added {} to your PATH in:", dir.display());
         for place in &added.places {
-            println!("  {place}");
+            outln!("  {place}");
         }
     }
     match &added.reload {
@@ -331,7 +331,7 @@ fn print_path_added(dir: &Path, added: &user_path::Added) {
             )
             .expect("the report goes to stdout, as println! sent it");
         }
-        None => println!("Open a new terminal to use `ralphy`."),
+        None => outln!("Open a new terminal to use `ralphy`."),
     }
 }
 
@@ -384,14 +384,14 @@ pub(crate) fn put_on_path_after_update(dest: &Path) {
     let default_dir = match default_bin_dir() {
         Ok(dir) => dir,
         Err(e) => {
-            println!("Note: could not check your PATH ({e:#}).");
+            outln!("Note: could not check your PATH ({e:#}).");
             return;
         }
     };
     match path_fix(dest, &path, &default_dir) {
         PathFix::Nothing => {}
         PathFix::Add(dir) => put_on_path(&dir, false),
-        PathFix::Install => println!(
+        PathFix::Install => outln!(
             "Note: `ralphy` is not on your PATH. \
              Run `{} install` so it works by name in a new terminal.",
             dest.display()

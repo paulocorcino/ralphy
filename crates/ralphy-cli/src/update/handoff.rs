@@ -16,6 +16,7 @@ use std::cell::RefCell;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
@@ -31,14 +32,14 @@ const OLD_EXIT_TIMEOUT: Duration = Duration::from_secs(45);
 const NEW_READY_TIMEOUT: Duration = Duration::from_secs(30);
 const POLL: Duration = Duration::from_millis(200);
 
-pub(super) fn run(daemon_pid: u32, channel: Channel, force: bool) -> Result<()> {
+pub(super) fn run(daemon_pid: u32, channel: Channel, force: bool) -> Result<ExitCode> {
     let store = ralphy_daemon::auth::store_dir()?;
     let mut log = Log::open(&ralphy_daemon::release::update_log_path_in(&store))?;
     log.record(&format!(
         "update requested by the daemon with pid {daemon_pid}"
     ));
     match take_over(daemon_pid, channel, force, &store, &mut log) {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(ExitCode::SUCCESS),
         // Before the hand-over the daemon reads stderr too, so the error goes
         // back to the page through the ordinary return.
         Err(e) if log.attached() => {
@@ -49,12 +50,7 @@ pub(super) fn run(daemon_pid: u32, channel: Channel, force: bool) -> Result<()> 
             log.record(&format!("error: {e:#}"));
             // The daemon that read stderr has exited. Returning the error would
             // print it into a closed pipe; the log already holds it.
-            #[expect(
-                clippy::disallowed_methods,
-                reason = "returning the error would print it into a closed pipe, and the \
-                          exit status must be 1 without that line"
-            )]
-            std::process::exit(1);
+            Ok(ExitCode::FAILURE)
         }
     }
 }

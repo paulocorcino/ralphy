@@ -95,12 +95,12 @@ fn changes_list(args: &ChangesListArgs) -> anyhow::Result<()> {
 
     if args.format.as_deref() == Some("json") {
         let out = serde_json::json!({ "changes": list });
-        println!("{out}");
+        outln!("{out}");
     } else {
         for c in &list {
             match &c.original_path {
-                Some(from) => println!("renamed {from} -> {}", c.path),
-                None => println!("{} {}", status_word(c.status), c.path),
+                Some(from) => outln!("renamed {from} -> {}", c.path),
+                None => outln!("{} {}", status_word(c.status), c.path),
             }
         }
     }
@@ -120,7 +120,7 @@ fn guarded_root(repo: &Path, verb: &str) -> anyhow::Result<PathBuf> {
 fn changes_stage(args: &ChangesPathArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "changes stage")?;
     match ralphy_core::worktree::stage(&repo_root, &args.path)? {
-        StageOutcome::Staged { paths } => println!("Staged {paths} path(s)."),
+        StageOutcome::Staged { paths } => outln!("Staged {paths} path(s)."),
         refused @ (StageOutcome::NoPaths | StageOutcome::NotInChangeSet { .. }) => {
             anyhow::bail!(
                 "{}",
@@ -135,7 +135,7 @@ fn changes_stage(args: &ChangesPathArgs) -> anyhow::Result<()> {
 fn changes_unstage(args: &ChangesPathArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "changes unstage")?;
     match ralphy_core::worktree::unstage(&repo_root, &args.path)? {
-        UnstageOutcome::Unstaged { paths } => println!("Unstaged {paths} path(s)."),
+        UnstageOutcome::Unstaged { paths } => outln!("Unstaged {paths} path(s)."),
         refused @ (UnstageOutcome::NoPaths | UnstageOutcome::NotInChangeSet { .. }) => {
             anyhow::bail!(
                 "{}",
@@ -150,7 +150,7 @@ fn changes_unstage(args: &ChangesPathArgs) -> anyhow::Result<()> {
 fn changes_commit(args: &ChangesCommitArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "changes commit")?;
     match ralphy_core::worktree::commit(&repo_root, &args.message)? {
-        CommitOutcome::Committed { sha } => println!("Committed {sha}."),
+        CommitOutcome::Committed { sha } => outln!("Committed {sha}."),
         refused @ (CommitOutcome::NothingStaged | CommitOutcome::EmptyMessage) => {
             anyhow::bail!(
                 "{}",

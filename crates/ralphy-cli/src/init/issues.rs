@@ -166,7 +166,7 @@ fn publish_draft_with(
     if let Some(ms) = &draft.milestone {
         if state.milestone_created.is_none() {
             let number = create_milestone(&ms.title, &ms.description)?;
-            println!("  created milestone #{number}: {}", ms.title);
+            outln!("  created milestone #{number}: {}", ms.title);
             state.milestone_created = Some(ms.title.clone());
             save(state)?;
         }
@@ -187,7 +187,7 @@ fn publish_draft_with(
             .collect();
         let body = patch_blocked_by(&issue.body, &blocked_numbers);
         let number = create_issue(&issue.title, &body, &issue.labels, milestone_name)?;
-        println!("  created #{number}: {}", issue.title);
+        outln!("  created #{number}: {}", issue.title);
         state.created_issues.push(number);
         save(state)?;
     }

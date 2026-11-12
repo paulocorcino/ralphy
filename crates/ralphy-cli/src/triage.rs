@@ -330,11 +330,11 @@ pub(crate) fn run(args: &TriageArgs) -> Result<()> {
     // Triage sweeps the whole repo's queue label — never assignee-scoped (ADR-0021).
     let issues = github::list_queue(&[TRIAGE_AGENT_LABEL.to_owned()], None, &repo)?;
     if issues.is_empty() {
-        println!("No open issue carries `triage-agent` — nothing to triage.");
+        outln!("No open issue carries `triage-agent` — nothing to triage.");
         return Ok(());
     }
     let numbers: Vec<u64> = issues.iter().map(|i| i.number).collect();
-    println!(
+    outln!(
         "Triaging {} issue(s): {}",
         numbers.len(),
         numbers
@@ -386,7 +386,7 @@ pub(crate) fn run(args: &TriageArgs) -> Result<()> {
     // Held before the preview, so the preview shows what `--yes` applies.
     if args.yes {
         for number in hold_untrusted_consolidations(&mut draft, &threads) {
-            println!(
+            outln!(
                 "held #{number}: the spec draws on a comment by someone who is not \
                  an owner, member or collaborator"
             );
@@ -394,15 +394,15 @@ pub(crate) fn run(args: &TriageArgs) -> Result<()> {
     }
 
     // Preview every outward action before publishing (ADR-0012 posture).
-    println!("\nTriage verdicts:");
+    outln!("\nTriage verdicts:");
     for item in &draft.items {
-        println!("{}", verdict_line(item, &labels));
+        outln!("{}", verdict_line(item, &labels));
     }
 
     let tracker = GhTracker::new(&repo);
     if args.yes {
         apply_triage(&draft, &tracker, &labels, |_| true)?;
-        println!("\nApplied {} verdict(s).", draft.item_count());
+        outln!("\nApplied {} verdict(s).", draft.item_count());
         return Ok(());
     }
 
@@ -411,9 +411,9 @@ pub(crate) fn run(args: &TriageArgs) -> Result<()> {
     let confirmed = ask_yes("\n  > Publish these verdicts? [y/N] ")?;
     apply_triage(&draft, &tracker, &labels, |_| confirmed)?;
     if confirmed {
-        println!("Applied {} verdict(s).", draft.item_count());
+        outln!("Applied {} verdict(s).", draft.item_count());
     } else {
-        println!("Declined — promote/consolidate skipped; any bounces/escalates were applied.");
+        outln!("Declined — promote/consolidate skipped; any bounces/escalates were applied.");
     }
 
     offer_follow_up_issues(&draft, &tracker, ask_yes)
@@ -434,7 +434,7 @@ fn triage_labels(repo: &Path) -> TriageLabels {
 /// Print `prompt` and read the operator's answer from stdin: `true` for `y` or
 /// `yes`, whatever the case.
 fn ask_yes(prompt: &str) -> Result<bool> {
-    print!("{prompt}");
+    out!("{prompt}");
     std::io::stdout()
         .flush()
         .context("writing the question to stdout")?;
@@ -464,7 +464,7 @@ fn offer_follow_up_issues(
         let Some(draft_issue) = &item.draft_issue else {
             continue;
         };
-        println!(
+        outln!(
             "\nEscalate #{} proposes a follow-up issue:\n  title: {}\n  body:\n{}",
             item.number,
             draft_issue.title,
@@ -473,9 +473,9 @@ fn offer_follow_up_issues(
         if ask("  > Create this follow-up issue? [y/N] ")? {
             let number =
                 tracker.create_issue(&draft_issue.title, &draft_issue.body, &draft_issue.labels)?;
-            println!("  created follow-up issue #{number}.");
+            outln!("  created follow-up issue #{number}.");
         } else {
-            println!("  skipped — no issue created.");
+            outln!("  skipped — no issue created.");
         }
     }
     Ok(())

@@ -180,7 +180,7 @@ fn rows(text: &str, resolve: impl Fn(&str) -> Result<Resolved>) -> serde_json::V
             ),
             // Stderr, not stdout: stdout is the JSON the workbench reads.
             Err(e) => {
-                eprintln!("skipped the SSH config host {alias}: {e:#}");
+                eoutln!("skipped the SSH config host {alias}: {e:#}");
                 None
             }
         })

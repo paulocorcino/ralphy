@@ -82,11 +82,11 @@ pub(crate) fn install() -> Result<()> {
         || super::describe::answers(&store, port),
         elevated,
     )?;
-    println!("registered daemon autostart");
+    outln!("registered daemon autostart");
     match next {
         AfterRegistration::AlreadyRegistered => {}
-        AfterRegistration::AlreadyRunning => println!("the daemon is already running"),
-        AfterRegistration::NotAsAdministrator => println!(
+        AfterRegistration::AlreadyRunning => outln!("the daemon is already running"),
+        AfterRegistration::NotAsAdministrator => outln!(
             "the daemon was not started from this administrator window; \
              it starts when you sign in again"
         ),
@@ -106,9 +106,9 @@ fn start_and_wait(store: &std::path::Path, port: u16) -> Result<()> {
         super::describe::answers(store, port) && ralphy_daemon::pidfile::read_in(store).is_some()
     };
     if super::restart::started(up, START_TIMEOUT, POLL) {
-        println!("started the daemon");
+        outln!("started the daemon");
     } else {
-        eprintln!(
+        eoutln!(
             "warning: the daemon did not answer within {}s after the start: see {}",
             START_TIMEOUT.as_secs(),
             store.join("daemon.log").display()

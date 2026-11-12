@@ -67,6 +67,12 @@
 //! with the assertions in `tests/headless/main.rs` via the shared constants below.
 
 #![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::exit,
+    reason = "a test helper child: the parent test reads what it prints and its exit code"
+)]
+#![expect(
     clippy::disallowed_methods,
     reason = "a test helper child: the parent test reads the exit code, so the child exits at once"
 )]

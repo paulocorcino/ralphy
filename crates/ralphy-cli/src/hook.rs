@@ -174,7 +174,7 @@ pub(crate) fn run_post_hook() {
 /// is still 0.
 pub(crate) fn run_status_hook(vendor: HookVendor) {
     match vendor {
-        HookVendor::Claude => println!("{{}}"),
+        HookVendor::Claude => outln!("{{}}"),
         HookVendor::Codex | HookVendor::OpenCode => {}
     }
     // Read stdin before every return: a vendor that writes the payload into a
@@ -189,7 +189,7 @@ pub(crate) fn run_status_hook(vendor: HookVendor) {
     }
     let line = status_line(vendor, &payload, &chrono::Local::now().to_rfc3339());
     if let Err(e) = append_line(Path::new(&path), &line) {
-        eprintln!("ralphy hook status: could not append to {path}: {e:#}");
+        eoutln!("ralphy hook status: could not append to {path}: {e:#}");
     }
 }
 

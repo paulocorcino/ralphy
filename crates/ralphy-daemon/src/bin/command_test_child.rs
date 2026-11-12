@@ -35,6 +35,13 @@
 //! (when set), prints `2.1.200 (Claude Code)` and exits 0. Its own dump path
 //! keeps it apart from the hook child, which writes `RALPHY_TEST_ENV_DUMP`.
 
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::exit,
+    reason = "a test helper child: the parent test reads what it prints and its exit code"
+)]
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args == ["gemini", "prepare-root"] {

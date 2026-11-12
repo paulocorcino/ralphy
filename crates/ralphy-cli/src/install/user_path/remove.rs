@@ -106,7 +106,7 @@ fn remove_from_file(file: &Path) -> Result<bool> {
     };
     let removal = without_block(&text);
     if removal.damaged {
-        eprintln!(
+        eoutln!(
             "warning: {} has a `ralphy install` block that was edited by hand; \
              it was left as it is",
             file.display()

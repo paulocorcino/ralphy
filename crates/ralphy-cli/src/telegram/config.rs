@@ -22,7 +22,7 @@ pub(crate) fn path() -> Result<PathBuf> {
 /// `None` when no bot is set up.
 pub(crate) fn load() -> Result<Option<TelegramConfig>> {
     if let Err(e) = legacy::take_legacy_config() {
-        eprintln!("warning: the old Telegram settings were not copied: {e}");
+        eoutln!("warning: the old Telegram settings were not copied: {e}");
     }
     TelegramConfig::load_from(&path()?)
 }

@@ -44,17 +44,17 @@ pub(crate) fn restart(yes: bool) -> Result<()> {
         return Ok(());
     }
     if restarted_by_systemd(&store)? {
-        println!("restarted {UNIT_NAME}");
+        outln!("restarted {UNIT_NAME}");
     } else if restarted_by_launchd(&store)? {
-        println!("restarted {LAUNCHD_LABEL}");
+        outln!("restarted {LAUNCHD_LABEL}");
     } else {
         if stop(&store)? {
-            println!("stopped the running daemon");
+            outln!("stopped the running daemon");
         } else {
-            println!("no daemon was running");
+            outln!("no daemon was running");
         }
         spawn_detached(&exe, &args, &store)?;
-        println!("started {} {}", readable(&exe), args.join(" "));
+        outln!("started {} {}", readable(&exe), args.join(" "));
     }
     if !started(
         || super::describe::answers(&store, port),
@@ -281,7 +281,7 @@ fn log_stdio(store: &Path) -> (std::process::Stdio, std::process::Stdio) {
     }) {
         Ok((out, err)) => (Stdio::from(out), Stdio::from(err)),
         Err(error) => {
-            eprintln!("warning: the restarted daemon will not log: {error:#}");
+            eoutln!("warning: the restarted daemon will not log: {error:#}");
             (Stdio::null(), Stdio::null())
         }
     }
@@ -340,7 +340,7 @@ pub(crate) fn spawn_outside_job(
     let detached = CREATE_NO_WINDOW | DETACHED_PROCESS;
     match spawn(detached | CREATE_BREAKAWAY_FROM_JOB) {
         Err(e) if breakaway_refused(&e) => {
-            eprintln!(
+            eoutln!(
                 "warning: {what} stays inside the job of the program that started it, \
                  so it stops when that program closes"
             );

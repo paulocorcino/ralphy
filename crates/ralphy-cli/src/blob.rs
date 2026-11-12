@@ -90,10 +90,10 @@ pub(crate) fn blob(cmd: BlobCommand) -> Result<()> {
                 reason: Some("too large"),
             },
         };
-        println!("{}", serde_json::to_string(&reply)?);
+        outln!("{}", serde_json::to_string(&reply)?);
     } else {
         match &blob {
-            ralphy_core::Blob::Text(s) => print!("{s}"),
+            ralphy_core::Blob::Text(s) => out!("{s}"),
             ralphy_core::Blob::Absent => {}
             ralphy_core::Blob::Binary => bail!("refused: binary"),
             ralphy_core::Blob::TooLarge => bail!("refused: too large"),

@@ -57,7 +57,7 @@ impl PresenterHandle {
             Err(e) => e.into_inner().take(),
         };
         if let Some(text) = notice {
-            println!("{text}");
+            outln!("{text}");
         }
     }
 
@@ -77,7 +77,7 @@ impl PresenterHandle {
                 Ok(()) | Err(_) => {}
             }
         } else {
-            println!("{header}");
+            outln!("{header}");
         }
     }
 
@@ -95,7 +95,7 @@ impl PresenterHandle {
                 Ok(()) | Err(_) => {}
             }
         } else {
-            println!("{line}");
+            outln!("{line}");
         }
     }
 
@@ -107,7 +107,7 @@ impl PresenterHandle {
             emoji: self.color,
         };
         for line in render_totals_panel(data, opts) {
-            println!("{line}");
+            outln!("{line}");
         }
     }
 

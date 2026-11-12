@@ -157,7 +157,7 @@ fn install(
         spec.pre_invocation = Some(spec::triage_prelude());
     }
     host_install(&spec)?;
-    println!(
+    outln!(
         "Registered timer {} ({}){}, logging to {}.",
         spec.task_name,
         describe(schedule),
@@ -182,7 +182,7 @@ fn remove(repo: &Path, target: Target) -> Result<()> {
     let exe = current_exe()?;
     let spec = spec::timer_spec(&ws, &exe, target, Schedule::Minutes(30), None);
     host_remove(&spec)?;
-    println!("Removed timer {}.", spec.task_name);
+    outln!("Removed timer {}.", spec.task_name);
     Ok(())
 }
 
@@ -191,7 +191,7 @@ fn remove_all(repo: &Path) -> Result<()> {
     let exe = current_exe()?;
     for spec in all_specs(&ws, &exe) {
         host_remove(&spec)?;
-        println!("Removed timer {}.", spec.task_name);
+        outln!("Removed timer {}.", spec.task_name);
     }
     Ok(())
 }
@@ -244,19 +244,19 @@ fn host_status(spec: &TimerSpec) -> Result<()> {
         .context("querying schtasks")?;
     let st = platform::parse_status(&String::from_utf8_lossy(&out.stdout));
     if !st.registered {
-        println!("{}: not registered.", spec.task_name);
+        outln!("{}: not registered.", spec.task_name);
         return Ok(());
     }
-    println!("{}: registered.", spec.task_name);
-    println!(
+    outln!("{}: registered.", spec.task_name);
+    outln!(
         "  last firing: {}",
         st.last_run.as_deref().unwrap_or("unknown")
     );
-    println!(
+    outln!(
         "  last result: {}",
         st.last_result.as_deref().unwrap_or("unknown")
     );
-    println!(
+    outln!(
         "  next tick:   {}",
         st.next_run.as_deref().unwrap_or("unknown")
     );
@@ -280,13 +280,13 @@ fn host_status(spec: &TimerSpec) -> Result<()> {
                 .take(5)
                 .collect::<Vec<_>>()
                 .join(" ");
-            println!("{}: registered ({expr}).", spec.task_name);
+            outln!("{}: registered ({expr}).", spec.task_name);
             // cron keeps no run history — an honest asymmetry, not a gap to fake.
-            println!("  last firing: unavailable (cron keeps no run history)");
-            println!("  last result: unavailable (cron keeps no run history)");
-            println!("  next tick:   unavailable (cron keeps no run history)");
+            outln!("  last firing: unavailable (cron keeps no run history)");
+            outln!("  last result: unavailable (cron keeps no run history)");
+            outln!("  next tick:   unavailable (cron keeps no run history)");
         }
-        None => println!("{}: not registered.", spec.task_name),
+        None => outln!("{}: not registered.", spec.task_name),
     }
     Ok(())
 }

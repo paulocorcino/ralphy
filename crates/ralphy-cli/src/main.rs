@@ -17,6 +17,9 @@ use clap::FromArgMatches;
 use ralphy_core::{git, Usage, Workspace};
 use tracing::warn;
 
+#[macro_use]
+mod output;
+
 mod blob;
 mod changes;
 mod cli;
@@ -81,7 +84,9 @@ fn main() -> Result<ExitCode> {
             hook::run_stop_hook();
             Ok(())
         }
-        Command::Hook(HookCommand::Guard { cost_gate }) => guard::run_guard_hook(cost_gate),
+        Command::Hook(HookCommand::Guard { cost_gate }) => {
+            return Ok(guard::run_guard_hook(cost_gate))
+        }
         Command::Hook(HookCommand::Post) => {
             hook::run_post_hook();
             Ok(())
@@ -108,7 +113,7 @@ fn main() -> Result<ExitCode> {
         Command::Sync(cmd) => sync::sync(cmd),
         Command::Gemini(cmd) => gemini::gemini(cmd),
         Command::Stop(args) => stop::stop(&args),
-        Command::Update(args) => update::run(&args),
+        Command::Update(args) => return update::run(&args),
     };
     outcome.map(|()| ExitCode::SUCCESS)
 }
@@ -125,7 +130,7 @@ fn askpass_exit_code() -> Option<ExitCode> {
     match host::askpass(&env.to_string_lossy(), &prompt.to_string_lossy()) {
         Ok(()) => Some(ExitCode::SUCCESS),
         Err(e) => {
-            eprintln!("{e:#}");
+            eoutln!("{e:#}");
             Some(ExitCode::FAILURE)
         }
     }
@@ -336,14 +341,14 @@ fn consolidate_cmd(args: ConsolidateArgs) -> Result<()> {
 
     let notes = knowledge::loose_notes(&ws);
     if notes.is_empty() {
-        println!("No loose knowledge notes under .ralphy/knowledge/ — nothing to consolidate.");
+        outln!("No loose knowledge notes under .ralphy/knowledge/ — nothing to consolidate.");
         return Ok(());
     }
     let names: Vec<String> = notes
         .iter()
         .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
         .collect();
-    println!(
+    outln!(
         "Consolidating {} note(s) into KNOWLEDGE.md: {}",
         notes.len(),
         names.join(", ")
@@ -365,9 +370,7 @@ fn consolidate_cmd(args: ConsolidateArgs) -> Result<()> {
     };
     let (archived, _usage) =
         run_consolidation(consolidator, &ws, &run_dir, args.max_minutes, &notes)?;
-    println!(
-        "Done: KNOWLEDGE.md updated, {archived} note(s) archived into .ralphy/knowledge/raw/."
-    );
+    outln!("Done: KNOWLEDGE.md updated, {archived} note(s) archived into .ralphy/knowledge/raw/.");
     Ok(())
 }
 

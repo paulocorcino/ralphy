@@ -69,12 +69,12 @@ pub(crate) fn stop(args: &StopArgs) -> anyhow::Result<()> {
         // workbench's Stop button, must not fill with false failures for a race
         // they cannot avoid.
         if args.format.as_deref() == Some("json") {
-            println!(
+            outln!(
                 "{}",
                 serde_json::json!({ "stop": { "requested": false, "reason": "no live run" } })
             );
         } else {
-            println!("no live run in this repo — nothing to stop.");
+            outln!("no live run in this repo — nothing to stop.");
         }
         return Ok(());
     };
@@ -97,12 +97,12 @@ pub(crate) fn stop(args: &StopArgs) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("could not write {}: {e}", path.display()))?;
 
     if args.format.as_deref() == Some("json") {
-        println!(
+        outln!(
             "{}",
             serde_json::json!({ "stop": { "requested": true, "runid": runid, "pid": pid } })
         );
     } else {
-        println!("stop requested for run {runid} (pid {pid}).");
+        outln!("stop requested for run {runid} (pid {pid}).");
     }
     Ok(())
 }
