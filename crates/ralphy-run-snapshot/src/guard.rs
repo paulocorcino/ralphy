@@ -16,6 +16,7 @@ use crate::document::{final_snapshot_path, snapshot_path, stop_path};
 /// `?`-propagated exit. There is deliberately no signal handler: a killed
 /// process leaves both files behind, and those orphans are exactly what
 /// [`crate::list_runs`]'s dead-pid sweep recovers.
+#[derive(Debug)]
 pub struct SnapshotGuard {
     path: PathBuf,
     stop: PathBuf,
@@ -41,6 +42,7 @@ impl SnapshotGuard {
     /// the run finished with (docs/adr/0085 D11). `report` is called when the
     /// document cannot be kept; the live document is removed either way. This
     /// crate carries no logger, so the caller says how a failure is logged.
+    #[must_use]
     pub fn keep_final_in(mut self, run_dir: &Path, report: fn(&std::io::Error)) -> Self {
         self.keep = Some((final_snapshot_path(run_dir), report));
         self

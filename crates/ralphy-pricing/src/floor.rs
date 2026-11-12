@@ -15,6 +15,10 @@ const OVERLAY_JSON: &str = include_str!("../../../assets/pricing/slug-overlay.js
 impl PriceTable {
     /// The shipped floor: ingested seed (`provider/model`) plus bare-id overlay.
     /// No overrides, no disk cache — that is [`PriceTable::load`].
+    ///
+    /// # Panics
+    ///
+    /// Never in a release: the two embedded JSON files are checked by the tests.
     pub fn defaults() -> Self {
         let seed_doc: Value =
             serde_json::from_str(SEED_JSON).expect("embedded models-dev-seed.json must parse");

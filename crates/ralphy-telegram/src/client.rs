@@ -29,6 +29,13 @@ pub struct UreqTransport {
     agent: ureq::Agent,
 }
 
+/// Hides the bot token, a secret.
+impl std::fmt::Debug for UreqTransport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UreqTransport").finish_non_exhaustive()
+    }
+}
+
 impl UreqTransport {
     /// Build a transport for `token`. The agent carries connect/read timeouts so
     /// a wedged network can't hang `setup`/`test` or the notifier's pre-spawn
@@ -104,6 +111,7 @@ fn envelope(
 }
 
 /// A thin Bot API client generic over its [`Transport`].
+#[derive(Debug)]
 pub struct BotClient<T: Transport> {
     transport: T,
 }
