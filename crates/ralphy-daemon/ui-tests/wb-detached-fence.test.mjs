@@ -1,8 +1,10 @@
 // Unit tests for assets/ui/wb-detached-fence.ts, the page script of the
 // torn-off fence window, on stub `window` and `document` objects.
+// oxlint-disable-next-line eslint/max-classes-per-file -- a fake class per object the test stands in for
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { isFenceOpen, wireDetachedFence } from "../assets/ui/wb-detached-fence.ts";
+import { idLookups } from "./fake-document.mjs";
 
 const ORIGIN = "https://daemon.test";
 
@@ -18,7 +20,7 @@ function page({ opener = true } = {}) {
   const document = {
     title: "",
     addEventListener: (type) => log.push(["document", type]),
-    getElementById: (id) => (id === "stage" ? stage : null),
+    ...idLookups((id) => (id === "stage" ? stage : null)),
   };
   return { window, document, log, stage };
 }
@@ -53,7 +55,8 @@ test("the fence window with no opener says so and asks nobody", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const p = page({ opener: false });
   wireDetachedFence(p.window, p.document);
-  assert.match(p.stage.innerHTML, /Nothing to show\. Detach a fence from the workbench first\./);
+  // oxlint-disable-next-line no-restricted-properties -- reads a fake element; the rule is for writes
+  assert.match(p.stage.innerHTML, /Nothing to show\. Detach a fence from the workbench first\./u);
   assert.deepEqual(p.log, []);
 });
 
@@ -76,6 +79,8 @@ test("the opener's answer mounts a fence only when it names one", () => {
     assert.equal(isFenceOpen(bad), false, JSON.stringify(bad));
   }
 });
+
+const tool = () => ({ append() {}, addEventListener() {} });
 
 // The window after the opener's answer, on a stubbed `BroadcastChannel`. `hear`
 // delivers a message of the channel; `closes` counts `window.close()`. An
@@ -113,7 +118,6 @@ function openedFence(t, { tab = "t1", pid = "p1", early = null } = {}) {
   const handlers = {};
   const opener = { postMessage() {}, closed: false };
   const stage = { innerHTML: "", querySelector: () => null, querySelectorAll: () => [] };
-  const tool = () => ({ append() {}, addEventListener() {} });
   const closes = { count: 0, focus: 0 };
   const window = {
     location: { origin: ORIGIN },
@@ -127,7 +131,7 @@ function openedFence(t, { tab = "t1", pid = "p1", early = null } = {}) {
     body: { append() {} },
     createElement: tool,
     addEventListener() {},
-    getElementById: () => stage,
+    ...idLookups(() => stage),
   };
   wireDetachedFence(window, document);
   handlers.message({

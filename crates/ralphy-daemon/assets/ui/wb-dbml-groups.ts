@@ -12,7 +12,7 @@ export const OTHER_TABLES = "Other tables";
 /** The shortest shared prefix, in characters, that puts two names in one group. */
 const MIN_PREFIX = 4;
 
-const SEPARATOR = /[_\-.]/;
+const SEPARATOR = /[_\-.]/u;
 
 // Compare as lower case by code unit: the same order on every machine.
 function byLower(a: string, b: string) {
@@ -62,7 +62,7 @@ function labelOf(names: string[]) {
       Math.max(prefix.lastIndexOf("_"), prefix.lastIndexOf("-"), prefix.lastIndexOf(".")) + 1,
     );
   }
-  const label = cut.replace(/[_\-.]+$/, "") || prefix;
+  const label = cut.replace(/[_\-.]+$/u, "") || prefix;
   return endsInsideWord(label, names) ? `${label}…` : label;
 }
 
@@ -98,11 +98,14 @@ export function groupTables(schema: DbmlSchema): { label: string; tables: DbmlTa
   }
   const rest = schema.tables
     .filter((t) => !taken.has(t.name))
-    .sort((a, b) => byLower(a.name, b.name));
+    .toSorted((a, b) => byLower(a.name, b.name));
   for (const run of runsOf(rest)) {
     addTo(buckets, run.length > 1 ? labelOf(run.map((t) => t.name)) : OTHER_TABLES, run);
   }
   return [...buckets]
-    .map(([label, tables]) => ({ label, tables: tables.sort((a, b) => byLower(a.name, b.name)) }))
-    .sort(byLabel);
+    .map(([label, tables]) => ({
+      label,
+      tables: tables.toSorted((a, b) => byLower(a.name, b.name)),
+    }))
+    .toSorted(byLabel);
 }

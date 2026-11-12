@@ -93,6 +93,7 @@ export function wireDetached(window: Window, document: Document) {
   // answer it. No opener, or a foreign one, means no file — and we say so
   // rather than rendering anything.
   const empty = (why: string) => {
+    // oxlint-disable-next-line unicorn/prefer-query-selector -- its innerHTML is old debt
     required(document.getElementById("viewers"), "the viewers").innerHTML =
       '<p class="detached-empty">Nothing to show. ' + why + ".</p>";
   };

@@ -1,6 +1,7 @@
 // Unit tests for assets/ui/wb-console-gpu.ts — the console's dormancy watch and
 // GPU budget. `gpuHolders` is pure; `createGpuBudget` is driven with fake
 // `deps` (windows, observer, microtask queue), with no console and no DOM.
+// oxlint-disable-next-line eslint/max-classes-per-file -- a fake class per object the test stands in for
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -13,24 +14,25 @@ import {
   terminalGpu,
 } from "../assets/ui/wb-console-gpu.ts";
 
+const gpuWin = (z, more = {}) => ({ seen: true, covered: false, hasTerminal: true, z, ...more });
+
 // --- gpuHolders: which windows hold one of the page's WebGL contexts ---------
 // Chrome keeps 16 live contexts per renderer process and drops the oldest past
 // that, so a cascade of 20 seen consoles lost four. The page hands out a
 // budget, to the seen, uncovered windows on top.
 
 test("gpuHolders gives the budget to the seen, uncovered windows on top", () => {
-  const win = (z, more = {}) => ({ seen: true, covered: false, hasTerminal: true, z, ...more });
   // [case, windows, budget, expected indexes]
   const rows = [
-    ["the highest z first, cut at the budget", [win(1), win(5), win(3), win(4)], 2, [1, 3]],
-    ["fewer candidates than the budget: all of them", [win(1), win(2)], 12, [1, 0]],
+    ["the highest z first, cut at the budget", [gpuWin(1), gpuWin(5), gpuWin(3), gpuWin(4)], 2, [1, 3]],
+    ["fewer candidates than the budget: all of them", [gpuWin(1), gpuWin(2)], 12, [1, 0]],
     [
       "a window not seen, covered or without a terminal never holds one, even on top",
-      [win(9, { seen: false }), win(8, { covered: true }), win(7, { hasTerminal: false }), win(1)],
+      [gpuWin(9, { seen: false }), gpuWin(8, { covered: true }), gpuWin(7, { hasTerminal: false }), gpuWin(1)],
       2,
       [3],
     ],
-    ["ties keep the input order", [win(2), win(2), win(2)], 2, [0, 1]],
+    ["ties keep the input order", [gpuWin(2), gpuWin(2), gpuWin(2)], 2, [0, 1]],
   ];
   for (const [name, windows, budget, want] of rows) {
     assert.deepEqual(gpuHolders(windows, budget), want, name);
@@ -187,6 +189,18 @@ test("many scheduleGpu calls in one turn give one rebalance", () => {
   assert.equal(tasks.length, 1, "after it ran, the next call queues again");
 });
 
+// A member left out fails the call that needs it.
+const missing = (name) => {
+  const { deps, runTasks } = fakeDeps();
+  deps.wins.add(Object.assign(fakeWindow(1), { _visible: true }));
+  delete deps[name];
+  const budget = createGpuBudget(deps);
+  return () => {
+    budget.scheduleGpu();
+    runTasks();
+  };
+};
+
 // The page globals are the reads `tsc` cannot see; it guards every other read
 // through the `GpuBudgetDeps` type.
 test("a budget uses its deps, not the page's IntersectionObserver or queueMicrotask", () => {
@@ -197,6 +211,7 @@ test("a budget uses its deps, not the page's IntersectionObserver or queueMicrot
     constructor() {
       globalReads += 1;
     }
+    observe() {}
   };
   globalThis.queueMicrotask = () => {
     globalReads += 1;
@@ -215,17 +230,6 @@ test("a budget uses its deps, not the page's IntersectionObserver or queueMicrot
     globalThis.queueMicrotask = savedMicrotask;
   }
 
-  // A member left out fails the call that needs it.
-  const missing = (name) => {
-    const { deps, runTasks } = fakeDeps();
-    deps.wins.add(Object.assign(fakeWindow(1), { _visible: true }));
-    delete deps[name];
-    const budget = createGpuBudget(deps);
-    return () => {
-      budget.scheduleGpu();
-      runTasks();
-    };
-  };
   assert.throws(missing("queueMicrotask"), TypeError);
   assert.throws(missing("isCovered"), TypeError);
   assert.throws(missing("windowShown"), TypeError);

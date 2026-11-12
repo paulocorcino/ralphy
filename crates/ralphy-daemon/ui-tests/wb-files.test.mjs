@@ -85,7 +85,7 @@ test("the tree icon of a diagram file", () => {
 });
 
 test("the protected directories: .git and .ralphy in any case, and the note in the notes directory", () => {
-  assert.deepEqual([".git", ".GIT", ".ralphy", "src"].map(isProtectedDir), [true, true, true, false]);
+  assert.deepEqual([".git", ".GIT", ".ralphy", "src"].map((d) => isProtectedDir(d)), [true, true, true, false]);
   const rows = [
     [".ralphy/notes/idea.note", false],
     ["src/.git/config", true],
@@ -109,12 +109,12 @@ test("wbFiles lists only shell() names in uses, and its members left shell()", (
 test("every name the markup of wbFiles reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbFiles");
   const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
+  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
   let read = 0;
   for (const [, attr, value] of attrs) {
     // `x-data` names the component; `x-ref` names an element.
     if (attr === "x-data" || attr === "x-ref") continue;
-    const raw = attr === "x-for" ? value.split(/\s+in\s+/)[1] : value;
+    const raw = attr === "x-for" ? value.split(/\s+in\s+/u)[1] : value;
     for (const n of bindingNames(raw)) {
       // `u` is the row of the upload card's `x-for`.
       if (n.startsWith("$") || n === "u") continue;
@@ -128,7 +128,7 @@ test("every name the markup of wbFiles reads is its own or in its uses list", ()
 test("nothing outside the files element names their state", () => {
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["fileSearch", "treeStale", "treeError", "treeNotLive", "treeLoading", "openPeerDown", "createHere", "toggleFileSearch"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
+    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
   }
 });
 
@@ -245,7 +245,7 @@ test("a fresh listing evicts the levels it contradicts — a reused folder name 
   // The key is `<slug>\n<checkout>\n<rel>` (#406 added the middle segment);
   // the rel is its LAST segment.
   const cached = () =>
-    [...own._treeCache.keys()].map((k) => k.split("\n").at(-1)).sort();
+    [...own._treeCache.keys()].map((k) => k.split("\n").at(-1)).toSorted();
 
   // The tree as it stood: `ideias/` holding `dossie/`, itself holding a file.
   seed("", [{ name: "ideias", dir: true }, { name: "README.md", dir: false }]);
@@ -305,6 +305,11 @@ test("isFolder reads Wunderbaum's data bag, a lazy flag or a child list", () => 
   for (const [why, node, want] of rows) assert.equal(s.isFolder(node), want, why);
 });
 
+const treeNode = (rel) =>
+  rel.split("/").reduce((parent, title) => ({ title, parent, data: {}, children: null }), {
+    title: "root",
+  });
+
 test("the Move item is withheld inside .git and .ralphy, except for a note in the notes directory", () => {
   // The context menu is where the UI's mirror of the daemon's carve-out
   // (`fswrite::is_note_in_notes_dir`) decides what to offer: exactly
@@ -314,12 +319,8 @@ test("the Move item is withheld inside .git and .ralphy, except for a note in th
   shell.$store.tabs.renderMenu = (_x, _y, list) => {
     items = list;
   };
-  const node = (rel) =>
-    rel.split("/").reduce((parent, title) => ({ title, parent, data: {}, children: null }), {
-      title: "root",
-    });
   const offersMove = (rel) => {
-    own.showMenu(0, 0, node(rel));
+    own.showMenu(0, 0, treeNode(rel));
     return items.some((i) => i.label?.startsWith("Move"));
   };
   const rows = [
@@ -356,7 +357,8 @@ test("emitCreate sends the directory the create lands in, and only what the list
 // The component's half, driven with `WBDaemon.observe` stubbed and no tree
 // mounted — the folds that decide what is sent and which reply is believed run
 // without Wunderbaum.
-async function withSearchShell(run, reply = { status: "ok", hits: [], truncated: false }) {
+const NO_HITS = { status: "ok", hits: [], truncated: false };
+async function withSearchShell(run, reply = NO_HITS) {
   const { scope: state, window } = loadComponent("wbFiles", { magics: { $refs: {}, $nextTick: (f) => f() } });
   const calls = [];
   let answer = reply;
@@ -511,6 +513,8 @@ function mountedTreeOptions(s, window, document) {
   return options;
 }
 
+function Wunderbaum() {}
+
 // The one files host outlives every mount: a project switch, a checkout
 // change and a woken peer each mount the tree again on the same element.
 test("a right-click on the tree opens the menu once, however often the tree was mounted", () => {
@@ -525,7 +529,6 @@ test("a right-click on the tree opens the menu once, however often the tree was 
   const menus = [];
   state.showMenu = (x, y, node) => menus.push([x, y, node]);
   const realMar10 = globalThis.mar10;
-  function Wunderbaum() {}
   globalThis.mar10 = { Wunderbaum: Object.assign(Wunderbaum, { getNode: () => null }) };
   const rightClick = () => listeners.forEach((fn) => fn({ clientX: 7, clientY: 9, preventDefault() {} }));
   try {
@@ -562,17 +565,18 @@ test("a tree level that fails to load draws no error row, closes, and asks the f
   assert.ok(state.treeStale.endsWith("The list shown is the last one read."), state.treeStale);
 });
 
+const folderNode = (rel) => ({ rel, children: null });
+
 test("while the peer is down, only a folder read before opens", () => {
   const { state, shell, window, document } = peerFilesShell("unreachable");
   const options = mountedTreeOptions(state, window, document);
   state.relPath = (n) => n.rel;
   state._treeCache.set(state.treeKey("read"), []);
-  const folder = (rel) => ({ rel, children: null });
-  assert.equal(options.beforeExpand({ flag: true, node: folder("never") }), false);
-  assert.equal(options.beforeExpand({ flag: true, node: folder("read") }), undefined);
-  assert.equal(options.beforeExpand({ flag: false, node: folder("never") }), undefined);
+  assert.equal(options.beforeExpand({ flag: true, node: folderNode("never") }), false);
+  assert.equal(options.beforeExpand({ flag: true, node: folderNode("read") }), undefined);
+  assert.equal(options.beforeExpand({ flag: false, node: folderNode("never") }), undefined);
   shell.fleetPeers[0].state = "reachable";
-  assert.equal(options.beforeExpand({ flag: true, node: folder("never") }), undefined);
+  assert.equal(options.beforeExpand({ flag: true, node: folderNode("never") }), undefined);
 });
 
 test("FILES names the down peer from the fleet, and the read that calls it back re-reads the tree", () => {
@@ -588,7 +592,7 @@ test("FILES names the down peer from the fleet, and the read that calls it back 
     { rel: "src", expanded: true },
     { rel: "docs", expanded: false },
   ];
-  state.rawTree = () => ({ root: { visit: (fn) => folders.forEach(fn) } });
+  state.rawTree = () => ({ root: { visit: (fn) => folders.forEach((f) => fn(f)) } });
   state.isFolder = () => true;
   state.relPath = (n) => n.rel;
   state.treeStale = "Could not refresh the file list.";

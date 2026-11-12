@@ -437,7 +437,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
         carry,
       );
     }
-    closeBtn.onclick = async () => {
+    const closeClicked = async () => {
       // Nothing is running here; the question says so rather than borrowing the
       // live console's warning.
       const ok = await askConfirm({
@@ -454,6 +454,9 @@ export function createPlaceholders(deps: PlaceholderDeps) {
         agent: record.agent,
       });
     };
+    closeBtn.addEventListener("click", () => {
+      void closeClicked();
+    });
 
     wins.add(win);
     budget.trackDormancy(win);

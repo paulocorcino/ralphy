@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { WBColumns } from "../assets/ui/wb-columns.ts";
 import { createConsole } from "../assets/ui/wb-console.ts";
 import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
+import { idLookups } from "./fake-document.mjs";
 
 const UI = join(import.meta.dirname, "../assets/ui");
 // The console family's source text, for the few pins on how it is written.
@@ -30,7 +31,7 @@ function compareNames(a, b) {
 }
 const SRC = readdirSync(UI)
   .filter((name) => familyGroup(name) >= 0)
-  .sort((a, b) => familyGroup(a) - familyGroup(b) || compareNames(a, b))
+  .toSorted((a, b) => familyGroup(a) - familyGroup(b) || compareNames(a, b))
   .map((name) => readFileSync(join(UI, name), "utf8"))
   .join("");
 
@@ -300,7 +301,7 @@ function withFrames(body) {
 
 function panHarness() {
   const ws = { scrollLeft: 0, scrollTop: 0, getBoundingClientRect: () => PAN_VIEW };
-  const api = load({}, { getElementById: (id) => (id === "workspace" ? ws : null) });
+  const api = load({}, { ...idLookups((id) => (id === "workspace" ? ws : null)) });
   const node = { isConnected: true };
   const placed = [];
   const pan = api.autoPan(node, (p) => placed.push(p));
@@ -469,8 +470,9 @@ test("the font range holds xterm's default, so an unset preference changes nothi
   assert.equal(c.fontSize(), c.FONT_DEFAULT);
 });
 
+const coarse = (q) => ({ matches: q.includes("coarse"), addEventListener() {} });
+
 test("a touch surface with no stored preference starts at the same size", () => {
-  const coarse = (q) => ({ matches: q.includes("coarse"), addEventListener() {} });
   const c = load({ matchMedia: coarse });
   assert.equal(c.fontSize(), c.FONT_DEFAULT);
 });
@@ -562,7 +564,7 @@ async function deskPage(served = {}, extras = {}, docExtras = {}) {
   };
   const sent = [];
   const answers = extras.answers || [];
-  const wb = load({ ...extras.window }, { getElementById: () => null, ...docExtras }, {
+  const wb = load({ ...extras.window }, { ...idLookups(() => null), ...docExtras }, {
     deskSink: {
       put(body) {
         sent.push(JSON.parse(body));
@@ -625,7 +627,7 @@ test("a flush sends only this page's changes: no read before it, no whole desk",
     await settle();
     assert.equal(page.gets.length, 1, `only the load read the desk: ${page.gets}`);
     assert.equal(page.sent.length, 1);
-    assert.deepEqual(Object.keys(page.sent[0]).sort(), ["changes", "generation", "seq"]);
+    assert.deepEqual(Object.keys(page.sent[0]).toSorted(), ["changes", "generation", "seq"]);
     assert.equal(page.sent[0].generation, 7);
     assert.ok(!JSON.stringify(page.sent).includes("theirs"), JSON.stringify(page.sent));
   } finally {
@@ -704,14 +706,15 @@ function deskWin(id, extra = {}) {
 }
 const SAVED = { id: "w-1", repo: "o/r", agent: "console", kind: "console", rect: { left: 100, top: 100, width: 600, height: 400 }, max: false, sessionId: 7, checkout: "wt-a", consoleName: "r #1" };
 
+const match = (w, sel) =>
+  sel.split(",").some((one) =>
+    one.trim().split(".").filter(Boolean).every((c) => w.classList.contains(c)),
+  );
+
 // The DOM that `applyColumns` paints: a stage whose windows match the few
 // selectors it queries, and a workspace with no scroll. The stage measures 0
 // wide, so the fence refresh after a write returns early.
 function columnDom(wins) {
-  const match = (w, sel) =>
-    sel.split(",").some((one) =>
-      one.trim().split(".").filter(Boolean).every((c) => w.classList.contains(c)),
-    );
   const all = (sel) => wins.filter((w) => match(w, sel));
   const one = (sel) => all(sel)[0] ?? null;
   const stageEl = { offsetWidth: 0, offsetHeight: 0, style: {}, querySelectorAll: all, querySelector: one };
@@ -737,7 +740,7 @@ function columnWin(id, maximized = false) {
   });
 }
 const colRecord = (id, max) => ({ ...SAVED, id, max, sessionId: null, checkout: null });
-const byId = (changes) => [...changes].sort((x, y) => x.id.localeCompare(y.id));
+const byId = (changes) => [...changes].toSorted((x, y) => x.id.localeCompare(y.id));
 
 // ADR-0051 §5: the console that becomes first in the columns is written to
 // the desk as an ordinary maximize, and the one that stops being first is
@@ -748,7 +751,7 @@ test("applyColumns writes the moved maximize to the desk when asked to persist",
   const page = await deskPage(
     { windows: [colRecord("w-a", true), colRecord("w-b", false)] },
     {},
-    { getElementById: (id) => dom?.[id] ?? null, dispatchEvent() {} },
+    { ...idLookups((id) => dom?.[id] ?? null), dispatchEvent() {} },
   );
   try {
     const C = loadColumns();
@@ -774,7 +777,7 @@ test("applyColumns writes the unmaximize of a console that stays a column, not f
   const page = await deskPage(
     { windows: [colRecord("w-a", true), colRecord("w-b", false)] },
     {},
-    { getElementById: (id) => dom?.[id] ?? null, dispatchEvent() {} },
+    { ...idLookups((id) => dom?.[id] ?? null), dispatchEvent() {} },
   );
   try {
     const C = loadColumns();
@@ -800,7 +803,7 @@ test("markRelaunch marks the id, and a take-down that throws clears the mark", (
   assert.equal(seen, true, "marked before the take-down");
   assert.equal(isRelaunching("w-a"), true, "still marked until the respawn");
   assert.equal(isRelaunching("w-b"), false);
-  assert.throws(() => markRelaunch("w-b", () => { throw new Error("gone"); }), /gone/);
+  assert.throws(() => markRelaunch("w-b", () => { throw new Error("gone"); }), /gone/u);
   assert.equal(isRelaunching("w-b"), false, "a take-down that throws clears the mark");
 });
 
@@ -808,7 +811,7 @@ test("markRelaunch marks the id, and a take-down that throws clears the mark", (
 // same id; the shell's columns wait for an id marked in between. These paths
 // need a real DOM, so the wiring is pinned on the source.
 test("a restart and a placeholder's Launch mark the console as relaunching", () => {
-  assert.match(SRC, /markRelaunch\(carry\.id, discard\);/);
+  assert.match(SRC, /markRelaunch\(carry\.id, discard\);/u);
   assert.match(SRC, /markRelaunch\(carry\.id, \(\) => \{\s*drop\(true\);\s*\}\);/u);
   assert.match(SRC, /\} finally \{\s*relaunching\.delete\(carry\.id\);/u);
 });
@@ -819,9 +822,9 @@ test("the torn-off fence window paints its columns without persist", () => {
   // The page and its page script module.
   const html =
     readFileSync(join(UI, "detached-fence.html"), "utf8") + readFileSync(join(UI, "wb-detached-fence.ts"), "utf8");
-  const calls = html.match(/WBConsole\.applyColumns\([^;]*;/g) || [];
+  const calls = html.match(/WBConsole\.applyColumns\([^;]*;/gu) || [];
   assert.equal(calls.length, 1, calls.join("\n"));
-  assert.ok(!/\bpersist\b/.test(html), "the torn-off fence window names persist");
+  assert.ok(!/\bpersist\b/u.test(html), "the torn-off fence window names persist");
 });
 
 // The torn-off fence window paints its own grid and never stores it
@@ -831,7 +834,7 @@ test("applyColumns writes nothing to the desk without persist", async () => {
   const page = await deskPage(
     { windows: [colRecord("w-a", true), colRecord("w-b", false)] },
     {},
-    { getElementById: (id) => dom?.[id] ?? null, dispatchEvent() {} },
+    { ...idLookups((id) => dom?.[id] ?? null), dispatchEvent() {} },
   );
   try {
     const C = loadColumns();
@@ -1092,7 +1095,7 @@ test("start a new desk treats a desk another tab already started as done", async
   };
   try {
     // The empty new desk is restored, which looks for the stage.
-    const c = load({}, { getElementById: () => null });
+    const c = load({}, { ...idLookups(() => null) });
     await c.whenDeskLoaded();
     assert.equal(c.deskFailure(), "the file is damaged");
     await c.startNewDesk();
@@ -1114,7 +1117,7 @@ test("start a new desk fails with the status on any other refusal", async () => 
   try {
     const c = load();
     await c.whenDeskLoaded();
-    await assert.rejects(c.startNewDesk(), /the daemon answered 500/);
+    await assert.rejects(c.startNewDesk(), /the daemon answered 500/u);
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -1134,27 +1137,28 @@ test("a desk read that fails in transport sets no desk failure", async () => {
   }
 });
 
+const deskOfSize = (n) => ({
+  windows: Array.from({ length: n }, (_, i) => ({
+    id: `w${i}`,
+    repo: "o/r",
+    agent: "console",
+    kind: "console",
+    consoleName: `r #${i + 1}`,
+    ts: i,
+  })),
+  fences: [],
+});
+
 // A full desk refuses a NEW console instead of cutting one in silence.
 test("atDeskCap is true once the desk holds the cap", async () => {
   const realFetch = globalThis.fetch;
-  const desk = (n) => ({
-    windows: Array.from({ length: n }, (_, i) => ({
-      id: `w${i}`,
-      repo: "o/r",
-      agent: "console",
-      kind: "console",
-      consoleName: `r #${i + 1}`,
-      ts: i,
-    })),
-    fences: [],
-  });
   try {
-    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(desk(29)) });
+    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(deskOfSize(29)) });
     const wb = load({}, {}, { deskSink: { put: () => Promise.resolve({ kind: "held" }), putSync() {} } });
     await wb.whenDeskLoaded();
     assert.equal(wb.DESK_MAX, 30);
     assert.equal(wb.atDeskCap(), false, "29 records leave room for one more");
-    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(desk(30)) });
+    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(deskOfSize(30)) });
     await wb.reloadDesk();
     assert.equal(wb.atDeskCap(), true, "30 records are a full desk");
   } finally {

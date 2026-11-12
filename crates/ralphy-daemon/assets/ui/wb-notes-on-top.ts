@@ -37,6 +37,10 @@ export type NoteOnTopDeps = {
   fragment: () => boolean;
 };
 
+function onTop(el: NoteCard) {
+  return el.classList.contains("on-top");
+}
+
 export function createNoteOnTop(deps: NoteOnTopDeps) {
   const { window, document, consoleHost, stack, stage, cardEl, recordOf, isAway, wakeCard } = deps;
   const fragment = deps.fragment;
@@ -46,12 +50,8 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
   // its place.
   let onTopId: string | null = null;
 
-  function onTop(el: NoteCard) {
-    return el.classList.contains("on-top");
-  }
-
   function viewportSize() {
-    const ws = document.getElementById("workspace");
+    const ws = document.querySelector<HTMLElement>("#workspace");
     return { width: ws?.clientWidth ?? 0, height: ws?.clientHeight ?? 0 };
   }
 
@@ -63,7 +63,7 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
   // so a scroll of the stage never has to move it and it does not shake
   // during a pan.
   function placeOnTop(el: NoteCard, box: FloatBox) {
-    const ws = document.getElementById("workspace");
+    const ws = document.querySelector<HTMLElement>("#workspace");
     if (ws) {
       const r = ws.getBoundingClientRect();
       el.style.setProperty("--ws-x", r.left + ws.clientLeft + "px");
@@ -174,7 +174,7 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
   let viewportWatch: ResizeObserver | null = null;
   function watchViewport() {
     if (viewportWatch || typeof window.ResizeObserver !== "function") return;
-    const ws = document.getElementById("workspace");
+    const ws = document.querySelector<HTMLElement>("#workspace");
     if (!ws) return;
     viewportWatch = new ResizeObserver(refitOnTop);
     viewportWatch.observe(ws);
@@ -224,7 +224,7 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
         }
         const delta = { dx: at.x - from.x, dy: at.y - from.y };
         const box = resizing
-          ? WBGeometry.resizeRect(dir, start, delta, NOTE_MIN, vp)
+          ? WBGeometry.resizeRect(dir, start, delta, { min: NOTE_MIN, bounds: vp })
           : onTopClamp({ ...start, left: start.left + delta.dx, top: start.top + delta.dy }, vp);
         placeOnTop(el, box);
       };

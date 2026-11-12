@@ -39,6 +39,70 @@ export type ConsoleKeysDeps = {
   focusWin: (el: HTMLElement) => void;
 };
 
+// The read half: resolves `{ image: Blob }` or `{ text }`. Always a promise:
+// an insecure origin has no `navigator.clipboard` and the API throws
+// synchronously. `read()` first, because `readText()` resolves "" for an
+// image-only clipboard (an iOS screenshot). ONE call: each read raises
+// Safari's "Paste" callout, so a text fallback would ask twice.
+function readClipboard(): ReturnType<TerminalDeps["readClipboard"]> {
+  try {
+    const clip = navigator.clipboard;
+    if (typeof clip.read !== "function") {
+      return Promise.resolve(clip.readText()).then((text) => ({ text }));
+    }
+    return Promise.resolve(clip.read()).then(clipboardContent);
+  } catch {
+    return Promise.resolve({ text: "" });
+  }
+}
+
+// Put `text` on the system clipboard and give the terminal its focus back.
+// `navigator.clipboard` exists only in a SECURE CONTEXT (loopback, https), so
+// the write degrades to a hidden textarea + `execCommand`. Every path is
+// best-effort and SILENT: `writeText` rejects with "Document is not focused"
+// whenever the workbench is not the focused window, and Chrome can refuse
+// `execCommand` outside a user gesture; the copy is dropped, not queued.
+function writeClipboard(text: string, term: XtermTerminal) {
+  if (!text) return;
+  // The fallback moves focus to the textarea; without giving it back, the
+  // operator's next keystroke goes nowhere and the console looks dead.
+  const fallback = () => {
+    // A detached popup has its OWN document — write into the one this terminal
+    // actually lives in, not the shell's.
+    const doc = term.element.ownerDocument;
+    const ta = doc.createElement("textarea");
+    ta.value = text;
+    // Off-screen rather than `display:none`: a hidden element cannot be selected.
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    doc.body.append(ta);
+    try {
+      ta.select();
+      // The only copy path where `navigator.clipboard` is missing or refuses (an insecure
+      // origin, an unfocused window).
+      // oxlint-disable-next-line typescript/no-deprecated -- the copy fallback
+      doc.execCommand("copy");
+    } catch {}
+    ta.remove();
+    try {
+      term.focus();
+    } catch {}
+  };
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- absent on an insecure origin
+  if (navigator.clipboard === undefined) {
+    fallback();
+    return;
+  }
+  navigator.clipboard.writeText(text).catch(fallback);
+}
+
+// The strip refuses focus: on iOS losing the textarea's caret dismisses
+// the keyboard. `pointerdown` + `mousedown`; `touchstart` is NOT
+// prevented — that would suppress the synthesized click.
+const holdFocus = (e: Event) => {
+  e.preventDefault();
+};
+
 export function createConsoleKeys(deps: ConsoleKeysDeps) {
   const { window, document, viewStore, wins, focusWin } = deps;
 
@@ -72,63 +136,6 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
     return px;
   }
 
-  // Put `text` on the system clipboard and give the terminal its focus back.
-  // `navigator.clipboard` exists only in a SECURE CONTEXT (loopback, https), so
-  // the write degrades to a hidden textarea + `execCommand`. Every path is
-  // best-effort and SILENT: `writeText` rejects with "Document is not focused"
-  // whenever the workbench is not the focused window, and Chrome can refuse
-  // `execCommand` outside a user gesture; the copy is dropped, not queued.
-  function writeClipboard(text: string, term: XtermTerminal) {
-    if (!text) return;
-    // The fallback moves focus to the textarea; without giving it back, the
-    // operator's next keystroke goes nowhere and the console looks dead.
-    const fallback = () => {
-      // A detached popup has its OWN document — write into the one this terminal
-      // actually lives in, not the shell's.
-      const doc = term.element.ownerDocument;
-      const ta = doc.createElement("textarea");
-      ta.value = text;
-      // Off-screen rather than `display:none`: a hidden element cannot be selected.
-      ta.style.position = "fixed";
-      ta.style.left = "-9999px";
-      doc.body.append(ta);
-      try {
-        ta.select();
-        // The only copy path where `navigator.clipboard` is missing or refuses (an insecure
-        // origin, an unfocused window).
-        // oxlint-disable-next-line typescript/no-deprecated -- the copy fallback
-        doc.execCommand("copy");
-      } catch {}
-      ta.remove();
-      try {
-        term.focus();
-      } catch {}
-    };
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- absent on an insecure origin
-    if (navigator.clipboard === undefined) {
-      fallback();
-      return;
-    }
-    navigator.clipboard.writeText(text).catch(fallback);
-  }
-
-  // The read half: resolves `{ image: Blob }` or `{ text }`. Always a promise:
-  // an insecure origin has no `navigator.clipboard` and the API throws
-  // synchronously. `read()` first, because `readText()` resolves "" for an
-  // image-only clipboard (an iOS screenshot). ONE call: each read raises
-  // Safari's "Paste" callout, so a text fallback would ask twice.
-  function readClipboard(): ReturnType<TerminalDeps["readClipboard"]> {
-    try {
-      const clip = navigator.clipboard;
-      if (typeof clip.read !== "function") {
-        return Promise.resolve(clip.readText()).then((text) => ({ text }));
-      }
-      return Promise.resolve(clip.read()).then(clipboardContent);
-    } catch {
-      return Promise.resolve({ text: "" });
-    }
-  }
-
   // The key bar of one window. Its latch buttons go back to the caller, which
   // reflects the terminal's latches on them.
   function buildKeyBar(win: ConsoleWin) {
@@ -136,23 +143,17 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
     // for the buttons to talk to.
     const bar = document.createElement("div");
     bar.className = "session-keys";
-    // The strip refuses focus: on iOS losing the textarea's caret dismisses
-    // the keyboard. `pointerdown` + `mousedown`; `touchstart` is NOT
-    // prevented — that would suppress the synthesized click.
-    const holdFocus = (e: Event) => {
-      e.preventDefault();
-    };
     bar.addEventListener("pointerdown", holdFocus);
     bar.addEventListener("mousedown", holdFocus);
 
     // `icon` (a Bootstrap Icons class) draws the key as that glyph; without
     // it the key shows `text`.
-    const key = (name: string, text: string, title: string, cls?: string, icon?: string) => {
+    const key = (name: string, text: string, title: string, icon?: string) => {
       const b = document.createElement("button");
       b.type = "button";
       // Not in the tab order: a keyboard user already has these keys.
       b.tabIndex = -1;
-      b.className = "session-key" + (cls !== undefined && cls !== "" ? " " + cls : "");
+      b.className = "session-key";
       b.dataset["key"] = name;
       b.title = title;
       if (icon !== undefined && icon !== "") {
@@ -171,7 +172,7 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
     // taking focus, the page going to the background.
     let keyboardOpen = false;
     let refocusing = false;
-    const kbBtn = key("keyboard", "", "Show or hide the keyboard", "", "bi-keyboard");
+    const kbBtn = key("keyboard", "", "Show or hide the keyboard", "bi-keyboard");
     kbBtn.setAttribute("aria-pressed", "false");
     const applyInputMode = () => {
       kbBtn.setAttribute("aria-pressed", keyboardOpen ? "true" : "false");
@@ -198,12 +199,12 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
     const shiftBtn = key("shift", "shift", "Shift: applies to the next key");
     shiftBtn.setAttribute("aria-pressed", "false");
     key("tab", "tab", "Tab");
-    key("enter", "", "Enter", "", "bi-arrow-return-left");
+    key("enter", "", "Enter", "bi-arrow-return-left");
     key("slash", "/", "Slash");
-    key("up", "", "Up", "", "bi-arrow-up");
-    key("down", "", "Down", "", "bi-arrow-down");
-    key("left", "", "Left", "", "bi-arrow-left");
-    key("right", "", "Right", "", "bi-arrow-right");
+    key("up", "", "Up", "bi-arrow-up");
+    key("down", "", "Down", "bi-arrow-down");
+    key("left", "", "Left", "bi-arrow-left");
+    key("right", "", "Right", "bi-arrow-right");
     const ctrlBtn = key("ctrl", "ctrl", "Ctrl: applies to the next key");
     ctrlBtn.setAttribute("aria-pressed", "false");
     key("ctrl-c", "^C", "Ctrl-C: interrupt");
@@ -218,7 +219,7 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
     // `writeClipboard`'s textarea fallback runs inside this click (a user
     // gesture), which is what makes it work on an insecure LAN origin.
     // `bi-copy`, not `bi-clipboard`: the clipboard glyph is the PASTE icon.
-    const copyBtn = key("copy", "", "Copy selection", "", "bi-copy");
+    const copyBtn = key("copy", "", "Copy selection", "bi-copy");
     copyBtn.disabled = true;
     const syncCopy = () => {
       copyBtn.disabled = win._term?.term.hasSelection() !== true;
@@ -241,7 +242,7 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
     // Paste. The read has no `execCommand` fallback, so on an insecure origin
     // the button is disabled (`pasteOffered`). An image becomes the same
     // `image.write` drop as a keyboard paste (ADR-0055).
-    const pasteBtn = key("paste", "", "Paste", "", "bi-clipboard");
+    const pasteBtn = key("paste", "", "Paste", "bi-clipboard");
     pasteBtn.disabled = !pasteOffered(navigator.clipboard);
 
     key("font-down", "A−", "Smaller text");

@@ -68,16 +68,16 @@ function message(reply: Reply, fallback: string) {
 }
 
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-const bare = (s: string) => s.trim().replace(/[.;:]+$/, "");
+const bare = (s: string) => s.trim().replace(/[.;:]+$/u, "");
 // One line only: a block of CLI output can start with a capital and end
 // with a period and still hold an `Error: ` line.
-const isSentence = (s: string) => /^[A-Z]/.test(s) && s.endsWith(".") && !s.includes("\n");
+const isSentence = (s: string) => /^[A-Z]/u.test(s) && s.endsWith(".") && !s.includes("\n");
 
 // One line of text from the CLI's output: the error line and its causes,
 // or every line when there is no `Error: ` line.
 function oneLine(text: string) {
   let lines = text.replaceAll("\r", "").split("\n");
-  const trace = lines.findIndex((l) => /^\s*Stack backtrace:/.test(l));
+  const trace = lines.findIndex((l) => /^\s*Stack backtrace:/u.test(l));
   if (trace >= 0) lines = lines.slice(0, trace);
   const errorLine = lines.find((l) => l.startsWith("Error: "));
   if (errorLine === undefined) {
@@ -88,7 +88,7 @@ function oneLine(text: string) {
   }
   const pieces = [errorLine.slice("Error: ".length).trim()];
   for (const l of lines.slice(lines.indexOf(errorLine) + 1)) {
-    const t = l.trim().replace(/^\d+: /, "");
+    const t = l.trim().replace(/^\d+: /u, "");
     if (t && t !== "Caused by:") pieces.push(t);
   }
   return pieces.join(": ");
@@ -104,8 +104,11 @@ function parts(reply: Reply): Parts | null {
   const known = Object.hasOwn(CAUSE, raw) ? CAUSE[raw] : undefined;
   if (known !== undefined) return { cause: known, rest: [] };
   if (isSentence(raw) && !raw.startsWith("Error: ")) return { sentence: raw };
-  const text = oneLine(raw).replace(/^(cannot|refusing to) [^:]+: /, "");
-  const [head, ...rest] = text.split(" — ").map(bare).filter(Boolean);
+  const text = oneLine(raw).replace(/^(cannot|refusing to) [^:]+: /u, "");
+  const [head, ...rest] = text
+    .split(" — ")
+    .map((s) => bare(s))
+    .filter(Boolean);
   return head === undefined ? null : { cause: head, rest };
 }
 

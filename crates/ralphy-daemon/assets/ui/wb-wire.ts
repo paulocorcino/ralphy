@@ -175,28 +175,30 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     }
   }
 
+  const flash = (msg: string) => {
+    messages.flash(msg);
+  };
+
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- a page with no daemon door
+  const daemonBacked = () => window.WBDaemon?.write !== undefined;
+
+  const call = (verb: string, payload: CommandPayload, okMsg?: string) => {
+    WBDaemon.write(verb, payload)
+      .then((reply) => {
+        if (WBFail.isError(reply)) {
+          flash(WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
+        } else if (okMsg !== undefined) flash(okMsg);
+        return null;
+      })
+      .catch(() => {
+        flash("Could not rename: the daemon did not answer.");
+      });
+  };
+
   // --- Write byte-ops (#197): the workspace-mutating seam actions go to the
   // daemon's confined `file.*` verbs; a refusal is flashed. The browser composes
   // the full rel path.
   (function wireWriteVerbs() {
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a page with no daemon door
-    const daemonBacked = () => window.WBDaemon?.write !== undefined;
-    const flash = (msg: string) => {
-      messages.flash(msg);
-    };
-    const call = (verb: string, payload: CommandPayload, okMsg?: string) => {
-      WBDaemon.write(verb, payload)
-        .then((reply) => {
-          if (WBFail.isError(reply)) {
-            flash(WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
-          } else if (okMsg !== undefined) flash(okMsg);
-          return null;
-        })
-        .catch(() => {
-          flash("Could not rename: the daemon did not answer.");
-        });
-    };
-
     // Where a write is aimed: the project, and the checkout it carries.
     type Aim = {
       repo: string;
@@ -283,7 +285,11 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     // add had to say.
     function actWorktreeCreated(d: ActionOf<"worktree-created">, { repo }: Aim) {
       void window.Alpine.store("checkouts").ensureWorktreeListing(repo, true);
-      if (d.message) flash(d.message.split("\n").map(WBFail.sentence).filter(Boolean).join(" "));
+      if (d.message) {
+        const lines = d.message.split("\n");
+        const sentences = lines.map((line) => WBFail.sentence(line));
+        flash(sentences.filter(Boolean).join(" "));
+      }
     }
 
     // The name of a new entry: the prompt dialog where the page has a shell,
@@ -362,7 +368,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
       flash(WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
       // "not found" on a delete says the ROW is the lie: re-list the parent
       // so the ghost ends up off the screen.
-      if (/not found/i.test(reason)) {
+      if (/not found/iu.test(reason)) {
         sendWindow(window, "workbench:tree-dirty", { rel: parentRel(d.path) });
       }
     }
@@ -430,7 +436,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
 
   // Dismiss the context menu on any outside interaction.
   const hideContextMenu = () => {
-    const menu = document.getElementById("ctxmenu");
+    const menu = document.querySelector<HTMLElement>("#ctxmenu");
     if (menu) menu.style.display = "none";
   };
   document.addEventListener("click", hideContextMenu);

@@ -37,8 +37,8 @@ const ENCODINGS: Encoding[] = [
 // was read and will be written back.
 export function encodingLabel(name: string | null | undefined, bom: boolean) {
   let text = (name ?? "") || "UTF-8";
-  text = text.replace(/^utf-16(le|be)$/i, (_, e: string) => `UTF-16 ${e.toUpperCase()}`);
-  text = text.replace(/^windows-/i, "Windows-");
+  text = text.replace(/^utf-16(le|be)$/iu, (_, e: string) => `UTF-16 ${e.toUpperCase()}`);
+  text = text.replace(/^windows-/iu, "Windows-");
   return bom ? `${text} BOM` : text;
 }
 
@@ -80,6 +80,12 @@ export type ViewerEncodingDeps = {
 
 export type ViewerEncoding = ReturnType<typeof createViewerEncoding>;
 
+const group = (head: string, act: string) =>
+  `<div class="dropdown-head">${head}</div>` +
+  ENCODINGS.map(
+    ([label], i) => `<button class="enc-item" data-${act}="${i}"><span>${label}</span></button>`,
+  ).join("");
+
 export function createViewerEncoding(deps: ViewerEncodingDeps) {
   const { window, document, messages, saver, reopenRefused } = deps;
   const { readWith, showSaveError, applyFresh, save } = saver;
@@ -90,12 +96,6 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
     const menu = document.createElement("div");
     menu.className = "enc-menu";
     menu.style.display = "none";
-    const group = (head: string, act: string) =>
-      `<div class="dropdown-head">${head}</div>` +
-      ENCODINGS.map(
-        ([label], i) =>
-          `<button class="enc-item" data-${act}="${i}"><span>${label}</span></button>`,
-      ).join("");
     menu.innerHTML = group("Reopen with", "reopen") + group("Save with", "savewith");
     el.append(menu);
     rec.encMenu = menu;
@@ -110,7 +110,7 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key === "Escape") close();
     };
-    btn.onclick = (ev: MouseEvent) => {
+    btn.addEventListener("click", (ev: MouseEvent) => {
       ev.stopPropagation();
       if (menu.style.display !== "none") {
         close();
@@ -120,8 +120,8 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
       menu.style.display = "";
       document.addEventListener("click", onOutside, true);
       document.addEventListener("keydown", onKey, true);
-    };
-    menu.onclick = (ev: MouseEvent) => {
+    });
+    menu.addEventListener("click", (ev: MouseEvent) => {
       const item = targetClosest(ev, ".enc-item");
       if (!item) return;
       ev.stopPropagation();
@@ -130,7 +130,7 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
       if (!encoding) return;
       if (item.dataset["reopen"] != null) reopenWith(rec, encoding);
       else if (item.dataset["savewith"] != null) saveWith(rec, encoding);
-    };
+    });
   }
 
   // Reopen: the same bytes, decoded as `name`. Unsaved edits would be lost

@@ -111,7 +111,7 @@ test("a text file still opens a diff tab", async () => {
   state.$store.tabs.openDiff(P, { path: "src/x.rs", originalPath: null, status: "modified" });
   await tick();
   assert.deepEqual(diffTabs(state).map((t) => t.id), ["diff:owner/repo:src/x.rs"]);
-  assert.deepEqual(observed.map((o) => o.verb).sort(), ["blob.read", "file.read"]);
+  assert.deepEqual(observed.map((o) => o.verb).toSorted(), ["blob.read", "file.read"]);
   assert.equal(opened[0].ftype, "diff");
 });
 

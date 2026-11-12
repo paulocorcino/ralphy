@@ -37,26 +37,28 @@ test("isUnknownCheckout is true only for the error reply that says unknown check
   assert.equal(isUnknownCheckout(), false);
 });
 
+const foldSession = (repo, environment) => ({
+  id: 1,
+  repo,
+  agent: "console",
+  kind: "console",
+  environment,
+});
+
+const deskRecord = (id, repo) => ({
+  id,
+  repo,
+  agent: "console",
+  kind: "console",
+  sessionId: 1,
+});
+
 test("reconcileDesk keeps same-slug sessions distinct by composite repo ref", () => {
   const peerA = "01ARZ3NDEKTSV4RRFFQ69G5FAY/owner/shared";
   const peerB = "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared";
-  const record = (id, repo) => ({
-    id,
-    repo,
-    agent: "console",
-    kind: "console",
-    sessionId: 1,
-  });
-  const session = (repo, environment) => ({
-    id: 1,
-    repo,
-    agent: "console",
-    kind: "console",
-    environment,
-  });
   const out = reconcileDesk({
-    layout: [record("a", peerA), record("b", peerB)],
-    sessions: [session(peerB, "WSL: B"), session(peerA, "WSL: A")],
+    layout: [deskRecord("a", peerA), deskRecord("b", peerB)],
+    sessions: [foldSession(peerB, "WSL: B"), foldSession(peerA, "WSL: A")],
   });
   assert.deepEqual(
     out.map(({ record: saved, session: live, action }) => [
@@ -135,16 +137,17 @@ test("nextFenceSlot: a plane with no free slot in the scanned band answers -1", 
   assert.equal(nextFenceSlot([wall], ORIGIN, FENCE_VIEW), -1);
 });
 
+const overlaps = (a, b) =>
+  a.left < b.left + b.width &&
+  a.left + a.width > b.left &&
+  a.top < b.top + b.height &&
+  a.top + a.height > b.top;
+
 test("nextFenceSlot: the slot it picks never overlaps an existing fence", () => {
   // Three fences with a HOLE at slot 1 — the shape a removal leaves behind.
   const rects = [0, 2, 3].map((i) => fenceSpawnRect(ORIGIN, FENCE_VIEW, i));
   const slot = nextFenceSlot(rects, ORIGIN, FENCE_VIEW);
   const born = fenceSpawnRect(ORIGIN, FENCE_VIEW, slot);
-  const overlaps = (a, b) =>
-    a.left < b.left + b.width &&
-    a.left + a.width > b.left &&
-    a.top < b.top + b.height &&
-    a.top + a.height > b.top;
   for (const r of rects) {
     assert.ok(!overlaps(born, r), `slot ${slot} lands on ${JSON.stringify(r)}`);
   }

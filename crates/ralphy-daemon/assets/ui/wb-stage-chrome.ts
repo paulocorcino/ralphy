@@ -111,6 +111,32 @@ export type ChromeDeps = {
   setWin: (win: ConsoleWin, fields: DeskWindowFields) => void;
 };
 
+function setBox(win: ConsoleWin, box: Partial<Rect>) {
+  win.style.left = box.left + "px";
+  win.style.top = box.top + "px";
+  win.style.width = box.width + "px";
+  win.style.height = box.height + "px";
+}
+
+// What a carried record hands the window: where it runs and how it is kept.
+function carriedFields(desk: ChromeRecord, consoleName: string) {
+  return {
+    _deskDaemonId: desk?.daemonId ?? null,
+    _deskEnvironment: desk?.environment ?? null,
+    // The worktree (#411), seeded from the record; the launch request and
+    // then the daemon's `session-open` overwrite it.
+    _deskCheckout: desk?.checkout ?? null,
+    // Locked in place (ADR-0050 lock amendment), seeded from the record.
+    _deskLocked: Boolean(desk?.locked),
+    _deskConsoleName: consoleName,
+  };
+}
+
+// The record's kind wins over the caller's.
+function deskKindOf(desk: ChromeRecord, kind: string | null | undefined) {
+  return (desk?.kind ?? "") || (kind ?? "");
+}
+
 export function createChrome(deps: ChromeDeps) {
   const {
     document,
@@ -156,50 +182,23 @@ export function createChrome(deps: ChromeDeps) {
       _deskKind: deskKindOf(desk, kind),
     };
   }
-  // The record's kind wins over the caller's.
-  function deskKindOf(desk: ChromeRecord, kind: string | null | undefined) {
-    return (desk?.kind ?? "") || (kind ?? "");
-  }
-
-  // What a carried record hands the window: where it runs and how it is kept.
-  function carriedFields(desk: ChromeRecord, consoleName: string) {
-    return {
-      _deskDaemonId: desk?.daemonId ?? null,
-      _deskEnvironment: desk?.environment ?? null,
-      // The worktree (#411), seeded from the record; the launch request and
-      // then the daemon's `session-open` overwrite it.
-      _deskCheckout: desk?.checkout ?? null,
-      // Locked in place (ADR-0050 lock amendment), seeded from the record.
-      _deskLocked: Boolean(desk?.locked),
-      _deskConsoleName: consoleName,
-    };
-  }
 
   // The element of a new window, with every field it will carry written HERE,
   // by the module that declares them (wb-window-state.ts): a field nothing
   // seeds reads as its declared default, not `undefined`.
   function seedWindow(
-    label: string | null | undefined,
-    repo: string | null | undefined,
+    identity: ReturnType<typeof identityFields>,
     desk: ChromeRecord,
-    kind: string | null | undefined,
     consoleName: string,
   ) {
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- initWindow sets its fields
     const win = document.createElement("div") as HTMLElement as ConsoleWin;
     win.className = "session-window";
     initWindow(win, {
-      ...identityFields(label, repo, desk, kind),
+      ...identity,
       ...carriedFields(desk, consoleName),
     });
     return win;
-  }
-
-  function setBox(win: ConsoleWin, box: Partial<Rect>) {
-    win.style.left = box.left + "px";
-    win.style.top = box.top + "px";
-    win.style.width = box.width + "px";
-    win.style.height = box.height + "px";
   }
 
   // A console born INTO a fence (#343), below the fence's head band.
@@ -408,7 +407,7 @@ export function createChrome(deps: ChromeDeps) {
     // console takes the lowest free number of its prefix.
     const consoleName =
       (desk?.consoleName ?? "") || WBConsoleName.defaultName(consolePrefix(repo), takenNames(null));
-    const win = seedWindow(label, repo, desk, kind, consoleName);
+    const win = seedWindow(identityFields(label, repo, desk, kind), desk, consoleName);
     const rect = desk?.rect;
     const spawnMoved = placeWindow(win, rect);
     const bar = buildTitlebar(win, label, repo, desk);

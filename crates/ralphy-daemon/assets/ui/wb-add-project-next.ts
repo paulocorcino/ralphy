@@ -72,7 +72,7 @@ export function nextReply(state: State, ev: Extract<Step, { type: "reply" }>) {
     active: -1,
   };
   if (state.sentText === null && reply.start !== undefined && reply.start !== "") {
-    const sep = /^[A-Za-z]:/.test(reply.start) || reply.start.includes("\\") ? "\\" : "/";
+    const sep = /^[A-Za-z]:/u.test(reply.start) || reply.start.includes("\\") ? "\\" : "/";
     patch.text = withSep(reply.start, sep);
     patch.listedText = patch.text;
     patch.needStart = false;

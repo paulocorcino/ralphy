@@ -405,9 +405,10 @@ test("an upload the daemon calls malformed is dropped and not sent again", async
   ]);
 });
 
+const ok = () => Promise.resolve({ kind: "ok", reply: {} });
+
 test("an answered upload takes the desk the daemon sent, and only when the sync takes it", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  const ok = () => Promise.resolve({ kind: "ok", reply: {} });
   for (const [verdict, expect] of [["taken", ["w9"]], ["stale", []]]) {
     const { desk, serve } = answeredDesk(ok, { verdict });
     await desk.whenDeskLoaded();

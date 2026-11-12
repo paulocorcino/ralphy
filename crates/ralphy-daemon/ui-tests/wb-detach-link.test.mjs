@@ -1,6 +1,7 @@
 // Unit tests for assets/ui/wb-detach-link.ts — runs the real source with no DOM.
 // Lives OUTSIDE assets/ui on purpose: lib.rs embeds all of assets/ui into the
 // daemon binary via include_dir!, so a test there would ship.
+// oxlint-disable-next-line eslint/max-classes-per-file -- a fake class per object the test stands in for
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { WBDetachLink, isDetachMessage } from "../assets/ui/wb-detach-link.ts";
@@ -153,6 +154,7 @@ test("post reaches every other link on the channel", () => {
   class FakeBroadcastChannel {
     constructor(name) {
       this.name = name;
+      // oxlint-disable-next-line unicorn/prefer-add-event-listener -- this fake imitates onmessage
       this.onmessage = null;
       if (!buses.has(name)) buses.set(name, new Set());
       buses.get(name).add(this);
@@ -252,6 +254,7 @@ test("channel() reaches the channel and no store at all", () => {
   class FakeBroadcastChannel {
     constructor(name) {
       this.name = name;
+      // oxlint-disable-next-line unicorn/prefer-add-event-listener -- this fake imitates onmessage
       this.onmessage = null;
       if (!buses.has(name)) buses.set(name, new Set());
       buses.get(name).add(this);

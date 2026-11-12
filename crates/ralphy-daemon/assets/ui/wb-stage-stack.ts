@@ -30,9 +30,9 @@ export type FocusHook = {
 
 export function createStack(document: Document) {
   // The viewport (the scrolling box); the windows and the cards are inside it.
-  const workspace = () => document.getElementById("workspace");
+  const workspace = () => document.querySelector<HTMLElement>("#workspace");
   // The pane of the console tabs (ADR-0037 §3d); a page without it has none.
-  const tabsPane = () => document.getElementById("console-tabs-pane");
+  const tabsPane = () => document.querySelector<HTMLElement>("#console-tabs-pane");
   let hook: FocusHook | null = null;
 
   // Focus stacking. `z` climbs each time a window is raised; when it reaches the

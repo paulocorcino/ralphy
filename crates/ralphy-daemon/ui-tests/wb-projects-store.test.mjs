@@ -48,6 +48,8 @@ test("setRowGit sets the git fields it is given on the row, and leaves the other
   assert.deepEqual(row, { slug: "owner/repo", branch: "new", branches: ["main", "new"], head: { kind: "detached", sha: "abc1234" } });
 });
 
+const projectRows = (groups) => groups.map((g) => [g.daemon, g.rows.map((r) => r.slug)]);
+
 // The sidebar gives the rows its search keeps; the files and the wake read
 // every project. A peer's group comes from the peer list either way.
 test("fleetGroups groups the rows it is given, and every project without them", () => {
@@ -56,9 +58,8 @@ test("fleetGroups groups the rows it is given, and every project without them", 
   const remote = { key: "01KY/owner/b", slug: "owner/b", daemon: "01KY", branch: "main" };
   store.setProjects([local, remote]);
   store.fleetPeers = [{ daemon_id: "01KY", name: "wsl", environment: "WSL: U", state: "reachable" }];
-  const rows = (groups) => groups.map((g) => [g.daemon, g.rows.map((r) => r.slug)]);
-  assert.deepEqual(rows(store.fleetGroups([local])), [["", ["owner/a"]], ["01KY", []]]);
-  assert.deepEqual(rows(store.fleetGroups()), [["", ["owner/a"]], ["01KY", ["owner/b"]]]);
+  assert.deepEqual(projectRows(store.fleetGroups([local])), [["", ["owner/a"]], ["01KY", []]]);
+  assert.deepEqual(projectRows(store.fleetGroups()), [["", ["owner/a"]], ["01KY", ["owner/b"]]]);
 });
 
 // --- the projects, the fleet and the sessions (moved from app.test.mjs, #621) ---
@@ -108,16 +109,17 @@ test("loadRepos keeps the head of a detached repo for the row title", async () =
   assert.equal(shell.rowTitle(state.projects[0]), "o/r · abc1234");
 });
 
+const projectRow = (slug, remote) => ({ slug, path: "/" + slug, reachable: true, branch: "main", dirty: false, remote });
+
 // The sidebar dot says GitHub only when github.com is the remote's host.
 test("loadRepos marks a row github only for a remote hosted on github.com", async () => {
   const state = loadShell().state.$store.projects;
   state.loadFleet = () => {};
   state.refreshLive = () => {};
-  const row = (slug, remote) => ({ slug, path: "/" + slug, reachable: true, branch: "main", dirty: false, remote });
   const rows = [
-    row("o/gh", "git@github.com:o/gh.git"),
-    row("o/fake", "https://github.com.evil.example/o/fake"),
-    row("o/none", null),
+    projectRow("o/gh", "git@github.com:o/gh.git"),
+    projectRow("o/fake", "https://github.com.evil.example/o/fake"),
+    projectRow("o/none", null),
   ];
   const realFetch = globalThis.fetch;
   globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(rows) });
@@ -158,7 +160,7 @@ test("a failed project read after a good one keeps the list, marked not current"
   }
   assert.equal(state.projects.length, 1);
   assert.equal(state.projects[0].slug, "a/b");
-  assert.match(state.reposError, /Not current: the daemon answered 500/);
+  assert.match(state.reposError, /Not current: the daemon answered 500/u);
 });
 
 test("a failed first project read is empty and says why", async () => {
@@ -193,7 +195,7 @@ test("a failed fleet read after a good one keeps the peers and their rows", asyn
   }
   assert.equal(state.fleetPeers.length, 1);
   assert.equal(state.projects.filter((p) => p.daemon === "p1").length, 1);
-  assert.match(state.fleetError, /Not current: the daemon answered 502/);
+  assert.match(state.fleetError, /Not current: the daemon answered 502/u);
 });
 
 test("the fleet row marked local stamps its environment, os and name on the local rows", async () => {
@@ -266,7 +268,7 @@ test("a failed session read after a good one keeps the list, marked not current"
     restore();
   }
   assert.equal(state.liveSessions.length, 1);
-  assert.match(state.sessionsError(), /Not current/);
+  assert.match(state.sessionsError(), /Not current/u);
 });
 
 test("two fleet reads close together list each peer row once", async () => {

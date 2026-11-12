@@ -14,12 +14,13 @@ function feeds() {
 
 const wake = () => Promise.resolve(true);
 
+const read = () => {};
+
 test("the getters return the last value fed, read after the factory was built", () => {
   const f = feeds();
   assert.deepEqual(f.lastSessions(), []);
   assert.equal(f.wakePeerNow(), null);
   assert.equal(f.readFleetNow(), null);
-  const read = () => {};
   f.ingestFleet([], { wake, read });
   assert.equal(f.wakePeerNow(), wake);
   assert.equal(f.readFleetNow(), read);

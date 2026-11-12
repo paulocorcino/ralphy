@@ -75,7 +75,7 @@ test("wbBoard lists only shell() names in uses, and its members left shell()", (
 test("every name the markup of wbBoard reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbBoard");
   const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
+  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
   // The `x-for` loop variables of the board, the issue view and the label menu.
   const loopVars = new Set(["col", "s", "iss", "l", "b", "c", "idx"]);
   let read = 0;
@@ -95,7 +95,7 @@ test("nothing outside the board element names its state", () => {
   // The page without the board's part: the shell and the other components.
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["kanbanSel", "openIssue", "selectedIssue", "kanbanColumns", "planModal", "openPlanModal", "discardPlan", "toggleLabel", "labelMenuOpen", "labelsLocked", "issueRunning"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
+    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
   }
 });
 
@@ -285,7 +285,7 @@ test("a failed board read after a good one keeps the cards, marked not current",
   await state.loadBoard();
   assert.equal(state.$store.board.boardIssues["o/r"].length, 1, "the cards stay");
   assert.equal(state.$store.board.boardRead["o/r"].current, false);
-  assert.match(state.$store.board.boardError["o/r"], /Not current/);
+  assert.match(state.$store.board.boardError["o/r"], /Not current/u);
 });
 
 // A label name is repo data: one named like an Object member (`constructor`)
@@ -314,5 +314,5 @@ test("moving a board card is locked while the board is not current", async () =>
   assert.equal(state.labelsLocked(), false);
   await state.loadBoard();
   assert.equal(state.labelsLocked(), true);
-  assert.match(state.labelLockReason(), /board shown is not current/);
+  assert.match(state.labelLockReason(), /board shown is not current/u);
 });

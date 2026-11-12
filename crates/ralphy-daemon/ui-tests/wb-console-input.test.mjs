@@ -352,13 +352,14 @@ test("holdMoveReport holds only button-less moves over a selection under a TUI",
   assert.equal(holdMoveReport(undefined, true, 0), false);
 });
 
+const item = (parts) => ({
+  types: Object.keys(parts),
+  getType: (t) => Promise.resolve(parts[t]),
+});
+
 // --- clipboardContent: what the paste key pastes ---------------------------
 
 test("clipboardContent prefers an image, then text, then nothing", async () => {
-  const item = (parts) => ({
-    types: Object.keys(parts),
-    getType: (t) => Promise.resolve(parts[t]),
-  });
   const png = { type: "image/png", size: 3 };
   const text = { text: () => Promise.resolve("hello") };
   // An iOS screenshot: image only — `readText()` would have resolved "".
@@ -373,13 +374,14 @@ test("clipboardContent prefers an image, then text, then nothing", async () => {
   assert.deepEqual(await clipboardContent([]), { text: "" });
 });
 
+const fakeTerm = (log) => ({
+  pasteImage: (blob) => log.push(["image", blob.type]),
+  term: { paste: (text) => log.push(["text", text]), focus: () => log.push(["focus"]) },
+});
+
 // --- pasteAfterRead: the paste key once its clipboard read settles ---------
 
 test("pasteAfterRead pastes only into the terminal still attached when the read settles", async () => {
-  const fakeTerm = (log) => ({
-    pasteImage: (blob) => log.push(["image", blob.type]),
-    term: { paste: (text) => log.push(["text", text]), focus: () => log.push(["focus"]) },
-  });
   const png = { type: "image/png" };
   // [case, what the read gives, what happens to `_term` while it waits,
   //  what the pressed terminal gets, what a new terminal gets]
@@ -416,7 +418,7 @@ test("phoneBleed is maximize AND a phone-width viewport", () => {
   // The breakpoint is the workbench's phone breakpoint: 01-base.css gates the
   // phone layout on the same number, so a drift between the two fails here.
   const css = readFileSync(join(UI, "styles/01-base.css"), "utf8");
-  const phone = css.match(/@media \(max-width: (\d+)px\) \{/);
+  const phone = css.match(/@media \(max-width: (\d+)px\) \{/u);
   assert.ok(phone, "01-base.css has a phone-width @media block");
   assert.equal(PHONE_MAX_WIDTH, Number(phone[1]));
   assert.equal(phoneBleed(true, 390), true);
@@ -434,30 +436,30 @@ test("phoneBleed is maximize AND a phone-width viewport", () => {
 
 test("selectionRow maps a touch to a buffer-absolute row", () => {
   // Screen at y=100, 20px rows, 24 rows on screen, scrolled 50 lines in.
-  assert.equal(selectionRow(100, 100, 20, 24, 50), 50);
-  assert.equal(selectionRow(119, 100, 20, 24, 50), 50);
-  assert.equal(selectionRow(120, 100, 20, 24, 50), 51);
-  assert.equal(selectionRow(345, 100, 20, 24, 50), 62);
+  assert.equal(selectionRow(100, { screenTop: 100, cellHeight: 20, rows: 24, viewportY: 50 }), 50);
+  assert.equal(selectionRow(119, { screenTop: 100, cellHeight: 20, rows: 24, viewportY: 50 }), 50);
+  assert.equal(selectionRow(120, { screenTop: 100, cellHeight: 20, rows: 24, viewportY: 50 }), 51);
+  assert.equal(selectionRow(345, { screenTop: 100, cellHeight: 20, rows: 24, viewportY: 50 }), 62);
   // Unscrolled: the row IS the buffer line.
-  assert.equal(selectionRow(140, 100, 20, 24, 0), 2);
+  assert.equal(selectionRow(140, { screenTop: 100, cellHeight: 20, rows: 24, viewportY: 0 }), 2);
 });
 
 test("selectionRow clamps to the screen", () => {
   // Above the screen: the top row. Below it: the last row, never a line that
   // is not on screen.
-  assert.equal(selectionRow(0, 100, 20, 24, 50), 50);
-  assert.equal(selectionRow(9999, 100, 20, 24, 50), 73);
-  assert.equal(selectionRow(9999, 100, 20, 1, 0), 0);
+  assert.equal(selectionRow(0, { screenTop: 100, cellHeight: 20, rows: 24, viewportY: 50 }), 50);
+  assert.equal(selectionRow(9999, { screenTop: 100, cellHeight: 20, rows: 24, viewportY: 50 }), 73);
+  assert.equal(selectionRow(9999, { screenTop: 100, cellHeight: 20, rows: 1, viewportY: 0 }), 0);
 });
 
 test("selectionRow never answers NaN", () => {
   // A terminal that has not laid out has a zero cell height; a missing
   // viewportY is 0. Either way the answer is a row `selectLines` accepts.
-  assert.equal(selectionRow(140, 100, 0, 24, 50), 50);
-  assert.equal(selectionRow(140, 100, NaN, 24, 50), 50);
-  assert.equal(selectionRow(NaN, 100, 20, 24, 50), 50);
-  assert.equal(selectionRow(140, 100, 20, 24), 2);
-  assert.equal(selectionRow(140, undefined, 20, 24, 0), 7);
+  assert.equal(selectionRow(140, { screenTop: 100, cellHeight: 0, rows: 24, viewportY: 50 }), 50);
+  assert.equal(selectionRow(140, { screenTop: 100, cellHeight: NaN, rows: 24, viewportY: 50 }), 50);
+  assert.equal(selectionRow(NaN, { screenTop: 100, cellHeight: 20, rows: 24, viewportY: 50 }), 50);
+  assert.equal(selectionRow(140, { screenTop: 100, cellHeight: 20, rows: 24 }), 2);
+  assert.equal(selectionRow(140, { screenTop: undefined, cellHeight: 20, rows: 24, viewportY: 0 }), 7);
 });
 
 // --- stepFont: the A− / A+ range ------------------------------------------

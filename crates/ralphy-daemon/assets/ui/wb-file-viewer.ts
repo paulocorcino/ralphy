@@ -58,9 +58,71 @@ export type ViewerDeps = {
   messages: Messages;
 };
 
+// A caption swap keeps the button's shape: icon, then the label span a narrow
+// pane hides, and the same words in `title`/`aria-label` for when it does.
+function setCaption(btn: HTMLElement, icon: string, caption: string) {
+  // oxlint-disable-next-line no-restricted-properties -- a fixed icon, no outside text
+  btn.innerHTML = `<i class="bi ${icon}"></i><span class="vbtn-label"></span>`;
+  need(btn, ".vbtn-label").textContent = caption;
+  btn.title = caption;
+  btn.setAttribute("aria-label", caption);
+}
+
+// What the toolbar says a pane IS: the path only (the tab and the sidebar
+// already name the file and the repo). A DETACHED pane keeps the full label;
+// the full form always rides the `title`. `dir` / `file` are split so the
+// CSS ellipsizes the directory first.
+function pathLabel(rec: ViewerRecord) {
+  const suffix = rec.kind === "diff" ? " ↔ HEAD" : "";
+  const full = `${rec.label} / ${rec.path}${suffix}`;
+  const cut = rec.path.lastIndexOf("/") + 1;
+  const head = rec.detached ? `${rec.label} / ` : "";
+  return { dir: head + rec.path.slice(0, cut), file: rec.path.slice(cut) + suffix, full };
+}
+
+// The mirror toggle (ADR-0037 §3c) is the attached canvas's: a detached
+// popup has one pane and no slot to put a second editor in.
+function mirrorBtnHtml(rec: ViewerRecord) {
+  return rec.detached
+    ? ""
+    : '<button class="vbtn" data-act="mirror" title="Mirror" aria-label="Mirror">' +
+        '<i class="bi bi-files"></i><span class="vbtn-label">Mirror</span></button>';
+}
+
+// The Detach/Re-attach button. A file tab detaches into a standalone popup
+// (watch an agent in the main window, read the file in another); a detached
+// pane folds back in. wb-file-viewer only *requests* it — the shell (app.ts) opens
+// the popup, and the popup (detached.html) folds back — so this module stays
+// agnostic to windows/tabs.
+function detachBtnHtml(rec: ViewerRecord) {
+  return rec.detached
+    ? '<button class="vbtn" data-act="detach" title="Re-attach" aria-label="Re-attach">' +
+        '<i class="bi bi-box-arrow-in-down-left"></i>' +
+        '<span class="vbtn-label">Re-attach</span></button>'
+    : '<button class="vbtn" data-act="detach" title="Detach" aria-label="Detach">' +
+        '<i class="bi bi-box-arrow-up-right"></i>' +
+        '<span class="vbtn-label">Detach</span></button>';
+}
+
+function disposeEditorAndModels(rec: ViewerRecord, ed: NonNullable<ViewerRecord["ed"]>) {
+  if (rec.kind === "diff") {
+    // A diff editor holds TWO models and BOTH must be disposed on EVERY
+    // path — disposing the editor does NOT (the leak is only visible in
+    // `monaco.editor.getModels()`, which wb_diff_311.py counts). The EDITOR
+    // goes first: a model disposed while attached raises a page error (#407).
+    const m = diffEditor(ed)?.getModel();
+    ed.dispose();
+    m?.original.dispose();
+    m?.modified.dispose();
+  } else {
+    codeEditor(ed)?.getModel()?.dispose();
+    ed.dispose();
+  }
+}
+
 export function createViewer(window: MermaidWindow, document: Document, deps: ViewerDeps) {
   const { messages } = deps;
-  const viewers = document.getElementById("viewers");
+  const viewers = document.querySelector<HTMLElement>("#viewers");
   const map = new Map<string, ViewerRecord>(); // tab id → viewer record
 
   // Monaco boots through an AMD loader, so an editor is created
@@ -163,22 +225,6 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     rec.ed = undefined;
   }
 
-  function disposeEditorAndModels(rec: ViewerRecord, ed: NonNullable<ViewerRecord["ed"]>) {
-    if (rec.kind === "diff") {
-      // A diff editor holds TWO models and BOTH must be disposed on EVERY
-      // path — disposing the editor does NOT (the leak is only visible in
-      // `monaco.editor.getModels()`, which wb_diff_311.py counts). The EDITOR
-      // goes first: a model disposed while attached raises a page error (#407).
-      const m = diffEditor(ed)?.getModel();
-      ed.dispose();
-      m?.original.dispose();
-      m?.modified.dispose();
-    } else {
-      codeEditor(ed)?.getModel()?.dispose();
-      ed.dispose();
-    }
-  }
-
   // A pane that opened refused now has bytes: rebuild it as the pane its
   // kind deserves. `open` returns early on a known id, so the record is
   // replaced under the same id — the tab in the shell is untouched.
@@ -201,42 +247,6 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     window.WB.emit("reload", { project: rec.project, path: rec.path });
   }
 
-  // The Detach/Re-attach button. A file tab detaches into a standalone popup
-  // (watch an agent in the main window, read the file in another); a detached
-  // pane folds back in. wb-file-viewer only *requests* it — the shell (app.ts) opens
-  // the popup, and the popup (detached.html) folds back — so this module stays
-  // agnostic to windows/tabs.
-  function detachBtnHtml(rec: ViewerRecord) {
-    return rec.detached
-      ? '<button class="vbtn" data-act="detach" title="Re-attach" aria-label="Re-attach">' +
-          '<i class="bi bi-box-arrow-in-down-left"></i>' +
-          '<span class="vbtn-label">Re-attach</span></button>'
-      : '<button class="vbtn" data-act="detach" title="Detach" aria-label="Detach">' +
-          '<i class="bi bi-box-arrow-up-right"></i>' +
-          '<span class="vbtn-label">Detach</span></button>';
-  }
-
-  // The mirror toggle (ADR-0037 §3c) is the attached canvas's: a detached
-  // popup has one pane and no slot to put a second editor in.
-  function mirrorBtnHtml(rec: ViewerRecord) {
-    return rec.detached
-      ? ""
-      : '<button class="vbtn" data-act="mirror" title="Mirror" aria-label="Mirror">' +
-          '<i class="bi bi-files"></i><span class="vbtn-label">Mirror</span></button>';
-  }
-
-  // What the toolbar says a pane IS: the path only (the tab and the sidebar
-  // already name the file and the repo). A DETACHED pane keeps the full label;
-  // the full form always rides the `title`. `dir` / `file` are split so the
-  // CSS ellipsizes the directory first.
-  function pathLabel(rec: ViewerRecord) {
-    const suffix = rec.kind === "diff" ? " ↔ HEAD" : "";
-    const full = `${rec.label} / ${rec.path}${suffix}`;
-    const cut = rec.path.lastIndexOf("/") + 1;
-    const head = rec.detached ? `${rec.label} / ` : "";
-    return { dir: head + rec.path.slice(0, cut), file: rec.path.slice(cut) + suffix, full };
-  }
-
   function setPathLabel(el: HTMLElement, rec: ViewerRecord) {
     const span = need(el, ".viewer-path");
     const { dir, file, full } = pathLabel(rec);
@@ -249,15 +259,6 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     f.textContent = file;
     span.append(d, f);
     span.title = full;
-  }
-
-  // A caption swap keeps the button's shape: icon, then the label span a narrow
-  // pane hides, and the same words in `title`/`aria-label` for when it does.
-  function setCaption(btn: HTMLElement, icon: string, caption: string) {
-    btn.innerHTML = `<i class="bi ${icon}"></i><span class="vbtn-label"></span>`;
-    need(btn, ".vbtn-label").textContent = caption;
-    btn.title = caption;
-    btn.setAttribute("aria-label", caption);
   }
 
   function detachClick(rec: BytesRecord) {

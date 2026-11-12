@@ -15,16 +15,16 @@ export type NoteLinksDeps = {
   recordOf: (id: string | null | undefined) => NoteSource | null;
 };
 
+// The anchor a click landed on, when it is a link of this card.
+function linkAnchor(ev: Event, el: NoteCard) {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a click hits an element
+  const a = (ev.target as Element | null)?.closest<HTMLAnchorElement>("a[href]");
+  return a && el.contains(a) ? a : null;
+}
+
 /** The installer of the click rule for one card. */
 export function installLinks(deps: NoteLinksDeps) {
   const { window, document, recordOf } = deps;
-
-  // The anchor a click landed on, when it is a link of this card.
-  function linkAnchor(ev: Event, el: NoteCard) {
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a click hits an element
-    const a = (ev.target as Element | null)?.closest<HTMLAnchorElement>("a[href]");
-    return a && el.contains(a) ? a : null;
-  }
 
   // Resolved against the CHECKOUT ROOT, not the note's own directory: a
   // note lands in `.ralphy/notes/` by default, and a path written there is

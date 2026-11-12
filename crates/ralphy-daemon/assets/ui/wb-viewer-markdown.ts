@@ -42,7 +42,7 @@ export function remoteImageNotice(src: string, alt: string) {
 // for anything that climbs OUT of the repo — the daemon would refuse it
 // anyway, and not asking is the honest way to spell "not ours".
 function repoRelative(dir: string, src: string) {
-  let clean = src.split(/[?#]/)[0] ?? "";
+  let clean = src.split(/[?#]/u)[0] ?? "";
   try {
     clean = decodeURIComponent(clean);
   } catch {
@@ -104,6 +104,29 @@ export type ViewerMarkdownDeps = {
 };
 
 export type ViewerMarkdown = ReturnType<typeof createViewerMarkdown>;
+
+// Scroll a rendered document to the heading a `#fragment` names, matched
+// by the slug of the heading text (`slugOf`).
+function jumpTo(rec: ViewerRecord, fragment: string) {
+  if (!fragment) return;
+  let want = fragment;
+  try {
+    want = decodeURIComponent(fragment);
+  } catch {
+    // A malformed escape still names SOMETHING; match it as written.
+  }
+  want = want.toLowerCase();
+  const heads =
+    rec.el?.querySelectorAll(
+      ".md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6",
+    ) ?? [];
+  for (const h of heads) {
+    if (slugOf(h.textContent) === want) {
+      h.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+  }
+}
 
 export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   const {
@@ -178,7 +201,9 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     // button is not shown and the nav is the column it always was). A jump or
     // a tap on the article closes it — the index is a way in, not a fixture.
     const split = need(el, ".md-split");
-    need(el, '[data-act="outline"]').onclick = () => split.classList.toggle("toc-open");
+    need(el, '[data-act="outline"]').addEventListener("click", () => {
+      split.classList.toggle("toc-open");
+    });
     need(el, ".md-outline").addEventListener("click", (ev) => {
       if (targetClosest(ev, ".outline-item")) split.classList.remove("toc-open");
     });
@@ -189,11 +214,11 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     // in-page find over the rendered article
     const find = need(el, ".md-find");
     const input = needInput(el, ".md-find-input");
-    need(el, '[data-act="find"]').onclick = () => {
+    need(el, '[data-act="find"]').addEventListener("click", () => {
       find.classList.add("open");
       input.focus();
       input.select();
-    };
+    });
     input.addEventListener("input", () => {
       mdSearch(rec, input.value);
     });
@@ -222,7 +247,8 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   function renderMarkdown(rec: BytesRecord) {
     if (!isRendered(rec.kind)) return;
     const article = inPane(rec, ".md-body");
-    rec.mermaidPending = renderBody(rec.kind, article, rec.content, rec.uid, document);
+    const file = { kind: rec.kind, content: rec.content, uid: rec.uid };
+    rec.mermaidPending = renderBody(file, article, document);
     resolveImages(rec, article);
     decorateZoomable(article);
     buildOutline(rec, article);
@@ -245,7 +271,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       const src = img.getAttribute("src") ?? "";
       // Anything carrying a scheme (`data:`, `https:`) or rooted at `/` is not
       // ours to resolve.
-      if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith("/")) return;
+      if (/^[a-z][a-z0-9+.-]*:/iu.test(src) || src.startsWith("/")) return;
       const rel = repoRelative(dir, src);
       if (rel === null) return;
       WBDaemon.readImage(rec.project, rel, undefined, rec.checkout)
@@ -312,29 +338,6 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     });
   }
 
-  // Scroll a rendered document to the heading a `#fragment` names, matched
-  // by the slug of the heading text (`slugOf`).
-  function jumpTo(rec: ViewerRecord, fragment: string) {
-    if (!fragment) return;
-    let want = fragment;
-    try {
-      want = decodeURIComponent(fragment);
-    } catch {
-      // A malformed escape still names SOMETHING; match it as written.
-    }
-    want = want.toLowerCase();
-    const heads =
-      rec.el?.querySelectorAll(
-        ".md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6",
-      ) ?? [];
-    for (const h of heads) {
-      if (slugOf(h.textContent) === want) {
-        h.scrollIntoView({ behavior: "smooth", block: "start" });
-        return;
-      }
-    }
-  }
-
   function drawMermaid(rec: ViewerRecord) {
     if (!rec.mermaidPending || rec.mermaidPending.length === 0) return;
     const pending = rec.mermaidPending;
@@ -384,10 +387,10 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       split.classList.add("editing");
       split.classList.remove("toc-open");
       editor.style.display = "block";
-      if (!rec.ed) {
-        mountEditor(rec, editor, { wordWrap: "on" });
-      } else {
+      if (rec.ed) {
         codeEditor(rec.ed)?.setValue(rec.content);
+      } else {
+        mountEditor(rec, editor, { wordWrap: "on" });
       }
       setCaption(toggle, "bi-eye", "Preview");
       setTimeout(() => rec.ed?.layout(), 0);

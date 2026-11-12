@@ -55,6 +55,13 @@ export type WindowGestureDeps = {
   setWin: (win: ConsoleWin, fields: DeskWindowFields) => void;
 };
 
+// The element a gesture without `opts` moves: a console window, as every
+// caller but a note card passes.
+function consoleWin(win: HTMLElement) {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- no opts: a window
+  return win as ConsoleWin;
+}
+
 export function createWindowGestures(deps: WindowGestureDeps) {
   const {
     window,
@@ -71,13 +78,6 @@ export function createWindowGestures(deps: WindowGestureDeps) {
     restoreRect,
     setWin,
   } = deps;
-
-  // The element a gesture without `opts` moves: a console window, as every
-  // caller but a note card passes.
-  function consoleWin(win: HTMLElement) {
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- no opts: a window
-    return win as ConsoleWin;
-  }
 
   // Drag by the titlebar, clamped to the STAGE (control buttons still click).
   // Coordinates are plane pixels: the stage's client rect carries the viewport's
@@ -352,8 +352,7 @@ export function createWindowGestures(deps: WindowGestureDeps) {
           dir,
           rect,
           { dx: ev.clientX - startX, dy: ev.clientY - startY },
-          min,
-          bounds,
+          { min, bounds },
         );
         win.style.left = out.left + "px";
         win.style.top = out.top + "px";

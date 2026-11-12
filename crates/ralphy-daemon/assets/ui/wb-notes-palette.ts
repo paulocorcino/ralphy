@@ -30,6 +30,25 @@ export type NotePaletteDeps = {
   markDirty: (el: NoteCard) => void;
 };
 
+// Which swatch is the card's now — read off the card, so a palette opened on
+// a note whose file was hand-edited shows what the file says.
+function paintPalette(el: NoteCard) {
+  const pop = el.querySelector<HTMLElement>(".note-palette");
+  if (!pop) return;
+  const have: NoteLook = lookOf(el);
+  for (const [key, cls] of [
+    ["tone", "note-swatch-tone"],
+    ["fill", "note-swatch-fill"],
+    ["ink", "note-swatch-ink"],
+    ["font", "note-swatch-font"],
+    ["size", "note-swatch-size"],
+  ] as const) {
+    for (const b of pop.querySelectorAll<HTMLElement>("." + cls)) {
+      b.classList.toggle("is-on", b.dataset["name"] === have[key]);
+    }
+  }
+}
+
 export function createNotePalette(deps: NotePaletteDeps) {
   const { document, veiledNow, closeMenu, syncFromEditor, markDirty } = deps;
 
@@ -89,9 +108,9 @@ export function createNotePalette(deps: NotePaletteDeps) {
     // `text` turns the strip from swatches into CHIPS — a colour can be shown
     // as itself, a font and a size cannot, so those two rows name what they
     // offer and the font chips are drawn IN the font they name.
+    // `label` names the strip; `cls` is the class of each of its buttons.
     const row = (
-      label: string,
-      cls: string,
+      { label, cls }: { label: string; cls: string },
       names: string[],
       pick: (el: NoteCard, name: string) => void,
       text?: (name: string) => string,
@@ -118,33 +137,16 @@ export function createNotePalette(deps: NotePaletteDeps) {
       }
       pop.append(strip);
     };
-    row("Color", "note-swatch note-swatch-tone", TONES, setTone);
-    row("Fill", "note-swatch note-swatch-fill", FILLS, setFill);
-    row("Text", "note-swatch note-swatch-ink", INKS, setInk);
+    row({ label: "Color", cls: "note-swatch note-swatch-tone" }, TONES, setTone);
+    row({ label: "Fill", cls: "note-swatch note-swatch-fill" }, FILLS, setFill);
+    row({ label: "Text", cls: "note-swatch note-swatch-ink" }, INKS, setInk);
     // `Aa` in each face, and the step names for the size: the chip is a sample
     // of what pressing it does, which is the only honest label a font has.
-    row("Font", "note-swatch note-swatch-font", FONTS, setFont, () => "Aa");
-    row("Size", "note-swatch note-swatch-size", SIZES, setSize, (n) => n.toUpperCase());
+    row({ label: "Font", cls: "note-swatch note-swatch-font" }, FONTS, setFont, () => "Aa");
+    row({ label: "Size", cls: "note-swatch note-swatch-size" }, SIZES, setSize, (n) =>
+      n.toUpperCase(),
+    );
     return pop;
-  }
-
-  // Which swatch is the card's now — read off the card, so a palette opened on
-  // a note whose file was hand-edited shows what the file says.
-  function paintPalette(el: NoteCard) {
-    const pop = el.querySelector<HTMLElement>(".note-palette");
-    if (!pop) return;
-    const have: NoteLook = lookOf(el);
-    for (const [key, cls] of [
-      ["tone", "note-swatch-tone"],
-      ["fill", "note-swatch-fill"],
-      ["ink", "note-swatch-ink"],
-      ["font", "note-swatch-font"],
-      ["size", "note-swatch-size"],
-    ] as const) {
-      for (const b of pop.querySelectorAll<HTMLElement>("." + cls)) {
-        b.classList.toggle("is-on", b.dataset["name"] === have[key]);
-      }
-    }
   }
 
   // One restyle: the card repaints at once and the DOCUMENT is what carries

@@ -71,7 +71,7 @@ function blockingDialogOpen(modals: { modalOpen(path: string): boolean }) {
 // Why `name` cannot be a single directory entry, or "" when it can.
 function nameProblem(name: string) {
   if (!name) return "name is required";
-  if (/[\\/]/.test(name)) return "name cannot contain / or \\";
+  if (/[\\/]/u.test(name)) return "name cannot contain / or \\";
   return name === "." || name === ".." ? "name cannot be . or .." : "";
 }
 
@@ -130,6 +130,7 @@ export function modalsStore(_deps: ModalsStoreDeps) {
       const isOpen = (scope: object) =>
         path.split(".").reduce<unknown>((o, k) => (isRecord(o) ? o[k] : undefined), scope);
       let was = false;
+      // oxlint-disable-next-line unicorn/no-this-assignment -- Alpine binds `this` to its scope
       const self = this;
       return {
         "x-show"(this: object) {

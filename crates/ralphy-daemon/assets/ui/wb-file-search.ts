@@ -44,7 +44,9 @@ function dirsToLoad(hits: Hit[] | null | undefined): string[] {
     const parts = (h.path || "").split("/");
     for (let i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join("/"));
   }
-  return [...dirs].sort((a, b) => a.split("/").length - b.split("/").length || (a < b ? -1 : 1));
+  return [...dirs].toSorted(
+    (a, b) => a.split("/").length - b.split("/").length || (a < b ? -1 : 1),
+  );
 }
 
 // The gutter line for a settled search. Empty when the tree says it all.
@@ -62,7 +64,7 @@ function toCollapse(before: string[] | null, now: string[] | null | undefined): 
   const had = new Set(before);
   return (now ?? [])
     .filter((rel) => !had.has(rel))
-    .sort((a, b) => b.split("/").length - a.split("/").length || (a < b ? -1 : 1));
+    .toSorted((a, b) => b.split("/").length - a.split("/").length || (a < b ? -1 : 1));
 }
 
 // The per-path lookup the filter predicate reads: `count` for a content hit,

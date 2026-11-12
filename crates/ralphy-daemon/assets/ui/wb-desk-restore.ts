@@ -59,6 +59,29 @@ export type DeskRestoreDeps = Pick<
   currentDeskFailure: () => string;
 };
 
+// The member's record, moved to sit near this window's top-left.
+function shiftedRecord(m: PopupMember, origin: { left: number; top: number }) {
+  return {
+    ...m,
+    rect: {
+      ...m.rect,
+      left: (m.rect?.left ?? 0) - origin.left + 12,
+      top: (m.rect?.top ?? 0) - origin.top + 12,
+    },
+  };
+}
+
+// The top-left corner of the fence in the opener's plane; no rect is 0, 0.
+function fenceOrigin(fence: { rect?: Partial<Rect> | null } | null | undefined) {
+  return { left: fence?.rect?.left ?? 0, top: fence?.rect?.top ?? 0 };
+}
+
+// The window ids a popup entry names: the ids it stored, then its snapshot.
+function entryMemberIds(entry: PopupEntry | undefined) {
+  const snapshot = (entry?.members ?? []).filter((m) => m.id).map((m) => m.id);
+  return [...(entry?.memberIds ?? []), ...snapshot];
+}
+
 export function createDeskRestore(deps: DeskRestoreDeps) {
   const {
     window,
@@ -128,12 +151,6 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
       for (const wid of membership[id] ?? []) away.set(wid, id);
     }
     return away;
-  }
-
-  // The window ids a popup entry names: the ids it stored, then its snapshot.
-  function entryMemberIds(entry: PopupEntry | undefined) {
-    const snapshot = (entry?.members ?? []).filter((m) => m.id).map((m) => m.id);
-    return [...(entry?.memberIds ?? []), ...snapshot];
   }
 
   // The fallback snapshot, so a popup that never answers still has somewhere
@@ -310,33 +327,16 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
     applyExtent();
   }
 
-  // The top-left corner of the fence in the opener's plane; no rect is 0, 0.
-  function fenceOrigin(fence: { rect?: Partial<Rect> | null } | null | undefined) {
-    return { left: fence?.rect?.left ?? 0, top: fence?.rect?.top ?? 0 };
-  }
-
-  // The member's record, moved to sit near this window's top-left.
-  function shiftedRecord(m: PopupMember, origin: { left: number; top: number }) {
-    return {
-      ...m,
-      rect: {
-        ...m.rect,
-        left: (m.rect?.left ?? 0) - origin.left + 12,
-        top: (m.rect?.top ?? 0) - origin.top + 12,
-      },
-    };
-  }
-
   // A note, a console with a live session, or the placeholder of one without.
   function mountMember(m: PopupMember, record: ReturnType<typeof shiftedRecord>) {
     if (m.kind === "note") {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a note member is a note
       window.WBNotes.mountDetached(record as NoteSource);
-    } else if (m.session != null) {
+    } else if (m.session == null) {
+      spawnPlaceholder(record);
+    } else {
       const agent = (m.agent ?? "") || "console";
       spawnWindow({ id: m.session, repo: m.repo ?? null }, agent, m.repo, record);
-    } else {
-      spawnPlaceholder(record);
     }
   }
 

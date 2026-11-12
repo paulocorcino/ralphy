@@ -132,18 +132,25 @@ function walkDeps(self: number, g: IssueGraph) {
   const acc = new Set<number>();
   const seen = new Set<number>();
   const stack = [self];
+  const walk = { self, acc, stack };
   while (stack.length > 0) {
     const node = stack.pop();
     if (node === undefined || seen.has(node)) continue; // already expanded — also breaks cycles
     seen.add(node);
-    for (const n of g.blockedOf.get(node) ?? []) addNeighbour(n, self, g, acc, stack);
+    for (const n of g.blockedOf.get(node) ?? []) {
+      addNeighbour(n, g, walk);
+    }
   }
   return acc;
 }
 
+/** The state of one `walkDeps`: its start, the predecessors found, and the nodes to expand. */
+type DepsWalk = { self: number; acc: Set<number>; stack: number[] };
+
 // One blocker `n` of a node `walkDeps` expands: a predecessor of `self`, a
 // node to walk through, or a closed bundle whose children stand in.
-function addNeighbour(n: number, self: number, g: IssueGraph, acc: Set<number>, stack: number[]) {
+function addNeighbour(n: number, g: IssueGraph, walk: DepsWalk) {
+  const { self, acc, stack } = walk;
   if (n === self) return;
   if (g.inQueue.has(n)) acc.add(n); // terminal in-queue predecessor
   else if (g.openNums.has(n)) stack.push(n); // transparent: keep walking
@@ -164,7 +171,7 @@ function kahnOrder(queue: Issue[], deps: Map<number, Set<number>>) {
   const placed = new Set<number>();
   const out = [];
   while (byNum.size > 0) {
-    const keys = [...byNum.keys()].sort((a, b) => a - b);
+    const keys = [...byNum.keys()].toSorted((a, b) => a - b);
     const ready = keys.find((n) => [...(deps.get(n) ?? [])].every((d) => placed.has(d)));
     if (ready == null) {
       for (const n of keys) out.push(byNum.get(n));
@@ -371,13 +378,13 @@ export const WBKanban = {
     const a = list.slice();
     switch (sort) {
       case "num-asc":
-        return a.sort((x, y) => x.number - y.number);
+        return a.toSorted((x, y) => x.number - y.number);
       case "updated":
-        return a.sort((x, y) => (y.updated || "").localeCompare(x.updated || ""));
+        return a.toSorted((x, y) => (y.updated || "").localeCompare(x.updated || ""));
       case "title":
-        return a.sort((x, y) => (x.title || "").localeCompare(y.title || ""));
+        return a.toSorted((x, y) => (x.title || "").localeCompare(y.title || ""));
       default:
-        return a.sort((x, y) => y.number - x.number);
+        return a.toSorted((x, y) => y.number - x.number);
     }
   },
 

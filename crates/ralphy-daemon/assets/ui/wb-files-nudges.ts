@@ -77,15 +77,16 @@ export function treeDirty(files: NudgeFiles, rel: string) {
     .then(() => files.refreshOpenViewers(rel));
 }
 
+const dirOf = (p: string | undefined) => {
+  if (typeof p !== "string") return null;
+  const i = p.lastIndexOf("/");
+  return i < 0 ? "" : p.slice(0, i);
+};
+
 // After a directory nudge, re-read any open tab whose file lives in `rel`
 // and push the bytes to its viewer. A failure keeps the tab's bytes.
 export function openViewersRefresh(files: NudgeFiles, rel: string): Promise<void | void[]> {
   if (!files.useDaemonTree()) return Promise.resolve();
-  const dirOf = (p: string | undefined) => {
-    if (typeof p !== "string") return null;
-    const i = p.lastIndexOf("/");
-    return i < 0 ? "" : p.slice(0, i);
-  };
   const reads: Promise<void>[] = [];
   for (const t of files.$store.tabs.tabs) {
     if (t.project !== files.$store.projects.openSlug || dirOf(t.path) !== rel) continue;

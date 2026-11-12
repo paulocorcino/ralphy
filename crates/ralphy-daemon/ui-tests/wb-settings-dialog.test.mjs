@@ -3,19 +3,15 @@
 // when the component reads a shell() name it does not list in `uses`, or
 // assigns a shell() field (ADR-0073 D4). The schema itself (`wb-settings.ts`)
 // is tested in wb-settings.test.mjs.
+// oxlint-disable-next-line eslint/max-classes-per-file -- a fake class per object the test stands in for
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, runIn as evalIn, valueIn, withoutComments } from "./harness.mjs";
 import { WB_SETTINGS } from "../assets/ui/wb-settings.ts";
 import { WBSettingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 
 // The part that holds the dialog's markup, with the Devices section inside it.
 const PART = "wb-settings-dialog.part.html";
-
-// Evaluate a markup expression the way Alpine does: names resolve on the
-// scope. `with` needs sloppy mode, which `new Function` gives.
-const evalIn = (scope, expr) => new Function("scope", `with (scope) { ${expr}; }`)(scope);
-const valueIn = (scope, expr) => new Function("scope", `with (scope) { return ${expr}; }`)(scope);
 
 // The element that holds the dialog's component, up to its `>`.
 const wrapperTag = () => {
@@ -23,7 +19,7 @@ const wrapperTag = () => {
   const at = html.indexOf('x-data="wbSettingsDialog"');
   return html.slice(html.lastIndexOf("<div", at), html.indexOf(">", at) + 1);
 };
-const handlerOf = (event) => wrapperTag().match(new RegExp(`@${event}\\.window="([^"]*)"`))[1];
+const handlerOf = (event) => wrapperTag().match(new RegExp(`@${event}\\.window="([^"]*)"`, "u"))[1];
 
 // The dialog with a daemon that records each `observe` call. `saveSetting`
 // ends by announcing on the page's real `WB` bus.
@@ -94,11 +90,9 @@ test("the notification switch is saved in this browser, and a refusal turns it o
   const map = new Map();
   globalThis.localStorage = { getItem: (k) => map.get(k) ?? null, setItem: (k, v) => map.set(k, String(v)) };
   let answer = "granted";
-  globalThis.Notification = class {
-    static permission = "default";
-    static requestPermission() {
-      return Promise.resolve(answer);
-    }
+  globalThis.Notification = {
+    permission: "default",
+    requestPermission: () => Promise.resolve(answer),
   };
   const flashed = [];
   const { scope: s, window } = loadComponent("wbSettingsDialog", {
@@ -156,18 +150,18 @@ test("the test notification is shown with the switch off, and a block says why",
     shown.map((n) => [n.title, n.tag]),
     [["Ralphy", "ralphy-test"]],
   );
-  assert.match(s.notifyTestNote, /took the test notification/);
+  assert.match(s.notifyTestNote, /took the test notification/u);
   assert.equal(JSON.parse(map.get("wb.view.v1") || "{}").notify, undefined, "the switch is not touched");
 
   answer = "denied";
   await s.testNotify();
   assert.equal(shown.length, 1, "a blocked page shows none");
-  assert.match(s.notifyTestNote, /blocks notifications/);
+  assert.match(s.notifyTestNote, /blocks notifications/u);
 
   delete globalThis.Notification;
   window.isSecureContext = false;
   await s.testNotify();
-  assert.match(s.notifyTestNote, /https:\/\/ address or from localhost/);
+  assert.match(s.notifyTestNote, /https:\/\/ address or from localhost/u);
 });
 
 // The console text size is the same `font` field the key bar's A−/A+ write, so
@@ -181,8 +175,9 @@ test("the console text size is saved to the view store, held to the key bar's ra
     setItem: (k, v) => map.set(k, String(v)),
   };
   try {
+    const font = () => JSON.parse(map.get("wb.view.v1") || "{}").font;
+
     await withDialog(async (s, calls) => {
-      const font = () => JSON.parse(map.get("wb.view.v1") || "{}").font;
       await s.saveSetting("consoles.font_size", "12");
       assert.equal(font(), 12);
       assert.equal(s.settings["consoles.font_size"], 12);
@@ -272,9 +267,9 @@ test("every name the dialog's markup reads is its own or in its uses list", () =
   // The Devices and Telegram sections are components of their own, nested
   // one level deeper: they read their own names, not this dialog's.
   const markup = partMarkup(PART)
-    .replace(/<template x-if="sec\.id === 'telegram'[\s\S]*?(?=<template x-if="sec\.id === 'devices')/, "")
-    .replace(/<template x-if="sec\.id === 'devices'[\s\S]*?<\/template>\s*<\/section>/, "</section>");
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
+    .replace(/<template x-if="sec\.id === 'telegram'[\s\S]*?(?=<template x-if="sec\.id === 'devices')/u, "")
+    .replace(/<template x-if="sec\.id === 'devices'[\s\S]*?<\/template>\s*<\/section>/u, "</section>");
+  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
   // `x-for="sec in …"` and `x-for="(e, i) in …"` name the loop's own variables.
   const loop = new Set(attrs.filter((m) => m[1] === "x-for").flatMap((m) => bindingNames(m[2].split(" in ")[0])));
   // The parameters of an arrow function in a binding are its own too.
@@ -299,9 +294,9 @@ test("the rail button asks the dialog to open with workbench:settings-open, and 
   const html = withoutComments(assembledPage("index.html"));
   const at = html.indexOf('title="Settings"');
   const button = html.slice(html.lastIndexOf("<button", at), at);
-  const click = button.match(/@click="([^"]*)"/)[1];
-  const active = button.match(/:class="([^"]*)"/)[1];
-  assert.match(wrapperTag(), /@workbench:settings-open\.window="openSettings\(\)"/);
+  const click = button.match(/@click="([^"]*)"/u)[1];
+  const active = button.match(/:class="([^"]*)"/u)[1];
+  assert.match(wrapperTag(), /@workbench:settings-open\.window="openSettings\(\)"/u);
 
   // The opener runs in shell() scope: it asks the menus to close (the account
   // menu hears it, wb-account.test.mjs) and sends the event.
@@ -328,9 +323,9 @@ test("the rail button asks the dialog to open with workbench:settings-open, and 
   // Nothing outside the component names its state.
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["openSettings", "closeSettings", "settingsSection", "settingsError", "deskHistory", "saveSetting"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
+    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
   }
-  assert.equal(outside.match(/\bsettingsOpen\b/g)?.length, 1, "only the rail button names the open flag, as a modal-stack path");
+  assert.equal(outside.match(/\bsettingsOpen\b/gu)?.length, 1, "only the rail button names the open flag, as a modal-stack path");
 });
 
 test("log off closes the dialog with the workbench:log-off event", async () => {
@@ -369,7 +364,7 @@ test("the open dialog reads its settings again on workbench:panels-reread, and a
 // gives to `scrim()`, or the shortcuts would never see the dialog open.
 test("openFlag is the path the Settings dialog gives to scrim()", () => {
   const markup = partMarkup(PART);
-  const paths = [...markup.matchAll(/x-bind="\$store\.modals\.scrim\('([^']+)'/g)].map((m) => m[1]);
+  const paths = [...markup.matchAll(/x-bind="\$store\.modals\.scrim\('([^']+)'/gu)].map((m) => m[1]);
   assert.deepEqual(paths, ["settingsOpen"]);
   assert.equal(WBSettingsDialog.openFlag, paths[0]);
 });

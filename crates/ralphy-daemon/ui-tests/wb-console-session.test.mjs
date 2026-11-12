@@ -64,10 +64,11 @@ test("relaunchRequest carries the record's checkout on an agent record only", ()
   });
 });
 
+const win = (sessionId, repo) => ({ _term: { sessionId }, _deskRepo: repo });
+
 // ADR-0059 §5: a window's row on `/api/sessions` is the daemon's id AND the
 // repo ref — a restarted daemon reuses ids and a peer's `1` is not ours.
 test("sessionRowFor matches a window's session by id and repo ref", () => {
-  const win = (sessionId, repo) => ({ _term: { sessionId }, _deskRepo: repo });
   const sessions = [
     { id: 1, repo: "owner/a", agent_state: { state: "working", since: "t" } },
     { id: 1, repo: "01PEER/owner/a", agent_state: { state: "waiting", since: "t" } },

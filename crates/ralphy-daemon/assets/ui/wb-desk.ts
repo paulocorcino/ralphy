@@ -119,6 +119,17 @@ export type DeskDeps = {
   wireStage: () => void;
 };
 
+// The `409` reply of an unreadable desk, as the reason to show, or null.
+// The daemon's text is for a developer: it goes to the browser console.
+async function unreadableDesk(r: ApiRefusal<"GET /api/desk">) {
+  if (r.status !== 409) return null;
+  const body = await r.json().catch(() => null);
+  if (body?.state !== "unreadable") return null;
+  // oxlint-disable-next-line no-console -- the daemon's text is for a developer
+  if (body.error) console.warn("saved desk:", body.error);
+  return "the file is damaged";
+}
+
 export function createDesk(deps: DeskDeps) {
   const {
     window,
@@ -279,15 +290,6 @@ export function createDesk(deps: DeskDeps) {
   let deskFailure = "";
   // The shell's hook for a desk failure found by a flush: no push says so.
   let onDeskFailure: (() => void) | null = null;
-  // The `409` reply of an unreadable desk, as the reason to show, or null.
-  // The daemon's text is for a developer: it goes to the browser console.
-  async function unreadableDesk(r: ApiRefusal<"GET /api/desk">) {
-    if (r.status !== 409) return null;
-    const body = await r.json().catch(() => null);
-    if (body?.state !== "unreadable") return null;
-    if (body.error) console.warn("saved desk:", body.error);
-    return "the file is damaged";
-  }
 
   // Load (or re-load, after a login or a push) the daemon's desk. Never
   // rejects: an unreachable daemon leaves the page as it was. An unreadable

@@ -45,6 +45,26 @@ export type ConvergeDeps = {
   dropClosedElsewhere: (id: string) => void;
 };
 
+function placeWindow(win: HTMLElement, r: Rect) {
+  // oxlint-disable-next-line unicorn/prefer-number-coercion -- "12px" is NaN to Number()
+  const at = (prop: "left" | "top" | "width" | "height") => parseInt(win.style[prop], 10);
+  if (
+    at("left") === Math.round(r.left) &&
+    at("top") === Math.round(r.top) &&
+    at("width") === Math.round(r.width) &&
+    at("height") === Math.round(r.height)
+  ) {
+    return;
+  }
+  win.style.left = r.left + "px";
+  win.style.top = r.top + "px";
+  win.style.width = r.width + "px";
+  win.style.height = r.height + "px";
+  // A tile below the CSS floor (`arrangeFence`): relaxed to the cell.
+  win.style.minWidth = r.width < WIN_MIN_W ? r.width + "px" : "";
+  win.style.minHeight = r.height < WIN_MIN_H ? r.height + "px" : "";
+}
+
 export function createDeskConverge(deps: ConvergeDeps) {
   const {
     OPTS,
@@ -112,26 +132,6 @@ export function createDeskConverge(deps: ConvergeDeps) {
       w._deskConsoleName = name;
       if (w._title && w._presentation) renderTitle(w, w._title, w._presentation);
     }
-  }
-
-  function placeWindow(win: HTMLElement, r: Rect) {
-    // oxlint-disable-next-line unicorn/prefer-number-coercion -- "12px" is NaN to Number()
-    const at = (prop: "left" | "top" | "width" | "height") => parseInt(win.style[prop], 10);
-    if (
-      at("left") === Math.round(r.left) &&
-      at("top") === Math.round(r.top) &&
-      at("width") === Math.round(r.width) &&
-      at("height") === Math.round(r.height)
-    ) {
-      return;
-    }
-    win.style.left = r.left + "px";
-    win.style.top = r.top + "px";
-    win.style.width = r.width + "px";
-    win.style.height = r.height + "px";
-    // A tile below the CSS floor (`arrangeFence`): relaxed to the cell.
-    win.style.minWidth = r.width < WIN_MIN_W ? r.width + "px" : "";
-    win.style.minHeight = r.height < WIN_MIN_H ? r.height + "px" : "";
   }
 
   // A card whose record another device removed, holding text not yet saved,

@@ -6,6 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createTitle } from "../assets/ui/wb-console-title.ts";
 import { checkoutsStore } from "../assets/ui/wb-checkouts-store.ts";
+import { idLookups } from "./fake-document.mjs";
 
 // An element with the few DOM members the title uses. Listeners are kept so a
 // test can fire them.
@@ -60,7 +61,7 @@ function fakeDocument() {
   const listeners = {};
   return {
     body: fakeElement("body"),
-    getElementById: () => null,
+    ...idLookups(() => null),
     createElement: (tag) => fakeElement(tag),
     addEventListener(type, fn) {
       (listeners[type] ||= []).push(fn);

@@ -30,14 +30,15 @@ export type FeedsDeps = {
   renderTitle: (win: ConsoleWin, title: HTMLElement, presentation: Presentation) => void;
 };
 
+function newId(prefix: string) {
+  // `crypto.randomUUID` is undefined in a non-secure context and the daemon can
+  // bind a plain-http LAN address (ADR-0032), so build the id by hand.
+  return prefix + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+}
+
 export function createFeeds(deps: FeedsDeps) {
   const { wins, pageWindows, renderTitle } = deps;
 
-  function newId(prefix: string) {
-    // `crypto.randomUUID` is undefined in a non-secure context and the daemon can
-    // bind a plain-http LAN address (ADR-0032), so build the id by hand.
-    return prefix + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
-  }
   function newDeskId() {
     return newId("w-");
   }

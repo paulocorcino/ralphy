@@ -34,7 +34,7 @@ function pageTakesChord(e: KeyboardEvent, body: HTMLElement, win: PressDeps["win
   // send them to the child, and the document listener of the columns
   // (wb-consoles-tab.ts) takes them.
   if (
-    /^Arrow(Left|Right|Up|Down)$/.test(e.code) &&
+    /^Arrow(Left|Right|Up|Down)$/u.test(e.code) &&
     body.closest(".session-window.column, .session-window.tab-grid") !== null
   ) {
     return true;
@@ -43,7 +43,7 @@ function pageTakesChord(e: KeyboardEvent, body: HTMLElement, win: PressDeps["win
   // terminal too. Only where the console menus' document listener exists
   // (wb-consoles-tab-menus.ts, on the page with a shell): a
   // detached popup has none, so its terminal keeps the key.
-  return /^(?:Digit\d|KeyR)$/.test(e.code) && typeof win.getShell === "function";
+  return /^(?:Digit\d|KeyR)$/u.test(e.code) && typeof win.getShell === "function";
 }
 
 export function wirePress({ term, body, window, writeClipboard }: PressDeps) {

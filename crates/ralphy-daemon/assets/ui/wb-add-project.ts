@@ -209,7 +209,7 @@ function listedTarget(dir: ListedDir, entry: Row, sep: string): Target {
 function createTarget(dir: ListedDir, name: string, sep: string): Target {
   // Windows drops a final space or dot, so the folder would get
   // another name than the one shown.
-  if (/[ .]$/.test(name)) {
+  if (/[ .]$/u.test(name)) {
     return {
       action: "missing",
       label: "A folder name cannot end with a space or a dot",
@@ -231,8 +231,8 @@ function createTarget(dir: ListedDir, name: string, sep: string): Target {
 
 // What adding the existing folder at `path` does: it is in Projects, it is a
 // repo, it is inside the repo `inside`, or it gets a repository.
-function finalTarget(path: string, repo: boolean, added: boolean, inside: string | null): Target {
-  path = path.length > 3 ? path.replace(/[\\/]+$/, "") : path;
+function finalTarget(given: string, repo: boolean, added: boolean, inside: string | null): Target {
+  const path = given.length > 3 ? given.replace(/[\\/]+$/u, "") : given;
   if (added) return { action: "added", label: "Already in Projects", help: "", path, init: false };
   if (repo) return { action: "add", label: "Add project", help: "", path, init: false };
   if (inside !== null) {

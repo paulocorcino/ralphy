@@ -93,7 +93,7 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
     setPathLabel(el, rec);
     holder().append(el);
 
-    need(el, '[data-act="find"]').onclick = () => {
+    need(el, '[data-act="find"]').addEventListener("click", () => {
       const mod = diffEditor(rec.ed)?.getModifiedEditor();
       mod?.focus();
       mod
@@ -103,7 +103,7 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
           // oxlint-disable-next-line no-console -- the failure is for a developer
           console.error("[workbench] monaco find failed", err);
         });
-    };
+    });
     rec.el = el;
     void mountDiff(rec, need(el, ".viewer-body"));
   }
@@ -141,11 +141,15 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
     // The intrinsic size is only known once the bytes decode, and a decode
     // failure is worth saying out loud: the daemon verified the type, so a
     // browser that still cannot paint it means an unsupported/corrupt file.
-    img.onload = () => (meta.textContent = `${img.naturalWidth} × ${img.naturalHeight}`);
-    img.onerror = () => (meta.textContent = "Image could not be displayed.");
+    img.addEventListener("load", () => {
+      meta.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
+    });
+    img.addEventListener("error", () => {
+      meta.textContent = "Image could not be displayed.";
+    });
     img.src = rec.content;
 
-    need(el, '[data-act="zoom"]').onclick = (ev: MouseEvent) => {
+    need(el, '[data-act="zoom"]').addEventListener("click", (ev: MouseEvent) => {
       // Two states only: fit-to-pane (default) and 1:1 with scrollbars. A zoom
       // slider is a feature this pane does not need to read a screenshot.
       const actual = el.classList.toggle("actual-size");
@@ -156,8 +160,10 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
         actual ? "bi-arrows-angle-contract" : "bi-arrows-angle-expand",
         actual ? "Fit" : "Actual size",
       );
-    };
-    need(el, '[data-act="reload"]').onclick = () => reloadFile(rec);
+    });
+    need(el, '[data-act="reload"]').addEventListener("click", () => {
+      reloadFile(rec);
+    });
     need(el, '[data-act="detach"]').addEventListener("click", () => {
       detachClick(rec);
     });
@@ -212,7 +218,9 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
         "or reopen the file with another encoding.";
     }
     holder().append(el);
-    need(el, '[data-act="reload"]').onclick = () => reloadFile(rec);
+    need(el, '[data-act="reload"]').addEventListener("click", () => {
+      reloadFile(rec);
+    });
     rec.el = el;
   }
 

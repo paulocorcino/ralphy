@@ -131,10 +131,10 @@ export function renderMenu(store: MenuTabs, x: number, y: number, items: MenuIte
     b.append(icon, label);
     if (it.disabled === true) b.disabled = true;
     if (it.title !== undefined && it.title !== "") b.title = it.title;
-    b.onclick = () => {
+    b.addEventListener("click", () => {
       store.hideMenu();
       it.run();
-    };
+    });
     menu.append(b);
   }
   menu.style.display = "block";

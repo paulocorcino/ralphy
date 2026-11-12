@@ -29,16 +29,18 @@ function rowTitle(needsRepo: boolean, unavailable: boolean, reason: string | nul
   return unavailable ? shownReason(reason) : "";
 }
 
-function rowFor(
-  kind: string,
-  label: string,
-  plain: boolean,
-  digit: string | undefined,
-  available: boolean | undefined,
-  reason: string | null | undefined,
-  sessions: Session[] | null | undefined,
-  openSlug: string | null | undefined,
-) {
+interface RowInput {
+  kind: string;
+  label: string;
+  plain: boolean;
+  digit: string | undefined;
+  available: boolean | undefined;
+  reason: string | null | undefined;
+  sessions: Session[] | null | undefined;
+  openSlug: string | null | undefined;
+}
+
+function rowFor({ kind, label, plain, digit, available, reason, sessions, openSlug }: RowInput) {
   // A count drawn from another repo would offer to reach a session with a
   // different working directory — a row that lies about what its click does.
   const scope = plain ? (openSlug ?? "") || "~" : openSlug;
@@ -72,20 +74,32 @@ function menuRows({
   openSlug,
 }: { roster?: RosterRow[] | null; sessions?: Session[] | null; openSlug?: string | null } = {}) {
   const rows = (roster ?? []).map((r) =>
-    rowFor(
-      r.id,
-      (r.label ?? "") || r.id,
-      false,
-      r.accelerator,
-      r.available,
-      r.reason,
+    rowFor({
+      kind: r.id,
+      label: (r.label ?? "") || r.id,
+      plain: false,
+      digit: r.accelerator,
+      available: r.available,
+      reason: r.reason,
       sessions,
       openSlug,
-    ),
+    }),
   );
   // The plain shell is not a vendor adapter, so it never enters the daemon's
   // roster; the menu appends it last on digit 0.
-  rows.push(rowFor("console", "console", true, "0", true, null, sessions, openSlug));
+  const kind = "console";
+  rows.push(
+    rowFor({
+      kind,
+      label: kind,
+      plain: true,
+      digit: "0",
+      available: true,
+      reason: null,
+      sessions,
+      openSlug,
+    }),
+  );
   return rows;
 }
 

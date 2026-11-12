@@ -20,8 +20,10 @@ function card(id, value, pointing) {
   };
 }
 
+const OK = { status: "ok" };
+
 // The file acts over the desk `records`, with a daemon that answers `reply`.
-function noteFile(records, reply = { status: "ok" }) {
+function noteFile(records, reply = OK) {
   const calls = [];
   const deps = {
     window: {

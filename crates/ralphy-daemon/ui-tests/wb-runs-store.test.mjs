@@ -46,7 +46,7 @@ test("a failed runs read after a good one keeps the runs, marked not current", a
   await store.hydrateRuns();
   assert.deepEqual(store.runsByProject["o/r"], [{ runid: "r1" }]);
   assert.equal(store.runsRead["o/r"].current, false);
-  assert.match(store.runsError, /Not current: the run store is locked/);
+  assert.match(store.runsError, /Not current: the run store is locked/u);
 });
 
 test("a failed first runs read shows the words for a daemon code, never the code", async () => {
@@ -76,13 +76,14 @@ test("a runs reply that arrives after a newer read is dropped", async () => {
   assert.equal(store.currentRun().runid, "new");
 });
 
+const fakeRun = (planPath) => ({ runid: "r1", plan_path: planPath });
+
 test("a re-read keeps the plan text of a run whose plan path did not change, and drops it when it changed", async () => {
-  const run = (planPath) => ({ runid: "r1", plan_path: planPath });
   const { store } = page(
     scripted([
-      { status: "ok", runs: [run(".ralphy/plan-a.md")] },
-      { status: "ok", runs: [run(".ralphy/plan-a.md")] },
-      { status: "ok", runs: [run(".ralphy/plan-b.md")] },
+      { status: "ok", runs: [fakeRun(".ralphy/plan-a.md")] },
+      { status: "ok", runs: [fakeRun(".ralphy/plan-a.md")] },
+      { status: "ok", runs: [fakeRun(".ralphy/plan-b.md")] },
     ]),
   );
   await store.hydrateRuns();

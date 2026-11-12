@@ -99,62 +99,37 @@
     "typescript/no-unsafe-type-assertion": "error",
     "typescript/consistent-type-imports": "error",
     "typescript/no-unnecessary-type-parameters": "error",
-    // debt: 461 sites
-    "require-unicode-regexp": "off",
-    // debt: 133 sites
-    "unicorn/consistent-function-scoping": "off",
+    "require-unicode-regexp": "error",
+    "unicorn/consistent-function-scoping": "error",
     // debt: 46 sites
     "no-restricted-properties": "off",
-    // debt: 45 sites
-    "unicorn/prefer-add-event-listener": "off",
-    // debt: 44 sites
-    "unicorn/no-array-sort": "off",
+    "unicorn/prefer-add-event-listener": "error",
+    "unicorn/no-array-sort": "error",
     // debt: 38 sites
     "no-console": "off",
-    // debt: 23 sites
-    "unicorn/prefer-query-selector": "off",
-    // debt: 16 sites
-    "unicorn/no-array-callback-reference": "off",
-    // debt: 14 sites
-    "max-params": "off",
-    // debt: 13 sites
-    "unicorn/no-negated-condition": "off",
+    "unicorn/prefer-query-selector": "error",
+    "unicorn/no-array-callback-reference": "error",
+    "max-params": ["error", { "max": 4 }],
+    "unicorn/no-negated-condition": "error",
     "no-var": "error",
-    // debt: 10 sites
-    "no-param-reassign": "off",
-    // debt: 6 sites
-    "max-classes-per-file": "off",
-    // debt: 6 sites
-    "no-new-func": "off",
+    "no-param-reassign": "error",
+    "max-classes-per-file": "error",
+    "no-new-func": "error",
     "prefer-const": "error",
-    // debt: 5 sites
-    "unicorn/prefer-dom-node-dataset": "off",
-    // debt: 4 sites
-    "no-script-url": "off",
-    // debt: 4 sites
-    "typescript/no-extraneous-class": "off",
-    // debt: 3 sites
-    "unicorn/no-object-as-default-parameter": "off",
-    // debt: 3 sites
-    "unicorn/no-this-assignment": "off",
-    // debt: 1 site
-    "accessor-pairs": "off",
-    // debt: 1 site
-    "no-redeclare": "off",
-    // debt: 1 site
-    "no-unmodified-loop-condition": "off",
-    // debt: 1 site
-    "import/no-named-as-default": "off",
-    // debt: 1 site
-    "oxc/no-accumulating-spread": "off",
-    // debt: 1 site
-    "unicorn/no-array-reverse": "off",
-    // debt: 1 site
-    "unicorn/no-immediate-mutation": "off",
-    // debt: 1 site
-    "unicorn/no-static-only-class": "off",
-    // debt: 1 site
-    "unicorn/prefer-type-error": "off",
+    "unicorn/prefer-dom-node-dataset": "error",
+    "no-script-url": "error",
+    "typescript/no-extraneous-class": "error",
+    "unicorn/no-object-as-default-parameter": "error",
+    "unicorn/no-this-assignment": "error",
+    "accessor-pairs": "error",
+    "no-redeclare": "error",
+    "no-unmodified-loop-condition": "error",
+    "import/no-named-as-default": "error",
+    "oxc/no-accumulating-spread": "error",
+    "unicorn/no-array-reverse": "error",
+    "unicorn/no-immediate-mutation": "error",
+    "unicorn/no-static-only-class": "error",
+    "unicorn/prefer-type-error": "error",
     // debt: 1 site
     "unicorn/require-post-message-target-origin": "off",
     // noise: file size is xtask oversized, one tool per property (D4)

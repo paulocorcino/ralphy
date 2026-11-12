@@ -51,6 +51,14 @@ export type NoteChromeDeps = {
   floatGesture: (el: NoteCard, dir: string | null) => (e: PointerEvent) => void;
 };
 
+function endTitle(el: NoteCard) {
+  const label = el.querySelector<HTMLElement>(".note-title");
+  const field = el.querySelector<HTMLInputElement>(".note-title-edit");
+  if (!label || !field) return;
+  field.hidden = true;
+  label.hidden = false;
+}
+
 export function createNoteChrome(deps: NoteChromeDeps) {
   const { document, consoleHost, recordOf, patch, render, persistCards, closeCard } = deps;
   const { veiledNow, toggleReveal, setMarked, mountEditor, syncFromEditor, markDirty, paintTitle } =
@@ -182,8 +190,8 @@ export function createNoteChrome(deps: NoteChromeDeps) {
       // nothing. The operator asked for the eye to be available on every card
       // (2026-09-22) — a control that appears only once the state is already
       // reached is not a door into it.
-      if (!veiledOf(el._noteMarkdown)) setMarked(el, true);
-      else toggleReveal(el);
+      if (veiledOf(el._noteMarkdown)) toggleReveal(el);
+      else setMarked(el, true);
     });
     // THE FILE'S OWN CONTROL, and it lives with the file: a gear in the
     // footer's left corner, beside the path it acts on (asked 2026-09-22).
@@ -374,13 +382,6 @@ export function createNoteChrome(deps: NoteChromeDeps) {
     field.hidden = false;
     field.focus();
     field.select();
-  }
-  function endTitle(el: NoteCard) {
-    const label = el.querySelector<HTMLElement>(".note-title");
-    const field = el.querySelector<HTMLInputElement>(".note-title-edit");
-    if (!label || !field) return;
-    field.hidden = true;
-    label.hidden = false;
   }
   function commitTitle(el: NoteCard) {
     const field = el.querySelector<HTMLInputElement>(".note-title-edit");

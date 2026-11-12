@@ -302,8 +302,7 @@ export function createFenceGestures(deps: FenceGestureDeps) {
           way,
           start,
           { dx: ev.clientX - startX, dy: ev.clientY - startY },
-          FENCE_MIN,
-          bounds,
+          { min: FENCE_MIN, bounds },
         );
         fits = fenceFits(fences(), { id: f.id, rect: next });
         if (next.width !== start.width || next.height !== start.height) sized = true;

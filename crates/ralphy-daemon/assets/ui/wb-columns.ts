@@ -42,6 +42,8 @@ export type Painted = { id: string; index: number; count: number; row: number; r
 /** A change that came from outside this client. */
 type ExternalEvent = { type?: string; ids?: string[] } | null | undefined;
 
+/** Where `open` puts a console: the most consoles the grid holds, and "right" or "down". */
+type OpenPlace = { cap: number; dir: string };
 /** The answer of `open`: the new grid, or why there is none (`null`: no reason to show). */
 type OpenResult = { ok: false; reason: string | null } | { ok: true; columns: Grid };
 
@@ -50,6 +52,12 @@ type SwapResult = { ok: false } | { ok: true; columns: Grid; ended: boolean; unm
 
 /** A console at its stage rect, for `fromRects`. */
 type StageItem = { id: string; rect?: Partial<Rect> | null };
+
+const box = (r: Partial<Rect> | null | undefined) => ({
+  left: Number(r?.left) || 0,
+  top: Number(r?.top) || 0,
+  width: Math.max(0, Number(r?.width) || 0),
+});
 
 export const WBColumns = (function () {
   // From this many rows, the list opens with a filter box.
@@ -92,13 +100,8 @@ export const WBColumns = (function () {
   // Open `id` next to `callerId`: "right" as a new column directly right of
   // the caller's column, "down" as a new row directly below the caller. An
   // empty grid is a lone maximized console: the caller is then the only one.
-  function open(
-    grid: Grid,
-    callerId: string,
-    id: string,
-    capValue: number,
-    dir: string,
-  ): OpenResult {
+  function open(grid: Grid, callerId: string, id: string, place: OpenPlace): OpenResult {
+    const { cap: capValue, dir } = place;
     const list = grid.length > 0 ? grid : [[callerId]];
     const ids = flat(list);
     if (ids.includes(id)) return { ok: false, reason: REASON_OPEN };
@@ -227,14 +230,9 @@ export const WBColumns = (function () {
   }
 
   function fromRects(items: StageItem[] | null | undefined): Grid {
-    const box = (r: Partial<Rect> | null | undefined) => ({
-      left: Number(r?.left) || 0,
-      top: Number(r?.top) || 0,
-      width: Math.max(0, Number(r?.width) || 0),
-    });
     const list = (items ?? [])
       .map((it) => ({ id: it.id, ...box(it.rect) }))
-      .sort((a, b) => a.left - b.left || a.top - b.top || compareIds(a.id, b.id));
+      .toSorted((a, b) => a.left - b.left || a.top - b.top || compareIds(a.id, b.id));
     const cols = [];
     for (const it of list) {
       let best = null;
@@ -253,7 +251,7 @@ export const WBColumns = (function () {
     }
     // Columns stay in the order of their first console's left edge.
     return cols.map((col) =>
-      [...col].sort((a, b) => a.top - b.top || a.left - b.left).map((it) => it.id),
+      [...col].toSorted((a, b) => a.top - b.top || a.left - b.left).map((it) => it.id),
     );
   }
 

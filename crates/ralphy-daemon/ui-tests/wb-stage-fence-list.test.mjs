@@ -200,12 +200,14 @@ function chromeFence(id, rect) {
   return fakeEl(rect, { ".fence-name": { value: id }, ".fence-count": { textContent: "" }, ".fence-columns": { disabled: false } }, { fenceId: id });
 }
 
+const at = (left, top) => ({ left, top, width: 100, height: 100 });
+
+const rect = (left, top) => ({ left, top, width: 400, height: 400 });
+
 // Fence `a` is locked and holds one console and one card, `b` holds two
 // consoles, and `c` went to a popup with three.
 // `tabbed`: the console of `a` is in its own tab, in the pane of the tabs.
 function chromeHarness({ autoBoot, measured = true, ownLocks = false, tabbed = false } = {}) {
-  const rect = (left, top) => ({ left, top, width: 400, height: 400 });
-  const at = (left, top) => ({ left, top, width: 100, height: 100 });
   const fences = [
     { id: "a", name: "A", rect: rect(0, 0), locked: true },
     { id: "b", name: "B", rect: rect(500, 0) },

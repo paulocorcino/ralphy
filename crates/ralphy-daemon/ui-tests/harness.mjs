@@ -284,7 +284,7 @@ export function loadComponent(alpineName, opts = {}) {
   const { state: shellState, window, document } = opts.from || loadShell(opts);
   const factory = MODULE_COMPONENTS[alpineName];
   if (typeof factory !== "function") {
-    throw new Error(`no Alpine component ${alpineName} in MODULE_COMPONENTS`);
+    throw new TypeError(`no Alpine component ${alpineName} in MODULE_COMPONENTS`);
   }
   globalThis.window = window;
   globalThis.document = document;
@@ -383,14 +383,15 @@ function unwrapView(value) {
   return value;
 }
 
+const wrappable = (v) => {
+  if (v === null || typeof v !== "object") return false;
+  if (Array.isArray(v)) return true;
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
+};
+
 function storeView(alpineName, stores) {
   const views = new WeakMap();
-  const wrappable = (v) => {
-    if (v === null || typeof v !== "object") return false;
-    if (Array.isArray(v)) return true;
-    const proto = Object.getPrototypeOf(v);
-    return proto === Object.prototype || proto === null;
-  };
   // `depth` 0 is the map of stores, 1 a store, 2 and more a value inside one.
   const wrap = (value, path, depth) => {
     if (!wrappable(value)) return value;
@@ -407,7 +408,7 @@ function storeView(alpineName, stores) {
         if (d && !d.configurable && !d.writable) return v;
         const at = path ? `${path}.${k}` : k;
         if (depth === 1 && typeof v === "function" && d && "value" in d) {
-          return (...args) => wrap(Reflect.get(target, k).apply(target, args.map(unwrapView)), `${at}()`, 2);
+          return (...args) => wrap(Reflect.get(target, k).apply(target, args.map((a) => unwrapView(a))), `${at}()`, 2);
         }
         return wrap(v, at, depth + 1);
       },
@@ -430,7 +431,7 @@ export function partMarkup(part) {
 }
 
 // A line that holds only `<!-- part: <name>.part.html -->`.
-const PART_MARKER = /^\s*<!-- part:\s*(\S+\.part\.html)\s*-->\s*$/;
+const PART_MARKER = /^\s*<!-- part:\s*(\S+\.part\.html)\s*-->\s*$/u;
 
 // The page `page` with each marker line replaced by the text of its part, and
 // the part named by `skip` left out. `build/ui.rs` is the only code that puts
@@ -438,7 +439,7 @@ const PART_MARKER = /^\s*<!-- part:\s*(\S+\.part\.html)\s*-->\s*$/;
 // whole page, in document order, or the page outside one component.
 export function assembledPage(page, { skip } = {}) {
   let text = "";
-  for (const line of readFileSync(join(UI, page), "utf8").split(/(?<=\n)/)) {
+  for (const line of readFileSync(join(UI, page), "utf8").split(/(?<=\n)/u)) {
     text += partLine(line, skip);
   }
   return text;
@@ -462,13 +463,20 @@ export function bindingNames(expr) {
     .replaceAll('&amp;', "&")
     .replaceAll(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/gu, "''");
   const names = new Set();
-  for (const m of code.matchAll(/[A-Za-z_$][\w$]*/g)) {
+  for (const m of code.matchAll(/[A-Za-z_$][\w$]*/gu)) {
     const before = code.slice(0, m.index);
     const after = code.slice(m.index + m[0].length);
-    if (/\.\s*$/.test(before)) continue;
-    if (/[{,]\s*$/.test(before) && /^\s*:/.test(after)) continue;
+    if (/\.\s*$/u.test(before)) continue;
+    if (/[{,]\s*$/u.test(before) && /^\s*:/u.test(after)) continue;
     if (["true", "false", "null", "undefined", "in", "of", "typeof"].includes(m[0])) continue;
     names.add(m[0]);
   }
   return [...names];
 }
+
+// Run a markup expression the way Alpine does: names resolve on `scope`.
+// `with` needs sloppy mode, which `new Function` gives.
+// oxlint-disable-next-line eslint/no-new-func -- the test runs markup code, as Alpine does
+export const runIn = (scope, expr) => new Function("scope", `with (scope) { ${expr}; }`)(scope);
+// oxlint-disable-next-line eslint/no-new-func -- the test runs markup code, as Alpine does
+export const valueIn = (scope, expr) => new Function("scope", `with (scope) { return ${expr}; }`)(scope);

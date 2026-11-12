@@ -98,7 +98,7 @@ export const WBSessionRoute = (function () {
   // socket still holds half-open behind a tunnel. The daemon's rule, mirrored:
   // anything else is not a holder.
   const HOLDER_KEY = "ralphy.holder";
-  const HOLDER_RE = /^[A-Za-z0-9_-]{1,64}$/;
+  const HOLDER_RE = /^[A-Za-z0-9_-]{1,64}$/u;
 
   // `sessionStorage` is per tab and survives a reload, which is the scope that
   // must keep the name. A storage that throws or is absent still yields a
@@ -215,7 +215,7 @@ export const WBSessionRoute = (function () {
 
   // Only the values the daemon reads; any other value is not sent. The
   // daemon reads the three as strings, so a bad one is absent there.
-  const EFFECTIVE_TYPE_RE = /^(slow-2g|2g|3g|4g)$/;
+  const EFFECTIVE_TYPE_RE = /^(slow-2g|2g|3g|4g)$/u;
   function linkFields(link: LinkFacts | undefined): SessionPayload {
     const out: SessionPayload = {};
     if (!link) return out;
@@ -252,12 +252,16 @@ export const WBSessionRoute = (function () {
   // launch with no repo or no agent sends the value empty, never `null`: the
   // daemon refuses it as an unknown repo or agent.
   // `since` is sent only on a reattach: a launch opens a new terminal.
+  /** The facts of one connect: a gzipped replay, the try number, and the reattach point. */
+  interface ConnectFacts {
+    gzip?: boolean;
+    attempt?: number | undefined;
+    since?: number | undefined;
+  }
   function requestOpts(
     req: SessionRequest,
     holderId: string,
-    gzip = false,
-    attempt?: number,
-    since?: number,
+    { gzip = false, attempt, since }: ConnectFacts = {},
   ): SessionOpenOpts {
     const repo = req.repo ?? undefined;
     if (req.id != null) {

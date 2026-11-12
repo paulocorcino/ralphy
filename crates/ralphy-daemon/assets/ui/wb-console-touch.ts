@@ -72,7 +72,13 @@ export function wireTouch(deps: TouchDeps) {
   const rowAt = (clientY: number) => {
     const screen = term.element.querySelector(".xterm-screen");
     const top = screen ? screen.getBoundingClientRect().top : 0;
-    return selectionRow(clientY, top, cellHeight(), term.rows, term.buffer.active.viewportY);
+    const viewportY = term.buffer.active.viewportY;
+    return selectionRow(clientY, {
+      screenTop: top,
+      cellHeight: cellHeight(),
+      rows: term.rows,
+      viewportY,
+    });
   };
   const cellHeight = () => {
     const el = term.element;

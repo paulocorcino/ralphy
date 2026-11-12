@@ -122,8 +122,8 @@ test("every CAUSE value fits after `Could not <act>: ` and follows the rules fil
   const causes = Object.entries(load().CAUSE);
   assert.ok(causes.length > 0);
   for (const [code, cause] of causes) {
-    assert.match(cause, /^[a-z]/, `${code}: a cause starts lowercase`);
-    assert.doesNotMatch(cause, /[.!?:;…]$/, `${code}: the sentence adds the final period`);
+    assert.match(cause, /^[a-z]/u, `${code}: a cause starts lowercase`);
+    assert.doesNotMatch(cause, /[.!?:;…]$/u, `${code}: the sentence adds the final period`);
     const plain = cause.replaceAll('’', "'");
     for (const c of RULES.contractions.banned) {
       assert.ok(!plain.toLowerCase().includes(c), `${code}: contraction ${c}`);
@@ -131,7 +131,7 @@ test("every CAUSE value fits after `Could not <act>: ` and follows the rules fil
     for (const t of [...RULES.banned, ...RULES.plain]) {
       assert.ok(!hasTerm(plain, t.term, Boolean(t.whole_word), Boolean(t.case_sensitive)), `${code}: ${t.term}`);
     }
-    const words = cause.split(/\s+/).length + "Could not act:".split(" ").length;
+    const words = cause.split(/\s+/u).length + "Could not act:".split(" ").length;
     assert.ok(words <= RULES.sentence_max_words, `${code}: ${words} words`);
   }
 });
@@ -178,9 +178,10 @@ test("readFold before any good read has no value", () => {
   assert.equal(first.current, false);
 });
 
+const fmt = () => "14:02";
+
 test("notCurrent names the time of the good read and the reason", () => {
   const F = load();
-  const fmt = () => "14:02";
   const good = F.readFold(null, { ok: true, value: 1, at: 5 });
   assert.equal(F.notCurrent(good, fmt), "");
   const stale = F.readFold(good, { ok: false, reason: "the daemon did not answer", at: 6 });

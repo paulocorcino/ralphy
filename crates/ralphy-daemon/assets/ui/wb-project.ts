@@ -146,7 +146,7 @@ function issueUrl(remoteUrl: string | null | undefined, number: number) {
 // part of another host's name or path.
 function githubRemote(remoteUrl: string | null | undefined) {
   return (remoteUrl ?? "").match(
-    /^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/,
+    /^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/u,
   );
 }
 
@@ -188,7 +188,7 @@ function worktreeCreateRow(
 function maskWorktreeName(raw: string | null | undefined) {
   return (raw ?? "")
     .replaceAll(/[\s\u0000-\u001F\u007F/\\~^:?*[]/gu, "")
-    .replace(/^[-.]+/, "")
+    .replace(/^[-.]+/u, "")
     .replaceAll(/\.{2,}/gu, ".")
     .replaceAll(/@\{+/gu, "@");
 }
@@ -208,7 +208,7 @@ function worktreeNameProblem(
 
 // Which characters of `name` the daemon would refuse.
 function charProblem(name: string) {
-  if (/\s/.test(name)) return "The name cannot contain spaces. Use “-” instead.";
+  if (/\s/u.test(name)) return "The name cannot contain spaces. Use “-” instead.";
   const bad = name.match(/[\u0000-\u001F\u007F/\\~^:?*[]/u);
   if (!bad) return "";
   return /[\u0000-\u001F\u007F]/u.test(bad[0])

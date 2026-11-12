@@ -246,11 +246,12 @@ test("frames behind a decode that passed its deadline are applied in order, and 
   }
 });
 
+let finish = () => {};
+
 test("a decode that ends after its deadline writes nothing", async () => {
   mock.timers.enable({ apis: ["setTimeout"] });
   try {
     const { seen, apply } = recorder();
-    let finish = () => {};
     const { take } = frameQueue(apply, () => new Promise((resolve) => { finish = () => resolve(new Uint8Array([65])); }));
     gzipOpen(take);
     mock.timers.tick(DECODE_DEADLINE_MS);

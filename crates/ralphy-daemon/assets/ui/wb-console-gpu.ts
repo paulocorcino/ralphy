@@ -76,7 +76,7 @@ export function gpuHolders(windows: GpuCandidate[], budget: number) {
   return windows
     .map((w, i) => ({ ...w, i }))
     .filter((w) => w.seen && !w.covered && w.hasTerminal)
-    .sort((a, b) => b.z - a.z)
+    .toSorted((a, b) => b.z - a.z)
     .slice(0, budget)
     .map((w) => w.i);
 }

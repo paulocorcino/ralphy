@@ -137,7 +137,7 @@ export function wbBranchDialog() {
       const all = this.branchModal.branches;
       const hit = q ? all.filter((b) => b.toLowerCase().includes(q)) : all.slice();
       const cur = this.branchModal.current;
-      return hit.sort(currentFirst(cur));
+      return hit.toSorted(currentFirst(cur));
     },
 
     openCheckoutChip(p: Project, anchor: HTMLElement) {
@@ -153,8 +153,7 @@ export function wbBranchDialog() {
           listing,
           this.$store.checkouts.checkoutOf(ref),
           mine,
-          p.branch,
-          p.dirty,
+          { branch: p.branch, dirty: p.dirty },
         ),
         onPick: (row) => {
           this.$store.checkouts.setCheckout(ref, row.primary ? null : row.name);

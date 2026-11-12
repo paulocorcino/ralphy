@@ -17,17 +17,17 @@ test("each modal's password fields render when THAT modal is open", () => {
   // The scrim's body runs to the `</div>` that closes it, found by depth.
   const scrimBody = (start) => {
     let depth = 0;
-    for (const t of html.slice(start).matchAll(/<div[\s>]|<\/div>/g)) {
+    for (const t of html.slice(start).matchAll(/<div[\s>]|<\/div>/gu)) {
       depth += t[0] === "</div>" ? -1 : 1;
       if (depth === 0) return html.slice(start, start + t.index);
     }
     throw new Error(`the modal scrim at offset ${start} is never closed`);
   };
   let checked = 0;
-  for (const m of html.matchAll(/<div class="modal-scrim" x-cloak x-bind="\$store\.modals\.scrim\('([^']+)'/g)) {
+  for (const m of html.matchAll(/<div class="modal-scrim" x-cloak x-bind="\$store\.modals\.scrim\('([^']+)'/gu)) {
     const flag = m[1];
     const body = scrimBody(m.index);
-    for (const g of body.matchAll(/<template x-if="([^"]+)">\s*<input[^>]*type="password"/g)) {
+    for (const g of body.matchAll(/<template x-if="([^"]+)">\s*<input[^>]*type="password"/gu)) {
       checked += 1;
       assert.ok(
         g[1].split("&&").map((t) => t.trim()).includes(flag),
@@ -47,9 +47,9 @@ test("the read-every-comment toggle is read-only and rendered disabled", () => {
   );
   assert.equal(item.type, "toggle");
   assert.equal(item.readonly, true);
-  assert.match(item.help, /ralphy config set queue\.trust_all_comments true/);
+  assert.match(item.help, /ralphy config set queue\.trust_all_comments true/u);
   const html = withoutComments(assembledPage("index.html"));
-  const toggle = html.match(/<template x-if="it\.type === 'toggle'">\s*<input[^>]*>/);
+  const toggle = html.match(/<template x-if="it\.type === 'toggle'">\s*<input[^>]*>/u);
   assert.ok(toggle, "the toggle template is gone");
-  assert.match(toggle[0], /:disabled="it\.readonly === true"/);
+  assert.match(toggle[0], /:disabled="it\.readonly === true"/u);
 });

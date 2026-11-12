@@ -74,7 +74,10 @@ export function stampLocalRows(
 // rows) and every peer's.
 export function fleetRows(repos: FleetRepoRow[] | undefined) {
   const rows = Array.isArray(repos) ? repos : [];
-  return { mine: rows.find((x) => x.local), peers: rows.filter((x) => !x.local).map(peerRow) };
+  return {
+    mine: rows.find((x) => x.local),
+    peers: rows.filter((x) => !x.local).map((x) => peerRow(x)),
+  };
 }
 
 // One peer's repo as a project row.

@@ -42,7 +42,7 @@ test("wbAccount lists only shell() names in uses, and its members left shell()",
 
 test("every name the markup of wbAccount reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbAccount");
-  const attrs = [...partMarkup(PART).matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
+  const attrs = [...partMarkup(PART).matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
   let read = 0;
   for (const [, attr, value] of attrs) {
     if (attr === "x-data") continue;
@@ -58,7 +58,7 @@ test("every name the markup of wbAccount reads is its own or in its uses list", 
 test("nothing outside the account menu names its state", () => {
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["avatarMenu", "toggleAvatarMenu", "closeAvatarMenu"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
+    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
   }
 });
 

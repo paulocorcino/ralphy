@@ -2,6 +2,7 @@
 // its channel on the page socket. `createTerminal` is driven with fake `deps`,
 // a fake channel opener, and fake xterm and observer classes, with no console
 // and no DOM.
+// oxlint-disable-next-line eslint/max-classes-per-file -- a fake class per object the test stands in for
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { gzipSync } from "node:zlib";
@@ -137,7 +138,7 @@ function fakePage() {
   const globals = {
     Terminal: FakeTerminal,
     FitAddon: { FitAddon: class { fit() {} } },
-    WebLinksAddon: { WebLinksAddon: class {} },
+    WebLinksAddon: { WebLinksAddon: class { dispose() {} } },
     Unicode11Addon: {
       Unicode11Addon: class {
         activate(term) {
@@ -317,30 +318,31 @@ test("a deps member left out fails the call that needs it", () => {
   }
 });
 
+const fakeChannel = (readyState) => ({
+  readyState,
+  sent: [],
+  closes: 0,
+  send(data) {
+    this.sent.push(data);
+    return true;
+  },
+  close() {
+    this.closes += 1;
+  },
+});
+
 test("detachSocket retires a channel: an open channel says why, and it closes", () => {
   const page = fakePage();
   try {
     const { detachSocket } = createTerminal(fakeDeps(page).deps);
-    const channel = (readyState) => ({
-      readyState,
-      sent: [],
-      closes: 0,
-      send(data) {
-        this.sent.push(data);
-        return true;
-      },
-      close() {
-        this.closes += 1;
-      },
-    });
 
-    const opened = channel(1);
+    const opened = fakeChannel(1);
     detachSocket(opened, "reconnect");
     assert.deepEqual(opened.sent, [encodeDetach("reconnect")]);
     assert.equal(opened.closes, 1);
 
     // A channel that waits for the page socket cannot send: it only closes.
-    const waiting = channel(0);
+    const waiting = fakeChannel(0);
     detachSocket(waiting, "reconnect");
     assert.deepEqual(waiting.sent, []);
     assert.equal(waiting.closes, 1);
@@ -666,9 +668,10 @@ test("notePage tells an open channel that the page went hidden or came back, and
   }
 });
 
+const navigatorWith = (value) => Object.defineProperty(globalThis, "navigator", { value, configurable: true });
+
 test("the channel open names the network the browser reports, and nothing when it reports none", () => {
   const saved = Object.getOwnPropertyDescriptor(globalThis, "navigator");
-  const navigatorWith = (value) => Object.defineProperty(globalThis, "navigator", { value, configurable: true });
   const page = fakePage();
   try {
     navigatorWith({ connection: { effectiveType: "3g", rtt: 300, downlink: 0.7 } });
@@ -724,7 +727,7 @@ test("a console opens a channel with its resume fields", () => {
     page.dropSocket();
     const { repo, id, since, holder } = page.channels[1].payload;
     assert.deepEqual({ repo, id, since }, { repo: "o/r", id: 5, since: 104 });
-    assert.match(holder, /^[A-Za-z0-9_-]{1,64}$/);
+    assert.match(holder, /^[A-Za-z0-9_-]{1,64}$/u);
     handle.dispose();
   } finally {
     page.restore();

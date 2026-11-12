@@ -108,6 +108,8 @@ async function writeProjectSetting(
   }
 }
 
+const when = (ms: number) => new Date(ms).toLocaleString();
+
 export function settingsDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
@@ -192,7 +194,6 @@ export function settingsDialog() {
             `${(refusal?.error ?? "") || "the daemon gave no reason"}.`;
           return;
         }
-        const when = (ms: number) => new Date(ms).toLocaleString();
         this.deskHistory.rows = WBDeskHistory.rows(reply, when);
         this.deskHistory.loaded = true;
       } catch {
@@ -258,7 +259,7 @@ export function settingsDialog() {
       }
     },
     pickDeskUpload() {
-      document.getElementById("desk-upload-input")?.click();
+      document.querySelector<HTMLElement>("#desk-upload-input")?.click();
     },
     async uploadDeskVersion(event: Event & { target: HTMLInputElement }) {
       const file = event.target.files?.[0];

@@ -46,9 +46,9 @@ test("every name the markup of wbUploadDialog reads is its own", () => {
   assert.deepEqual(data.uses, []);
   const markup = partMarkup(PART);
   let read = 0;
-  for (const [, attr, value] of markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)) {
+  for (const [, attr, value] of markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)) {
     if (attr === "x-data") continue;
-    const raw = attr === "x-for" ? value.split(/\s+in\s+/)[1] : value;
+    const raw = attr === "x-for" ? value.split(/\s+in\s+/u)[1] : value;
     for (const n of bindingNames(raw)) {
       if (n.startsWith("$") || n === "r") continue;
       assert.doesNotThrow(() => state[n], `${attr}="${value}" reads ${n}`);
@@ -56,7 +56,7 @@ test("every name the markup of wbUploadDialog reads is its own", () => {
     }
   }
   assert.ok(read > 8, `the markup was read: ${read} names`);
-  assert.match(partMarkup(PART), /x-data="wbUploadDialog" @workbench:upload-open\.window="openUpload\(\$event\.detail\)"/);
+  assert.match(partMarkup(PART), /x-data="wbUploadDialog" @workbench:upload-open\.window="openUpload\(\$event\.detail\)"/u);
 });
 
 test("the dialog refuses a file over the limit and marks the names that exist", async () => {
@@ -147,13 +147,13 @@ test("a dropped folder, a worktree and a protected folder are refused with a mes
   const dir = [{ webkitGetAsEntry: () => ({ isDirectory: true }) }];
   let { t, opened, flashed } = tree();
   askUpload(t, "", [file("photos")], dir);
-  assert.match(flashed[0], /not folders/);
+  assert.match(flashed[0], /not folders/u);
   ({ t, opened, flashed } = tree({ checkout: "wt-a" }));
   askUpload(t, "", [file("x.txt")]);
-  assert.match(flashed[0], /worktree/);
+  assert.match(flashed[0], /worktree/u);
   ({ t, opened, flashed } = tree());
   askUpload(t, ".git/hooks", [file("x.txt")]);
-  assert.match(flashed[0], /cannot write/);
+  assert.match(flashed[0], /cannot write/u);
   assert.deepEqual(opened, []);
 });
 
