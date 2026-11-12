@@ -10,6 +10,7 @@
    `wb-console.ts` creates one per console, before its view. The focused fence
    is per-client state and lives here.
    --------------------------------------------------------------------------- */
+import { setMarkup } from "./wb-html.ts";
 import { WBGeometry } from "./wb-geometry.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
@@ -117,8 +118,7 @@ function paintFenceLock(el: HTMLElement, locked: boolean) {
   el.classList.toggle("locked", locked);
   const btn = el.querySelector<HTMLButtonElement>(".fence-lock");
   if (btn) {
-    // oxlint-disable-next-line no-restricted-properties -- a fixed icon, no outside text
-    btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
+    setMarkup(btn, locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>');
     btn.title = locked ? "Unlock this fence" : "Lock this fence in place";
     btn.setAttribute("aria-pressed", locked ? "true" : "false");
   }

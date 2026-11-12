@@ -2,11 +2,13 @@
 // does nothing: `detached-main.ts` calls `wireDetached` after it created the
 // file pane, so `WBViewer` exists when the shell answers "ready" (ADR-0075
 // D5, D9).
+import { setMarkup } from "./wb-html.ts";
 import { isRecord } from "./wb-api.ts";
 import { openerOf } from "./wb-events.ts";
 import { isFileDescriptor, isOpenRequest } from "./wb-file-viewer.ts";
 import { windowTitle } from "./wb-window-title.ts";
 import { required } from "./wb-dom-need.ts";
+import { devLog } from "./wb-log.ts";
 
 /** A message this window sends the shell. */
 export type FilePopupMessage =
@@ -51,7 +53,7 @@ export function wireDetached(window: Window, document: Document) {
     emit(action, ...detail) {
       const to = opener();
       if (to) to.postMessage({ type: "wb-emit", action, detail: detail[0] }, PEER);
-      else console.log("[workbench:action]", { action, ...detail[0] });
+      else devLog("[workbench:action]", { action, ...detail[0] });
     },
   };
 
@@ -93,9 +95,11 @@ export function wireDetached(window: Window, document: Document) {
   // answer it. No opener, or a foreign one, means no file — and we say so
   // rather than rendering anything.
   const empty = (why: string) => {
-    // oxlint-disable-next-line unicorn/prefer-query-selector -- its innerHTML is old debt
-    required(document.getElementById("viewers"), "the viewers").innerHTML =
-      '<p class="detached-empty">Nothing to show. ' + why + ".</p>";
+    setMarkup(
+      // oxlint-disable-next-line unicorn/prefer-query-selector -- its innerHTML is old debt
+      required(document.getElementById("viewers"), "the viewers"),
+      '<p class="detached-empty">Nothing to show. ' + why + ".</p>",
+    );
   };
   const shell = opener();
   if (!shell) {

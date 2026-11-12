@@ -7,6 +7,7 @@
    `StageColumnsDeps` lists every read, so `tsc` refuses a read outside it.
    `wb-console.ts` creates one per console.
    --------------------------------------------------------------------------- */
+import { setMarkup } from "./wb-html.ts";
 import { WBGeometry } from "./wb-geometry.ts";
 import { PHONE_MAX_WIDTH } from "./wb-viewport.ts";
 import { inTab } from "./wb-console-place.ts";
@@ -93,10 +94,10 @@ function paintColumnButton(btn: HTMLButtonElement, narrow: boolean) {
   if (btn.getAttribute("aria-label") === label) return;
   btn.title = label;
   btn.setAttribute("aria-label", label);
-  // oxlint-disable-next-line no-restricted-properties -- a fixed icon, no outside text
-  btn.innerHTML = narrow
-    ? '<i class="bi bi-arrow-down-up"></i>'
-    : '<i class="bi bi-arrows-expand-vertical"></i>';
+  setMarkup(
+    btn,
+    narrow ? '<i class="bi bi-arrow-down-up"></i>' : '<i class="bi bi-arrows-expand-vertical"></i>',
+  );
 }
 
 export function createStageColumns(deps: StageColumnsDeps) {

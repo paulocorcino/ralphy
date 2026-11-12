@@ -7,6 +7,7 @@
    Each step takes the store as `store`, and calls only its own methods, so
    the store stays the one writer of its tabs.
    --------------------------------------------------------------------------- */
+import { setMarkup } from "./wb-html.ts";
 import type { CanvasTab, MenuItem, Slot } from "./wb-shell-types.d.ts";
 import { required } from "./wb-dom-need.ts";
 
@@ -113,7 +114,7 @@ export function closeItems(store: MenuTabs, t: CanvasTab): MenuItem[] {
 // `{ label, icon, run }` with optional `sep`, `danger`, `disabled`, `title`.
 export function renderMenu(store: MenuTabs, x: number, y: number, items: MenuItem[]) {
   const menu = required(document.querySelector<HTMLElement>("#ctxmenu"), "the element #ctxmenu");
-  menu.innerHTML = "";
+  setMarkup(menu, "");
   for (const it of items) {
     if (it.sep === true) {
       const hr = document.createElement("div");

@@ -1,3 +1,5 @@
+import { devWarn } from "./wb-log.ts";
+
 const pascal = (name: string) =>
   name.replaceAll(
     /(\w)(\w*)(_|-|\s*)/gu,
@@ -27,7 +29,7 @@ export function iconDirective(
       // oxlint-disable-next-line typescript/no-unnecessary-condition -- a page may lack lucide
       const node = window.lucide?.icons[pascal(name)];
       if (!node) {
-        console.warn(`x-icon: no lucide icon named "${name}"`);
+        devWarn(`x-icon: no lucide icon named "${name}"`);
         el.replaceChildren();
         return;
       }

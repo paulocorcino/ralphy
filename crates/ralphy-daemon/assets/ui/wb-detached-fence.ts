@@ -3,6 +3,7 @@
 // `wireDetachedFence` after it created the consoles and the note cards, so
 // `WBConsole` and `WBNotes` exist when the shell answers "ready" (ADR-0075
 // D5, D9).
+import { setMarkup } from "./wb-html.ts";
 import { WBColumns } from "./wb-columns.ts";
 import type { Grid } from "./wb-columns.ts";
 import { WBDetachLink } from "./wb-detach-link.ts";
@@ -90,7 +91,7 @@ export function wireDetachedFence(window: Window, document: Document) {
   let MEMBERS: PopupMember[] = [];
   const stageEl = () => required(document.querySelector<HTMLElement>("#stage"), "the stage");
   const empty = (why: string) => {
-    stageEl().innerHTML = '<p class="detached-empty">Nothing to show. ' + why + ".</p>";
+    setMarkup(stageEl(), '<p class="detached-empty">Nothing to show. ' + why + ".</p>");
   };
   const shell = opener();
   if (!shell) {
@@ -201,13 +202,13 @@ export function wireDetachedFence(window: Window, document: Document) {
     note.className = "detached-note";
     note.type = "button";
     note.title = "Keep a note on top";
-    note.innerHTML = '<i class="bi bi-sticky-fill"></i>';
+    setMarkup(note, '<i class="bi bi-sticky-fill"></i>');
     note.addEventListener("click", nextNoteOnTop);
     const columns = document.createElement("button");
     columns.className = "detached-columns";
     columns.type = "button";
     columns.title = "Open this fence's consoles as columns";
-    columns.innerHTML = '<i class="bi bi-layout-three-columns"></i>';
+    setMarkup(columns, '<i class="bi bi-layout-three-columns"></i>');
     columns.addEventListener("click", openColumns);
     tools.append(note, columns);
     document.body.append(tools);
@@ -349,8 +350,10 @@ export function wireDetachedFence(window: Window, document: Document) {
       // Never simply vanish from under the operator's hands: say why, then
       // go. The consoles are already coming home in the other tab — or
       // there is no other tab left to come home to.
-      stageEl().innerHTML =
-        '<p class="detached-lost">The workbench window was closed. This window will close too.</p>';
+      setMarkup(
+        stageEl(),
+        '<p class="detached-lost">The workbench window was closed. This window will close too.</p>',
+      );
       setTimeout(() => {
         window.close();
       }, 1500);

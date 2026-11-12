@@ -143,8 +143,10 @@ test("a raw replay is applied at once, and only the frame after a gzip open is d
 test("a replay that is not gzip is dropped and the live frames still come", async () => {
   const { seen, apply } = recorder();
   const { take } = frameQueue(apply);
+  // oxlint-disable-next-line no-console -- the test checks the console output
   const warn = console.warn;
   const warned = [];
+  // oxlint-disable-next-line no-console -- the test checks the console output
   console.warn = (...args) => warned.push(args);
   try {
     take(commandFrame("session-open", { session: 1, replay_encoding: "gzip" }));
@@ -153,6 +155,7 @@ test("a replay that is not gzip is dropped and the live frames still come", asyn
     await settle();
     take(terminalFrame(1, "live 2"));
   } finally {
+    // oxlint-disable-next-line no-console -- the test checks the console output
     console.warn = warn;
   }
   assert.deepEqual(seen, ["open", "replay-lost", "live 1", "live 2"], "the terminal is told the replay is lost");
@@ -185,8 +188,10 @@ test("a queued frame that throws does not stop the later frames or whenIdle", as
     seen.push(label);
   };
   const { take, whenIdle } = frameQueue(apply);
+  // oxlint-disable-next-line no-console -- the test checks the console output
   const warn = console.warn;
   const warned = [];
+  // oxlint-disable-next-line no-console -- the test checks the console output
   console.warn = (...args) => warned.push(args);
   try {
     take(commandFrame("session-open", { session: 1, replay_encoding: "gzip" }));
@@ -197,6 +202,7 @@ test("a queued frame that throws does not stop the later frames or whenIdle", as
     whenIdle(() => seen.push("close"));
     await settle();
   } finally {
+    // oxlint-disable-next-line no-console -- the test checks the console output
     console.warn = warn;
   }
   assert.deepEqual(seen, ["open", "the screen", "live 1", "live 2", "close"]);
@@ -273,7 +279,9 @@ test("a replay decode past its deadline reports a stall", () => {
     return Promise.resolve(new Response(null, { status: 204 }));
   };
   forgetStalls();
+  // oxlint-disable-next-line no-console -- the test checks the console output
   const warn = console.warn;
+  // oxlint-disable-next-line no-console -- the test checks the console output
   console.warn = () => {};
   mock.timers.enable({ apis: ["setTimeout"] });
   try {
@@ -284,6 +292,7 @@ test("a replay decode past its deadline reports a stall", () => {
     assert.deepEqual(kinds, ["decode-deadline"]);
   } finally {
     mock.timers.reset();
+    // oxlint-disable-next-line no-console -- the test checks the console output
     console.warn = warn;
     globalThis.fetch = prev;
   }

@@ -8,10 +8,12 @@
    `tsc` refuses a read outside it. `wb-console.ts` creates one per console and
    keeps the columns and the desk records.
    --------------------------------------------------------------------------- */
+import { setMarkup } from "./wb-html.ts";
 import { WBGeometry } from "./wb-geometry.ts";
 import { sendDocument } from "./wb-events.ts";
 import { inTab } from "./wb-console-place.ts";
 import type { ConsoleWin, DeskWindowFields, ExtentOpts, Stacked } from "./wb-types.d.ts";
+import { devWarn } from "./wb-log.ts";
 
 // Plane geometry is `wb-geometry.ts` (ADR-0057): pure folds over rects.
 const { STAGE_MARGIN, stageExtent } = WBGeometry;
@@ -48,8 +50,7 @@ function paintMaxButton(win: ConsoleWin) {
   if (!btn) return;
   const on = ["maximized", "column", "tab-grid"].some((c) => win.classList.contains(c));
   btn.title = on ? "Restore" : "Maximize";
-  // oxlint-disable-next-line no-restricted-properties -- a fixed icon, no outside text
-  btn.innerHTML = on ? '<i class="bi bi-fullscreen-exit"></i>' : '<i class="bi bi-fullscreen"></i>';
+  setMarkup(btn, on ? '<i class="bi bi-fullscreen-exit"></i>' : '<i class="bi bi-fullscreen"></i>');
 }
 
 // A restored console floats again, so the bleed's pin goes; a column keeps it.
@@ -189,7 +190,7 @@ export function createStageWindow(deps: StageWindowDeps) {
     const own = win._deskLocked;
     const held = !own && heldByFence(win);
     const locked = own || held;
-    btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
+    setMarkup(btn, locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>');
     btn.title = lockTitle(own, held);
     btn.setAttribute("aria-pressed", locked ? "true" : "false");
     btn.disabled = held;
@@ -212,7 +213,7 @@ export function createStageWindow(deps: StageWindowDeps) {
     win.requestFullscreen().catch((err: unknown) => {
       // The browser refusing (no user gesture, a policy header). Say so; the
       // console is still usable maximized.
-      console.warn("fullscreen refused", err);
+      devWarn("fullscreen refused", err);
     });
   }
 
@@ -226,9 +227,10 @@ export function createStageWindow(deps: StageWindowDeps) {
       const win = btn.closest(".session-window");
       const on = Boolean(win) && el === win;
       btn.title = on ? "Exit full screen" : "Full screen";
-      btn.innerHTML = on
-        ? '<i class="bi bi-fullscreen-exit"></i>'
-        : '<i class="bi bi-arrows-fullscreen"></i>';
+      setMarkup(
+        btn,
+        on ? '<i class="bi bi-fullscreen-exit"></i>' : '<i class="bi bi-arrows-fullscreen"></i>',
+      );
       // The touch-target grow lives on the WINDOW, not the button: the whole
       // titlebar is the operator's exit affordance on a tablet.
       win?.classList.toggle("fullscreen", on);

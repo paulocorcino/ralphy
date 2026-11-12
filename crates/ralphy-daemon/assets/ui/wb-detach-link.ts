@@ -174,6 +174,8 @@ export const WBDetachLink = (function () {
         const c = open();
         if (!c) return;
         try {
+          /* oxlint-disable-next-line unicorn/require-post-message-target-origin --
+             a BroadcastChannel takes no target origin */
           c.postMessage(msg);
         } catch {}
       },

@@ -281,6 +281,8 @@ pub(super) const STEPS: &[Step] = &[
             "crates/ralphy-daemon/ui-tests",
         ],
     ),
+    // Only this step fails an unused disable: the step above does not run
+    // the rules that read the types, so their disables look unused there.
     // A folder, not a list of files: on Windows `npx` runs through
     // `cmd.exe`, which cuts a command line at 8191 characters.
     step(
@@ -296,6 +298,7 @@ pub(super) const STEPS: &[Step] = &[
             "oxlint",
             "--type-aware",
             "--deny-warnings",
+            "--report-unused-disable-directives-severity=error",
             "crates/ralphy-daemon/assets/ui",
         ],
     ),

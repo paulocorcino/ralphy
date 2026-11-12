@@ -16,6 +16,7 @@
 import { component } from "./wb-alpine.ts";
 import { WBRelease } from "./wb-release.ts";
 import { apiFetch } from "./wb-api.ts";
+import { devWarn } from "./wb-log.ts";
 
 export function releaseDialogs() {
   // Every `shell()` member this component's code or markup reads or calls.
@@ -61,7 +62,7 @@ export function releaseDialogs() {
         await navigator.clipboard.writeText("ralphy update");
       } catch (e) {
         // No clipboard off a secure origin; the command stays on screen to type.
-        console.warn("copy ralphy update:", e);
+        devWarn("copy ralphy update:", e);
         return;
       }
       this.releaseCmdCopied = true;
@@ -87,7 +88,7 @@ export function releaseDialogs() {
         if (r.ok) needCode = (await r.json()).totp_enrolled;
       } catch (e) {
         // The daemon asks for the code anyway; the page then shows its refusal.
-        console.warn("security state:", e);
+        devWarn("security state:", e);
       }
       // The list as it is now, not as the last poll left it.
       await this.$store.projects.refreshLive();
@@ -220,7 +221,7 @@ export function releaseDialogs() {
         this.$store.release.releaseWatchChanged(enable);
       } catch (e) {
         // A preference: the next read reports what actually took.
-        console.warn("release watch:", e);
+        devWarn("release watch:", e);
       }
     },
 

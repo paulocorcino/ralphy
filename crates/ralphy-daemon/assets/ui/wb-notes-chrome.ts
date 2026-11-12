@@ -2,6 +2,7 @@
 // the file menu, the body, the foot and the resize edges, and the title as a
 // rename (ADR-0064 §4). `createNotes` builds it with the card's closure names
 // as typed deps; the text of each part is the one it had in `wb-notes.ts`.
+import { setMarkup } from "./wb-html.ts";
 import {
   DEFAULT_DIR,
   NOTE_MIN,
@@ -90,7 +91,7 @@ export function createNoteChrome(deps: NoteChromeDeps) {
     // a braille-dots grip beside a console's `bi-grip-vertical` reads as a
     // different application. The console's titlebar is the reference
     // (`buildChrome`), and a test pins the characters back OUT.
-    grab.innerHTML = '<i class="bi bi-grip-vertical"></i>';
+    setMarkup(grab, '<i class="bi bi-grip-vertical"></i>');
     const title = document.createElement("span");
     title.className = "note-title";
     title.title = "Rename this note";
@@ -147,7 +148,7 @@ export function createNoteChrome(deps: NoteChromeDeps) {
     tone.className = "note-tone";
     tone.type = "button";
     tone.title = "Change the colors and the font";
-    tone.innerHTML = '<i class="bi bi-palette"></i>';
+    setMarkup(tone, '<i class="bi bi-palette"></i>');
     tone.addEventListener("click", (ev) => {
       ev.stopPropagation();
       togglePalette(el);
@@ -169,7 +170,7 @@ export function createNoteChrome(deps: NoteChromeDeps) {
     index.type = "button";
     index.title = "Go to a heading in this note";
     index.hidden = true;
-    index.innerHTML = '<i class="bi bi-list-ul"></i>';
+    setMarkup(index, '<i class="bi bi-list-ul"></i>');
     index.addEventListener("click", (ev) => {
       ev.stopPropagation();
       toggleIndex(el);
@@ -203,7 +204,7 @@ export function createNoteChrome(deps: NoteChromeDeps) {
     more.className = "note-more";
     more.type = "button";
     more.title = "File and Markdown help";
-    more.innerHTML = '<i class="bi bi-gear"></i>';
+    setMarkup(more, '<i class="bi bi-gear"></i>');
     more.addEventListener("click", (ev) => {
       ev.stopPropagation();
       toggleMenu(el);
@@ -212,7 +213,7 @@ export function createNoteChrome(deps: NoteChromeDeps) {
     close.className = "note-close";
     close.type = "button";
     close.title = "Close this note. The file is kept.";
-    close.innerHTML = '<i class="bi bi-x-lg"></i>';
+    setMarkup(close, '<i class="bi bi-x-lg"></i>');
     close.addEventListener("click", () => {
       closeCard(el.dataset["noteId"]);
     });
@@ -223,7 +224,7 @@ export function createNoteChrome(deps: NoteChromeDeps) {
     back.className = "note-putback";
     back.type = "button";
     back.title = "Put back";
-    back.innerHTML = '<i class="bi bi-box-arrow-in-down-left"></i>';
+    setMarkup(back, '<i class="bi bi-box-arrow-in-down-left"></i>');
     back.addEventListener("click", (ev) => {
       ev.stopPropagation();
       putBack();

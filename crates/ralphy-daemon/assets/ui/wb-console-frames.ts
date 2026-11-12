@@ -16,6 +16,7 @@ import { TAG_COMMAND, TAG_TERMINAL } from "./wb-console-session.ts";
 // oxlint-disable-next-line typescript/consistent-type-imports -- the peer pin hashes this import
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { reportStall } from "./wb-stall.ts";
+import { devWarn } from "./wb-log.ts";
 
 // The payload of the daemon's `session-end`, `session-open` and
 // `session-size` frames. A peer of an older build sends no `session-size`.
@@ -144,7 +145,7 @@ export function frameQueue(
       }
     };
     const timer = setTimeout(() => {
-      console.warn("console replay did not decode in time");
+      devWarn("console replay did not decode in time");
       void reportStall("decode-deadline", "replay", DECODE_DEADLINE_MS);
       end({ kind: "replay-lost" });
     }, DECODE_DEADLINE_MS);
@@ -155,7 +156,7 @@ export function frameQueue(
       },
       // The replay is lost, not the console: the live stream goes on.
       (error: unknown) => {
-        console.warn("console replay did not decode:", error);
+        devWarn("console replay did not decode:", error);
         end({ kind: "replay-lost" });
       },
     );
@@ -173,7 +174,7 @@ export function frameQueue(
         try {
           take(bytes);
         } catch (error: unknown) {
-          console.warn("console frame was not applied:", error);
+          devWarn("console frame was not applied:", error);
         }
       }
     } finally {

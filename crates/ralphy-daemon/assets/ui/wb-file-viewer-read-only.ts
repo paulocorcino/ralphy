@@ -1,6 +1,7 @@
 // The read-only panes: a diff (HEAD against the working tree, side by side),
 // an image, and a refused file that names why it has no bytes. None of them
 // saves.
+import { setMarkup } from "./wb-html.ts";
 import { WBMonaco } from "./wb-monaco.ts";
 import { WBFail } from "./wb-fail.ts";
 import { canFocus, isElement, need, required } from "./wb-dom-need.ts";
@@ -9,6 +10,7 @@ import type { Messages } from "./wb-messages.ts";
 import type { BytesRecord, RefusedRecord, ViewerRecord } from "./wb-file-viewer.ts";
 import type { MermaidWindow } from "./wb-dbml-draw.ts";
 import { diffEditor } from "./wb-file-viewer-records.ts";
+import { devError } from "./wb-log.ts";
 
 /** What `createViewer` hands the read-only panes. */
 export type ViewerReadOnlyDeps = {
@@ -67,7 +69,7 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
         // "no changes". Say it failed and close the tab (#311).
         rec.mounting = false;
         rec.mountFailed = true;
-        console.error("[workbench] monaco diff failed to mount", err);
+        devError("[workbench] monaco diff failed to mount", err);
         messages.flash("Could not open the editor.");
         window.Alpine.store("tabs").closeTab(rec.id);
       });
@@ -82,14 +84,17 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
     // read-only by design (#311) — no commit, discard or staging control — and a
     // detached popup folds back a single-file descriptor a two-sided pane has no
     // representation in.
-    el.innerHTML = `
+    setMarkup(
+      el,
+      `
       <div class="viewer-toolbar">
         <span class="viewer-path"></span>
         <span class="spacer"></span>
         <button class="vbtn" data-act="find" title="Find" aria-label="Find"
           ><i class="bi bi-search"></i><span class="vbtn-label">Find</span></button>
       </div>
-      <div class="viewer-body"></div>`;
+      <div class="viewer-body"></div>`,
+    );
     setPathLabel(el, rec);
     holder().append(el);
 
@@ -100,8 +105,7 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
         ?.getAction("actions.find")
         ?.run()
         .catch((err: unknown) => {
-          // oxlint-disable-next-line no-console -- the failure is for a developer
-          console.error("[workbench] monaco find failed", err);
+          devError("[workbench] monaco find failed", err);
         });
     });
     rec.el = el;
@@ -117,7 +121,9 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
     el.className = "viewer image-viewer";
     el.dataset["tabId"] = rec.id;
     el.style.display = "none";
-    el.innerHTML = `
+    setMarkup(
+      el,
+      `
       <div class="viewer-toolbar">
         <span class="viewer-path"></span>
         <span class="img-meta"></span>
@@ -129,7 +135,8 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
           ><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
         ${detachBtnHtml(rec)}
       </div>
-      <div class="viewer-body img-scroll"><img class="img-canvas" alt="" /></div>`;
+      <div class="viewer-body img-scroll"><img class="img-canvas" alt="" /></div>`,
+    );
     setPathLabel(el, rec);
     holder().append(el);
 
@@ -197,7 +204,9 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
     el.className = "viewer refused-viewer";
     el.dataset["tabId"] = rec.id;
     el.style.display = "none";
-    el.innerHTML = `
+    setMarkup(
+      el,
+      `
       <div class="viewer-toolbar">
         <span class="viewer-path"></span>
         <span class="spacer"></span>
@@ -209,7 +218,8 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
         <i class="bi bi-file-earmark-x"></i>
         <p class="refused-text"></p>
         <p class="refused-hint"></p>
-      </div>`;
+      </div>`,
+    );
     setPathLabel(el, rec);
     need(el, ".refused-text").textContent = refusalText(rec.refused);
     if (rec.refused === "binary") {

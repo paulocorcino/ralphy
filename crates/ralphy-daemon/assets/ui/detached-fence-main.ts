@@ -9,6 +9,7 @@ import { createDaemon } from "./wb-daemon.ts";
 import { createNotes } from "./wb-notes.ts";
 import { openerOf } from "./wb-events.ts";
 import { wireDetachedFence } from "./wb-detached-fence.ts";
+import { devLog } from "./wb-log.ts";
 
 // Where this window will talk. `"*"` would broadcast this fence's contents
 // to whatever opened us, so the concrete origin is both the
@@ -22,7 +23,7 @@ window.WB = {
   emit(action, ...detail) {
     const to = openerOf(window);
     if (to) to.postMessage({ type: "wb-emit", action, detail: detail[0] }, PEER);
-    else console.log("[workbench:action]", { action, ...detail[0] });
+    else devLog("[workbench:action]", { action, ...detail[0] });
   },
 };
 

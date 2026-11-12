@@ -2,6 +2,7 @@
 // the heading index, and what to type (ADR-0064 §§6, 10, 11). `createNotes`
 // builds it with the card's names as typed deps; the text of each function is
 // the one it had in `wb-notes.ts`.
+import { setMarkup } from "./wb-html.ts";
 import { anchorsOf, veiledOf } from "./wb-notes-folds.ts";
 import type { NoteCard, NoteSource } from "./wb-types.d.ts";
 import { isNode, targetClosest } from "./wb-dom-need.ts";
@@ -196,7 +197,7 @@ export function createNoteMenus(deps: NoteMenusDeps) {
     modal.setAttribute("aria-label", "Markdown in a note");
     const head = document.createElement("div");
     head.className = "modal-head";
-    head.innerHTML = '<i class="bi bi-markdown"></i>';
+    setMarkup(head, '<i class="bi bi-markdown"></i>');
     const heading = document.createElement("span");
     heading.className = "modal-title";
     heading.textContent = "Markdown in a note";
