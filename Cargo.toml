@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/ralphy-core",
     "crates/ralphy-cli",
+    "crates/ralphy-agent-antigravity",
     "crates/ralphy-agent-claude",
     "crates/ralphy-agent-codex",
     "crates/ralphy-agent-copilot",
@@ -110,6 +111,7 @@ os_info = { version = "3", default-features = false }
 winresource = "0.1"
 
 ralphy-core = { path = "crates/ralphy-core" }
+ralphy-agent-antigravity = { path = "crates/ralphy-agent-antigravity" }
 ralphy-agent-claude = { path = "crates/ralphy-agent-claude" }
 ralphy-agent-codex = { path = "crates/ralphy-agent-codex" }
 ralphy-agent-copilot = { path = "crates/ralphy-agent-copilot" }
