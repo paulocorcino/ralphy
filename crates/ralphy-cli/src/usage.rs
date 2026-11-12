@@ -358,7 +358,7 @@ fn recover_models(args: &UsageArgs) -> Result<()> {
         codex_dir: ralphy_daemon::usage::codex_dir_path()?,
         copilot_db: ralphy_daemon::usage::copilot_db_path()?,
         cursor_dir: ralphy_daemon::usage::cursor_dir_path()?,
-        antigravity_root: ralphy_proc_util::antigravity::owned_root()?,
+        antigravity_root: ralphy_daemon::usage::antigravity_root_path()?,
         gemini_dir: ralphy_daemon::usage::gemini_dir_path()?,
         kimi_dir: ralphy_daemon::usage::kimi_dir_path()?,
         kimi_code_dir: ralphy_daemon::usage::kimi_code_dir_path()?,

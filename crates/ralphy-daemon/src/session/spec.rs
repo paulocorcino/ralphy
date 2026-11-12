@@ -260,17 +260,18 @@ pub fn spec_with_status(
         Agent::Claude => add_claude_launch(&mut spec, root, repo_slug, console, status),
         Agent::Codex => add_codex_launch(&mut spec, status),
         Agent::OpenCode => add_opencode_launch(&mut spec, status),
-        Agent::Antigravity => add_antigravity_launch(&mut spec),
+        Agent::Antigravity => add_antigravity_launch(&mut spec, status),
         Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi => {}
     }
     spec
 }
 
 /// The Antigravity part of [`spec_with_status`]: the owned root as
-/// `--gemini_dir`, and no autonomy flag (ADR-0086 D8). The route refuses the
+/// `--gemini_dir`, no autonomy flag (ADR-0086 D8), and `RALPHY_STATUS_FILE`
+/// for the status hook the root already holds (D9). The route refuses the
 /// launch before this when the root cannot be resolved; if it still cannot,
 /// the program is cleared so the spawn fails and `agy` never runs elsewhere.
-fn add_antigravity_launch(spec: &mut SessionSpec) {
+fn add_antigravity_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::StatusFiles>) {
     match ralphy_proc_util::antigravity::owned_root() {
         Ok(root) => {
             let mut flag = OsString::from("--gemini_dir=");
@@ -280,8 +281,25 @@ fn add_antigravity_launch(spec: &mut SessionSpec) {
         Err(e) => {
             tracing::error!(error = %format!("{e:#}"), "no owned root for an Antigravity console");
             spec.program = OsString::new();
+            return;
         }
     }
+    let Some(files) = status else {
+        return;
+    };
+    match files.create_status() {
+        Ok(()) => tail_status_file(spec, files),
+        Err(e) => tracing::warn!(error = %e, "could not write the console's agent-state file"),
+    }
+}
+
+/// Name the console's status file in `RALPHY_STATUS_FILE`, and tail it.
+fn tail_status_file(spec: &mut SessionSpec, files: crate::agent_state::StatusFiles) {
+    spec.env.push((
+        OsString::from(crate::agent_state::STATUS_ENV),
+        files.status.clone().into_os_string(),
+    ));
+    spec.status = Some(files);
 }
 
 /// The Codex part of [`spec_with_status`]: the status hooks as `-c`
@@ -311,11 +329,7 @@ fn add_codex_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::S
             .into_iter()
             .map(OsString::from),
     );
-    spec.env.push((
-        OsString::from(crate::agent_state::STATUS_ENV),
-        files.status.clone().into_os_string(),
-    ));
-    spec.status = Some(files);
+    tail_status_file(spec, files);
 }
 
 /// The `OpenCode` part of [`spec_with_status`]: the state plugin file, named
@@ -341,11 +355,7 @@ fn add_opencode_launch(spec: &mut SessionSpec, status: Option<crate::agent_state
         OsString::from("OPENCODE_CONFIG_CONTENT"),
         OsString::from(crate::agent_state::opencode::console_config(&plugin)),
     ));
-    spec.env.push((
-        OsString::from(crate::agent_state::STATUS_ENV),
-        files.status.clone().into_os_string(),
-    ));
-    spec.status = Some(files);
+    tail_status_file(spec, files);
 }
 
 /// The Claude part of [`spec_with_status`]: the opt-in name, the opt-in
@@ -379,11 +389,7 @@ fn add_claude_launch(
                     spec.args.push(OsString::from("--settings"));
                     spec.args.push(settings.clone().into_os_string());
                 }
-                spec.env.push((
-                    OsString::from(crate::agent_state::STATUS_ENV),
-                    files.status.clone().into_os_string(),
-                ));
-                spec.status = Some(files);
+                tail_status_file(spec, files);
             }
             Err(e) => {
                 tracing::warn!(

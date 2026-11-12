@@ -183,6 +183,8 @@ pub struct StorePaths {
     pub copilot_db: PathBuf,
     pub cursor_dir: PathBuf,
     pub gemini_dir: PathBuf,
+    /// The root Ralphy owns for `agy`, whose `antigravity-cli/` folder holds its store.
+    pub antigravity_root: PathBuf,
     /// The Telegram config the daemon sends its console messages with
     /// (ADR-0085 D14). Empty: no config, and no message is sent, so a test's
     /// daemon never reaches Telegram.

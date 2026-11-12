@@ -346,6 +346,7 @@ fn usage_stores() -> Result<StorePaths> {
         copilot_db: usage::copilot_db_path()?,
         cursor_dir: usage::cursor_dir_path()?,
         gemini_dir: usage::gemini_dir_path()?,
+        antigravity_root: usage::antigravity_root_path()?,
         telegram_config: telegram_config(),
     })
 }

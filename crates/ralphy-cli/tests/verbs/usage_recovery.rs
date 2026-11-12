@@ -29,6 +29,7 @@ fn run_recovery(usage: &Path, stores: &Path) -> std::process::Output {
         .env("RALPHY_KIMI_DIR", missing("kimi"))
         .env("RALPHY_KIMI_CODE_DIR", missing("kimi-code"))
         .env("RALPHY_OPENCODE_DB", missing("opencode.db"))
+        .env("RALPHY_DAEMON_DIR", missing("ralphy"))
         .output()
         .expect("running ralphy")
 }
@@ -177,4 +178,34 @@ fn recovery_reports_colliding_session_models_as_conflicts() {
         map,
         BTreeMap::from([("shared".into(), "claude-opus-4-8".into())])
     );
+}
+
+/// The Antigravity store is in the owned root, and a machine where `agy` never
+/// ran has no root: the recovery still answers, and the row stays recoverable.
+#[test]
+fn usage_recovery_tolerates_a_missing_antigravity_root() {
+    let temp = tempfile::tempdir().unwrap();
+    let usage = temp.path().join("usage");
+    let stores = temp.path().join("stores");
+    std::fs::create_dir_all(&usage).unwrap();
+    std::fs::write(
+        usage.join("owner-repo.jsonl"),
+        "{\"agent\":\"antigravity\",\"model\":\"unknown\",\"session_id\":\"agy-conv\",\
+         \"tokens\":{\"input\":6},\"ts\":\"2026-11-12T00:00:00Z\"}\n",
+    )
+    .unwrap();
+
+    let output = run_recovery(&usage, &stores);
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !stores.join("ralphy").exists(),
+        "the recovery writes no root"
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("recoverable: 1 line(s), 6 tok"), "{stdout}");
 }

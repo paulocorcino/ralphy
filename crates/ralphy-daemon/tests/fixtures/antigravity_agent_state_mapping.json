@@ -1,0 +1,94 @@
+[
+  {
+    "why": "P1: one turn with four tools; SessionStart comes with the first prompt, then each model call and tool",
+    "lines": [
+      {"event": "SessionStart", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T16:46:03Z"},
+      {"event": "PreInvocation", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T16:46:04Z"},
+      {"event": "PreToolUse", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "tool_name": "run_command", "tool_use_id": "call_4566659267947845633", "ts": "2026-11-12T16:46:08Z"},
+      {"event": "PostToolUse", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "tool_name": "run_command", "tool_use_id": "call_4566659267947845633", "ts": "2026-11-12T16:46:12Z"},
+      {"event": "PostInvocation", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T16:46:12Z"},
+      {"event": "PreInvocation", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T16:46:13Z"},
+      {"event": "PreToolUse", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "tool_name": "write_file", "tool_use_id": "call_16871810805275382442", "ts": "2026-11-12T16:46:16Z"},
+      {"event": "PostToolUse", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "tool_name": "write_file", "tool_use_id": "call_16871810805275382442", "ts": "2026-11-12T16:46:17Z"},
+      {"event": "PostInvocation", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T16:46:17Z"},
+      {"event": "PreInvocation", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T16:46:25Z"},
+      {"event": "PostInvocation", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T16:46:27Z"},
+      {"event": "Stop", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T16:46:27Z"}
+    ],
+    "states": [
+      "done:session-boundary",
+      "working",
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      "done:turn-end"
+    ]
+  },
+  {
+    "why": "P4: the second turn of a conversation has no SessionStart; its first model call starts it",
+    "lines": [
+      {"event": "SessionStart", "session_id": "d1b6a7c0-4c55-4e8e-9f0e-5b3c2a1d0e9f", "ts": "2026-11-12T16:51:27Z"},
+      {"event": "PreInvocation", "session_id": "d1b6a7c0-4c55-4e8e-9f0e-5b3c2a1d0e9f", "ts": "2026-11-12T16:51:27Z"},
+      {"event": "PostInvocation", "session_id": "d1b6a7c0-4c55-4e8e-9f0e-5b3c2a1d0e9f", "ts": "2026-11-12T16:51:32Z"},
+      {"event": "Stop", "session_id": "d1b6a7c0-4c55-4e8e-9f0e-5b3c2a1d0e9f", "ts": "2026-11-12T16:51:33Z"},
+      {"event": "PreInvocation", "session_id": "d1b6a7c0-4c55-4e8e-9f0e-5b3c2a1d0e9f", "ts": "2026-11-12T16:51:34Z"},
+      {"event": "PostInvocation", "session_id": "d1b6a7c0-4c55-4e8e-9f0e-5b3c2a1d0e9f", "ts": "2026-11-12T16:51:37Z"},
+      {"event": "Stop", "session_id": "d1b6a7c0-4c55-4e8e-9f0e-5b3c2a1d0e9f", "ts": "2026-11-12T16:51:38Z"}
+    ],
+    "states": ["done:session-boundary", "working", null, "done:turn-end", "working", null, "done:turn-end"]
+  },
+  {
+    "why": "P3d: a tool the guard denied has no PostToolUse; the turn still ends at Stop",
+    "lines": [
+      {"event": "SessionStart", "session_id": "70348a5c-e8ab-4583-b295-52b359e63a2b", "ts": "2026-11-12T16:51:14Z"},
+      {"event": "PreInvocation", "session_id": "70348a5c-e8ab-4583-b295-52b359e63a2b", "ts": "2026-11-12T16:51:14Z"},
+      {"event": "PreToolUse", "session_id": "70348a5c-e8ab-4583-b295-52b359e63a2b", "tool_name": "run_command", "tool_use_id": "call_6100118627628313381", "ts": "2026-11-12T16:51:17Z"},
+      {"event": "PostInvocation", "session_id": "70348a5c-e8ab-4583-b295-52b359e63a2b", "ts": "2026-11-12T16:51:18Z"},
+      {"event": "PreInvocation", "session_id": "70348a5c-e8ab-4583-b295-52b359e63a2b", "ts": "2026-11-12T16:51:18Z"},
+      {"event": "PostInvocation", "session_id": "70348a5c-e8ab-4583-b295-52b359e63a2b", "ts": "2026-11-12T16:51:20Z"},
+      {"event": "Stop", "session_id": "70348a5c-e8ab-4583-b295-52b359e63a2b", "ts": "2026-11-12T16:51:20Z"}
+    ],
+    "states": ["done:session-boundary", "working", null, null, null, null, "done:turn-end"]
+  },
+  {
+    "why": "a resumed conversation sends no SessionStart: its first line makes it the lead",
+    "lines": [
+      {"event": "PreInvocation", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T17:00:01Z"},
+      {"event": "PreToolUse", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "tool_name": "read_file", "tool_use_id": "call_15746592857182597825", "ts": "2026-11-12T17:00:03Z"},
+      {"event": "PostToolUse", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "tool_name": "read_file", "tool_use_id": "call_15746592857182597825", "ts": "2026-11-12T17:00:04Z"},
+      {"event": "PostInvocation", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T17:00:05Z"},
+      {"event": "Stop", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T17:00:05Z"}
+    ],
+    "states": ["working", null, null, null, "done:turn-end"]
+  },
+  {
+    "why": "a new conversation in the same console is the new lead; a late line of the old one changes nothing",
+    "lines": [
+      {"event": "PreInvocation", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T17:10:01Z"},
+      {"event": "Stop", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T17:10:02Z"},
+      {"event": "SessionStart", "session_id": "70348a5c-e8ab-4583-b295-52b359e63a2b", "ts": "2026-11-12T17:11:00Z"},
+      {"event": "PreInvocation", "session_id": "70348a5c-e8ab-4583-b295-52b359e63a2b", "ts": "2026-11-12T17:11:01Z"},
+      {"event": "PostInvocation", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T17:11:02Z"},
+      {"event": "Stop", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T17:11:03Z"},
+      {"event": "Stop", "session_id": "70348a5c-e8ab-4583-b295-52b359e63a2b", "ts": "2026-11-12T17:11:04Z"}
+    ],
+    "states": ["working", "done:turn-end", null, "working", null, null, "done:turn-end"]
+  },
+  {
+    "why": "an event outside the six, and a payload that was not JSON (empty event), change nothing",
+    "lines": [
+      {"event": "PreInvocation", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T17:20:01Z"},
+      {"event": "Notification", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T17:20:02Z"},
+      {"event": "", "ts": "2026-11-12T17:20:03Z"},
+      {"event": "Stop", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "ts": "2026-11-12T17:20:04Z"},
+      {"event": "PermissionRequest", "session_id": "4c9e68ec-9c07-43f0-9292-aa15a321723d", "tool_name": "run_command", "ts": "2026-11-12T17:20:05Z"}
+    ],
+    "states": ["working", null, null, "done:turn-end", null]
+  }
+]

@@ -287,6 +287,87 @@ async fn api_usage_carries_gemini_interactive_records() {
     assert_eq!(record["lower_bound"].as_bool(), Some(true), "{record}");
 }
 
+/// `/api/usage` carries the records of the Antigravity store under the owned
+/// root: one conversation with one model call. Proves the `antigravity_root`
+/// router arg is threaded end to end.
+#[tokio::test]
+async fn api_usage_includes_antigravity_records() {
+    let root = tempfile::tempdir().unwrap();
+    seed_antigravity(root.path(), "agy-conv", 40, 2);
+
+    let resp = router(
+        None,
+        PathBuf::from("does-not-exist"),
+        PathBuf::from("does-not-exist"),
+        StorePaths {
+            antigravity_root: root.path().to_path_buf(),
+            ..Default::default()
+        },
+        Instant::now(),
+        idle_shutdown(),
+        auth::AuthState::localhost(),
+    )
+    .oneshot(
+        Request::builder()
+            .uri("/api/usage")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let raw = resp.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+    let interactive = body["interactive"].as_array().expect("interactive array");
+    let record = interactive
+        .iter()
+        .find(|r| r["agent"] == "antigravity" && r["session_id"] == "agy-conv")
+        .unwrap_or_else(|| panic!("no antigravity record; got: {body}"));
+    assert_eq!(record["model"], "gemini-3.8-flash-low", "{record}");
+    assert_eq!(record["tokens"]["input"].as_u64(), Some(40), "{record}");
+    assert_eq!(record["tokens"]["output"].as_u64(), Some(2), "{record}");
+}
+
+/// The Antigravity store is the owned root in the Ralphy folder, so a daemon
+/// started with `RALPHY_DAEMON_DIR` reads the root under that folder.
+#[test]
+fn the_antigravity_store_follows_the_ralphy_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let saved = std::env::var_os("RALPHY_DAEMON_DIR");
+    std::env::set_var("RALPHY_DAEMON_DIR", dir.path());
+    let got = usage::antigravity_root_path();
+    match saved {
+        Some(v) => std::env::set_var("RALPHY_DAEMON_DIR", v),
+        None => std::env::remove_var("RALPHY_DAEMON_DIR"),
+    }
+    assert_eq!(got.unwrap(), dir.path().join("antigravity-root"));
+}
+
+/// Write `<root>/antigravity-cli/conversations/<id>.db` with one `gen_metadata`
+/// row: the protobuf of one model call, field 1 > 4 the usage (its field 2 the
+/// input, 3 the output) and field 1 > 21 the label `agy models` prints. Every
+/// value is under 128, so each varint is one byte.
+fn seed_antigravity(root: &Path, id: &str, input: u8, output: u8) {
+    let label = b"Gemini 3.8 Flash (Low)";
+    let usage = [0x10, input, 0x18, output];
+    let mut call = vec![0x22, 4];
+    call.extend_from_slice(&usage);
+    call.extend_from_slice(&[0xaa, 0x01, u8::try_from(label.len()).unwrap()]);
+    call.extend_from_slice(label);
+    let mut data = vec![0x0a, u8::try_from(call.len()).unwrap()];
+    data.extend_from_slice(&call);
+    let dir = root.join("antigravity-cli").join("conversations");
+    std::fs::create_dir_all(&dir).unwrap();
+    let conn = rusqlite::Connection::open(dir.join(format!("{id}.db"))).unwrap();
+    conn.execute("CREATE TABLE gen_metadata (idx INTEGER, data BLOB)", [])
+        .unwrap();
+    conn.execute(
+        "INSERT INTO gen_metadata (idx, data) VALUES (0, ?1)",
+        rusqlite::params![data],
+    )
+    .unwrap();
+}
+
 /// The session id of the seeded Codex rollout.
 const CODEX_SESSION: &str = "019c5131-651b-78f2-b8e7-93995bff4dad";
 
