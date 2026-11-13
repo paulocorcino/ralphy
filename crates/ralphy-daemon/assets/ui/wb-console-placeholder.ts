@@ -10,6 +10,7 @@
 --------------------------------------------------------------------------- */
 import * as WBConsoleSession from "./wb-console-session.ts";
 import { checkoutStillThere, liveSessionFor } from "./wb-console-placeholder-reads.ts";
+import { takeOffStage } from "./wb-console-take-down.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import type { Group } from "./wb-fleet.ts";
 import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
@@ -346,10 +347,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     // it. Announcing the gap would take the console out of its column
     // (ADR-0051 §5) and promote the next one to the maximize.
     const drop = (respawn?: boolean) => {
-      win.remove();
-      budget.untrackDormancy(win);
-      wins.delete(win);
-      applyExtent();
+      takeOffStage({ wins, budget, applyExtent }, win, "placeholder take-down");
       if (respawn !== true) changed();
     };
     // The attach `restoreDesk` makes, into this record's id and rect. A session
