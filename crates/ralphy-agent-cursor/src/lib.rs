@@ -255,10 +255,9 @@ impl Agent for CursorAgent {
             // A `--model` refusal is checked FIRST and outranks a quota stop: an
             // entitlement refusal will not heal on a retry, so scheduling
             // ADR-0030's ~30-minute wait for it would burn the issue's budget
-            // re-asking an already-answered question (same ordering as
-            // `ralphy-agent-gemini/src/lib.rs`). The closure fires only when no
-            // plan file was written, which is exactly the zero-record refusal
-            // and quota-stop shape (D13, #266).
+            // re-asking an already-answered question. The closure fires only
+            // when no plan file was written, which is exactly the zero-record
+            // refusal and quota-stop shape (D13, #266).
             |log| {
                 model_refusal_stop(log, model).or_else(|| {
                     outcome::cursor_limit_note(&fold_cursor_stream(log))

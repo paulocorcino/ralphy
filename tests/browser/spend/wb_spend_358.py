@@ -171,7 +171,6 @@ def empty_env(daemon_dir, usage_dir, pricing_file):
         RALPHY_KIMI_DIR=empty,
         RALPHY_KIMI_CODE_DIR=empty,
         RALPHY_CURSOR_DIR=empty,
-        RALPHY_GEMINI_DIR=empty,
         RALPHY_COPILOT_DB=os.path.join(empty, "none.db"),
     )
 

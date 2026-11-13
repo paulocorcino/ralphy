@@ -207,7 +207,7 @@ impl Agent for KimiAgent {
             // run would otherwise abort as "kimi produced no plan" (#282). Surface
             // it as a typed `PlanLimit` so the runner routes it through the same
             // stop-and-report / auto-resume path as an execute-time
-            // `Outcome::Limit` (the Codex/Gemini pattern). Kimi's 403 promises only
+            // `Outcome::Limit` (the Codex pattern). Kimi's 403 promises only
             // "the next cycle" with no timestamp → `reset: None`, which drives the
             // ADR-0030 synthetic cadence `phases.rs` already handles. The
             // no-plan-written state is itself the non-clean-exit guard the execute
@@ -310,7 +310,7 @@ mod tests {
     use std::path::PathBuf;
 
     /// ADR-0044 D4: resolved effort is stored on the agent and discarded at
-    /// plan/execute — mirrors gemini's documented-discard pin.
+    /// plan/execute.
     #[test]
     fn resolved_effort_is_stored_for_documented_discard() {
         let agent = KimiAgent::new(None, PathBuf::from("/run"))

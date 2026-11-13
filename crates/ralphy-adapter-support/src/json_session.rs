@@ -189,8 +189,8 @@ fn json_session<'a, T>(
 /// fail at "line 1 column 1". Returns the input unchanged when no BOM is present.
 ///
 /// `pub` so an adapter that reads its own artifact outside [`run_json_session`]
-/// (Gemini's one-shots, whose ladder is exit-code-first and cannot go through the
-/// shared tail) shares this guard rather than growing a second copy of it.
+/// (Antigravity reads the JSON file its session wrote) shares this guard rather
+/// than growing a second copy of it.
 pub fn strip_bom(s: &str) -> &str {
     s.strip_prefix('\u{feff}').unwrap_or(s)
 }
