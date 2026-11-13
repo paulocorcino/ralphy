@@ -239,7 +239,8 @@ Ralphy does not surface a separate estimate for them.
 ## Removed agent: Gemini
 
 The Gemini CLI agent was removed. Use `--agent antigravity`. A stored `gemini`
-section in your settings is ignored.
+section in your settings is ignored. `ralphy config unset gemini.plan_model` (and
+`gemini.exec_model`) still clears a stored key.
 
 ## Events sink keys (`events.*`)
 

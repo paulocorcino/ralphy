@@ -311,12 +311,13 @@ fn set_copilot_effort(s: &mut Settings, key: &str, value: &str) -> Result<()> {
     })
 }
 
-/// Remove one key of a `gemini` section that an older version stored; the section goes
-/// with its last key.
+/// Whether `field` is a key that an older version stored in the `gemini` section.
 fn is_gemini_field(field: &str) -> bool {
     matches!(field, "plan_model" | "exec_model")
 }
 
+/// Remove one key of a `gemini` section that an older version stored; the section goes
+/// with its last key.
 fn unset_stored_gemini_key(s: &mut Settings, field: &str) {
     if let Some(section) = s.extra.get_mut("gemini").and_then(|v| v.as_object_mut()) {
         section.remove(field);

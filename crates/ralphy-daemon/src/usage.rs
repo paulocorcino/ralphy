@@ -257,8 +257,8 @@ pub fn antigravity_root_path() -> anyhow::Result<PathBuf> {
 /// Scan every vendor store for interactive usage records, minus the sessions the
 /// ledger owns (`session_id` in `run_records`), each as JSON (ADR-0033 §2/§6).
 /// `registry.repos` gives the project/actor. Read-only: the Copilot scan reads a
-/// private copy. Cursor `tokens` is always `null` (ADR-0042 D11); Gemini counts
-/// are a LOWER BOUND (ADR-0043 D10).
+/// private copy. Cursor `tokens` is always `null` (ADR-0042 D11). A record has
+/// `lower_bound` when the Antigravity scan could not decode a row (ADR-0086).
 pub fn interactive_records(
     stores: &StorePaths,
     registry: &RegistryStore,
