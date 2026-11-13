@@ -204,6 +204,11 @@ lock and by this reader.
   lock's recovery story exactly: there is no signal handler, a killed process
   leaves the file behind, and stale-pid takeover is the recovery mechanism.
 
+Note (2026-11-13): since 2026-11-13 `ralphy run` handles the stop signals
+([ADR-0054](0054-cooperative-run-stop.md), amendment of 2026-11-13), so the
+guards run on those. A hard kill still leaves the files, and the dead-pid sweep
+stays the recovery.
+
 **A finished run does not linger.** Its document is deleted at exit, so it leaves
 the panel at once — which is what the parent PRD asks for (user story 12: a
 finished run leaves cleanly). The alternative, keeping the terminal document
