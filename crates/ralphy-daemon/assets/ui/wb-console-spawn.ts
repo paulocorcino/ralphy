@@ -16,7 +16,7 @@ import { WBSessionRoute } from "./wb-session-route.ts";
 import { DESK_MAX } from "./wb-desk-folds.ts";
 import { createSpawnRecords } from "./wb-console-spawn-records.ts";
 import { showLinkLost, showParked, showPeerDown } from "./wb-console-strips.ts";
-import { devError } from "./wb-log.ts";
+import { takeOffStage } from "./wb-console-take-down.ts";
 import type { Group } from "./wb-fleet.ts";
 import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
@@ -349,16 +349,7 @@ export function createSpawn(deps: SpawnDeps) {
       clearNudge();
       closeCheckoutMenu();
       win._term?.dispose("window-closed");
-      win.remove();
-      budget.untrackDormancy(win);
-      wins.delete(win);
-      // The layout wakes the siblings this window covered: a throw there must
-      // not cancel the new window, which `relaunchIn` spawns next (#904).
-      try {
-        applyExtent();
-      } catch (e) {
-        devError("console restart: the layout after the take-down failed", e);
-      }
+      takeOffStage({ wins, budget, applyExtent }, win, "console restart");
     };
     const relaunchIn = (checkout: string | null | undefined) => {
       // A restart is the operator's act: an adopted console gets its record.

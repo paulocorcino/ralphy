@@ -103,6 +103,10 @@ pub(super) const CONSOLE_FAMILY: &[(&str, &str)] = &[
         include_str!("../../assets/ui/wb-console-tabs.ts"),
     ),
     (
+        "wb-console-take-down.ts",
+        include_str!("../../assets/ui/wb-console-take-down.ts"),
+    ),
+    (
         "wb-console-terminal-link.ts",
         include_str!("../../assets/ui/wb-console-terminal-link.ts"),
     ),
