@@ -465,7 +465,12 @@ fn meter_for_prices_both_phases_without_partial_residue() {
         ..Default::default()
     };
 
-    let m = meter_for(&pt, Some(&plan), &exec);
+    let m = meter_for(
+        &pt,
+        &crate::pricing::RunAgents::default(),
+        Some(&plan),
+        &exec,
+    );
 
     // Each phase priced by the table itself: the rate is the table's, the sum
     // is the meter's.

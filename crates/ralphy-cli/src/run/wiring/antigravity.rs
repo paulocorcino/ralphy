@@ -24,6 +24,21 @@ pub(crate) struct ResolvedAntigravity {
     pub(crate) run_without_guard_proof: bool,
 }
 
+impl ResolvedAntigravity {
+    /// The model and effort of the end-of-run consolidation: the execute pair,
+    /// else the plan pair, else none (`agy` keeps its default). The operator
+    /// chose the execute model for the work of the run.
+    pub(crate) fn consolidation_model(&self) -> (Option<&str>, Option<&str>) {
+        if self.exec_model.is_some() {
+            return (self.exec_model.as_deref(), self.exec_effort.as_deref());
+        }
+        if self.plan_model.is_some() {
+            return (self.plan_model.as_deref(), self.plan_effort.as_deref());
+        }
+        (None, None)
+    }
+}
+
 /// Resolve each phase: its flag, then `antigravity.*` in the settings. The
 /// effort flags are the run's resolved `--plan-effort` and `--exec-effort`.
 pub(crate) fn resolve_antigravity(
@@ -142,5 +157,40 @@ mod tests {
         assert_eq!(bare.plan_model, None);
         assert_eq!(bare.exec_model, None);
         assert!(!bare.run_without_guard_proof, "the waiver defaults off");
+    }
+
+    fn resolved(plan: Option<(&str, &str)>, exec: Option<(&str, &str)>) -> ResolvedAntigravity {
+        let own = |pair: Option<(&str, &str)>| {
+            (
+                pair.map(|(m, _)| m.to_owned()),
+                pair.map(|(_, e)| e.to_owned()),
+            )
+        };
+        let ((plan_model, plan_effort), (exec_model, exec_effort)) = (own(plan), own(exec));
+        ResolvedAntigravity {
+            plan_model,
+            exec_model,
+            plan_effort,
+            exec_effort,
+            run_without_guard_proof: false,
+        }
+    }
+
+    #[test]
+    fn the_consolidation_takes_the_exec_model_and_its_effort() {
+        let r = resolved(Some(("plan-id", "low")), Some(("exec-id", "high")));
+        assert_eq!(r.consolidation_model(), (Some("exec-id"), Some("high")));
+    }
+
+    #[test]
+    fn the_consolidation_falls_back_to_the_plan_model() {
+        let r = resolved(Some(("plan-id", "low")), None);
+        assert_eq!(r.consolidation_model(), (Some("plan-id"), Some("low")));
+    }
+
+    #[test]
+    fn the_consolidation_keeps_the_agy_default_with_no_model_set() {
+        let r = resolved(None, None);
+        assert_eq!(r.consolidation_model(), (None, None));
     }
 }

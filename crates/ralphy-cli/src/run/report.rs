@@ -9,7 +9,7 @@ use ralphy_core::{git, BranchMode, StopReason, Workspace};
 use tracing::warn;
 
 use super::summary::RunSummary;
-use crate::{pricing, ui, CliAgent};
+use crate::{pricing, ui};
 
 /// Knowledge consolidation trigger: a non-dry run that finished (`run_ok`) and left
 /// loose per-issue notes folds them into KNOWLEDGE.md, so the curated cache the next
@@ -24,9 +24,8 @@ use crate::{pricing, ui, CliAgent};
 /// already succeeded and the notes stay loose for a later retry. `ANTHROPIC_API_KEY`
 /// was already cleared up front. The session runs on the run's own executor
 /// `agent` (docs/adr/0031) — not a hardwired Claude — so a Kimi/Codex/OpenCode run
-/// never reaches for `claude`. The model/effort defaults come from
-/// `consolidate_defaults`: opus/medium for Claude (curation is judgment-heavy),
-/// the adapter's own default for the rest. 30-minute wall like the command.
+/// never reaches for `claude`. The caller's
+/// `Consolidator` names the model and effort. 30-minute wall like the command.
 ///
 /// Returns the consolidation invocation's token [`ralphy_core::Usage`] (issue #269) — default
 /// (zero) when the pass did not run or failed. The pass is a real vendor call, so
@@ -35,7 +34,7 @@ use crate::{pricing, ui, CliAgent};
 /// and returned for the caller to fold into this run's total and footer. This is
 /// run overhead, not issue work, so it never touches any per-issue rollup.
 pub(crate) fn maybe_consolidate_knowledge(
-    agent: CliAgent,
+    consolidator: crate::Consolidator<'_>,
     run_ok: bool,
     dry_run: bool,
     ws: &Workspace,
@@ -50,12 +49,6 @@ pub(crate) fn maybe_consolidate_knowledge(
     }
     ralphy_core::emit::knowledge_consolidating(u64::try_from(notes.len()).unwrap_or(u64::MAX));
     let run_dir = ws.run_dir(stamp);
-    let (model, effort) = crate::consolidate_defaults(agent);
-    let consolidator = crate::Consolidator {
-        agent,
-        model,
-        effort,
-    };
     match crate::run_consolidation(consolidator, ws, &run_dir, 30, &notes) {
         Ok((archived, usage)) => {
             ralphy_core::emit::knowledge_consolidated(u64::try_from(archived).unwrap_or(u64::MAX));
@@ -67,7 +60,7 @@ pub(crate) fn maybe_consolidate_knowledge(
                 &git::project_slug(repo),
                 &git::user_email(repo).unwrap_or_default(),
                 &git::user_name(repo).unwrap_or_default(),
-                agent.cli_name(),
+                consolidator.agent.cli_name(),
                 "consolidate",
                 &usage,
             );
@@ -142,6 +135,7 @@ pub(crate) fn render_final_panel(
     dry_run: bool,
     repo_root: &std::path::Path,
     consolidate_usage: &ralphy_core::Usage,
+    agents: &pricing::RunAgents,
 ) {
     let panel_stop = report.stop.map(|s| match s {
         StopReason::Deadline => ui::PanelStop::Deadline,
@@ -173,63 +167,23 @@ pub(crate) fn render_final_panel(
     run_usage.add_tokens(consolidate_usage);
     let project_usage = ralphy_core::ledger::project_total(&slug);
 
-    // Read-time USD (ADR-0008 D8), priced per model and summed. The run total
-    // prices the runner's per-model split with the consolidation pass folded in
-    // under its own model; the project total groups the cumulative ledger rows by
-    // model. USD never enters the ledger — re-pricing the table re-prices history.
+    // Read-time USD (ADR-0008 D8), priced per model and summed; USD never enters
+    // the ledger, so re-pricing the table re-prices history.
     let price_table = pricing::PriceTable::load();
-    let mut run_by_model = report.run_usage_by_model.clone();
-    if consolidate_usage.total() > 0 {
-        run_by_model
-            .entry(
-                consolidate_usage
-                    .model
-                    .clone()
-                    .unwrap_or_else(|| "unknown".into()),
-            )
-            .or_default()
-            .add_tokens(consolidate_usage);
-    }
-    let (run_usd, run_partial) =
-        price_table.cost_usd_by_model(&pricing::counts_by_model(&run_by_model));
-
-    // The consolidation pass as its own footer segment, so the overhead stays
-    // legible beside the run total it is now part of. Priced alone; `None` (the
-    // segment is omitted) when the pass did not run this run (issue #269).
-    let (consolidate_breakdown, consolidate_usd) = if consolidate_usage.total() > 0 {
-        let mut by_model: std::collections::BTreeMap<String, ralphy_core::Usage> =
-            std::collections::BTreeMap::new();
-        by_model
-            .entry(
-                consolidate_usage
-                    .model
-                    .clone()
-                    .unwrap_or_else(|| "unknown".into()),
-            )
-            .or_default()
-            .add_tokens(consolidate_usage);
-        let (usd, _) = price_table.cost_usd_by_model(&pricing::counts_by_model(&by_model));
-        (
-            Some(ralphy_core::Usage {
-                model: None,
-                ..consolidate_usage.clone()
-            }),
-            usd,
-        )
-    } else {
-        (None, None)
-    };
-
-    let mut project_by_model: std::collections::BTreeMap<String, ralphy_core::Usage> =
-        std::collections::BTreeMap::new();
-    for row in ralphy_core::read_project_rows(&slug) {
-        project_by_model
-            .entry(row.model.clone())
-            .or_default()
-            .add_tokens(&row.tokens);
-    }
-    let (project_usd, project_partial) =
-        price_table.cost_usd_by_model(&pricing::counts_by_model(&project_by_model));
+    let usd = price_footer(
+        &price_table,
+        agents,
+        &report.run_usage_by_model,
+        consolidate_usage,
+        &ralphy_core::read_project_rows(&slug),
+    );
+    let (run_usd, run_partial) = usd.run;
+    let (project_usd, project_partial) = usd.project;
+    let consolidate_usd = usd.consolidate;
+    let consolidate_breakdown = (consolidate_usage.total() > 0).then(|| ralphy_core::Usage {
+        model: None,
+        ..consolidate_usage.clone()
+    });
 
     let data = ui::PanelData {
         branch: report.branch,
@@ -263,6 +217,53 @@ pub(crate) fn render_final_panel(
         consolidate_usd,
     };
     presenter.print_panel(&data);
+}
+
+/// The footer's read-time USD, each model id keyed by the agent that ran it.
+struct FooterUsd {
+    run: (Option<f64>, bool),
+    consolidate: Option<f64>,
+    project: (Option<f64>, bool),
+}
+
+/// Price the run total (the consolidation pass folded in under its own model), the
+/// consolidation segment alone, and the project total (each ledger row keyed by its
+/// own agent).
+fn price_footer(
+    table: &pricing::PriceTable,
+    agents: &pricing::RunAgents,
+    run_split: &std::collections::BTreeMap<String, ralphy_core::Usage>,
+    consolidate: &ralphy_core::Usage,
+    project_rows: &[ralphy_core::UsageRow],
+) -> FooterUsd {
+    let mut run_by_model = run_split.clone();
+    let mut consolidate_usd = None;
+    if consolidate.total() > 0 {
+        let model = consolidate
+            .model
+            .clone()
+            .unwrap_or_else(|| "unknown".into());
+        run_by_model
+            .entry(model.clone())
+            .or_default()
+            .add_tokens(consolidate);
+        let alone = std::collections::BTreeMap::from([(model, consolidate.clone())]);
+        consolidate_usd = table.cost_usd_by_model(&agents.counts_by_key(&alone)).0;
+    }
+    let mut project_by_key: std::collections::BTreeMap<String, ralphy_core::Usage> =
+        std::collections::BTreeMap::new();
+    for row in project_rows {
+        let key = ralphy_pricing::price_key(&row.agent, &row.model);
+        project_by_key
+            .entry(key.to_owned())
+            .or_default()
+            .add_tokens(&row.tokens);
+    }
+    FooterUsd {
+        run: table.cost_usd_by_model(&agents.counts_by_key(&run_by_model)),
+        consolidate: consolidate_usd,
+        project: table.cost_usd_by_model(&pricing::counts_by_model(&project_by_key)),
+    }
 }
 
 /// Map a queue's [`StopReason`] to the `run.finished` `outcome` label (ADR-0019).
@@ -319,6 +320,91 @@ pub(crate) fn empty_queue_scope(
 mod tests {
     use super::*;
     use ralphy_core::Outcome;
+
+    const AGY_ID: &str = "gemini-3.8-flash-low";
+
+    fn million(model: &str) -> ralphy_core::Usage {
+        ralphy_core::Usage {
+            input: 1_000_000,
+            model: Some(model.into()),
+            ..Default::default()
+        }
+    }
+
+    fn floor_flash() -> f64 {
+        let counts = ralphy_pricing::TokenCounts {
+            input: 1_000_000,
+            ..Default::default()
+        };
+        pricing::PriceTable::defaults()
+            .cost_usd("gemini-3.8-flash", &counts)
+            .expect("the floor prices gemini-3.8-flash")
+    }
+
+    fn agy_footer(consolidate: &ralphy_core::Usage, rows: &[ralphy_core::UsageRow]) -> FooterUsd {
+        let split = std::collections::BTreeMap::from([(AGY_ID.to_owned(), million(AGY_ID))]);
+        let agents = pricing::RunAgents::new("antigravity", "antigravity");
+        price_footer(
+            &pricing::PriceTable::defaults(),
+            &agents,
+            &split,
+            consolidate,
+            rows,
+        )
+    }
+
+    fn row(agent: &str, model: &str) -> ralphy_core::UsageRow {
+        ralphy_core::UsageRow {
+            project: String::new(),
+            actor_email: String::new(),
+            actor_name: String::new(),
+            ralphy_version: String::new(),
+            issue: 1,
+            phase: "execute".into(),
+            agent: agent.into(),
+            model: model.into(),
+            session_id: None,
+            outcome: String::new(),
+            tokens: million(model),
+            ts: String::new(),
+        }
+    }
+
+    #[test]
+    fn the_run_total_prices_an_agy_id_by_its_base_id() {
+        let usd = agy_footer(&ralphy_core::Usage::default(), &[]);
+        let (run, partial) = usd.run;
+        assert!(
+            (run.expect("priced") - floor_flash()).abs() < 1e-9,
+            "{run:?}"
+        );
+        assert!(!partial);
+    }
+
+    #[test]
+    fn the_consolidation_segment_prices_an_agy_id_by_its_base_id() {
+        let usd = agy_footer(&million(AGY_ID), &[]);
+        let segment = usd.consolidate.expect("the segment is priced");
+        assert!((segment - floor_flash()).abs() < 1e-9, "{segment}");
+        assert!(!usd.run.1, "the run total is not partial either");
+    }
+
+    #[test]
+    fn the_project_total_keys_each_ledger_row_by_its_agent() {
+        let agy = agy_footer(
+            &ralphy_core::Usage::default(),
+            &[row("antigravity", AGY_ID)],
+        );
+        let (usd, partial) = agy.project;
+        assert!(
+            (usd.expect("priced") - floor_flash()).abs() < 1e-9,
+            "{usd:?}"
+        );
+        assert!(!partial);
+
+        let claude = agy_footer(&ralphy_core::Usage::default(), &[row("claude", AGY_ID)]);
+        assert_eq!(claude.project, (None, true), "a claude row keeps its id");
+    }
 
     #[test]
     fn outcome_of_maps_every_stop_reason() {

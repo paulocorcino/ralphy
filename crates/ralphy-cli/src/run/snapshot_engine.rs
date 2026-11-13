@@ -46,6 +46,9 @@ struct SnapshotEngine {
     /// Latch. Once the flag is set nothing can un-set it, so the `exists()` call
     /// is pure cost from then on — this drops it to zero for the rest of the run.
     stop_seen: bool,
+    /// Has a stop signal reached this process? A signal handler may only store
+    /// an atomic, so this tick turns it into the stop (ADR-0054, 2026-11-13).
+    stop_signal: fn() -> bool,
 }
 
 impl SnapshotEngine {
@@ -144,14 +147,15 @@ impl DeliveryEngine for SnapshotEngine {
     }
 
     fn on_tick(&mut self, _changed: bool) {
-        // The operator's stop (docs/adr/0054). Existence-only: `ralphy stop`
-        // writes a JSON body for forensics, but a torn or truncated write must
-        // never be the difference between stopping and not.
+        // The operator's stop (docs/adr/0054): a stop signal, or the sentinel.
+        // Existence-only: `ralphy stop` writes a JSON body for forensics, but a
+        // torn or truncated write must never be the difference between stopping
+        // and not.
         //
         // This raises a PROCESS-WIDE flag from a worker thread; the run thread
         // reads it at its own poll sites and does the stopping. Nothing here
         // touches the run, kills a child, or writes repo state.
-        if !self.stop_seen && self.stop_path.exists() {
+        if !self.stop_seen && ((self.stop_signal)() || self.stop_path.exists()) {
             self.stop_seen = true;
             ralphy_core::stop::request();
         }
@@ -256,6 +260,7 @@ pub(super) fn try_start_snapshot(
         plan_abs,
         stop_path,
         stop_seen: false,
+        stop_signal: ralphy_proc_util::stop_signal::received,
     };
     spawn_worker("ralphy-snapshot", engine, queue, detach_warn)
 }

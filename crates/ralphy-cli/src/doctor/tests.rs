@@ -11,6 +11,7 @@ fn all_found() -> MachineFacts {
         gh_signed_in: true,
         python: Some("Python 3.12.4".to_owned()),
         agents: vec![(Agent::Claude, "2.1.0 (Claude Code)".to_owned())],
+        antigravity_signed_in: None,
         linger: None,
         hooks: vec![(Agent::Claude, HookCheck::Ok)],
         telegram: None,
@@ -316,6 +317,16 @@ fn doctor_names_the_codex_state_source() {
         serde_json::json!(["hook", "status", "codex"])
     );
     assert!(hook_command(Agent::Copilot, Path::new("copilot")).is_none());
+}
+
+#[test]
+fn the_agy_hook_check_runs_hook_status_antigravity() {
+    let hook = hook_command(Agent::Antigravity, Path::new("agy")).expect("agy has hooks");
+    assert_eq!(hook.form(), ralphy_proc_util::hook_form::HookForm::Exec);
+    assert_eq!(
+        hook.entry()["args"],
+        serde_json::json!(["hook", "status", "antigravity"])
+    );
 }
 
 /// `OpenCode`'s state comes from a plugin: there is no command to run, so the

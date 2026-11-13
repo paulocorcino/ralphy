@@ -34,6 +34,44 @@ pub(crate) fn counts_by_model(by_model: &BTreeMap<String, Usage>) -> BTreeMap<St
         .collect()
 }
 
+/// The two agents of a run, as `CliAgent::cli_name()` strings. A model id of the run
+/// prices under the key each agent gives it; an empty name is no agent.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct RunAgents {
+    pub(crate) exec: String,
+    pub(crate) plan: String,
+}
+
+impl RunAgents {
+    pub(crate) fn new(exec: &str, plan: &str) -> Self {
+        Self {
+            exec: exec.to_owned(),
+            plan: plan.to_owned(),
+        }
+    }
+
+    /// The key a model id of this run prices under.
+    pub(crate) fn key<'a>(&self, model: &'a str) -> &'a str {
+        ralphy_pricing::price_key(&self.plan, ralphy_pricing::price_key(&self.exec, model))
+    }
+
+    /// [`counts_by_model`] with each bucket re-keyed by [`Self::key`]; buckets that
+    /// share a key add up.
+    pub(crate) fn counts_by_key(
+        &self,
+        by_model: &BTreeMap<String, Usage>,
+    ) -> BTreeMap<String, TokenCounts> {
+        let mut keyed: BTreeMap<String, Usage> = BTreeMap::new();
+        for (model, usage) in by_model {
+            keyed
+                .entry(self.key(model).to_owned())
+                .or_default()
+                .add_tokens(usage);
+        }
+        counts_by_model(&keyed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,6 +134,41 @@ mod tests {
             })
         );
         assert_eq!(out.get("unknown").map(TokenCounts::total), Some(10));
+    }
+
+    fn split(model: &str) -> BTreeMap<String, Usage> {
+        BTreeMap::from([(
+            model.to_owned(),
+            Usage {
+                input: 1_000_000,
+                ..Default::default()
+            },
+        )])
+    }
+
+    #[test]
+    fn a_split_run_keys_each_id_under_its_run_agents() {
+        let agents = RunAgents::new("antigravity", "claude");
+        assert_eq!(agents.key("gemini-3.8-flash-low"), "gemini-3.8-flash");
+        assert_eq!(agents.key("claude-opus-4-8"), "claude-opus-4-8");
+        // The plan agent's own rule applies too, not only the executor's.
+        let agents = RunAgents::new("claude", "antigravity");
+        assert_eq!(agents.key("gemini-3.8-flash-low"), "gemini-3.8-flash");
+        let keyed = agents.counts_by_key(&split("gemini-3.8-flash-low"));
+        assert_eq!(keyed.keys().collect::<Vec<_>>(), vec!["gemini-3.8-flash"]);
+    }
+
+    #[test]
+    fn a_run_without_antigravity_keeps_an_id_suffix() {
+        let agents = RunAgents::new("claude", "codex");
+        let keyed = agents.counts_by_key(&split("gemini-3.8-flash-high"));
+        assert_eq!(
+            keyed.keys().collect::<Vec<_>>(),
+            vec!["gemini-3.8-flash-high"]
+        );
+        let (usd, partial) = PriceTable::defaults().cost_usd_by_model(&keyed);
+        assert_eq!(usd, None);
+        assert!(partial);
     }
 
     /// The tokio/reqwest absence pin that guarded `ralphy-cli` before the pricing

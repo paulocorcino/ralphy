@@ -21,7 +21,7 @@ mod antigravity;
 mod logging;
 
 pub(crate) use antigravity::{resolve_antigravity, ResolvedAntigravity};
-pub(crate) use logging::init_tracing;
+pub(crate) use logging::{init_tracing, ConsoleOpts};
 
 use crate::cli::{CliAgent, RunArgs};
 use crate::non_empty;

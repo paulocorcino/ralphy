@@ -117,7 +117,6 @@ fn held_one_shot(
         program: &program,
         root: &root,
         work_dir,
-        run_dir: log_path.parent().unwrap_or(work_dir),
         log_path,
         model: options.model,
         effort: options.effort,

@@ -38,6 +38,24 @@ use wiring::{
     ResolvedEffort,
 };
 
+/// The agent, model and effort of the end-of-run consolidation: an agy run
+/// uses its own models; every other agent keeps the vendor defaults.
+fn run_consolidator(
+    agent: CliAgent,
+    antigravity: &wiring::ResolvedAntigravity,
+) -> crate::Consolidator<'_> {
+    let (model, effort) = if matches!(agent, CliAgent::Antigravity) {
+        antigravity.consolidation_model()
+    } else {
+        crate::consolidate_defaults(agent)
+    };
+    crate::Consolidator {
+        agent,
+        model,
+        effort,
+    }
+}
+
 pub(crate) fn run_cmd(args: &RunArgs) -> Result<()> {
     // Anchors the `run.finished` `duration_s` (ADR-0019) — the run's wall-clock.
     let run_start = std::time::Instant::now();
@@ -75,6 +93,10 @@ pub(crate) fn run_cmd(args: &RunArgs) -> Result<()> {
     // thread) and the tracing subscriber. `obs` stays whole so `start_delivery` is the ONE
     // place a delivery worker is spawned; a `?` bail above it returns with the rings unstarted.
     let obs = install_observability(log_file, args, &repo_root);
+    // After the subscriber, so a failed install is logged (ADR-0054, amendment 2026-11-13).
+    if let Err(e) = ralphy_proc_util::stop_signal::install() {
+        tracing::warn!(error = %e, "could not handle stop signals; a Ctrl-C ends the run at once");
+    }
 
     // The repo name feeds the run title, which seeds the header face and the Telegram card.
     let repo_name = repo_root
@@ -399,7 +421,7 @@ fn work_the_queue(args: &RunArgs, work: &Work<'_>, workers: Workers) -> Result<(
     let presenter = &work.obs.presenter;
     let (notifier, events_handle, snapshot_handle) = workers;
     let consolidation_usage = finalize_run(
-        args.agent,
+        run_consolidator(args.agent, &resolved_antigravity),
         presenter,
         &result,
         args.dry_run,
@@ -423,6 +445,7 @@ fn work_the_queue(args: &RunArgs, work: &Work<'_>, workers: Workers) -> Result<(
         args.dry_run,
         &cfg.repo_root,
         &consolidation_usage,
+        &crate::pricing::RunAgents::new(args.agent.cli_name(), work.plan_agent.cli_name()),
     );
     Ok(())
 }

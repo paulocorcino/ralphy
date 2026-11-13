@@ -4,7 +4,7 @@
 use anyhow::Result;
 use tracing::{info, warn};
 
-use crate::{handoff, Issue, Plan, PlanLimit, ResetAt};
+use crate::{handoff, Issue, Plan, PlanLimit, PlanStopped, ResetAt};
 
 use super::IssueCtx;
 use crate::runner::comments::{bundle_comment, infeasible_comment};
@@ -94,6 +94,10 @@ pub(crate) fn plan_phase(
             Ok(p) => break p,
             Err(e) => e,
         };
+        if let Some(stopped) = e.downcast_ref::<PlanStopped>() {
+            record_stopped_plan(issue, ledger, stopped);
+            return Err(e);
+        }
         let limit = e.downcast::<PlanLimit>()?;
 
         plan_limit_streak += 1;
@@ -144,6 +148,20 @@ pub(crate) fn plan_phase(
     }
 
     Ok(PlanPhase::Planned(plan))
+}
+
+/// Put the spend of a planner the operator's stop reaped on the ledger: the
+/// vendor billed those tokens even though no plan was written.
+fn record_stopped_plan(issue: &Issue, ledger: &mut RunLedger<'_>, stopped: &PlanStopped) {
+    ledger.record_phase(
+        issue.number,
+        "plan",
+        "stopped",
+        PhaseSpend {
+            usage: &stopped.usage,
+            session_id: stopped.session_id.as_deref(),
+        },
+    );
 }
 
 /// Decide what one plan-time usage limit does: the outcome that stops the run,

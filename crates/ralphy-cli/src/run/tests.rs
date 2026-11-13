@@ -88,3 +88,28 @@ fn verify_timeout_no_longer_derives_from_the_per_issue_cap() {
     assert_eq!(resolve_verify_timeout_minutes(Some(15)), 15);
     assert!(resolve_verify_timeout_minutes(None) > 0);
 }
+
+fn agy_with_exec(model: &str) -> wiring::ResolvedAntigravity {
+    wiring::ResolvedAntigravity {
+        plan_model: None,
+        exec_model: Some(model.to_owned()),
+        plan_effort: None,
+        exec_effort: None,
+        run_without_guard_proof: false,
+    }
+}
+
+#[test]
+fn the_run_consolidator_of_an_agy_run_carries_its_model() {
+    let agy = agy_with_exec("gemini-3.8-flash-low");
+    let c = run_consolidator(CliAgent::Antigravity, &agy);
+    assert!(matches!(c.agent, CliAgent::Antigravity));
+    assert_eq!(c.model, Some("gemini-3.8-flash-low"));
+}
+
+#[test]
+fn the_run_consolidator_of_a_claude_run_keeps_opus_medium() {
+    let agy = agy_with_exec("gemini-3.8-flash-low");
+    let c = run_consolidator(CliAgent::Claude, &agy);
+    assert_eq!((c.model, c.effort), (Some("opus"), Some("medium")));
+}

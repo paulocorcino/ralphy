@@ -12,6 +12,7 @@ fn plain_renderer() -> (Renderer, LiveState) {
             emoji: true,
         },
         price: PriceTable::load(),
+        agents: RunAgents::default(),
     };
     (renderer, LiveState::default())
 }

@@ -11,6 +11,7 @@ pub mod exe;
 pub mod hook_form;
 pub mod pid;
 mod stop;
+pub mod stop_signal;
 
 pub use pid::pid_is_alive;
 pub use stop::{exit_on_stop_signal, send_stop_signal, stop_within, stoppable_group};

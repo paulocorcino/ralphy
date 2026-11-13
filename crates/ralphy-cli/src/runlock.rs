@@ -8,9 +8,10 @@
 //! only produces a warning.
 //!
 //! Release is RAII ([`RunLockGuard`]'s `Drop`), which covers every normal and
-//! `?`-propagated exit of `run_cmd`. There is deliberately no Ctrl-C/signal
-//! handler: a killed process leaves the file behind, and stale-PID takeover is
-//! the recovery mechanism — a crash or reboot never silences a schedule.
+//! `?`-propagated exit of `run_cmd`. `ralphy run` turns a stop signal into a
+//! stop, so a Ctrl-C ends through this `Drop` too (ADR-0054, 2026-11-13). A
+//! hard kill still leaves the file behind, and stale-PID takeover is the
+//! recovery mechanism — a crash or reboot never silences a schedule.
 
 use std::fs;
 use std::path::{Path, PathBuf};

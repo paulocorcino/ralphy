@@ -241,6 +241,8 @@ smaller: with this ADR landed, the handler's whole body is
 `runstate/<runid>.json` that a Ctrl-C leaves today would start being cleaned up
 by the guards that already exist.
 
+Built by the amendment of 2026-11-13.
+
 ## Consequences
 
 - The workbench can stop a run in about a second (spawn + a ≤250 ms tick + a
@@ -283,4 +285,38 @@ Some(n) }`. This adds one row to D3's table:
 | `runner.rs` post-plan guard | a stop during planning failing the run, reading as `Deadline`, or starting an executor |
 
 A stopped planner has no ledger line: `plan_phase` records the plan line only
-for a plan that was written.
+for a plan that was written. The amendment of 2026-11-13 replaces this sentence.
+
+## Amendment (2026-11-13) — a signal is a stop, and a stopped planner keeps its usage
+
+Two gaps were found in the live check of the Antigravity adapter. Both are
+closed here, before any code.
+
+**Part one: a signal is a stop.** Only `ralphy run` handles signals. The daemon
+and every other subcommand do not. The handled signals are SIGTERM, SIGINT and
+SIGHUP on Unix, and CTRL_C_EVENT, CTRL_BREAK_EVENT and CTRL_CLOSE_EVENT on
+Windows.
+
+- The handler stores an atomic in `ralphy_proc_util::stop_signal` and does
+  nothing else. The snapshot tick (D4) reads the atomic and calls
+  `ralphy_core::stop::request()`. The stop then takes the path `ralphy stop`
+  takes, and D5 and D6 hold unchanged.
+- A second signal takes the default action. This is the escape hatch that
+  "Deliberately not built" asked for.
+- No signal is ignored or blocked. A child inherits an ignored signal or a
+  blocked mask through exec, and the PTY spawn of the Claude adapter is not ours
+  to reset.
+- On a console close, Windows ends the process after about 5 s. The handler
+  waits, with a bound, for the teardown of the run.
+- A run the daemon starts has no console (`dispatch/spawn.rs`), so it gets no
+  console event. Step 4 of `docs/daemon-bench.md` holds.
+- The guards of ADR-0047 §8 now run on these signals. A hard kill still leaves
+  the files, and the dead-pid sweep stays the recovery.
+
+**Part two: a stopped planner keeps its usage.** The planner that a stop reaped
+may have spent tokens that the vendor bills. An adapter whose reaped planner
+knows its usage returns `ralphy_core::PlanStopped { usage, session_id }` from
+`plan()`. `plan_phase` writes the plan line with the outcome `stopped`, and the
+run counts the usage. A plain error keeps today's path: no ledger line.
+`PlanStopped` is a type of `ralphy-core`, so the ledger stays in core and the
+adapter writes no ledger line.

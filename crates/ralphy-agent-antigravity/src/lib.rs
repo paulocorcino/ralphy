@@ -20,7 +20,9 @@ use ralphy_adapter_support::{
     classify, run_exec_session, run_plan_session, CompletionSignals, ExecCfg, HeadlessRun,
     IssueBudget, PlanCfg, PLAN_CHARTER, PROMPT_EXECUTE,
 };
-use ralphy_core::{git, plan, Agent, Execution, Issue, Outcome, Plan, PlanLimit, Workspace};
+use ralphy_core::{
+    git, plan, Agent, Execution, Issue, Outcome, Plan, PlanLimit, PlanStopped, Workspace,
+};
 
 use crate::outcome::{Fold, RunEnd};
 use crate::session::Session;
@@ -68,9 +70,6 @@ pub const ACCEPTS_IMAGES: bool = true;
 
 /// The agent name: in events, ledger rows and `--agent antigravity`.
 const NAME: &str = "antigravity";
-
-/// The run's `agy` log, in the run dir.
-const LOG_FILE: &str = "antigravity.log";
 
 /// The planning prompt, assembled from `assets/prompts/plan/` and embedded so
 /// the binary is self-contained.
@@ -188,7 +187,7 @@ impl AntigravityAgent {
         Ok(Launch {
             program: self.program.clone().unwrap_or_else(command::agy_program),
             root,
-            log_path: self.run_dir.join(LOG_FILE),
+            log_path: session::next_session_log(&self.run_dir),
         })
     }
 
@@ -206,7 +205,6 @@ impl AntigravityAgent {
             program: &launch.program,
             root: &launch.root,
             work_dir,
-            run_dir: &self.run_dir,
             log_path: &launch.log_path,
             model,
             effort,
@@ -338,13 +336,23 @@ fn execute_outcome(
     Ok((classify(signals), fold))
 }
 
-/// Why a plan run left no plan, when it is not the generic case: the fault
-/// of this machine, or a limit with its reset.
+/// Why a plan run left no plan, when it is not the generic case: the
+/// operator's stop with the usage so far, the fault of this machine, or a
+/// limit with its reset.
 fn plan_stop(r: &HeadlessRun, launch: &Launch, model: Option<&str>) -> Option<anyhow::Error> {
+    let fold = outcome::fold(&r.stdout);
+    if r.stopped {
+        return Some(
+            PlanStopped {
+                usage: usage::usage(&fold, model),
+                session_id: fold.conversation_id,
+            }
+            .into(),
+        );
+    }
     if let Err(fault) = machine_fault(r, launch) {
         return Some(fault);
     }
-    let fold = outcome::fold(&r.stdout);
     signals(r, &fold, false).limit.map(|_| {
         let reset = quota::read_reset(&launch.program, &launch.root, model);
         PlanLimit { reset }.into()

@@ -47,9 +47,7 @@ pub(crate) struct Session<'a> {
     pub(crate) root: &'a Path,
     /// The child's working folder.
     pub(crate) work_dir: &'a Path,
-    /// The folder of the session's status file.
-    pub(crate) run_dir: &'a Path,
-    /// Where the combined log is streamed.
+    /// Where the combined log is streamed; the status file sits beside it.
     pub(crate) log_path: &'a Path,
     pub(crate) model: Option<&'a str>,
     pub(crate) effort: Option<&'a str>,
@@ -106,7 +104,7 @@ impl Session<'_> {
 
     /// The child's command, pointed at a fresh status file, and that file.
     fn command(&self) -> Result<(Command, PathBuf)> {
-        let status_file = status::fresh_status_file(self.run_dir)?;
+        let status_file = status::fresh_status_file(self.log_path)?;
         let flags = RunFlags {
             root: self.root,
             model: self.model,
@@ -125,6 +123,19 @@ impl Session<'_> {
             waiver: self.waiver,
             window: status::PROOF_WINDOW,
         }
+    }
+}
+
+/// The log of the next session in `run_dir`: `antigravity-<n>.log`, `n` the
+/// first number with no log yet.
+pub(crate) fn next_session_log(run_dir: &Path) -> PathBuf {
+    let mut n = 1_u32;
+    loop {
+        let path = run_dir.join(format!("{}-{n}.log", crate::NAME));
+        if !path.exists() {
+            return path;
+        }
+        n += 1;
     }
 }
 

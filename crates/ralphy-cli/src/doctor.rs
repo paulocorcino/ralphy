@@ -18,10 +18,12 @@ use serde::{Deserialize, Serialize};
 use crate::init::Agent;
 
 mod probe;
+mod sign_in;
 use probe::probe_output;
 pub(crate) use probe::{agent_program, probe};
 #[cfg(test)]
 use probe::{hook_command, parse_linger};
+use sign_in::sign_in_line;
 
 #[derive(Args)]
 pub(crate) struct DoctorArgs {
@@ -38,6 +40,8 @@ pub(crate) enum Tool {
     Gh,
     Python,
     Agent,
+    /// Whether `agy` is signed in for Ralphy's root: a warning, never a failure.
+    SignIn,
     Linger,
     /// Whether the hooks of an agent that gives its state through hooks run.
     Hooks,
@@ -83,6 +87,8 @@ pub(crate) struct MachineFacts {
     pub python: Option<String>,
     /// The agent CLIs found, in `Agent::ALL` order, with their versions.
     pub agents: Vec<(Agent, String)>,
+    /// Whether `agy models` lists models in Ralphy's root; `None` without `agy`.
+    pub antigravity_signed_in: Option<bool>,
     /// `None` off Linux.
     pub linger: Option<LingerRead>,
     /// The hook check of each installed agent whose state comes from hooks.
@@ -323,6 +329,7 @@ fn state_line(name: &str, state: &TelegramState, main_name: Option<&str>) -> Too
 pub(crate) fn evaluate(facts: &MachineFacts, windows: bool) -> DoctorReport {
     let mut tools = vec![git_line(facts, windows), gh_line(facts), python_line(facts)];
     tools.extend(agent_lines(facts));
+    tools.extend(sign_in_line(facts));
     tools.extend(
         facts
             .agents

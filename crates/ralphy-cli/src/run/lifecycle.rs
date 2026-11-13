@@ -8,9 +8,9 @@ use anyhow::Result;
 use ralphy_core::{git, Workspace};
 
 use super::report::{emit_run_finished, maybe_consolidate_knowledge};
-use super::wiring::{init_tracing, strip_secret_tokens_from_env};
+use super::wiring::{init_tracing, resolve_plan_agent, strip_secret_tokens_from_env, ConsoleOpts};
 use super::{snapshot_engine, summary};
-use crate::cli::{CliAgent, RunArgs};
+use crate::cli::RunArgs;
 use crate::{events, runstate, telegram, ui};
 
 /// Close out the `--if-idle` deferral border (#222): emit `run skipped`, clear the
@@ -223,7 +223,13 @@ pub(super) fn install_observability(
 
     let presenter = init_tracing(
         log_file,
-        args.verbose,
+        ConsoleOpts {
+            verbose: args.verbose,
+            agents: crate::pricing::RunAgents::new(
+                args.agent.cli_name(),
+                resolve_plan_agent(args.plan_agent, args.agent).cli_name(),
+            ),
+        },
         notifier_layer,
         events_layer,
         snapshot_layer,
@@ -253,7 +259,7 @@ pub(super) fn install_observability(
     reason = "the arguments are the handles and results that the end of the run uses"
 )]
 pub(super) fn finalize_run(
-    agent: CliAgent,
+    consolidator: crate::Consolidator<'_>,
     presenter: &ui::PresenterHandle,
     result: &Result<ralphy_core::QueueReport>,
     dry_run: bool,
@@ -275,7 +281,7 @@ pub(super) fn finalize_run(
     // Its token cost is returned so the caller folds it into the panel run total
     // (issue #269); the ledger line is written inside `maybe_consolidate_knowledge`.
     let consolidation_usage =
-        maybe_consolidate_knowledge(agent, result.is_ok(), dry_run, ws, stamp);
+        maybe_consolidate_knowledge(consolidator, result.is_ok(), dry_run, ws, stamp);
 
     // ADR-0019 run-boundary event: emitted only on a CLEAN termination — a crash/kill
     // is detected by heartbeat silence, never a `run.finished`. Emitted BEFORE the

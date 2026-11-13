@@ -1,5 +1,7 @@
 //! A stop raised while the run works an issue.
 
+use ralphy_core::QueueReport;
+
 use super::*;
 
 /// A stop raised while #1 is executing is caught the moment the execute returns
@@ -74,6 +76,88 @@ fn a_stop_that_reaps_the_planner_ends_the_run_as_stopped() {
         current_branch(&repo),
         report.branch,
         "a stopped run hands its branch back, as every other stop does"
+    );
+    remove_scratch(&repo);
+}
+
+/// Runs #1 and #2 with a planner that the stop reaps after it spent tokens:
+/// `plan` returns a `PlanStopped` carrying that usage.
+fn run_with_a_stopped_planner(name: &str, stamp: &str) -> (StoppingAgent, QueueReport, PathBuf) {
+    let repo = init_repo(name);
+    let agent = StoppingAgent::new(None).stopping_in_plan(1, PlannerEnd::ReapedWithUsage);
+    let report = run_queue(
+        &cfg(&repo, stamp),
+        &[issue(1), issue(2)],
+        &agent,
+        &SilentTracker,
+        &FreeClock,
+    )
+    .expect("a stopped planner is not a run error");
+    (agent, report, repo)
+}
+
+/// The vendor billed the tokens of a reaped planner: the run's usage counts them.
+#[test]
+fn a_stopped_planner_with_usage_counts_in_the_run_usage() {
+    let _flag = StopFlagGuard::acquire();
+    let (_agent, report, repo) =
+        run_with_a_stopped_planner("plan-stopped-usage", "20260728-000006");
+
+    assert_eq!(report.run_usage.input, STOPPED_PLAN_INPUT);
+    remove_scratch(&repo);
+}
+
+/// The reaped planner's spend is under its own model in the per-model split.
+#[test]
+fn a_stopped_planners_model_is_in_the_run_split() {
+    let _flag = StopFlagGuard::acquire();
+    let (_agent, report, repo) =
+        run_with_a_stopped_planner("plan-stopped-model", "20260728-000007");
+
+    let split = report.run_usage_by_model.get(STOPPED_PLAN_MODEL);
+    assert_eq!(
+        split.map(|u| u.input),
+        Some(STOPPED_PLAN_INPUT),
+        "split: {:?}",
+        report.run_usage_by_model
+    );
+    remove_scratch(&repo);
+}
+
+/// The ledger keeps the reaped planner's spend as a `plan` row with outcome
+/// `stopped`, which `ralphy usage` and the spend panel read.
+#[test]
+fn a_stopped_planner_writes_a_stopped_plan_row() {
+    let _flag = StopFlagGuard::acquire();
+    let (_agent, _report, repo) =
+        run_with_a_stopped_planner("plan-stopped-ledger", "20260728-000009");
+
+    let rows = ralphy_core::read_project_rows(&ralphy_core::git::project_slug(&repo));
+    let plan: Vec<_> = rows.iter().filter(|r| r.phase == "plan").collect();
+    assert_eq!(plan.len(), 1, "one plan row: {rows:?}");
+    assert_eq!(plan[0].outcome, "stopped");
+    assert_eq!(plan[0].issue, 1);
+    assert_eq!(plan[0].tokens.input, STOPPED_PLAN_INPUT);
+    assert_eq!(plan[0].session_id.as_deref(), Some("stopped-session"));
+    remove_scratch(&repo);
+}
+
+/// Usage on the stop does not turn it into a planning failure: the run still
+/// ends as the stop, names #1, and starts no executor.
+#[test]
+fn a_stopped_planner_with_usage_ends_the_run_as_stopped() {
+    let _flag = StopFlagGuard::acquire();
+    let (agent, report, repo) = run_with_a_stopped_planner("plan-stopped-ends", "20260728-000008");
+
+    assert_eq!(*agent.planned.borrow(), vec![1]);
+    assert!(
+        agent.executed.borrow().is_empty(),
+        "no executor after a stop"
+    );
+    assert!(
+        matches!(report.stop, Some(StopReason::Stopped { number: Some(1) })),
+        "expected a stop naming #1, got {:?}",
+        report.stop
     );
     remove_scratch(&repo);
 }

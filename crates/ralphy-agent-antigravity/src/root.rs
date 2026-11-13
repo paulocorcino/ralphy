@@ -27,11 +27,15 @@ const STATUS_EVENTS: [&str; 6] = [
 /// The events whose handlers sit under a tool `matcher`.
 const TOOL_EVENTS: [&str; 2] = ["PreToolUse", "PostToolUse"];
 
+/// The built-in skill folder of `swarm`: `agy` matches a top-level `exclude`
+/// of `config/skills.json` against folder names (measured on agy 1.5.8, #928).
+const SWARM_SKILL_DIR: &str = "native_swarm";
+
 /// The folders a repository's own `hooks.json` is read from.
 const WORKSPACE_HOOK_DIRS: [&str; 3] = [".agents", ".agent", "_agents"];
 
-/// Write the hooks file and turn `swarm` off in the owned `root`, with the
-/// running `ralphy` as the hook program.
+/// Write the hooks file and turn the `swarm` plugin and skill off in the owned
+/// `root`, with the running `ralphy` as the hook program.
 pub(crate) fn ensure(root: &Path) -> Result<()> {
     let ralphy = ralphy_proc_util::exe::running_exe()?;
     let config = root.join("config");
@@ -43,7 +47,8 @@ pub(crate) fn ensure(root: &Path) -> Result<()> {
     })?;
     let hooks = serde_json::to_string_pretty(&hooks_document(&ralphy)?)?;
     write_if_changed(&hooks_file(root), &format!("{hooks}\n"))?;
-    turn_swarm_off(&config.join("config.json"))
+    turn_swarm_off(&config.join("config.json"))?;
+    exclude_swarm_skill(&config.join("skills.json"))
 }
 
 /// The hooks file `agy` reads from the owned `root`.
@@ -59,7 +64,7 @@ fn hooks_document(ralphy: &Path) -> Result<Value> {
         Ok(json!({ "type": "command", "command": command }))
     };
     let guard = handler(&["hook", "guard", "--vendor", "antigravity"])?;
-    let status = handler(&["hook", "status", "antigravity"])?;
+    let status = handler(&ralphy_proc_util::antigravity::STATUS_HOOK_ARGS)?;
     let mut events = Map::new();
     for event in STATUS_EVENTS {
         let mut handlers = Vec::new();
@@ -80,19 +85,43 @@ fn hooks_document(ralphy: &Path) -> Result<Value> {
 /// Set `plugins.swarm.enabled` to `false` in `config.json`, keeping every other
 /// key: `agy` writes the file itself, with `swarm` on, at its first run (D13).
 fn turn_swarm_off(path: &Path) -> Result<()> {
-    let mut config = match fs::read_to_string(path) {
-        Ok(text) => serde_json::from_str(&text)
-            .with_context(|| format!("reading the Antigravity config {}", path.display()))?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => json!({}),
-        Err(e) => {
-            return Err(e).with_context(|| format!("reading {}", path.display()));
-        }
-    };
+    let mut config = read_config(path)?;
     let swarm = object_at(&mut config, &["plugins", "swarm"])
         .with_context(|| format!("the Antigravity config {} is not an object", path.display()))?;
     swarm.insert("enabled".to_owned(), Value::Bool(false));
     let text = serde_json::to_string_pretty(&config)?;
     write_if_changed(path, &format!("{text}\n"))
+}
+
+/// Add `native_swarm` to the top-level `exclude` of `skills.json`, keeping
+/// every other key: the `config.json` switch leaves the skill listed (D13).
+fn exclude_swarm_skill(path: &Path) -> Result<()> {
+    let mut config = read_config(path)?;
+    let exclude = config
+        .as_object_mut()
+        .map(|object| object.entry("exclude").or_insert_with(|| json!([])))
+        .and_then(Value::as_array_mut)
+        .with_context(|| {
+            format!(
+                "the Antigravity config {} has no list `exclude`",
+                path.display()
+            )
+        })?;
+    if !exclude.iter().any(|name| name == SWARM_SKILL_DIR) {
+        exclude.push(json!(SWARM_SKILL_DIR));
+    }
+    let text = serde_json::to_string_pretty(&config)?;
+    write_if_changed(path, &format!("{text}\n"))
+}
+
+/// A JSON config file of the owned root, or an empty object when it is missing.
+fn read_config(path: &Path) -> Result<Value> {
+    match fs::read_to_string(path) {
+        Ok(text) => serde_json::from_str(&text)
+            .with_context(|| format!("reading the Antigravity config {}", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(json!({})),
+        Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
+    }
 }
 
 /// The object at `keys` inside `value`, made where it is missing. `None` when
