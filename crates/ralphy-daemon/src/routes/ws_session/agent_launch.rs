@@ -5,13 +5,20 @@ use std::path::{Path, PathBuf};
 
 use axum::http::StatusCode;
 
+use super::antigravity_root;
 use super::join::hold;
 use super::refuse::Refusal;
 use super::upgrade::{launch_record, Open, Opened};
 use super::SessionLabels;
-use super::{antigravity_root, gemini_root};
 use crate::routes::blocking_read;
 use crate::{agent_state, auth, checkout, registry, session};
+
+/// The query value of the removed Gemini CLI agent, still named by saved desks.
+const REMOVED_GEMINI: &str = "gemini";
+
+/// Why a launch of [`REMOVED_GEMINI`] is refused: the words the CLI prints for
+/// `--agent gemini` (ADR-0086 D19).
+const GEMINI_REMOVED: &str = "the Gemini CLI agent was removed: use --agent antigravity";
 
 /// A launch whose repo, checkout and gates are settled: what is asked for and
 /// the directory the child runs in.
@@ -26,6 +33,9 @@ struct SettledLaunch {
 
 impl Open {
     pub(super) async fn agent(self) -> Opened {
+        if self.query.agent.as_deref() == Some(REMOVED_GEMINI) {
+            return Opened::refused(StatusCode::BAD_REQUEST, GEMINI_REMOVED);
+        }
         let Some((agent_str, agent)) = self.requested_agent() else {
             return Opened::refused(StatusCode::BAD_REQUEST, "unknown agent");
         };
@@ -77,7 +87,7 @@ impl Open {
 
     /// ADR-0063 §3: the selected checkout, resolved with the same resolver and
     /// confinement as every git-backed verb (`spawn_cwd`), off the runtime.
-    /// INVARIANT: this returns BEFORE the Cursor gate, the Gemini gate, `spec_for`
+    /// INVARIANT: this returns BEFORE the vendor gates, `spec_for`
     /// and every spawn — a bad name writes nothing and spawns nothing.
     async fn resolve_checkout(
         &self,
@@ -111,15 +121,10 @@ impl Open {
     /// walks up from `cwd`, so a checkout gets its own opt-out and the primary
     /// keeps its own (ADR-0063 §3); the opt-in is the primary's `.ralphy/`.
     ///
-    /// ADR-0043 D4/D6: a Gemini child is contained by an owned configuration root
-    /// AND the policy document inside it. The daemon may not import the adapter
-    /// that writes them (ADR-0032 §10), so `gemini_root::ensure` asks the CLI to
-    /// (ADR-0040 Amendment 3). INVARIANT: this refusal precedes `spec_for` and
-    /// every spawn path, so no Gemini child is ever created outside the owned root.
-    ///
     /// ADR-0086 D8/D9: an Antigravity child runs in the owned root with Ralphy's
-    /// hooks file in it; `antigravity_root::ensure` prepares it the same way, and
-    /// refuses the launch here when the file is still missing.
+    /// hooks file in it. The daemon may not import the adapter that writes it
+    /// (ADR-0032 §10), so `antigravity_root::ensure` asks the CLI to (ADR-0040
+    /// Amendment 3), and refuses the launch here when the file is still missing.
     async fn vendor_gate(
         &self,
         agent: session::Agent,
@@ -129,9 +134,6 @@ impl Open {
         if agent == session::Agent::Cursor {
             ralphy_proc_util::cursor::indexing_gate(cwd, session::cursor_indexing_allowed(root))
                 .map_err(|e| e.to_string())?;
-        }
-        if agent == session::Agent::Gemini {
-            gemini_root::ensure(root, &self.daemon_id).await?;
         }
         if agent == session::Agent::Antigravity {
             antigravity_root::ensure(root, &self.daemon_id).await?;

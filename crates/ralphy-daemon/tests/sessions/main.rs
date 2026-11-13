@@ -23,8 +23,8 @@ mod session_ws;
 mod session_ws_antigravity;
 mod session_ws_checkout;
 mod session_ws_cursor;
-mod session_ws_gemini;
 mod session_ws_refusals;
+mod session_ws_removed_gemini;
 
 #[path = "../support/golden.rs"]
 mod golden;
@@ -43,8 +43,9 @@ fn point_launcher_at_test_child() {
             "RALPHY_DAEMON_AGENT_OVERRIDE",
             env!("CARGO_BIN_EXE_session_test_child"),
         );
-        // A Gemini launch with no owned root runs `ralphy gemini prepare-root`
-        // first; without this the daemon would run the TEST binary itself.
+        // An Antigravity launch with no hooks file runs `ralphy antigravity
+        // prepare-root` first; without this the daemon would run the TEST
+        // binary itself.
         std::env::set_var(
             "RALPHY_EXE_OVERRIDE",
             env!("CARGO_BIN_EXE_command_test_child"),

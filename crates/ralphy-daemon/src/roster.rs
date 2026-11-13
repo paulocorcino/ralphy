@@ -32,8 +32,7 @@ fn accelerator(a: Agent) -> &'static str {
         Agent::Kimi => "4",
         Agent::Copilot => "5",
         Agent::Cursor => "6",
-        Agent::Gemini => "7",
-        Agent::Antigravity => "8",
+        Agent::Antigravity => "7",
     }
 }
 
@@ -94,10 +93,10 @@ mod tests {
     }
 
     #[test]
-    fn the_roster_gives_antigravity_digit_8() {
+    fn the_roster_gives_antigravity_digit_7() {
         let rows = roster_with(&|_| None);
         let row = rows.iter().find(|r| r.id == "antigravity");
-        assert_eq!(row.map(|r| r.accelerator), Some("8"), "{rows:?}");
+        assert_eq!(row.map(|r| r.accelerator), Some("7"), "{rows:?}");
     }
 
     #[test]
@@ -122,7 +121,7 @@ mod tests {
             ("kimi", "4"),
             ("copilot", "5"),
             ("cursor", "6"),
-            ("gemini", "7"),
+            ("antigravity", "7"),
         ] {
             let row = rows
                 .iter()
@@ -135,7 +134,7 @@ mod tests {
         }
         // Served in digit order, so the menu renders without re-sorting.
         let order: Vec<&str> = rows.iter().map(|r| r.accelerator).collect();
-        assert_eq!(order, ["1", "2", "3", "4", "5", "6", "7", "8"]);
+        assert_eq!(order, ["1", "2", "3", "4", "5", "6", "7"]);
     }
 
     #[test]

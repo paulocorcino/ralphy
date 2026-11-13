@@ -116,7 +116,7 @@ async fn an_old_peer_that_refuses_over_http_is_shown_as_a_refusal() {
     let repo = format!("{DEAD_ID}/{SLUG}");
     let refusal = page::refused(
         local.port,
-        serde_json::json!({ "repo": repo, "agent": "gemini" }),
+        serde_json::json!({ "repo": repo, "agent": "antigravity" }),
     )
     .await;
     assert_eq!(

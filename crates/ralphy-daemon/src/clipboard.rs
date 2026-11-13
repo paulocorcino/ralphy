@@ -31,9 +31,9 @@ use crate::tree::{ImageType, MAX_IMAGE_BYTES};
 pub const PARENT: &str = ".ralphy";
 
 /// The landing directory. Inside `.ralphy/` on purpose: the operator chose
-/// "never in the tree, never committed" over "every vendor can read it" — Gemini
-/// refuses gitignored reads (#275), and that limitation is accepted and recorded
-/// in the ADR rather than worked around.
+/// "never in the tree, never committed" over "every vendor can read it" — a
+/// vendor that refuses gitignored reads cannot open a paste, and that limitation
+/// is accepted and recorded in the ADR rather than worked around.
 pub const DIR: &str = ".ralphy/clipboard";
 
 /// How many same-stamp collisions to step past before giving up. Two pastes in

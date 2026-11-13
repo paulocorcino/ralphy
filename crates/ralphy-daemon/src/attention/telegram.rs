@@ -78,7 +78,6 @@ fn vendor_name(vendor: &str) -> &str {
         Some(Agent::Codex) => "Codex",
         Some(Agent::Copilot) => "Copilot",
         Some(Agent::Cursor) => "Cursor",
-        Some(Agent::Gemini) => "Gemini",
         Some(Agent::Kimi) => "Kimi",
         Some(Agent::OpenCode) => "OpenCode",
         None => vendor,

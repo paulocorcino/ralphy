@@ -4,7 +4,7 @@
 //! This is a real bug's regression test: a daemon started from an agent's shell
 //! tool inherits `NO_COLOR=1`, `portable-pty` copies the whole parent
 //! environment into the child, and every workbench console came out monochrome —
-//! measured on claude, codex, gemini and copilot, which all honour it.
+//! measured on claude, codex and copilot, which all honour it.
 //!
 //! The daemon's secrets do not reach the child either (ADR-0072 D7).
 //!

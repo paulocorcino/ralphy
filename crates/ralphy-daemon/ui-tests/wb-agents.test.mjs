@@ -15,7 +15,7 @@ const NEEDS_REPO = "Open a project before you start an agent.";
 const ROSTER = [
   { id: "claude", label: "claude", accelerator: "1" },
   { id: "codex", label: "codex", accelerator: "2" },
-  { id: "gemini", label: "gemini", accelerator: "7" },
+  { id: "antigravity", label: "antigravity", accelerator: "7" },
 ];
 
 test("roster order is preserved and the console row comes last on digit 0", () => {
@@ -26,7 +26,7 @@ test("roster order is preserved and the console row comes last on digit 0", () =
   });
   assert.deepEqual(
     rows.map((r) => r.kind),
-    ["claude", "codex", "gemini", "console"],
+    ["claude", "codex", "antigravity", "console"],
   );
   assert.deepEqual(
     rows.map((r) => r.digit),
