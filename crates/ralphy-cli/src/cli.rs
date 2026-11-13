@@ -8,12 +8,15 @@ use crate::WRITE_TO_STRING;
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
+use clap::builder::{EnumValueParser, PossibleValue, TypedValueParser};
+use clap::error::{ErrorKind, Result as ClapResult};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_core::{BranchMode, Effort};
+use std::ffi::OsStr;
 
 use crate::{
-    antigravity, blob, changes, config, daemon, doctor, gemini, host, init, install, issues,
-    models, mutate, schedule, stop, sync, telegram, triage, uninstall, update, usage,
+    antigravity, blob, changes, config, daemon, doctor, host, init, install, issues, models,
+    mutate, schedule, stop, sync, telegram, triage, uninstall, update, usage,
 };
 
 mod hook;
@@ -170,10 +173,6 @@ pub(crate) enum Command {
     // ADR-0036 §6.
     #[command(subcommand, hide = true)]
     Sync(sync::SyncCommand),
-    /// Prepare Gemini's own configuration in a repo.
-    // ADR-0040 Amendment 3.
-    #[command(subcommand, hide = true)]
-    Gemini(gemini::GeminiCommand),
     /// Prepare the folder Ralphy owns for Antigravity.
     // ADR-0040 Amendment 3, ADR-0086 D8.
     #[command(subcommand, hide = true)]
@@ -221,14 +220,14 @@ pub(crate) struct RunArgs {
     /// The agent that does the work. `claude` (the default) runs in a live
     /// terminal session; the other agents run without one. Use `--plan-agent`
     /// to plan with a different agent.
-    #[arg(long = "agent", value_enum, default_value_t = CliAgent::Claude)]
+    #[arg(long = "agent", value_parser = AgentParser::<CliAgent>::new(), default_value = "claude")]
     pub(crate) agent: CliAgent,
 
     /// The agent that writes the plan. Without it, `--agent` also plans. For
     /// example, `--agent opencode --plan-agent claude` means Claude plans and
     /// `OpenCode` does the work. Any two agents can be paired.
     // ADR-0009.
-    #[arg(long = "plan-agent", value_enum)]
+    #[arg(long = "plan-agent", value_parser = AgentParser::<CliAgent>::new())]
     pub(crate) plan_agent: Option<CliAgent>,
 
     /// Work only this issue. Without it, the whole queue is worked.
@@ -383,7 +382,7 @@ pub(crate) struct ConsolidateArgs {
     /// The agent that merges the notes. The default is Claude. Every agent
     /// follows the same instructions.
     // ADR-0031.
-    #[arg(long = "agent", value_enum, default_value_t = CliAgent::Claude)]
+    #[arg(long = "agent", value_parser = AgentParser::<CliAgent>::new(), default_value = "claude")]
     pub(crate) agent: CliAgent,
 
     /// The model that merges the notes. Default: the agent's own default (opus
@@ -413,8 +412,6 @@ pub(crate) enum CliAgent {
     // The binary is `cursor-agent`/`agent` (ADR-0042 D14); the SELECTOR is the
     // vendor's name, as with every other adapter.
     Cursor,
-    // One word `gemini` derives correctly from the variant name — no `#[value]` attr.
-    Gemini,
     // One word `kimi` derives correctly from the variant name — no `#[value]` attr.
     Kimi,
     // The ADR-0005 contract and the documented invocation are `--agent opencode`
@@ -432,11 +429,47 @@ impl CliAgent {
             CliAgent::Codex => "codex",
             CliAgent::Copilot => "copilot",
             CliAgent::Cursor => "cursor",
-            CliAgent::Gemini => "gemini",
             CliAgent::Kimi => "kimi",
             CliAgent::OpenCode => "opencode",
             CliAgent::Antigravity => "antigravity",
         }
+    }
+}
+
+/// The text of every agent argument given the removed `gemini` value.
+// ADR-0086 D19: the daemon gives the same text, for one release.
+const GEMINI_REMOVED: &str = "the Gemini CLI agent was removed: use --agent antigravity";
+
+/// Clap's parser of an agent enum, except that `gemini` names its successor.
+#[derive(Clone)]
+pub(crate) struct AgentParser<E>(std::marker::PhantomData<E>);
+
+impl<E> AgentParser<E> {
+    pub(crate) fn new() -> Self {
+        Self(std::marker::PhantomData)
+    }
+}
+
+impl<E: ValueEnum + Clone + Send + Sync + 'static> TypedValueParser for AgentParser<E> {
+    type Value = E;
+
+    fn parse_ref(
+        &self,
+        cmd: &clap::Command,
+        arg: Option<&clap::Arg>,
+        value: &OsStr,
+    ) -> ClapResult<E> {
+        if value == "gemini" {
+            let message = format!("{GEMINI_REMOVED}\n");
+            return Err(clap::Error::raw(ErrorKind::InvalidValue, message).with_cmd(cmd));
+        }
+        EnumValueParser::<E>::new().parse_ref(cmd, arg, value)
+    }
+
+    fn possible_values(&self) -> Option<Box<dyn Iterator<Item = PossibleValue> + '_>> {
+        Some(Box::new(
+            E::value_variants().iter().filter_map(E::to_possible_value),
+        ))
     }
 }
 

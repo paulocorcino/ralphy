@@ -28,7 +28,7 @@ pub(crate) struct InitArgs {
 
     /// The agent that studies the repo and writes the first issues. It must be
     /// logged in. Default: the first logged-in agent found.
-    #[arg(long, value_enum)]
+    #[arg(long, value_parser = crate::cli::AgentParser::<Agent>::new())]
     pub agent: Option<Agent>,
 }
 
@@ -59,9 +59,6 @@ fn diagnose_with_agent(
 
         Agent::Copilot => {
             ralphy_agent_copilot::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
-        }
-        Agent::Gemini => {
-            ralphy_agent_gemini::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
         }
         Agent::Cursor => {
             ralphy_agent_cursor::diagnose_repo(repo, neutral_cwd, model, effort, timeout)

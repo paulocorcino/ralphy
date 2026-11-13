@@ -29,7 +29,6 @@ mod daemon;
 mod delivery;
 mod doctor;
 mod events;
-mod gemini;
 mod guard;
 mod hook;
 mod host;
@@ -112,7 +111,6 @@ fn main() -> Result<ExitCode> {
         Command::Changes(cmd) => changes::changes(cmd),
         Command::Blob(cmd) => blob::blob(cmd),
         Command::Sync(cmd) => sync::sync(cmd),
-        Command::Gemini(cmd) => gemini::gemini(cmd),
         Command::Antigravity(cmd) => antigravity::antigravity(&cmd),
         Command::Stop(args) => stop::stop(&args),
         Command::Update(args) => return update::run(&args),
@@ -163,7 +161,6 @@ pub(crate) fn consolidate_defaults(
         | CliAgent::Codex
         | CliAgent::Copilot
         | CliAgent::Cursor
-        | CliAgent::Gemini
         | CliAgent::Kimi
         | CliAgent::OpenCode => (None, None),
     }
@@ -216,9 +213,6 @@ fn consolidate_with_agent(
         }
         CliAgent::Cursor => {
             ralphy_agent_cursor::consolidate_knowledge(ws, run_dir, model, effort, timeout)
-        }
-        CliAgent::Gemini => {
-            ralphy_agent_gemini::consolidate_knowledge(ws, run_dir, model, effort, timeout)
         }
         CliAgent::Kimi => {
             ralphy_agent_kimi::consolidate_knowledge(ws, run_dir, model, effort, timeout)
@@ -434,21 +428,20 @@ mod tests {
                 "consolidate_knowledge(",
             ),
         ];
-        for (variant, krate) in [("Gemini", "gemini"), ("Antigravity", "antigravity")] {
-            for (src, enum_path, verb) in sites {
-                assert!(!src.contains(&format!("not yet wired for --agent {krate}")));
-                // The arm, in whitespace-free text: from its `=>` to the next `=>`.
-                let code: String = src.split_whitespace().collect();
-                let arm = format!("{enum_path}{variant}=>");
-                let call = format!("ralphy_agent_{krate}::{verb}");
-                let start = code.find(&arm).unwrap_or_else(|| panic!("no {arm} arm"));
-                let rest = code.split_at(start + arm.len()).1;
-                let body = rest.split_at(rest.find("=>").unwrap_or(rest.len())).0;
-                assert!(body.contains(&call), "expected {call} inside the {arm} arm");
-            }
-            // ADR-0043 D8, ADR-0086 D4: the model of a one-shot is the plan's own.
-            let agent = <CliAgent as clap::ValueEnum>::from_str(krate, false).expect("a CLI agent");
-            assert_eq!(consolidate_defaults(agent), (None, None), "{krate}");
+        let (variant, krate) = ("Antigravity", "antigravity");
+        for (src, enum_path, verb) in sites {
+            assert!(!src.contains(&format!("not yet wired for --agent {krate}")));
+            // The arm, in whitespace-free text: from its `=>` to the next `=>`.
+            let code: String = src.split_whitespace().collect();
+            let arm = format!("{enum_path}{variant}=>");
+            let call = format!("ralphy_agent_{krate}::{verb}");
+            let start = code.find(&arm).unwrap_or_else(|| panic!("no {arm} arm"));
+            let rest = code.split_at(start + arm.len()).1;
+            let body = rest.split_at(rest.find("=>").unwrap_or(rest.len())).0;
+            assert!(body.contains(&call), "expected {call} inside the {arm} arm");
         }
+        // ADR-0086 D4: the model of a one-shot is the plan's own.
+        let agent = <CliAgent as clap::ValueEnum>::from_str(krate, false).expect("a CLI agent");
+        assert_eq!(consolidate_defaults(agent), (None, None), "{krate}");
     }
 }

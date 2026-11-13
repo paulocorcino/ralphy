@@ -16,7 +16,6 @@ fn agent_slug(a: crate::CliAgent) -> &'static str {
         crate::CliAgent::Codex => "codex",
         crate::CliAgent::Copilot => "copilot",
         crate::CliAgent::Cursor => "cursor",
-        crate::CliAgent::Gemini => "gemini",
         crate::CliAgent::Kimi => "kimi",
         crate::CliAgent::OpenCode => "opencode",
         crate::CliAgent::Antigravity => "antigravity",
@@ -39,7 +38,6 @@ fn plan_action(a: crate::CliAgent) -> ModelsAction {
         | crate::CliAgent::Codex
         | crate::CliAgent::Copilot
         | crate::CliAgent::Cursor
-        | crate::CliAgent::Gemini
         | crate::CliAgent::Kimi => ModelsAction::Unsupported(unsupported_note(a)),
     }
 }
@@ -47,7 +45,11 @@ fn plan_action(a: crate::CliAgent) -> ModelsAction {
 #[derive(clap::Args)]
 pub(crate) struct ModelsArgs {
     /// Which agent's model list to show.
-    #[arg(long = "agent", value_enum, default_value_t = crate::CliAgent::OpenCode)]
+    #[arg(
+        long = "agent",
+        value_parser = crate::cli::AgentParser::<crate::CliAgent>::new(),
+        default_value = "opencode"
+    )]
     pub agent: crate::CliAgent,
 }
 

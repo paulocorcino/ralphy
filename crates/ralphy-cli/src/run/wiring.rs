@@ -12,7 +12,6 @@ use ralphy_agent_claude::ClaudeAgent;
 use ralphy_agent_codex::CodexAgent;
 use ralphy_agent_copilot::CopilotAgent;
 use ralphy_agent_cursor::CursorAgent;
-use ralphy_agent_gemini::GeminiAgent;
 use ralphy_agent_kimi::KimiAgent;
 use ralphy_agent_opencode::OpenCodeAgent;
 use ralphy_core::{github, Agent, BranchMode, Effort};
@@ -122,30 +121,6 @@ pub(crate) fn resolve_cursor(
         plan_model: config::resolve_optional_model(plan_flag, None),
         exec_model: config::resolve_optional_model(exec_flag, None),
         allow_indexing: persisted.allow_codebase_indexing_i_understand_the_risk,
-    }
-}
-
-/// The two Gemini per-phase model pins resolved once (flag, then settings.json,
-/// then `None`, ADR-0043 D8). `None` on either omits `-m` for that phase, which
-/// on this vendor means the ROUTER picks — and charges a second, billed routing
-/// call per turn.
-pub(crate) struct ResolvedGemini {
-    pub(crate) plan_model: Option<String>,
-    pub(crate) exec_model: Option<String>,
-}
-
-/// Resolve the two Gemini per-phase model pins, mirroring [`resolve_copilot`].
-/// The persisted values were validated at `config set` time; the flags are
-/// deliberately unfiltered (D8), so an id the vendor has just started serving is
-/// never blocked by a stale local list.
-pub(crate) fn resolve_gemini(
-    plan_flag: Option<String>,
-    exec_flag: Option<String>,
-    persisted: &ralphy_agent_gemini::GeminiSettings,
-) -> ResolvedGemini {
-    ResolvedGemini {
-        plan_model: config::resolve_optional_model(plan_flag, persisted.plan_model.clone()),
-        exec_model: config::resolve_optional_model(exec_flag, persisted.exec_model.clone()),
     }
 }
 
@@ -278,7 +253,6 @@ pub(crate) fn build_agent(
     effort: ResolvedEffort,
     copilot: &ResolvedCopilot,
     cursor: &ResolvedCursor,
-    gemini: &ResolvedGemini,
     antigravity: &ResolvedAntigravity,
     idle_minutes: Option<u64>,
 ) -> Box<dyn Agent> {
@@ -333,18 +307,6 @@ pub(crate) fn build_agent(
             )
         }
         CliAgent::Cursor => cursor_agent(cursor, claude, run_dir, run_deadline, headless_idle),
-        CliAgent::Gemini => {
-            let (plan_effort, exec_effort) = effort_strings(effort);
-            Box::new(
-                GeminiAgent::new(gemini.exec_model.clone(), run_dir)
-                    .with_plan_model(gemini.plan_model.clone())
-                    .with_plan_effort(plan_effort)
-                    .with_exec_effort(exec_effort)
-                    .with_run_deadline(run_deadline)
-                    .with_max_minutes_per_issue(claude.max_minutes_per_issue)
-                    .with_idle_minutes(headless_idle),
-            )
-        }
         CliAgent::Kimi => {
             let (plan_effort, exec_effort) = effort_strings(effort);
             Box::new(
@@ -462,7 +424,6 @@ pub(crate) fn preflight_agents(executor: CliAgent, planner: CliAgent) -> Result<
         CliAgent::Claude
         | CliAgent::Codex
         | CliAgent::Copilot
-        | CliAgent::Gemini
         | CliAgent::Kimi
         | CliAgent::OpenCode => ralphy_adapter_support::locate_program(a.cli_name()).is_some(),
     })

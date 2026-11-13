@@ -36,7 +36,7 @@ pub(crate) struct TriageArgs {
 
     /// The agent that sorts the issues. It must be logged in. Default: the
     /// first logged-in agent, in the order `ralphy init` uses.
-    #[arg(long, value_enum)]
+    #[arg(long, value_parser = crate::cli::AgentParser::<Agent>::new())]
     agent: Option<Agent>,
 
     /// The model that sorts the issues. Default: the agent's own default.
@@ -118,9 +118,6 @@ fn triage_with_agent(
         }
         Agent::Copilot => {
             ralphy_agent_copilot::triage_issues(repo, out_path, req, model, effort, timeout)
-        }
-        Agent::Gemini => {
-            ralphy_agent_gemini::triage_issues(repo, out_path, req, model, effort, timeout)
         }
         Agent::Cursor => {
             ralphy_agent_cursor::triage_issues(repo, out_path, req, model, effort, timeout)

@@ -32,7 +32,6 @@ fn every_arm_passes_each_translated_effort_to_the_adapter() {
         "Codex",
         "Copilot",
         "Cursor",
-        "Gemini",
         "Kimi",
         "OpenCode",
         "Antigravity",
@@ -54,7 +53,7 @@ fn every_arm_passes_each_translated_effort_to_the_adapter() {
         ".with_exec_effort(exec_effort)",
     ];
     // (arm, what its body must pass on)
-    let rows: [(&str, &[&str]); 6] = [
+    let rows: [(&str, &[&str]); 5] = [
         (
             "Claude",
             &["ClaudeAgent::new(", "plan_effort,run_dir", "exec_effort,"],
@@ -67,7 +66,6 @@ fn every_arm_passes_each_translated_effort_to_the_adapter() {
                 ".with_exec_effort(exec_effort.or_else(||copilot.exec_effort.clone()))",
             ],
         ),
-        ("Gemini", setters),
         ("Kimi", setters),
         (
             "OpenCode",
@@ -184,7 +182,6 @@ fn check_agents_present_uses_the_given_locator() {
         CliAgent::Claude
         | CliAgent::Codex
         | CliAgent::Copilot
-        | CliAgent::Gemini
         | CliAgent::Kimi
         | CliAgent::OpenCode
         | CliAgent::Antigravity => false,
@@ -346,7 +343,6 @@ fn build_agent_builds_every_agent_the_cli_accepts() {
     use ralphy_agent_antigravity::AntigravitySettings;
     use ralphy_agent_copilot::CopilotSettings;
     use ralphy_agent_cursor::CursorSettings;
-    use ralphy_agent_gemini::GeminiSettings;
     let claude = ResolvedClaude {
         plan_model: String::new(),
         default_exec_model: String::new(),
@@ -376,46 +372,11 @@ fn build_agent_builds_every_agent_the_cli_accepts() {
             none,
             &resolve_copilot(None, None, &CopilotSettings::default()),
             &resolve_cursor(None, None, &CursorSettings::default()),
-            &resolve_gemini(None, None, &GeminiSettings::default()),
             &resolve_antigravity(None, None, none, &AntigravitySettings::default()),
             Some(0),
         );
         assert_eq!(built.name(), name, "--agent {name} built another adapter");
     }
-}
-
-/// ADR-0043 D8: each phase resolves independently — flag, then the persisted
-/// `gemini.*` key, then `None` (omit `-m` and let the vendor route).
-#[test]
-fn gemini_models_resolve_flag_then_persisted_then_none() {
-    let persisted = ralphy_agent_gemini::GeminiSettings {
-        plan_model: Some("gemini-2.5-pro".into()),
-        exec_model: Some("gemini-3.5-flash".into()),
-    };
-
-    // The flag beats the persisted value, per phase.
-    let r = resolve_gemini(
-        Some("gemini-2.5-flash".into()),
-        Some("gemini-3.1-flash-lite".into()),
-        &persisted,
-    );
-    assert_eq!(r.plan_model.as_deref(), Some("gemini-2.5-flash"));
-    assert_eq!(r.exec_model.as_deref(), Some("gemini-3.1-flash-lite"));
-
-    // Absent flags fall through to the persisted keys.
-    let r = resolve_gemini(None, None, &persisted);
-    assert_eq!(r.plan_model.as_deref(), Some("gemini-2.5-pro"));
-    assert_eq!(r.exec_model.as_deref(), Some("gemini-3.5-flash"));
-
-    // An EMPTY flag is not a pin — it falls through rather than sending `-m ""`.
-    let r = resolve_gemini(Some(String::new()), Some(String::new()), &persisted);
-    assert_eq!(r.plan_model.as_deref(), Some("gemini-2.5-pro"));
-    assert_eq!(r.exec_model.as_deref(), Some("gemini-3.5-flash"));
-
-    // Neither set: `None`, which omits `-m` and lets the vendor route.
-    let r = resolve_gemini(None, None, &ralphy_agent_gemini::GeminiSettings::default());
-    assert_eq!(r.plan_model, None);
-    assert_eq!(r.exec_model, None);
 }
 
 /// Both tokens leave the process environment, so no child inherits either.

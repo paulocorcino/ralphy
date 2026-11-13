@@ -116,7 +116,6 @@ pub(super) struct AdapterSettings {
     pub(super) opencode: ralphy_agent_opencode::OpenCodeSettings,
     pub(super) copilot: ralphy_agent_copilot::CopilotSettings,
     pub(super) cursor: ralphy_agent_cursor::CursorSettings,
-    pub(super) gemini: ralphy_agent_gemini::GeminiSettings,
     pub(super) antigravity: ralphy_agent_antigravity::AntigravitySettings,
 }
 
@@ -127,7 +126,6 @@ impl AdapterSettings {
             opencode: section(settings, ralphy_agent_opencode::OpenCodeSettings::SECTION),
             copilot: section(settings, ralphy_agent_copilot::CopilotSettings::SECTION),
             cursor: section(settings, ralphy_agent_cursor::CursorSettings::SECTION),
-            gemini: section(settings, ralphy_agent_gemini::GeminiSettings::SECTION),
             antigravity: section(
                 settings,
                 ralphy_agent_antigravity::AntigravitySettings::SECTION,

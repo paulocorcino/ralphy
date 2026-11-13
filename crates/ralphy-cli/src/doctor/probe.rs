@@ -140,12 +140,7 @@ pub(super) fn hook_command(agent: Agent, cli: &Path) -> Option<hook_form::HookCo
     match agent {
         Agent::Claude => Some(ralphy_daemon::agent_state::console_hook(cli)),
         Agent::Codex => Some(ralphy_daemon::agent_state::codex_check_hook()),
-        Agent::Copilot
-        | Agent::Cursor
-        | Agent::Gemini
-        | Agent::Kimi
-        | Agent::Opencode
-        | Agent::Antigravity => None,
+        Agent::Copilot | Agent::Cursor | Agent::Kimi | Agent::Opencode | Agent::Antigravity => None,
     }
 }
 
@@ -203,12 +198,9 @@ pub(crate) fn agent_program(a: Agent) -> Option<PathBuf> {
         Agent::Cursor => ralphy_agent_cursor::locate_cursor(),
         // The binary is `agy`, found by the adapter's locator (ADR-0086 D17).
         Agent::Antigravity => ralphy_proc_util::antigravity::locate_agy(),
-        Agent::Claude
-        | Agent::Codex
-        | Agent::Copilot
-        | Agent::Gemini
-        | Agent::Kimi
-        | Agent::Opencode => locate_program(a.cli_name()),
+        Agent::Claude | Agent::Codex | Agent::Copilot | Agent::Kimi | Agent::Opencode => {
+            locate_program(a.cli_name())
+        }
     }
 }
 

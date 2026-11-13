@@ -285,24 +285,6 @@ const ADAPTER_EMIT_SITES: &[AdapterEmitSite] = &[
         ],
     ),
     (
-        "crates/ralphy-agent-gemini/src/lib.rs",
-        1,
-        1,
-        &[
-            "\"gemini\"",
-            "model.unwrap_or(DEFAULT_MODEL)",
-            "\"\"",
-            "\"\"",
-        ],
-        &[
-            "\"gemini\"",
-            "0",
-            "model.unwrap_or(DEFAULT_MODEL)",
-            "\"\"",
-            "\"\"",
-        ],
-    ),
-    (
         "crates/ralphy-agent-kimi/src/lib.rs",
         1,
         1,
