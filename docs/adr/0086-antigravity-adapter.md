@@ -522,7 +522,7 @@ What carries over from ADR-0043, under this ADR's numbers:
 | D14 images | D16 | by path |
 | D15 blast radius closed | D12, D13 | what has a switch is off; the rest is a charter rule |
 | D16 the WSL `/mnt/c` shim | D17 | an explicit probe list |
-| D17 the vendor's terms | none | to review in #784 before the adapter ships |
+| D17 the vendor's terms | none | decided 2026-11-13: the risk is the account owner's (see the end of `Fixed in #928`) |
 | D18 `kill_tree` | D17 | cooperative stop first |
 
 ## Moving from Gemini
@@ -711,6 +711,14 @@ issue, with `agy` 1.5.8 on 2026-11-13.
    run total and its per-model split.
 9. Linux updater: it runs in its own session and process group, so the
    stop does not end it; accepted, with no code (D11).
+
+Vendor terms, decided by the operator on 2026-11-13: Ralphy keeps the
+adapter as it is, with no warning and no opt-in. Ralphy runs Google's own
+`agy` binary on the account owner's own machine, signed in by the owner, and
+never reads or moves the owner's token; the risk of the vendor's section 6
+(a suspended account) is the account owner's. Rejected: an opt-in switch
+with a warning, and an API-key mode; either can come later if the vendor
+changes its terms or acts on them.
 
 ## Consequences
 
