@@ -2,6 +2,7 @@
 //! first one only raises a flag that the run reads, a later one ends the process.
 //!
 //! No signal is ignored or blocked here: a child inherits both through exec.
+//! A signal the process already ignores keeps its action.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -57,6 +58,10 @@ mod platform {
     pub(super) fn install() -> std::io::Result<()> {
         let handler: extern "C" fn(libc::c_int) = on_signal;
         for signal in SIGNALS {
+            // A signal the parent ignores stays ignored, as under `nohup`.
+            if is_ignored(signal)? {
+                continue;
+            }
             // SAFETY: the struct is zeroed, then each field is written before
             // sigaction reads it; `sa_sigaction` is a pointer-sized field that
             // holds a handler address. sigaction only reads the struct.
@@ -74,6 +79,21 @@ mod platform {
             }
         }
         Ok(())
+    }
+
+    /// Is the action of `signal` in this process `SIG_IGN`?
+    fn is_ignored(signal: libc::c_int) -> std::io::Result<bool> {
+        // SAFETY: a null new action makes sigaction only write the current one
+        // into the zeroed struct.
+        let (rc, old) = unsafe {
+            let mut old: libc::sigaction = std::mem::zeroed();
+            let rc = libc::sigaction(signal, std::ptr::null(), &raw mut old);
+            (rc, old)
+        };
+        if rc != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(old.sa_sigaction == libc::SIG_IGN)
     }
 }
 

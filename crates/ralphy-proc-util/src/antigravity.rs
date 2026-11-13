@@ -78,12 +78,15 @@ fn ralphy_dir(daemon_dir: Option<OsString>, home: Option<PathBuf>) -> Result<Pat
     Ok(home.join(".ralphy"))
 }
 
+/// The arguments of `ralphy` that the hooks file runs on each status event.
+pub const STATUS_HOOK_ARGS: [&str; 3] = ["hook", "status", "antigravity"];
+
 /// The command `ralphy doctor` runs to check the `agy` hook: the program and
 /// the arguments of the hooks file, run without a shell.
 pub fn check_hook(exe: &Path) -> HookCommand {
     let (major, minor, patch) = EXEC_FORM_FROM;
     let version = format!("{major}.{minor}.{patch}");
-    hook_for_version(Some(&version), exe, &["hook", "status", "antigravity"])
+    hook_for_version(Some(&version), exe, &STATUS_HOOK_ARGS)
 }
 
 /// The shell `agy` runs a hook command with.

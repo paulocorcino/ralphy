@@ -124,6 +124,24 @@ fn a_stopped_planners_model_is_in_the_run_split() {
     remove_scratch(&repo);
 }
 
+/// The ledger keeps the reaped planner's spend as a `plan` row with outcome
+/// `stopped`, which `ralphy usage` and the spend panel read.
+#[test]
+fn a_stopped_planner_writes_a_stopped_plan_row() {
+    let _flag = StopFlagGuard::acquire();
+    let (_agent, _report, repo) =
+        run_with_a_stopped_planner("plan-stopped-ledger", "20260728-000009");
+
+    let rows = ralphy_core::read_project_rows(&ralphy_core::git::project_slug(&repo));
+    let plan: Vec<_> = rows.iter().filter(|r| r.phase == "plan").collect();
+    assert_eq!(plan.len(), 1, "one plan row: {rows:?}");
+    assert_eq!(plan[0].outcome, "stopped");
+    assert_eq!(plan[0].issue, 1);
+    assert_eq!(plan[0].tokens.input, STOPPED_PLAN_INPUT);
+    assert_eq!(plan[0].session_id.as_deref(), Some("stopped-session"));
+    remove_scratch(&repo);
+}
+
 /// Usage on the stop does not turn it into a planning failure: the run still
 /// ends as the stop, names #1, and starts no executor.
 #[test]

@@ -20,10 +20,12 @@ struct TestChild {
 
 impl TestChild {
     fn spawn(hold: bool) -> Self {
+        Self::spawn_with(if hold { &["--hold"] } else { &[] })
+    }
+
+    fn spawn_with(args: &[&str]) -> Self {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_stop_signal_test_child"));
-        if hold {
-            cmd.arg("--hold");
-        }
+        cmd.args(args);
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
@@ -150,4 +152,32 @@ fn sigint_and_sighup_are_stop_signals() {
             "signal {signal} is a stop, not fatal: {status:?}"
         );
     }
+}
+
+#[cfg(unix)]
+#[test]
+#[expect(
+    unsafe_code,
+    reason = "FFI: libc::kill sends one signal to the helper child"
+)]
+fn an_ignored_sighup_stays_ignored() {
+    let mut child = TestChild::spawn_with(&["--ignore-hup"]);
+    let pid = libc::pid_t::try_from(child.child.id()).expect("a pid fits in pid_t");
+    // SAFETY: kill(2) takes plain integers; the pid is our own live child.
+    let sent = unsafe { libc::kill(pid, libc::SIGHUP) };
+    assert_eq!(sent, 0, "SIGHUP is sent");
+    assert!(
+        child.wait_exit(Duration::from_millis(500)).is_none(),
+        "an ignored SIGHUP must not end the process"
+    );
+    assert!(
+        child.lines.try_recv().is_err(),
+        "an ignored SIGHUP must not be a stop"
+    );
+    send_stop_signal(&child.child).expect("the stop signal is sent");
+    child.expect_line("stopped");
+    let status = child
+        .wait_exit(Duration::from_secs(5))
+        .expect("the child exits after its stop");
+    assert!(status.success(), "SIGTERM is still a stop: {status:?}");
 }

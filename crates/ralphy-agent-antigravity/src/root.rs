@@ -64,7 +64,7 @@ fn hooks_document(ralphy: &Path) -> Result<Value> {
         Ok(json!({ "type": "command", "command": command }))
     };
     let guard = handler(&["hook", "guard", "--vendor", "antigravity"])?;
-    let status = handler(&["hook", "status", "antigravity"])?;
+    let status = handler(&ralphy_proc_util::antigravity::STATUS_HOOK_ARGS)?;
     let mut events = Map::new();
     for event in STATUS_EVENTS {
         let mut handlers = Vec::new();
