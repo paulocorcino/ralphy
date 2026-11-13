@@ -27,6 +27,7 @@ use chrono::TimeZone;
 use tracing::Level;
 
 mod active_line;
+mod meter;
 mod panel;
 
 #[test]

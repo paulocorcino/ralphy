@@ -423,6 +423,7 @@ fn work_the_queue(args: &RunArgs, work: &Work<'_>, workers: Workers) -> Result<(
         args.dry_run,
         &cfg.repo_root,
         &consolidation_usage,
+        &crate::pricing::RunAgents::new(args.agent.cli_name(), work.plan_agent.cli_name()),
     );
     Ok(())
 }

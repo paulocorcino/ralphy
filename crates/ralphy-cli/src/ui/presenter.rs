@@ -20,10 +20,12 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
-use super::render::{meter_for, pick, render_active_line, render_line, sleep_label, LineExtra};
+use super::render::{
+    meter_for, pick, render_active_line, render_line, sleep_label, LineExtra, Meter,
+};
 use super::{active_phase, fit, queue_bar_label, RenderOpts};
-use crate::pricing::PriceTable;
-use crate::runstate::{event_to_runevent, EventFields, RunEvent, RunState};
+use crate::pricing::{PriceTable, RunAgents};
+use crate::runstate::{event_to_runevent, EventFields, RunEvent, RunState, UsageLite};
 
 /// The mutable live-region state behind the presenter's single `Mutex`: the folded
 /// run, the active issue's wall-clock anchor, and the two `indicatif` bars (only
@@ -83,12 +85,19 @@ struct Renderer {
     /// The read-time price table, used to project per-line USD for the `plan
     /// written` and `done` meters (ADR-0008 D8). Loaded once at construction.
     price: PriceTable,
+    /// The run's agents, so an agy id prices under its base id.
+    agents: RunAgents,
 }
 
 impl Presenter {
     /// Build a presenter, auto-detecting the terminal: styled (colour + emoji)
     /// on an attended TTY without `NO_COLOR`, else a plain clean-line renderer.
     pub(crate) fn new() -> Self {
+        Self::for_run(RunAgents::default())
+    }
+
+    /// [`Self::new`] for a run: the meters price each agy id under its base id.
+    pub(crate) fn for_run(agents: RunAgents) -> Self {
         let is_tty = console::Term::stderr().is_term();
         let no_color = std::env::var_os("NO_COLOR").is_some();
         let styled = is_tty && !no_color;
@@ -103,6 +112,7 @@ impl Presenter {
                 emoji: styled,
             },
             price: PriceTable::load(),
+            agents,
         };
         // ALL terminal I/O runs on this one thread: it applies each event and, on a
         // styled TTY, repaints the active line every second so the elapsed clock keeps
@@ -139,6 +149,10 @@ impl Presenter {
 }
 
 impl Renderer {
+    fn meter(&self, plan: Option<&UsageLite>, last: &UsageLite) -> Meter {
+        meter_for(&self.price, &self.agents, plan, last)
+    }
+
     /// The render loop: apply each event as it arrives, repaint the clock on the idle
     /// tick, and answer a [`PresenterMsg::Flush`] once everything already queued is
     /// drained (so teardown clears the region only after the last scroll line is on
@@ -252,7 +266,7 @@ impl Renderer {
             RunEvent::PlanWritten { usage, .. } => {
                 // The scroll line shows the planning meter + elapsed-so-far; the
                 // fold stashed the planning usage for the eventual `done` line.
-                let meter = Some(meter_for(&self.price, None, usage));
+                let meter = Some(self.meter(None, usage));
                 let extra = match s.run.active_issue() {
                     Some(e) => LineExtra {
                         duration: s.elapsed_of(e.number),
@@ -286,7 +300,7 @@ impl Renderer {
                         duration: s.elapsed_of(e.number),
                         model: e.model.clone(),
                         effort: e.effort.clone(),
-                        meter: Some(meter_for(&self.price, e.plan_usage.as_ref(), usage)),
+                        meter: Some(self.meter(e.plan_usage.as_ref(), usage)),
                     },
                     None => LineExtra::default(),
                 };

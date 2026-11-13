@@ -3,6 +3,12 @@
 use crate::delivery;
 use crate::ui;
 
+/// What the console of a run needs: the `--verbose` flag and the run's agents.
+pub(crate) struct ConsoleOpts {
+    pub(crate) verbose: bool,
+    pub(crate) agents: crate::pricing::RunAgents,
+}
+
 /// Install the tracing stack. The full structured log always goes to the run's
 /// `ralphy.log` (no colour, local timestamps). On screen, the animated presenter
 /// (ADR-0006) renders the run's lifecycle by default; `--verbose` (or a set
@@ -18,7 +24,7 @@ use crate::ui;
 /// caller routes the early-exit notice and the final panel through it uniformly.
 pub(crate) fn init_tracing(
     log_file: Option<std::fs::File>,
-    verbose: bool,
+    console: ConsoleOpts,
     notifier: Option<delivery::DeliveryLayer>,
     events: Option<delivery::DeliveryLayer>,
     snapshot: delivery::DeliveryLayer,
@@ -40,7 +46,7 @@ pub(crate) fn init_tracing(
 
     // `--verbose`, or any explicit env filter, means the operator wants the raw
     // log on screen — drop the presenter and disable animation (ADR-0006 D3).
-    let raw_stderr = verbose
+    let raw_stderr = console.verbose
         || std::env::var_os("RUST_LOG").is_some()
         || std::env::var_os("RALPHY_LOG").is_some();
 
@@ -74,7 +80,7 @@ pub(crate) fn init_tracing(
         registry.with(stderr_layer).init();
         ui::PresenterHandle::plain().with_edge(edge)
     } else {
-        let presenter = ui::Presenter::new();
+        let presenter = ui::Presenter::for_run(console.agents);
         let handle = presenter.handle().with_edge(edge);
         registry.with(presenter).init();
         handle

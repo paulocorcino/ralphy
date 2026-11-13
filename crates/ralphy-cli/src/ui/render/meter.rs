@@ -4,7 +4,7 @@ use std::time::Duration;
 
 pub(crate) use ralphy_pricing::fmt_tokens;
 
-use crate::pricing::PriceTable;
+use crate::pricing::{PriceTable, RunAgents};
 use crate::ui::UsageLite;
 
 /// A priced token meter for one scroll-up line: the combined breakdown to show
@@ -31,9 +31,9 @@ pub(crate) struct LineExtra {
 /// Price one phase's [`UsageLite`] at read time, or `None` when its model is absent
 /// or unpriced. `UsageLite` aliases the core `Usage`, which `crate::pricing::counts`
 /// narrows to the [`TokenCounts`](crate::pricing::TokenCounts) the table prices on.
-fn price_lite(pt: &PriceTable, u: &UsageLite) -> Option<f64> {
+fn price_lite(pt: &PriceTable, agents: &RunAgents, u: &UsageLite) -> Option<f64> {
     let model = u.model.as_deref().filter(|m| !m.is_empty())?;
-    pt.cost_usd(model, &crate::pricing::counts(u))
+    pt.cost_usd(agents.key(model), &crate::pricing::counts(u))
 }
 
 /// Build a [`Meter`] for an issue line from its planning usage (stashed, may be
@@ -41,7 +41,12 @@ fn price_lite(pt: &PriceTable, u: &UsageLite) -> Option<f64> {
 /// breakdown sums both phases; the USD prices each phase's model separately (plan
 /// and execute often differ) and sums the priced portion, mirroring
 /// `cost_usd_by_model`'s `$?`/`+?` semantics (ADR-0008 D8).
-pub(crate) fn meter_for(pt: &PriceTable, plan: Option<&UsageLite>, last: &UsageLite) -> Meter {
+pub(crate) fn meter_for(
+    pt: &PriceTable,
+    agents: &RunAgents,
+    plan: Option<&UsageLite>,
+    last: &UsageLite,
+) -> Meter {
     let mut combined = last.clone();
     combined.model = None; // the sum spans models; the label's model comes from the active issue
     if let Some(p) = plan {
@@ -57,7 +62,7 @@ pub(crate) fn meter_for(pt: &PriceTable, plan: Option<&UsageLite>, last: &UsageL
         if u.total() == 0 {
             continue;
         }
-        match price_lite(pt, u) {
+        match price_lite(pt, agents, u) {
             Some(c) => {
                 usd += c;
                 any_priced = true;
