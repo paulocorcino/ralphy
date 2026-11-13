@@ -163,6 +163,7 @@ mod tests {
         let rows: &[(&str, f64)] = &[
             ("gemini-4-argon", 2.0 + 10.0 + 0.1),
             ("gemini-3.8-flash", 0.75 + 3.75 + 0.075),
+            ("gemini-4-hydrogen", 1.5 + 7.5 + 0.075),
             ("claude-opus-5-5", 4.0 + 20.0 + 0.2 + 5.0),
             ("claude-sonnet-5-5", 2.0 + 10.0 + 0.1 + 2.5),
             ("gpt-oss-120b", 0.09 + 0.36),
@@ -176,5 +177,15 @@ mod tests {
                 "{id}: expected {expected}, got {got}"
             );
         }
+    }
+
+    #[test]
+    fn the_agy_orchestrator_id_stays_unpriced() {
+        let table = PriceTable::defaults();
+        let tokens = one_million_each();
+        assert_eq!(
+            table.cost_usd("gemini-pro-orchestrator-g1-pro", &tokens),
+            None
+        );
     }
 }

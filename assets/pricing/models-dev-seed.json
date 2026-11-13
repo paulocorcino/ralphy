@@ -119,6 +119,9 @@
       },
       "gemini-3.8-flash": {
         "cost": { "input": 0.75, "output": 3.75, "cache_read": 0.075 }
+      },
+      "gemini-4-hydrogen": {
+        "cost": { "input": 1.5, "output": 7.5, "cache_read": 0.075 }
       }
     }
   },

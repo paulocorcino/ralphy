@@ -32,3 +32,11 @@ fn price_key_strips_the_effort_suffix() {
     assert_eq!(price_key("claude-opus-5-5-high"), "claude-opus-5-5");
     assert_eq!(price_key("gemini-4-argon"), "gemini-4-argon");
 }
+
+#[test]
+fn an_xhigh_model_id_gets_no_effort_flag() {
+    assert_eq!(
+        effort_flag(Some("gemini-4-hydrogen-xhigh"), Some("high")),
+        None
+    );
+}
