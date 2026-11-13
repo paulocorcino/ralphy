@@ -7,7 +7,7 @@ use super::*;
 /// `render_triage_threads`).
 const FORGE_ITEMS: usize = 26;
 /// Lines that tell the agent to run `gh issue view`, under `assets/prompts/`.
-const PROMPT_GH_ISSUE_VIEW: usize = 22;
+const PROMPT_GH_ISSUE_VIEW: usize = 20;
 
 const SPAWNED: [&str; 3] = ["git", "gh", "ssh"];
 
