@@ -5,9 +5,9 @@ use std::path::PathBuf;
 
 use crate::{
     antigravity::scan_antigravity, claude::scan_claude, codex::scan_codex_with_stems,
-    copilot::scan_copilot, cursor::scan_cursor, gemini::scan_gemini, kimi::scan_kimi,
-    opencode::scan_opencode, AntigravityScan, ClaudeScan, CodexScan, CopilotScan, CursorScan,
-    GeminiScan, InteractiveRecord, KimiScan, OpenCodeScan,
+    copilot::scan_copilot, cursor::scan_cursor, kimi::scan_kimi, opencode::scan_opencode,
+    AntigravityScan, ClaudeScan, CodexScan, CopilotScan, CursorScan, InteractiveRecord, KimiScan,
+    OpenCodeScan,
 };
 
 /// A ledger identity whose model is unknown.
@@ -34,7 +34,6 @@ pub struct RecoveryStores {
     pub codex_dir: PathBuf,
     pub copilot_db: PathBuf,
     pub cursor_dir: PathBuf,
-    pub gemini_dir: PathBuf,
     pub kimi_dir: PathBuf,
     pub kimi_code_dir: PathBuf,
     pub opencode_db: PathBuf,
@@ -89,12 +88,6 @@ fn scan_agent(agent: &str, stores: &RecoveryStores) -> Vec<InteractiveRecord> {
         }),
         "cursor" => scan_cursor(&CursorScan {
             cursor_dir: &stores.cursor_dir,
-            run_session_ids: &no_runs,
-            repos: &[],
-            since: None,
-        }),
-        "gemini" => scan_gemini(&GeminiScan {
-            gemini_dir: &stores.gemini_dir,
             run_session_ids: &no_runs,
             repos: &[],
             since: None,
@@ -328,7 +321,6 @@ mod tests {
             codex_dir: root.join("codex"),
             copilot_db: root.join("copilot.db"),
             cursor_dir: root.join("cursor"),
-            gemini_dir: root.join("gemini"),
             kimi_dir: root.join("kimi"),
             kimi_code_dir: root.join("kimi-code"),
             opencode_db: root.join("opencode.db"),
@@ -355,22 +347,6 @@ mod tests {
         );
         write(
             &stores
-                .gemini_dir
-                .join("tmp/project/chats/sess-gemini.jsonl"),
-            concat!(
-                "{\"sessionId\":\"sess-gemini\",\"startTime\":\"2026-07-29T00:00:00Z\",",
-                "\"lastUpdated\":\"2026-07-29T00:00:01Z\",\"kind\":\"main\"}\n",
-                "{\"id\":\"turn\",\"type\":\"gemini\",\"tokens\":{\"input\":10,\"output\":2,",
-                "\"cached\":0,\"thoughts\":0,\"tool\":0,\"total\":12},",
-                "\"model\":\"gemini-3.5-flash\"}\n",
-            ),
-        );
-        write(
-            &stores.gemini_dir.join("tmp/project/.project_root"),
-            "C:\\repo",
-        );
-        write(
-            &stores
                 .kimi_code_dir
                 .join("sessions/ws/sess-kimi/agents/main/wire.jsonl"),
             concat!(
@@ -387,7 +363,6 @@ mod tests {
             ("codex", "rollout-codex", Some("gpt-5-codex")),
             ("copilot", "sess-copilot", Some("claude-sonnet-5")),
             ("cursor", "sess-cursor", None),
-            ("gemini", "sess-gemini", Some("gemini-3.5-flash")),
             ("kimi", "sess-kimi", Some("kimi-for-coding")),
             ("opencode", "sess-opencode", Some("k2p6")),
         ];

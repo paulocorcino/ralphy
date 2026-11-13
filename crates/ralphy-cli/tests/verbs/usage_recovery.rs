@@ -25,7 +25,6 @@ fn run_recovery(usage: &Path, stores: &Path) -> std::process::Output {
         .env("RALPHY_CODEX_DIR", missing("codex"))
         .env("RALPHY_COPILOT_DB", missing("copilot.db"))
         .env("RALPHY_CURSOR_DIR", missing("cursor"))
-        .env("RALPHY_GEMINI_DIR", missing("gemini"))
         .env("RALPHY_KIMI_DIR", missing("kimi"))
         .env("RALPHY_KIMI_CODE_DIR", missing("kimi-code"))
         .env("RALPHY_OPENCODE_DB", missing("opencode.db"))
