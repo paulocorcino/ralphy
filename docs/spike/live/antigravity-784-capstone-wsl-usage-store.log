@@ -1,0 +1,9 @@
+# D5 on WSL: stream usage against the store, per conversation.
+# WSL Ubuntu on Windows 11, agy 1.5.8, owned root <home>/.ralphy/antigravity-root, 2026-11-13 (#784 capstone).
+# Binary: <home>/p1lint/target/debug/ralphy, debug build of feat/784-capstone a439c946.
+== stream vs store, run 20261113-032212 (execute in antigravity.log, consolidation in consolidate.log)
+1c50b4c2-5a59-475f-8b4c-c7a7733a476e: stream calls=14 in=80970 out=1537 cache_read=160803 | store rows=14 in=80970 out=1537 cache_read=160803 labels=['Gemini 3.8 Flash (Low)'] | equal=True
+83fd1b7e-5685-4f61-8f4a-150acb238852: stream calls=11 in=34935 out=733 cache_read=102164 | store rows=11 in=34935 out=733 cache_read=102164 labels=['Gemini 4 Argon (Medium)'] | equal=True
+== plan session: store only (its stream log was overwritten by the execute session)
+bcb98b13-ae4e-4499-bd9e-1629304ce52e ([53449, 1042, 123233], 10, {'Gemini 3.8 Flash (Low)'})
+== ralphy.log: plan written up=53449 cr=123233 cw=0 out=1042

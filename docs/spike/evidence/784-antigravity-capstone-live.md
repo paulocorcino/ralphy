@@ -15,8 +15,10 @@ Binary: `target/debug/ralphy.exe` built from `feat/784-capstone` at main
 `gemini-3.8-flash-low` for every call Ralphy chose, except where a line says
 otherwise. Lab: `paulocorcino/FinCal` in fresh temporary clones.
 
-WSL host: not run yet. The operator has not signed in on WSL; the WSL lines
-are open (see the end of this file).
+WSL host: Ubuntu 22.04.5 LTS on WSL 2 (kernel 6.6.87.2) on the same machine,
+`agy` 1.5.8, owned root `<home>/.ralphy/antigravity-root` (the operator signed
+in there once), date 2026-11-13. Binary: `<home>/p1lint/target/debug/ralphy`,
+a debug build of `feat/784-capstone` at `a439c946`.
 
 ## Windows
 
@@ -86,15 +88,26 @@ are open (see the end of this file).
   such calls ran on the default model by mistake (the first `/quota` used
   15 070 input tokens). Ralphy itself spawns `agy` with no shell, so a run
   is not affected.
-- Limit: not reached. The operator decided (2026-11-12) not to spend tokens
-  to reach one. The quota read-out `agy -p /quota --output-format json`
-  answered in 4 s with 0 tokens and `num_turns: 0`; its JSON has the shape
-  the adapter's parser reads (`command.data.groups[].buckets[]` with
-  `remaining_fraction` and `reset_time`), with three groups: `Gemini Models`
-  (weekly 0.9957, 5 h 1.0), `Claude and GPT models` (weekly 1.0, 5 h 1.0),
-  `Gemini 4 Argon` (weekly 0.9891). No bucket is at 0, so the parser gives
-  no reset, and a limit now would be `Limit(None)`. The classifier's
-  patterns are not checked against a real limit.
+- Limit: observed on Windows, `agy` 1.5.8, 2026-11-13, measured by the
+  parent agent with the operator's approval to spend the most expensive
+  model. Five calls of `claude-opus-5-5-high` (each about 26 000 to 33 000
+  input and 20 000 to 22 000 output tokens, about 3.5 min) took the
+  `Claude and GPT models` 5 h bucket from 1.0 to 0 and its weekly bucket
+  from 1.0 to 0.46; the `Gemini Models` group stayed at about 0.97 to 0.98.
+  The sixth call: exit 3 after 4.5 s, JSON `status: "ERROR"`,
+  `finished_reason: "error"`, `error: "Individual quota reached. Please
+  upgrade your subscription to increase your limits. Resets in 4h41m14s."`,
+  usage all 0, and on stderr `error: Individual quota reached. ...` then
+  `AGY_ERROR: {"short_error":"RESOURCE_EXHAUSTED (code 429): ...",
+  "status":"RESOURCE_EXHAUSTED","error_code":429,"code_kind":"http",
+  "retryable":true,...}`. Then `ralphy run --agent antigravity --only-issue
+  110 --plan-model claude-opus-5-5-high` classified it as a limit with a
+  reset: `ralphy.log` has `waiting for usage-limit reset remaining_min=280`,
+  the `reset_time` of the 5 h bucket read from `/quota`, and the run waited.
+  The parent stopped it after 10 min; nothing was posted on GitHub. The
+  reset comes from `/quota`: the stderr `Resets in ...` text is not parsed.
+  The limit is per model group: no `Gemini Models` bucket was at 0. Log:
+  `antigravity-784-capstone-win-limit.log`.
 - Two runs at once in one root: two `ralphy consolidate --agent antigravity
   --model gemini-3.8-flash-low` started in the same second in two clones,
   both with the owned root. Both exit 0 (56 s and 126 s), each with its own
@@ -190,10 +203,61 @@ are open (see the end of this file).
   us" can be read to cover a tool that drives `agy`. This is a decision for
   the operator, not a code change.
 
-## WSL (open)
+## WSL
 
-Not run: the operator has not signed in for Ralphy's root on WSL. Open
-until then: issue #132 end to end on a temp FinCal clone (C1.3), usage
-against the store, hooks under `sh -c` from the file Ralphy writes (C1.7),
-and a second run stopped with `SIGTERM` to see its `result` (D17). The
-sign-in, once, in a WSL shell: `agy --gemini_dir=$HOME/.ralphy/antigravity-root`.
+- WSL: issue #132 closed by ralphy run --agent antigravity (`--issues 132
+  --base-branch master --branch-mode new --plan-model gemini-3.8-flash-low
+  --exec-model gemini-3.8-flash-low --no-telegram`), run `20261113-032212`,
+  exit 0 in 208 s: plan 42 s (3 steps), execute 62 s (`[ok] #132 done`),
+  knowledge consolidated in 92 s. The issue is closed as completed with
+  Ralphy's comments; the delivery commit `00447c4` is on the local branch
+  `afk/run-20261113-032212` of the temp clone, and nothing was pushed. Each
+  session wrote `antigravity: agy version 1.5.8` first. Log:
+  `antigravity-784-capstone-wsl-run.log`.
+- Usage on WSL: stream sum equals store sum for the execute session (14
+  calls, 80 970 in, 1 537 out, 160 803 cache read) and for the
+  consolidation (11 calls, 34 935 in, 733 out, 102 164 cache read), and the
+  run log's `up=80970 cr=160803 out=1537` is the same. The plan session's
+  stream was overwritten by the execute session; its store (10 rows,
+  53 449 in, 1 042 out, 123 233 cache read) equals the run log's `plan
+  written up=53449 cr=123233 out=1042`. The consolidation again used
+  `Gemini 4 Argon (Medium)` (no `--model`). Log:
+  `antigravity-784-capstone-wsl-usage-store.log`.
+- Linux hooks: SessionStart seen from the hooks file Ralphy wrote in
+  `<root>/config/hooks.json`, whose commands are the single-quoted program
+  path, for example `'<home>/p1lint/target/debug/ralphy' hook status
+  antigravity`. `agy` runs each hook as `sh -c '<path>' hook ...`, with the
+  session's `agy` as the parent (sampled: three `hook status`, one `hook
+  guard --vendor antigravity`). `SessionStart` came 7.5 s after the launch of
+  the execute session (03:23:01.05 to 03:23:08.56) and 7.8 s after the
+  consolidation's; all six events fired, and each `PreToolUse` has its
+  `PostToolUse` (10 of 10 in the consolidation), so the guard allowed every
+  tool call. Log: `antigravity-784-capstone-wsl-hooks.log`.
+- Process groups on Linux: Ralphy starts each `agy` session in its own
+  process group (pgid = the `agy` pid) inside Ralphy's session.
+- Updater on Linux: at 03:32:45, after the 15-minute window, the session's
+  `agy` (pid 98034, pgid 98034) started `agy --bg-updater` (pid 98251) in a
+  new session and group of its own (sid = pgid = 98251); it ran `agy
+  --version` and ended by itself after 3.6 s. It is in neither the run's
+  group nor the `agy` group, so the Unix tree kill, which sends `SIGKILL` to
+  the group `agy` leads, does not reach it. Log:
+  `antigravity-784-capstone-wsl-updater.log`.
+- Stop by `kill -TERM <ralphy pid>`: not a stop of the agent. A run on the
+  throwaway issue #133, `SIGTERM` to the `ralphy` pid 15 s into planning:
+  `ralphy` exited 143 within 3 ms (`ralphy run` has no `SIGTERM` handler);
+  `agy`, in its own group, got no signal, was moved under `/init`, finished
+  its planning turn (it wrote `.ralphy/plan.md`; 9 calls, 51 108 in), with
+  its hooks still firing, and ended by itself 27 s later. No run recorded
+  that usage and nothing was posted on #133. Log:
+  `antigravity-784-capstone-wsl-stop.log`.
+- Stop by `ralphy stop` (the operator's stop): a third run on #133,
+  `ralphy stop --repo .` 18 s into planning. The run logged `operator stop
+  — reaping the headless child`, the adapter sent `SIGTERM` to the `agy`
+  group, and `agy` wrote one `result` line with `status:"ERROR"`,
+  `error:"interrupted"`, `finished_reason:"interrupted"` and the usage so
+  far (38 369 in, 160 out, 16 423 cache read), and `error: interrupted` on
+  stderr. `agy` was gone 1.3 s after `ralphy stop` returned; `ralphy` exit
+  0 with `Stopped: you stopped the run during #133. Branch handed back with
+  the work in place; #133 stays open.` The run summary records `up=0 cr=0
+  out=0`: the usage of the interrupted `result` is not counted. Log:
+  `antigravity-784-capstone-wsl-stop.log`.

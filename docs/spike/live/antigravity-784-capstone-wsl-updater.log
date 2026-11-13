@@ -1,0 +1,32 @@
+# D11 on WSL: agy processes with pid, parent, group and session; agy's updater log lines.
+# WSL Ubuntu on Windows 11, agy 1.5.8, owned root <home>/.ralphy/antigravity-root, 2026-11-13 (#784 capstone).
+# Binary: <home>/p1lint/target/debug/ralphy, debug build of feat/784-capstone a439c946.
+== agy processes of run 1 (pid, ppid, pgid, sid); ralphy pid=22513 pgid=22166
+03:22:12.033 start pid=22466 ppid=22174 pgid=22166 sid=22166 args=agy --version
+03:22:13.078 gone pid=22466
+03:22:18.358 start pid=22735 ppid=22513 pgid=22735 sid=22166 args=<home>/.local/bin/agy --version
+03:22:19.403 start pid=22775 ppid=22513 pgid=22775 sid=22166 args=<home>/.local/bin/agy --gemini_dir=<home>/.ralphy/antigravity-root --output-format stream-json --input-format stream-json --dangerously-skip-permissions --model gemini-3.8-flash-low
+03:22:19.403 gone pid=22735
+03:23:00.524 gone pid=22775
+03:23:01.046 start pid=23920 ppid=22513 pgid=23920 sid=22166 args=<home>/.local/bin/agy --gemini_dir=<home>/.ralphy/antigravity-root --output-format stream-json --input-format stream-json --dangerously-skip-permissions --model gemini-3.8-flash-low
+03:23:57.154 gone pid=23920
+03:24:07.486 start pid=27336 ppid=22513 pgid=27336 sid=22166 args=<home>/.local/bin/agy --gemini_dir=<home>/.ralphy/antigravity-root --output-format stream-json --input-format stream-json --dangerously-skip-permissions
+03:25:39.872 gone pid=27336
+== agy processes of the stop run
+03:32:43.156 start pid=97826 ppid=96755 pgid=97826 sid=57414 args=<home>/.local/bin/agy --version
+03:32:44.190 start pid=98034 ppid=96755 pgid=98034 sid=57414 args=<home>/.local/bin/agy --gemini_dir=<home>/.ralphy/antigravity-root --output-format stream-json --input-format stream-json --dangerously-skip-permissions --model gemini-3.8-flash-low
+03:32:44.190 gone pid=97826
+03:32:45.224 start pid=98251 ppid=98034 pgid=98251 sid=98251 args=<home>/.local/bin/agy --bg-updater --app_data_dir=antigravity-cli --gemini_dir=<home>/.ralphy/antigravity-root
+03:32:46.269 start pid=98465 ppid=98251 pgid=98251 sid=98251 args=<home>/.local/bin/agy --version
+03:32:47.299 gone pid=98465
+03:32:48.844 gone pid=98251
+03:33:24.311 gone pid=98034
+== agy's own log: updater lines
+I1113 03:17:16.226173       1 auto_updater.go:334] Spawned background update process with PID 14313
+I1113 03:17:56.854751       1 auto_updater.go:281] Last check was less than 15 minutes ago, skipping update (fast path)
+I1113 03:18:50.079534       1 auto_updater.go:281] Last check was less than 15 minutes ago, skipping update (fast path)
+I1113 03:22:20.346319       1 auto_updater.go:281] Last check was less than 15 minutes ago, skipping update (fast path)
+I1113 03:23:01.982043       1 auto_updater.go:281] Last check was less than 15 minutes ago, skipping update (fast path)
+I1113 03:24:08.281448       1 auto_updater.go:281] Last check was less than 15 minutes ago, skipping update (fast path)
+I1113 03:32:45.039215       1 auto_updater.go:334] Spawned background update process with PID 98251
+I1113 03:34:06.012828       1 auto_updater.go:281] Last check was less than 15 minutes ago, skipping update (fast path)
