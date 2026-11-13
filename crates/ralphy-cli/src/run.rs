@@ -93,6 +93,10 @@ pub(crate) fn run_cmd(args: &RunArgs) -> Result<()> {
     // thread) and the tracing subscriber. `obs` stays whole so `start_delivery` is the ONE
     // place a delivery worker is spawned; a `?` bail above it returns with the rings unstarted.
     let obs = install_observability(log_file, args, &repo_root);
+    // After the subscriber, so a failed install is logged (ADR-0054, amendment 2026-11-13).
+    if let Err(e) = ralphy_proc_util::stop_signal::install() {
+        tracing::warn!(error = %e, "could not handle stop signals; a Ctrl-C ends the run at once");
+    }
 
     // The repo name feeds the run title, which seeds the header face and the Telegram card.
     let repo_name = repo_root

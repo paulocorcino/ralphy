@@ -75,12 +75,7 @@ fn main() -> Result<ExitCode> {
         run::strip_secret_tokens_from_env();
     }
     let outcome = match cli.command {
-        Command::Run(args) => {
-            if let Err(e) = ralphy_proc_util::stop_signal::install() {
-                warn!(error = %e, "could not handle stop signals; a Ctrl-C ends the run at once");
-            }
-            run::run_cmd(&args)
-        }
+        Command::Run(args) => run::run_cmd(&args),
         Command::Consolidate(args) => consolidate_cmd(args),
         Command::Models(args) => models::run(&args),
         Command::Config(args) => config::run(args),
