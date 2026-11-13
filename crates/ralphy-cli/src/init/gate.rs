@@ -13,7 +13,6 @@ pub(crate) enum Agent {
     Codex,
     Copilot,
     Cursor,
-    Gemini,
     Kimi,
     Opencode,
     Antigravity,
@@ -30,14 +29,13 @@ impl Agent {
     /// A NEWCOMER GOES LAST, for the same reason: appending preserves every
     /// current no-flag choice, whereas inserting one before `Copilot` would change
     /// it on a machine already logged into that newcomer.
-    pub(crate) const ALL: [Agent; 8] = [
+    pub(crate) const ALL: [Agent; 7] = [
         Agent::Claude,
         Agent::Codex,
         Agent::Kimi,
         Agent::Opencode,
         Agent::Copilot,
         Agent::Cursor,
-        Agent::Gemini,
         Agent::Antigravity,
     ];
 
@@ -47,7 +45,6 @@ impl Agent {
             Agent::Codex => "codex",
             Agent::Copilot => "copilot",
             Agent::Cursor => "cursor",
-            Agent::Gemini => "gemini",
             Agent::Kimi => "kimi",
             Agent::Opencode => "opencode",
             Agent::Antigravity => "antigravity",
@@ -63,7 +60,6 @@ impl Agent {
             Agent::Codex => ralphy_agent_codex::ACCEPTS_IMAGES,
             Agent::Copilot => ralphy_agent_copilot::ACCEPTS_IMAGES,
             Agent::Cursor => ralphy_agent_cursor::ACCEPTS_IMAGES,
-            Agent::Gemini => ralphy_agent_gemini::ACCEPTS_IMAGES,
             Agent::Kimi => ralphy_agent_kimi::ACCEPTS_IMAGES,
             Agent::Opencode => ralphy_agent_opencode::ACCEPTS_IMAGES,
             Agent::Antigravity => ralphy_agent_antigravity::ACCEPTS_IMAGES,
@@ -175,17 +171,6 @@ fn agent_status(f: &EnvFindings, agent: Agent) -> &'static str {
 /// The notes that explain a cost or a missing tool; empty when there is none.
 fn notes(f: &EnvFindings) -> String {
     let mut out = String::new();
-    // The router tax is a COST, not a blocker: unpinned, this vendor spends a
-    // second, billed routing call per turn (ADR-0043 D8/#257). Surfaced here so it
-    // is read before the first run rather than on a bill.
-    if f.agents_present.contains(&Agent::Gemini) {
-        out.push_str(
-            "note: gemini routes the model when none is pinned, spending a second, paid \
-             routing call (one extra API request) per turn — pin gemini.plan_model / \
-             gemini.exec_model with `ralphy config set` to halve request consumption\n",
-        );
-    }
-
     // git backs every branch/commit/tag/undo; when it is missing its absence
     // would otherwise read as `NO GITHUB REMOTE`. Point Windows operators at Git
     // for Windows, which also provides the git-bash shell #291 pins SHELL to.
@@ -283,13 +268,6 @@ pub(crate) fn agent_logged_in(a: Agent) -> bool {
         // exit-status tail would report every logged-out Cursor operator as logged
         // in — the precise failure this arm exists to avoid.
         Agent::Cursor => return cursor_logged_in(ralphy_agent_cursor::probe_cursor_login()),
-
-        // The third early return, for the same reason as Cursor's but keyed on a
-        // CODE rather than a JSON field: this vendor answers authentication with
-        // exit 41 (ADR-0043 D6), and the shared `status().success()` tail would
-        // report every non-zero exit — a bad flag, a config error — as "logged
-        // out". The probe (`--list-sessions`) costs no model call.
-        Agent::Gemini => return ralphy_agent_gemini::probe_gemini_login(),
 
         // `agy models` in the owned root lists models only when signed in, and
         // costs no model call (ADR-0086 D7).

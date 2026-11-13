@@ -327,8 +327,6 @@ fn work_the_queue(args: &RunArgs, work: &Work<'_>, workers: Workers) -> Result<(
         wiring::resolve_copilot(plan_flag.clone(), exec_flag.clone(), &adapters.copilot);
     let resolved_cursor =
         wiring::resolve_cursor(plan_flag.clone(), exec_flag.clone(), &adapters.cursor);
-    let resolved_gemini =
-        wiring::resolve_gemini(plan_flag.clone(), exec_flag.clone(), &adapters.gemini);
     let resolved_antigravity = wiring::resolve_antigravity(
         plan_flag.clone(),
         exec_flag.clone(),
@@ -353,7 +351,6 @@ fn work_the_queue(args: &RunArgs, work: &Work<'_>, workers: Workers) -> Result<(
         resolved_effort,
         &resolved_copilot,
         &resolved_cursor,
-        &resolved_gemini,
         &resolved_antigravity,
         idle_minutes,
     );
@@ -371,7 +368,6 @@ fn work_the_queue(args: &RunArgs, work: &Work<'_>, workers: Workers) -> Result<(
                 resolved_effort,
                 &resolved_copilot,
                 &resolved_cursor,
-                &resolved_gemini,
                 &resolved_antigravity,
                 idle_minutes,
             ),

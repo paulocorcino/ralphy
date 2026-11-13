@@ -175,7 +175,6 @@ fn every_argv_the_daemon_spawns_parses() {
         d::worktree_list_argv(),
         d::changes_list_argv(),
         d::sync_status_argv(),
-        d::gemini_root_argv(),
     ];
     let mut ok = |label: &str, argv: Result<Vec<String>, d::ArgvError>| {
         built.push(argv.unwrap_or_else(|e| panic!("{label}: the daemon refused: {e}")));

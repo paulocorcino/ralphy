@@ -1,6 +1,6 @@
 {
   "daemon_id": "<daemon_id>",
   "environment": "<environment>",
-  "message": "gemini: autonomy is disabled by your administrator",
+  "message": "the Gemini CLI agent was removed: use --agent antigravity",
   "reason": "refused"
 }

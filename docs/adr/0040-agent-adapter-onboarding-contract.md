@@ -31,6 +31,9 @@ made one — see the end of this file.
 **Amendment 5** (2026-11-12) records the Antigravity adapter: the first vendor
 exception to C12 rule 4, and the drift found in the wiring inventory — see the end
 of this file.
+**Amendment 6** (2026-11-12) records the removal of the Gemini adapter: the
+owned-root paragraph and the layout pin now describe Antigravity — see the end of
+this file.
 **Amendment 4** (2026-10-28) adds §C12, the rules for a hook command, sharpens
 C3, and adds the state source to Tier 4 — see the end of this file.
 
@@ -588,3 +591,22 @@ names the path.
 - The state source is `hooks`: the map of the six `agy` events is in
   `agent_state/antigravity.rs`, pinned by
   `tests/fixtures/antigravity_agent_state_mapping.json`.
+
+## Amendment 6 — 2026-11-12, the Gemini adapter is removed
+
+Source: [ADR-0086](./0086-antigravity-adapter.md) D19. The `ralphy-agent-gemini`
+crate and the `gemini` vendor are gone. Two passages of this ADR named Gemini as
+the example of an owned configuration root; Antigravity is the example now.
+
+- **Owned-root paragraph of Tier 4.** The vendor with an owned configuration
+  root is Antigravity: `agy --gemini_dir=<root>`, with the hook and settings
+  files written into the root. The root is one per OS user. When it is absent,
+  the session route runs `ralphy antigravity prepare-root` and checks the root
+  again. It still fails closed: a root that is still missing refuses the launch
+  before `spec_for` and before any spawn. A console of a saved `gemini` session
+  is refused with the removal message.
+- **The layout pin.** The daemon no longer keeps its own copy of the root
+  layout, so the pin test `the_gemini_root_layout_matches_the_adapters_own` is
+  gone. The daemon and the CLI resolve the root through
+  `ralphy_proc_util::antigravity::owned_root`, one function for both.
+- **Roster digit.** Digit `8`, once Gemini's, is free. Antigravity takes `7`.

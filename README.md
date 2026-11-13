@@ -12,7 +12,7 @@ Ralphy is one small binary that turns the computer where your code lives into a 
 you can reach from any other screen. It runs a resident **daemon** on your box and serves a
 **workbench**: projects, a file explorer with a real editor, your git changes, your issue
 board, live runs, spend — and **real agent terminals** (Claude, Codex, OpenCode, Copilot,
-Cursor, Gemini, Antigravity, Kimi) side by side in one tab.
+Cursor, Antigravity, Kimi) side by side in one tab.
 
 The terminals belong to the daemon, not to the browser. Close the laptop, pick up the
 tablet, open the same URL: the sessions are still running, with their scrollback, **and your
@@ -88,7 +88,7 @@ checksum, replaces the binary in place, and restarts the daemon if one is runnin
 
 - 🤖 **At least one coding-agent CLI, signed in.** That's the brain behind the terminals and
   the runs. [Claude Code](https://claude.com/claude-code) is the default; Codex, OpenCode,
-  Copilot, Cursor, Gemini, Antigravity and Kimi work too.
+  Copilot, Cursor, Antigravity and Kimi work too.
   → [which agents, and how to pick one](docs/agents.md)
 - 🐙 **The `gh` CLI, logged in** — needed for the issue board and the overnight run. Check
   with `gh auth status`. (Not using GitHub? The consoles, explorer, notes and changes work
@@ -308,7 +308,7 @@ git merge afk/run-<stamp>    git branch -D afk/run-<stamp>
   pass. → [docs/verify-gate.md](docs/verify-gate.md)
 - 🧯 **Command guardrails** — Claude Code sessions block `git push`, pull request writes,
   `reset --hard` and other destructive commands mid-run. Codex, OpenCode, Copilot and
-  Antigravity sessions block pushes and pull request writes. Kimi, Cursor and Gemini rely on
+  Antigravity sessions block pushes and pull request writes. Kimi and Cursor rely on
   their own vendor's controls. → [SECURITY.md](SECURITY.md)
 - 🗣️ **Only your team talks to the agent** — issue comments from people who are not
   collaborators on the repo never reach it.

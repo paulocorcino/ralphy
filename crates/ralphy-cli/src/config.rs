@@ -5,7 +5,6 @@
 //! hardcoded default ([`resolve`]). The two Copilot effort keys have no flag
 //! (#227), and the adapter clamps their level per model (#233). Cursor has no
 //! model key: `--model` is mandatory on that vendor, so it has no unset state.
-//! Gemini model ids are validated at `set` time only (#257, ADR-0043 D8).
 
 use std::path::PathBuf;
 
@@ -127,8 +126,6 @@ const SUPPORTED_KEYS: &[&str] = &[
     "antigravity.plan_effort",
     "antigravity.exec_effort",
     "antigravity.run_without_guard_proof_i_understand_the_risk",
-    "gemini.plan_model",
-    "gemini.exec_model",
 ];
 
 /// The trailing parenthetical the key list carries in `--help`-style docs and the
@@ -137,7 +134,7 @@ const SUPPORTED_KEYS: &[&str] = &[
 ///
 /// The decisions behind the keys: events ADR-0019, verify gate ADR-0011 and
 /// ADR-0015, files.encoding ADR-0036, the Copilot MCP key ADR-0041 D7, the
-/// Cursor key ADR-0042 D6, the Gemini models ADR-0043 D8.
+/// Cursor key ADR-0042 D6.
 const SUPPORTED_KEYS_NOTE: &str = "\
 (events.url and events.token set where run events are sent. They are saved for \
 each repo in ~/.ralphy/events.toml, not in settings.json. \
@@ -175,9 +172,7 @@ each phase, as one word such as gemini-3.8-flash; antigravity.plan_effort and \
 antigravity.exec_effort set its effort. \
 antigravity.run_without_guard_proof_i_understand_the_risk=true lets an Antigravity \
 session go on when Ralphy cannot prove that its hooks run, so the guard may not run. \
-Only `ralphy config set` on this machine can turn it on. \
-gemini.plan_model and gemini.exec_model set Gemini's model for each phase; \
-without them, Gemini makes one extra, billed call per turn to choose a model.)";
+Only `ralphy config set` on this machine can turn it on.)";
 
 /// Human-readable list of every supported `config` key, derived from
 /// [`SUPPORTED_KEYS`] so it never drifts from the validated set. Reused in the

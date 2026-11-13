@@ -137,16 +137,13 @@ def empty_env(daemon_dir):
 
 
 def make_fixture_repo():
-    """A throwaway git repo the daemon can open consoles in. A Gemini launch is
-    refused before any gemini CLI starts: the daemon prepares the Gemini configuration root
-    at `.ralphy/gemini-home` first, and a plain file there makes that fail. So
-    no gemini CLI starts and nothing is spent."""
+    """A throwaway git repo the daemon can open consoles in. The agent consoles
+    of this check are `gemini`, an agent the daemon no longer has: it refuses
+    the launch by name before anything is spawned, so nothing is spent."""
     d = tempfile.mkdtemp(prefix="wb303_fixture_")
     p = Path(d)
     (p / "README.md").write_text("# fixture\n\nThe #303 console-desk fixture repo.\n", encoding="utf-8")
     (p / ".gitignore").write_text(".ralphy/\n", encoding="utf-8")
-    (p / ".ralphy").mkdir()
-    (p / ".ralphy" / "gemini-home").write_text("not a folder\n", encoding="utf-8")
     for args in (
         ["git", "init"],
         ["git", "config", "user.email", "wb303@example.com"],
@@ -226,7 +223,7 @@ def geometry_table(page):
     ]
     outs = page.evaluate(
         "(rows) => rows.map((r) => { try {"
-        " return window.WBConsole.resizeRect(r.dir, r.rect, r.delta, r.min, r.bounds);"
+        " return window.WBConsole.resizeRect(r.dir, r.rect, r.delta, { min: r.min, bounds: r.bounds });"
         " } catch (e) { return String(e); } })",
         args,
     )
@@ -800,11 +797,10 @@ def main():
             )
 
             # --- scenarios 7 & 8: the desk survives a DAEMON restart ----------
-            # Seed an agent console into the desk. Gemini, because this fixture
-            # repo cannot hold its configuration root: the daemon refuses the
-            # launch with 400 before any gemini CLI starts, so the reconnect path is
-            # exercised end-to-end without starting a vendor CLI or spending
-            # quota.
+            # Seed an agent console into the desk. Gemini, because the daemon
+            # no longer has that agent: it refuses the launch by name before
+            # anything is spawned, so the reconnect path is exercised end-to-end
+            # without starting a vendor CLI or spending quota.
             console_rec = desk_records(page)[0]
             # Seeded through the daemon; the shell picks it up on the reload
             # that the restart below forces (issue #327).
@@ -964,10 +960,9 @@ def main():
             # --- scenario 10: the relaunch-on-load opt-in ---------------------
             # Seed a desk of ONE agent record whose session id no live session
             # can claim, so the verdict is unambiguous: a placeholder with the
-            # toggle off, a real launch with it on. Gemini cannot prepare its
-            # configuration root in this fixture, so that launch is refused by
-            # the daemon before any gemini CLI starts — the OPEN is the evidence, and
-            # nothing is spent proving it.
+            # toggle off, a real launch with it on. The daemon refuses a gemini
+            # launch by name before anything is spawned — the OPEN is the
+            # evidence, and nothing is spent proving it.
             replace_windows(
                 page,
                 [

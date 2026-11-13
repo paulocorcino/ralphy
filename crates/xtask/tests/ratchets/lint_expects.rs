@@ -18,7 +18,7 @@ const EXPECTS: &[(&str, usize)] = &[
     ("print_stderr", 8),
     ("print_stdout", 8),
     ("string_slice", 0),
-    ("too_many_arguments", 43),
+    ("too_many_arguments", 40),
     ("undocumented_unsafe_blocks", 0),
 ];
 

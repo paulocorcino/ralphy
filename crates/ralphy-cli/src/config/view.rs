@@ -6,7 +6,6 @@ use ralphy_agent_antigravity::AntigravitySettings;
 use ralphy_agent_claude::ClaudeSettings;
 use ralphy_agent_copilot::CopilotSettings;
 use ralphy_agent_cursor::CursorSettings;
-use ralphy_agent_gemini::GeminiSettings;
 use ralphy_agent_opencode::OpenCodeSettings;
 use ralphy_core::{git, Settings, Workspace};
 
@@ -16,7 +15,6 @@ struct AgentSections {
     claude: ClaudeSettings,
     copilot: CopilotSettings,
     cursor: CursorSettings,
-    gemini: GeminiSettings,
     agy: AntigravitySettings,
 }
 
@@ -27,7 +25,6 @@ impl AgentSections {
             claude: s.agent_settings(ClaudeSettings::SECTION)?,
             copilot: s.agent_settings(CopilotSettings::SECTION)?,
             cursor: s.agent_settings(CursorSettings::SECTION)?,
-            gemini: s.agent_settings(GeminiSettings::SECTION)?,
             agy: s.agent_settings(AntigravitySettings::SECTION)?,
         })
     }
@@ -44,9 +41,11 @@ pub(crate) fn get(ws: &Workspace, json: bool) -> Result<()> {
         claude,
         copilot,
         cursor,
-        gemini,
         agy,
     } = AgentSections::load(&s)?;
+    if let Some(warning) = stored_gemini_warning(&s) {
+        eoutln!("{warning}");
+    }
     print_str("opencode.model", opencode.model);
     print_str("verify.command", s.verify.command);
     match s.verify.require_verify_gate {
@@ -110,8 +109,6 @@ pub(crate) fn get(ws: &Workspace, json: bool) -> Result<()> {
         "antigravity.run_without_guard_proof_i_understand_the_risk = {}",
         agy.run_without_guard_proof_i_understand_the_risk
     );
-    print_str("gemini.plan_model", gemini.plan_model);
-    print_str("gemini.exec_model", gemini.exec_model);
     // The CloudEvents sink knobs come from the global per-repo store, printed for
     // the current repo's slug (the token masked).
     let slug = git::project_slug(ws.repo_root());
@@ -139,7 +136,6 @@ pub(super) fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
         claude,
         copilot,
         cursor,
-        gemini,
         agy,
     } = AgentSections::load(&s)?;
     let slug = git::project_slug(ws.repo_root());
@@ -185,8 +181,6 @@ pub(super) fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
         "antigravity.exec_effort": agy.exec_effort,
         "antigravity.run_without_guard_proof_i_understand_the_risk":
             agy.run_without_guard_proof_i_understand_the_risk,
-        "gemini.plan_model": gemini.plan_model,
-        "gemini.exec_model": gemini.exec_model,
     }))
 }
 
@@ -197,4 +191,15 @@ fn print_str(key: &str, value: Option<String>) {
         Some(v) => outln!("{key} = {v}"),
         None => outln!("{key}: not set"),
     }
+}
+
+/// The one warning for a `gemini` section that an older version stored: it is ignored.
+pub(super) fn stored_gemini_warning(s: &Settings) -> Option<String> {
+    s.extra.contains_key("gemini").then(|| {
+        concat!(
+            "warning: the stored gemini settings are ignored, because the Gemini agent ",
+            "was removed; use antigravity.plan_model and antigravity.exec_model instead"
+        )
+        .to_owned()
+    })
 }

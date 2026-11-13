@@ -59,8 +59,8 @@ function text(value: string | number | boolean | null | undefined): string {
   return value === undefined || value === null || value === "" ? NONE : String(value);
 }
 
-// ADR-0043 D10: a vendor that hides part of its usage (Gemini never writes its
-// router's tokens to disk) leaves counts that are a FLOOR, not the bill. The
+// ADR-0043 D10: a record that carries `lower_bound` (a row of a past run keeps it)
+// holds counts that are a FLOOR, not the bill. The
 // caveat rides on the NUMBER itself — a figure that can be read without its
 // caveat will be — and the row says so in words beside it.
 export function boundMark(value: string, lowerBound: boolean): string {

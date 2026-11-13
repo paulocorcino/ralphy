@@ -253,7 +253,7 @@ fn the_scan_reads_citations_as_routes() {
     assert!(!is_served("/api/gone", &served));
     assert!(!is_served("/ws/tree", &served));
     assert_eq!(
-        citations(&cited, "\"/ws/.ralphy/gemini-home\""),
+        citations(&cited, "\"/ws/.ralphy/clipboard\""),
         Vec::<String>::new()
     );
     assert_eq!(

@@ -124,7 +124,6 @@ def daemon_env(store, empty_home, command_dump, token=None, peer=False):
         RALPHY_KIMI_CODE_DIR=empty_usage,
         RALPHY_COPILOT_DB=os.path.join(empty_usage, "copilot-none.db"),
         RALPHY_CURSOR_DIR=empty_usage,
-        RALPHY_GEMINI_DIR=empty_usage,
     )
     if token:
         env["RALPHY_DAEMON_TOKEN"] = token

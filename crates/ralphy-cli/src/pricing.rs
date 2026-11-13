@@ -118,48 +118,6 @@ mod tests {
         );
     }
 
-    /// The Gemini axis end to end (ADR-0043 D8): the lookup goes through the
-    /// adapter's own `price_key`, so the table and the vendor's id grammar cannot
-    /// drift apart — and the two ids that collide with a Cursor row of the same
-    /// spelling stay un-conflated.
-    #[test]
-    fn gemini_ids_price_through_the_adapters_key() {
-        let table = PriceTable::defaults();
-        let t = one_million_each();
-        let cost = |key: &str| table.cost_usd(key, &t);
-
-        // The 3× trap: the CLI's `gemini-3-flash` is served by the 3.5 backend…
-        let cli_flash = cost(&ralphy_agent_gemini::price_key("gemini-3-flash"))
-            .expect("the CLI's flash must price");
-        assert!((cli_flash - 12.15).abs() < 1e-9, "got {cli_flash}");
-        // …while the raw row of that spelling is Cursor's preview Flash.
-        let cursor_flash = cost("gemini-3-flash").expect("Cursor's row must survive");
-        assert!((cursor_flash - 4.05).abs() < 1e-9, "got {cursor_flash}");
-        assert!(
-            cli_flash > cursor_flash,
-            "the two must stay distinct rows, not one conflated price"
-        );
-
-        // The routing model the CLI actually dispatches to is priced.
-        let lite = cost("gemini-3.1-flash-lite").expect("the routing model must price");
-        assert!((lite - 2.025).abs() < 1e-9, "got {lite}");
-
-        // No published price ⇒ no row: unpriced beats guessed. `cost_usd` reports
-        // `None`, which the report renders as `~$?`, never `0`.
-        assert_eq!(cost("gemini-3.1-pro-preview-customtools"), None);
-        // And a routed run never borrows another vendor's `auto` row.
-        assert_eq!(cost(&ralphy_agent_gemini::price_key("auto")), None);
-        assert!(
-            cost("auto").is_some(),
-            "Cursor's own `auto` row must be untouched"
-        );
-
-        // Retired for pinning, still priced — as its successor.
-        let retired = cost(&ralphy_agent_gemini::price_key("gemini-3-pro-preview"));
-        assert!(retired.is_some(), "a historical run record must cost out");
-        assert_eq!(retired, cost("gemini-3.1-pro-preview"));
-    }
-
     /// The Cursor axis end to end: the adapter's own normalizer feeds the lookup,
     /// so the price key and the vendor's id grammar can never drift apart.
     #[test]

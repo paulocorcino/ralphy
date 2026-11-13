@@ -221,50 +221,6 @@ fn cursor_dir_path_ignores_the_scratch_config_dir() {
     drop(guard);
 }
 
-/// ADR-0043 D4 points `$GEMINI_CLI_HOME` at Ralphy's OWN owned root. If this
-/// resolver honoured it, the daemon would report Ralphy's per-repo state instead
-/// of the operator's sessions — so it must not divert the resolver, while the
-/// test-only `$RALPHY_GEMINI_DIR` still wins.
-#[test]
-fn gemini_dir_path_ignores_ralphys_own_cli_home() {
-    let guard = ENV_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let restore = (
-        std::env::var_os("GEMINI_CLI_HOME"),
-        std::env::var_os("RALPHY_GEMINI_DIR"),
-    );
-
-    std::env::set_var("GEMINI_CLI_HOME", "C:/tmp/ralphy-owned-root");
-    std::env::remove_var("RALPHY_GEMINI_DIR");
-    let got = gemini_dir_path().unwrap();
-    assert!(
-        got.ends_with(".gemini"),
-        "Ralphy's own CLI home must not divert the resolver, got {got:?}"
-    );
-    assert!(
-        !got.starts_with("C:/tmp/ralphy-owned-root"),
-        "resolved Ralphy's own owned root, got {got:?}"
-    );
-
-    std::env::set_var("RALPHY_GEMINI_DIR", "C:/tmp/override");
-    assert_eq!(
-        gemini_dir_path().unwrap(),
-        PathBuf::from("C:/tmp/override"),
-        "the test override must still win"
-    );
-
-    match restore.0 {
-        Some(v) => std::env::set_var("GEMINI_CLI_HOME", v),
-        None => std::env::remove_var("GEMINI_CLI_HOME"),
-    }
-    match restore.1 {
-        Some(v) => std::env::set_var("RALPHY_GEMINI_DIR", v),
-        None => std::env::remove_var("RALPHY_GEMINI_DIR"),
-    }
-    drop(guard);
-}
-
 /// ADR-0040 Tier 4 anti-drift: a vendor that reaches the daemon's launch enum
 /// must have a store-path RESOLVER here AND have its scan actually chained into
 /// [`interactive_records`]. Source-text pin over this very file, so it reds the
@@ -486,4 +442,33 @@ fn the_usage_modal_is_gone_from_the_served_assets() {
             );
         }
     }
+}
+
+/// History stays readable: a ledger row of the removed `gemini` agent keeps its
+/// label and its price.
+#[test]
+fn a_ledger_row_of_the_removed_gemini_agent_keeps_its_label() {
+    use crate::spend::{annotate_unpriced, fixtures::table_of, summarize, SpendInput, Window};
+    let prices = table_of(&["gemini-3.5-flash"]);
+    let tokens = serde_json::json!({ "input": 1_000_000, "output": 0 });
+    let mut records = vec![serde_json::json!({
+        "project": "acme/widget", "agent": "gemini", "model": "gemini-3.5-flash",
+        "session_id": "old", "tokens": tokens, "ts": "2026-07-30T12:00:00+00:00",
+    })];
+    annotate_unpriced(&mut records, &mut [], &BTreeMap::new(), &prices);
+    assert_eq!(records[0]["agent"], "gemini", "the label stays");
+    assert!(
+        records[0].get("unpriced_cause").is_none(),
+        "the price stays"
+    );
+    let input = SpendInput {
+        records: &records,
+        interactive: &[],
+        recovered: &BTreeMap::new(),
+        prices: &prices,
+        project: "acme/widget",
+        window: Window::All,
+        since: None,
+    };
+    assert_eq!(summarize(&input).usd, Some(15.0));
 }

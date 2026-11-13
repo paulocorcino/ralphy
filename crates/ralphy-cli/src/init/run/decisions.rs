@@ -127,7 +127,6 @@ pub(super) fn init_model_for(agent: Agent) -> Option<&'static str> {
         Agent::Codex
         | Agent::Copilot
         | Agent::Cursor
-        | Agent::Gemini
         | Agent::Opencode
         | Agent::Kimi
         | Agent::Antigravity => None,

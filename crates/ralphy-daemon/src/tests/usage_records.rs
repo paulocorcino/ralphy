@@ -218,17 +218,31 @@ async fn api_usage_carries_cursor_interactive_records() {
     );
 }
 
-/// `/api/usage` also carries Gemini interactive records, with REAL counts —
-/// unlike Cursor's `null`, the Gemini store keeps per-turn tokens (a lower
-/// bound, ADR-0043 D10). Proves the `gemini_dir` router arg is threaded
-/// end-to-end.
+/// Every store location of the daemon at one folder, so a reader of the store
+/// inside it would find it whichever location it takes.
+fn every_store_at(dir: &Path) -> StorePaths {
+    let at = || dir.to_path_buf();
+    StorePaths {
+        claude_projects_dir: at(),
+        codex_dir: at(),
+        opencode_db: at(),
+        kimi_dir: at(),
+        kimi_code_dir: at(),
+        copilot_db: at(),
+        cursor_dir: at(),
+        antigravity_root: at(),
+        ..Default::default()
+    }
+}
+
+/// A `~/.gemini/tmp` store with chats gives no usage record: nothing reads it.
 #[tokio::test]
-async fn api_usage_carries_gemini_interactive_records() {
-    let gemini_dir = tempfile::tempdir().unwrap();
-    let chats = gemini_dir.path().join("tmp").join("fincal").join("chats");
+async fn the_usage_route_no_longer_reads_a_gemini_store() {
+    let old_store = tempfile::tempdir().unwrap();
+    let chats = old_store.path().join("tmp").join("fincal").join("chats");
     std::fs::create_dir_all(&chats).unwrap();
     std::fs::write(
-        gemini_dir
+        old_store
             .path()
             .join("tmp")
             .join("fincal")
@@ -250,10 +264,7 @@ async fn api_usage_carries_gemini_interactive_records() {
         None,
         PathBuf::from("does-not-exist"),
         PathBuf::from("does-not-exist"),
-        StorePaths {
-            gemini_dir: gemini_dir.path().to_path_buf(),
-            ..Default::default()
-        },
+        every_store_at(old_store.path()),
         Instant::now(),
         idle_shutdown(),
         auth::AuthState::localhost(),
@@ -271,20 +282,12 @@ async fn api_usage_carries_gemini_interactive_records() {
     let body_string = String::from_utf8_lossy(&raw);
     let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
     let interactive = body["interactive"].as_array().expect("interactive array");
-    let record = interactive
-        .iter()
-        .find(|r| {
-            r.get("agent").and_then(|v| v.as_str()) == Some("gemini")
-                && r.get("session_id").and_then(|v| v.as_str()) == Some("ralphy-probe-p1p2p3p4p6")
-        })
-        .unwrap_or_else(|| panic!("no gemini record; got: {body_string}"));
-    // `total - input`, not the bare `output` field — the arithmetic survives
-    // the whole route, not just the scan's own unit test.
-    assert_eq!(record["tokens"]["output"].as_u64(), Some(287), "{record}");
-    assert_eq!(record["tokens"]["input"].as_u64(), Some(20637), "{record}");
-    // ADR-0043 D10: the served record must carry the floor label, or the UI
-    // has nothing to render `≥ n (lower bound)` from.
-    assert_eq!(record["lower_bound"].as_bool(), Some(true), "{record}");
+    assert!(
+        interactive
+            .iter()
+            .all(|r| r.get("agent").and_then(|v| v.as_str()) != Some("gemini")),
+        "a gemini record came back; got: {body_string}"
+    );
 }
 
 /// `/api/usage` carries the records of the Antigravity store under the owned

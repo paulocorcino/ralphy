@@ -231,6 +231,36 @@ fn every_cli_agent_parses_from_its_one_word_name() {
         "the kebab alias"
     );
 }
+/// The text every agent argument gives for the removed `gemini` value.
+const GEMINI_REMOVED: &str = "the Gemini CLI agent was removed: use --agent antigravity";
+
+/// The error of one command line that must fail.
+fn parse_error(argv: &[&str]) -> String {
+    match Cli::try_parse_from(argv) {
+        Ok(_) => panic!("{argv:?} must fail"),
+        Err(e) => e.to_string(),
+    }
+}
+
+#[test]
+fn the_removed_gemini_agent_names_antigravity() {
+    for argv in [
+        ["ralphy", "run", "--agent", "gemini"],
+        ["ralphy", "consolidate", "--agent", "gemini"],
+        ["ralphy", "models", "--agent", "gemini"],
+        ["ralphy", "init", "--agent", "gemini"],
+        ["ralphy", "triage", "--agent", "gemini"],
+    ] {
+        let err = parse_error(&argv);
+        assert!(err.contains(GEMINI_REMOVED), "{argv:?}: {err}");
+    }
+}
+
+#[test]
+fn the_removed_gemini_plan_agent_names_antigravity() {
+    let err = parse_error(&["ralphy", "run", "--plan-agent", "gemini"]);
+    assert!(err.contains(GEMINI_REMOVED), "{err}");
+}
 #[test]
 fn run_help_lists_all_flags() {
     // Render the `run` subcommand's help and arg set and assert the flags that a
@@ -315,7 +345,6 @@ fn internal_commands_are_listed_apart_and_still_parse() {
         "changes",
         "blob",
         "sync",
-        "gemini",
         "antigravity",
     ];
     assert_eq!(names(footer), internal);

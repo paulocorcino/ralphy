@@ -22,7 +22,7 @@ was probably decided on purpose (see [CLAUDE.md](../../CLAUDE.md)).
   when the distinction matters.
 
   Current companion-note families: **0005** (opencode), **0028** (kimi),
-  **0041** (copilot), **0042** (cursor), **0043** (gemini), **0052** (local
+  **0041** (copilot), **0042** (cursor), **0043** (gemini, superseded), **0052** (local
   fleet).
 
 ## Writing a new ADR

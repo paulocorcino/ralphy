@@ -281,7 +281,7 @@ pub enum StateSource {
 pub fn state_source(agent: Agent) -> StateSource {
     match agent {
         Agent::Antigravity | Agent::Claude | Agent::Codex | Agent::OpenCode => StateSource::Hooks,
-        Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi => StateSource::None,
+        Agent::Copilot | Agent::Cursor | Agent::Kimi => StateSource::None,
     }
 }
 
@@ -304,7 +304,7 @@ impl HookVendor {
             Agent::Codex => Some(HookVendor::Codex),
             Agent::OpenCode => Some(HookVendor::OpenCode),
             Agent::Antigravity => Some(HookVendor::Antigravity),
-            Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi => None,
+            Agent::Copilot | Agent::Cursor | Agent::Kimi => None,
         }
     }
 

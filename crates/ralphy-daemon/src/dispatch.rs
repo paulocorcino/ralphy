@@ -33,11 +33,11 @@ use crate::session::Agent;
 
 mod antigravity;
 mod argv;
-mod gemini;
 mod host;
 mod registry;
 mod spawn;
 
+pub use antigravity::antigravity_root_argv;
 #[cfg(test)]
 pub(crate) use argv::LOCAL_ONLY_KEYS;
 pub use argv::{
@@ -52,7 +52,6 @@ pub use registry::project_add_argv;
 pub(crate) use spawn::MAX_COLLECT_CHILDREN;
 pub use spawn::{collect, dispatch, ralphy_exe, Child, ProcessSpawner, Spawner, REPLY_DEADLINE};
 pub(crate) use spawn::{collect_within, Collected, COLLECT_SLOTS};
-pub use {antigravity::antigravity_root_argv, gemini::gemini_root_argv};
 
 /// The effect class of a verb (ADR-0036 §2): `Native` runs in-daemon,
 /// `Observe`/`Query` read state, `Spawn` launches a detached `ralphy` child,
@@ -107,7 +106,6 @@ pub(crate) fn agent_flag(a: Agent) -> &'static str {
         Agent::Codex => "codex",
         Agent::Copilot => "copilot",
         Agent::Cursor => "cursor",
-        Agent::Gemini => "gemini",
         Agent::Kimi => "kimi",
         Agent::OpenCode => "opencode",
     }

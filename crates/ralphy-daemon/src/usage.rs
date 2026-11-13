@@ -7,9 +7,9 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use ralphy_usage_scan::{
-    scan_antigravity, scan_claude, scan_codex, scan_copilot, scan_cursor, scan_gemini, scan_kimi,
-    scan_opencode, AntigravityScan, ClaudeScan, CodexScan, CopilotScan, CursorScan, GeminiScan,
-    KimiScan, OpenCodeScan, RegisteredRepo,
+    scan_antigravity, scan_claude, scan_codex, scan_copilot, scan_cursor, scan_kimi, scan_opencode,
+    AntigravityScan, ClaudeScan, CodexScan, CopilotScan, CursorScan, KimiScan, OpenCodeScan,
+    RegisteredRepo,
 };
 
 use crate::registry::RegistryStore;
@@ -248,27 +248,6 @@ pub fn cursor_dir_path() -> anyhow::Result<PathBuf> {
     Ok(PathBuf::from(home).join(".cursor"))
 }
 
-/// The Gemini interactive session store root: `$RALPHY_GEMINI_DIR` when set (tests
-/// point it at a temp dir), else `<home>/.gemini`. This is the `.gemini` BASE —
-/// `scan_gemini` walks its `tmp/<basename>/chats/` subtree. Mirrors
-/// [`cursor_dir_path`].
-///
-/// It deliberately does NOT read `$GEMINI_CLI_HOME`: that is the variable Ralphy
-/// points at its OWN owned configuration root (ADR-0043 D4), so honouring it here
-/// would resolve Ralphy's per-repo state instead of the OPERATOR's own interactive
-/// sessions — the only thing this store is read for.
-pub fn gemini_dir_path() -> anyhow::Result<PathBuf> {
-    if let Some(dir) = std::env::var_os("RALPHY_GEMINI_DIR") {
-        return Ok(PathBuf::from(dir));
-    }
-    let home = std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .ok_or_else(|| {
-            anyhow::anyhow!("no home directory resolved for the Gemini session store")
-        })?;
-    Ok(PathBuf::from(home).join(".gemini"))
-}
-
 /// The Antigravity store: the root Ralphy owns for every `agy` it starts, in the
 /// Ralphy folder (`RALPHY_DAEMON_DIR` when set; ADR-0086 D8).
 pub fn antigravity_root_path() -> anyhow::Result<PathBuf> {
@@ -278,8 +257,8 @@ pub fn antigravity_root_path() -> anyhow::Result<PathBuf> {
 /// Scan every vendor store for interactive usage records, minus the sessions the
 /// ledger owns (`session_id` in `run_records`), each as JSON (ADR-0033 §2/§6).
 /// `registry.repos` gives the project/actor. Read-only: the Copilot scan reads a
-/// private copy. Cursor `tokens` is always `null` (ADR-0042 D11); Gemini counts
-/// are a LOWER BOUND (ADR-0043 D10).
+/// private copy. Cursor `tokens` is always `null` (ADR-0042 D11). A record has
+/// `lower_bound` when the Antigravity scan could not decode a row (ADR-0086).
 pub fn interactive_records(
     stores: &StorePaths,
     registry: &RegistryStore,
@@ -336,12 +315,6 @@ pub fn interactive_records(
         repos: &repos,
         since,
     });
-    let gemini = scan_gemini(&GeminiScan {
-        gemini_dir: &stores.gemini_dir,
-        run_session_ids: &run_session_ids,
-        repos: &repos,
-        since,
-    });
     let antigravity = scan_antigravity(&AntigravityScan {
         root: &stores.antigravity_root,
         run_session_ids: &run_session_ids,
@@ -355,7 +328,6 @@ pub fn interactive_records(
         .chain(kimi.iter())
         .chain(copilot.iter())
         .chain(cursor.iter())
-        .chain(gemini.iter())
         .chain(antigravity.iter())
         .filter_map(|r| serde_json::to_value(r).ok())
         .collect()

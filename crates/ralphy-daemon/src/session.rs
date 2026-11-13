@@ -27,8 +27,7 @@ mod spec;
 pub use manager::{AttachError, Attachment, RecordClaim, SessionManager, TurnEnd, WriterClaim};
 pub use spec::{
     claude_console_named, console_cwd, console_name, console_spec, cursor_indexing_allowed,
-    gemini_home, gemini_policy_path, peer_console_launcher, peer_console_spec, spec_for,
-    spec_with_status, Agent, SessionSpec,
+    peer_console_launcher, peer_console_spec, spec_for, spec_with_status, Agent, SessionSpec,
 };
 
 /// Variables that suppress colour, dropped from every PTY child's inherited

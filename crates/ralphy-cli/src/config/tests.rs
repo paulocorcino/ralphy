@@ -287,8 +287,6 @@ fn every_registry_key_is_handled_by_all_subcommands() {
             | "copilot.exec_effort"
             | "antigravity.plan_effort"
             | "antigravity.exec_effort" => "high",
-            // Validated against the vendor's id set, so `x` is refused.
-            "gemini.plan_model" | "gemini.exec_model" => "gemini-3.5-flash",
             _ => "x",
         }
     };

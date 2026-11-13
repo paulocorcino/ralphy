@@ -18,7 +18,6 @@ fn accepts_images_reflects_crate_consts() {
     assert!(Agent::Codex.accepts_images());
     assert!(Agent::Copilot.accepts_images());
     assert!(!Agent::Cursor.accepts_images());
-    assert!(Agent::Gemini.accepts_images());
     assert!(!Agent::Kimi.accepts_images());
     assert!(!Agent::Opencode.accepts_images());
     assert!(Agent::Antigravity.accepts_images());
@@ -53,7 +52,6 @@ fn newcomers_go_last_in_all() {
             Agent::Opencode,
             Agent::Copilot,
             Agent::Cursor,
-            Agent::Gemini,
             Agent::Antigravity,
         ]
     );
@@ -167,32 +165,6 @@ fn format_report_logged_in_and_not_logged_in_substrings() {
         "expected 'codex: not logged in' in:\n{report}"
     );
 }
-/// #257: the router tax is priced into the operator's first read of `init`,
-/// and only when this vendor is actually installed.
-#[test]
-fn the_report_surfaces_geminis_router_tax() {
-    let with_gemini = EnvFindings {
-        git: true,
-        python: true,
-        gh_authenticated: true,
-        github_remote: true,
-        agents_present: vec![Agent::Gemini],
-        agents_logged_in: vec![Agent::Gemini],
-    };
-    let report = format_report(&with_gemini, &evaluate_gate(&with_gemini));
-    assert!(report.contains("gemini.exec_model"), "{report}");
-    assert!(report.contains("halve request consumption"), "{report}");
-
-    let without = EnvFindings {
-        agents_present: vec![Agent::Claude],
-        agents_logged_in: vec![Agent::Claude],
-        ..with_gemini
-    };
-    let report = format_report(&without, &evaluate_gate(&without));
-    assert!(!report.contains("gemini.exec_model"), "{report}");
-    assert!(!report.contains("halve request consumption"), "{report}");
-}
-
 /// The whole report of a machine with git and one logged-in agent, and
 /// with python, the gh login and the GitHub remote missing.
 #[test]
@@ -216,7 +188,6 @@ agents:
   opencode: absent
   copilot: absent
   cursor: absent
-  gemini: absent
   antigravity: absent
 result: 3 blocker(s)
 ";

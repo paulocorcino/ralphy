@@ -182,7 +182,6 @@ pub struct StorePaths {
     pub kimi_code_dir: PathBuf,
     pub copilot_db: PathBuf,
     pub cursor_dir: PathBuf,
-    pub gemini_dir: PathBuf,
     /// The root Ralphy owns for `agy`, whose `antigravity-cli/` folder holds its store.
     pub antigravity_root: PathBuf,
     /// The Telegram config the daemon sends its console messages with

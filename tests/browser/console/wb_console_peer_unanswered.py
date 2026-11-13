@@ -208,7 +208,6 @@ def env_for(store, token=None):
         RALPHY_KIMI_CODE_DIR=empty,
         RALPHY_COPILOT_DB=os.path.join(empty, "copilot-none.db"),
         RALPHY_CURSOR_DIR=empty,
-        RALPHY_GEMINI_DIR=empty,
     )
     # Without a distro the peer is "on another machine": consoles go through the relay.
     env.pop("WSL_DISTRO_NAME", None)

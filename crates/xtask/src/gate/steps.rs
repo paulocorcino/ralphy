@@ -353,7 +353,7 @@ pub(super) const STEPS: &[Step] = &[
             "--prefix",
             "crates/",
             "--expect",
-            "32",
+            "29",
         ],
     ),
     step(

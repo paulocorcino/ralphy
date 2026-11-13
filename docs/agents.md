@@ -10,7 +10,6 @@
 | `opencode` | `opencode run`, headless | Fixed model; set effort with `--exec-variant` |
 | `copilot` | `copilot`, headless | Checks which models your account can use before the run starts |
 | `cursor` | `cursor-agent`, headless | Default model `auto`; a `--model` never changes the default of your own Cursor sessions; turns off Cursor's codebase upload in the repo first, and tells you |
-| `gemini` | `gemini`, headless | Default model `auto`; uses its own settings folder, so your `~/.gemini` is never read or changed |
 | `antigravity` | `agy`, headless | No `--model`: `agy` uses the default of your plan; uses its own settings folder, so your `~/.gemini` is never read or changed; the keys are in [configuration](configuration.md#antigravity-run-defaults-antigravity) |
 
 All eight use the login you already have in that CLI, **not a metered API key** — Ralphy

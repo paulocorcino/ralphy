@@ -6,7 +6,6 @@ use ralphy_agent_antigravity::AntigravitySettings;
 use ralphy_agent_claude::ClaudeSettings;
 use ralphy_agent_copilot::CopilotSettings;
 use ralphy_agent_cursor::CursorSettings;
-use ralphy_agent_gemini::GeminiSettings;
 use ralphy_agent_opencode::OpenCodeSettings;
 use ralphy_core::{git, gitignore, Effort, Settings, Workspace};
 
@@ -47,13 +46,6 @@ fn with_cursor(s: &mut Settings, f: impl FnOnce(&mut CursorSettings)) -> Result<
     let mut c: CursorSettings = s.agent_settings(CursorSettings::SECTION)?;
     f(&mut c);
     s.set_agent_settings(CursorSettings::SECTION, &c)
-}
-
-/// Load-mutate-store the Gemini section; same contract as [`with_claude`].
-fn with_gemini(s: &mut Settings, f: impl FnOnce(&mut GeminiSettings)) -> Result<()> {
-    let mut g: GeminiSettings = s.agent_settings(GeminiSettings::SECTION)?;
-    f(&mut g);
-    s.set_agent_settings(GeminiSettings::SECTION, &g)
 }
 
 pub(crate) fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
@@ -166,7 +158,7 @@ fn set_core_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
 }
 
 /// Set a key of an agent section (`opencode.*`, `claude.*`, `copilot.*`,
-/// `gemini.*`, `cursor.*`).
+/// `cursor.*`).
 fn set_agent_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
     match key {
         "opencode.model" => with_opencode(s, |o| o.model = Some(value.to_owned()))?,
@@ -228,7 +220,6 @@ fn set_agent_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
                 .with_context(|| format!("{key} must be 'true' or 'false', got '{value}'"))?;
             with_antigravity(s, |a| a.run_without_guard_proof_i_understand_the_risk = b)?;
         }
-        "gemini.plan_model" | "gemini.exec_model" => set_gemini_model(s, key, value)?,
         // Same reasoning, a different capability (ADR-0042 D6): the hatch lets a
         // run upload the operator's repository to the vendor. Ralphy never denies
         // the capability — it denies a SILENT one.
@@ -320,35 +311,30 @@ fn set_copilot_effort(s: &mut Settings, key: &str, value: &str) -> Result<()> {
     })
 }
 
-/// Set `gemini.plan_model` or `gemini.exec_model`.
-///
-/// Validated HERE and only here: a persisted id is refused at
-/// configuration time rather than mid-run, while `--plan-model`/
-/// `--exec-model` stay unfiltered so a stale local list cannot block an id
-/// the vendor has started serving (ADR-0043 D8 amendment, #257).
-///
-/// The stored value is TRIMMED: `is_pinnable_model` trims before matching,
-/// so persisting the raw string would accept ` gemini-2.5-pro `, report it
-/// valid from `config get`, and 404 on every run.
-fn set_gemini_model(s: &mut Settings, key: &str, value: &str) -> Result<()> {
-    let value = value.trim();
-    if !ralphy_agent_gemini::is_pinnable_model(value) {
-        bail!(
-            "{key} must be a Gemini model id the CLI still serves, got '{value}'; valid: {}",
-            ralphy_agent_gemini::PINNABLE_MODELS.join(", ")
-        );
-    }
-    let plan = key == "gemini.plan_model";
-    with_gemini(s, |g| {
-        if plan {
-            g.plan_model = Some(value.to_owned());
-        } else {
-            g.exec_model = Some(value.to_owned());
+/// Whether `field` is a key that an older version stored in the `gemini` section.
+fn is_gemini_field(field: &str) -> bool {
+    matches!(field, "plan_model" | "exec_model")
+}
+
+/// Remove one key of a `gemini` section that an older version stored; the section goes
+/// with its last key.
+fn unset_stored_gemini_key(s: &mut Settings, field: &str) {
+    if let Some(section) = s.extra.get_mut("gemini").and_then(|v| v.as_object_mut()) {
+        section.remove(field);
+        if section.is_empty() {
+            s.extra.remove("gemini");
         }
-    })
+    }
 }
 
 pub(crate) fn unset(ws: &Workspace, key: &str) -> Result<()> {
+    if let Some(field) = key.strip_prefix("gemini.").filter(|f| is_gemini_field(f)) {
+        let mut s = Settings::load(ws)?;
+        unset_stored_gemini_key(&mut s, field);
+        s.save(ws)?;
+        outln!("{key}: unset");
+        return Ok(());
+    }
     require_known_key(key)?;
     // The events sink knobs are cleared in the global store, not settings.json.
     if key == "events.url" || key == "events.token" {
@@ -404,8 +390,6 @@ pub(crate) fn unset(ws: &Workspace, key: &str) -> Result<()> {
                 a.run_without_guard_proof_i_understand_the_risk = false;
             })?;
         }
-        "gemini.plan_model" => with_gemini(&mut s, |g| g.plan_model = None)?,
-        "gemini.exec_model" => with_gemini(&mut s, |g| g.exec_model = None)?,
         _ => unreachable!(),
     }
     s.save(ws)?;

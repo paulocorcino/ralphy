@@ -1,5 +1,8 @@
 # Gemini adapter — live validation note
 
+Status: superseded by ADR-0086
+Superseded by [ADR-0086](./0086-antigravity-adapter.md): the Gemini adapter was removed.
+
 Companion to [ADR-0043](./0043-gemini-adapter.md), recording what the live probes
 of issue #253 **actually observed** on 2026-07-21, and — as importantly — what
 they could not.

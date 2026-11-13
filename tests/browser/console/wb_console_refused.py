@@ -1,30 +1,31 @@
-"""A console the daemon cannot start shows the reason; a Gemini console
+"""A console the daemon cannot start shows the reason; an Antigravity console
 prepares its own configuration.
 
 The browser cannot read the body of a refused WebSocket upgrade, so a refused
 launch is announced in a `session-end` frame with `reason: "refused"` and the
 reason as `message`. This pass checks, in a real browser over a REAL daemon,
 that the console prints that reason instead of a bare `[session closed]`, and
-that a Gemini console in a repo with no owned root opens after the daemon runs
-`ralphy gemini prepare-root`.
+that an Antigravity console opens after the daemon runs
+`ralphy antigravity prepare-root` for a scratch store with no owned root.
 
 Scenario 1  an agent console on an unregistered repo prints
             `[could not start: unknown repo]`, not `[session closed]`
 Scenario 2  no session was created for it (`/api/sessions` is empty)
-Scenario 3  a Gemini console in a repo with no owned root opens: the policy
-            document now exists in the repo, the console prints no refusal,
-            and the daemon lists one gemini session
+Scenario 3  an Antigravity console opens when the store has no owned root:
+            the hooks file now exists in the scratch store, the console prints
+            no refusal, and the daemon lists one antigravity session
 Scenario 4  zero `pageerror` events over the whole pass
 
 The agent is `session_test_child` (`RALPHY_DAEMON_AGENT_OVERRIDE`), so no real
-Gemini CLI is needed; `ralphy gemini prepare-root` is the real one.
+`agy` is needed; `ralphy antigravity prepare-root` is the real one, and it writes
+the owned root inside the scratch `RALPHY_DAEMON_DIR`.
 
 Boots a Localhost daemon on 7396 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
 stopped by its own subprocess handle, NEVER by name (`ralphy.exe` doubles as
 the orchestrator on this host).
 
-Writes .ralphy/screenshots/console-refused.png and console-gemini-prepared.png.
+Writes .ralphy/screenshots/console-refused.png and console-antigravity-prepared.png.
 Run: python tests/browser/console/wb_console_refused.py   (exit 0 = all pass)
 """
 
@@ -194,18 +195,18 @@ def main():
             sessions = json.loads(page.request.get(BASE + "api/sessions").text())
             check("no session exists for the refused launch", sessions == [], f"got={sessions}")
 
-            # --- scenario 3: Gemini opens in a repo with no owned root ----------
-            policy = Path(fixture_dir) / ".ralphy" / "gemini-home" / ".gemini" / "ralphy-policy.toml"
-            check("the fixture starts with no policy document", not policy.exists(), "")
-            page.evaluate(f"() => window.WBConsole.open({{ repo: '{slug}', agent: 'gemini' }})")
+            # --- scenario 3: Antigravity opens with no owned root ---------------
+            hooks = Path(daemon_dir) / "antigravity-root" / "config" / "hooks.json"
+            check("the scratch store starts with no hooks file", not hooks.exists(), "")
+            page.evaluate(f"() => window.WBConsole.open({{ repo: '{slug}', agent: 'antigravity' }})")
             text = flat(wait_screen(page, 1, "READY"))
-            check("the Gemini console starts its child", "READY" in text, f"screen={text[-200:]!r}")
+            check("the Antigravity console starts its child", "READY" in text, f"screen={text[-200:]!r}")
             check("the console prints no refusal", "could not start" not in text, "")
-            check("the daemon prepared the policy document", policy.is_file(), str(policy))
+            check("the daemon prepared the hooks file", hooks.is_file(), str(hooks))
             sessions = json.loads(page.request.get(BASE + "api/sessions").text())
             agents = [row.get("agent") for row in sessions]
-            check("the daemon lists one gemini session", agents == ["gemini"], f"got={agents}")
-            page.screenshot(path=os.path.join(SHOT_DIR, "console-gemini-prepared.png"))
+            check("the daemon lists one antigravity session", agents == ["antigravity"], f"got={agents}")
+            page.screenshot(path=os.path.join(SHOT_DIR, "console-antigravity-prepared.png"))
 
             ctx.close()
             browser.close()

@@ -117,7 +117,6 @@ fn every_agent_parses_from_its_query_value_and_names_a_program() {
         ("codex", Agent::Codex, "codex"),
         ("copilot", Agent::Copilot, "copilot"),
         ("cursor", Agent::Cursor, "cursor-agent"),
-        ("gemini", Agent::Gemini, "gemini"),
         ("kimi", Agent::Kimi, "kimi"),
         ("opencode", Agent::OpenCode, "opencode"),
     ] {
@@ -207,10 +206,9 @@ fn all_enumerates_every_enum_variant() {
             Agent::Codex => 1,
             Agent::Copilot => 2,
             Agent::Cursor => 3,
-            Agent::Gemini => 4,
-            Agent::Kimi => 5,
-            Agent::OpenCode => 6,
-            Agent::Antigravity => 7,
+            Agent::Kimi => 4,
+            Agent::OpenCode => 5,
+            Agent::Antigravity => 6,
         }
     }
     let mut tags: Vec<u8> = Agent::ALL.iter().copied().map(tag).collect();
@@ -218,7 +216,7 @@ fn all_enumerates_every_enum_variant() {
     tags.dedup();
     assert_eq!(
         tags,
-        (0..=7).collect::<Vec<u8>>(),
+        (0..=6).collect::<Vec<u8>>(),
         "Agent::ALL must list every variant exactly once"
     );
 }
@@ -301,59 +299,6 @@ fn the_console_name_key_matches_the_adapters_own_schema() {
     );
 }
 
-/// Same drift risk as `the_optin_key_matches_the_adapters_own_schema`, one
-/// layer down: the daemon duplicates the owned root's three path components
-/// rather than importing `ralphy-agent-gemini` (ADR-0032 §10). Rename one in
-/// the adapter and the daemon would silently point a launch — and its refusal
-/// gate — at a directory the CLI never reads.
-#[test]
-fn the_gemini_root_layout_matches_the_adapters_own() {
-    let root = include_str!("../../../../ralphy-agent-gemini/src/root.rs");
-    assert!(
-        root.contains(r#"ROOT_DIR_NAME: &str = "gemini-home""#),
-        "the adapter renamed the owned root directory the daemon duplicates"
-    );
-    assert!(
-        root.contains(r#"CLI_SUBDIR: &str = ".gemini""#),
-        "the adapter renamed the CLI subdirectory the daemon duplicates"
-    );
-    let policy = include_str!("../../../../ralphy-agent-gemini/src/policy.rs");
-    assert!(
-        policy.contains(r#"POLICY_FILE: &str = "ralphy-policy.toml""#),
-        "the adapter renamed the policy document the daemon's launch gate checks"
-    );
-}
-
-/// A Gemini launch must carry BOTH halves of the containment: the env var the
-/// CLI reads its root from, and the global flag the policy rides on. A spec
-/// with one and not the other launches an unconstrained child.
-#[test]
-fn gemini_launches_under_the_owned_root_and_its_policy() {
-    let repo = PathBuf::from("C:/Dev/FinCal");
-    let spec = spec_for(Agent::Gemini, &repo, repo.clone(), "owner/fincal", (24, 80));
-    assert_eq!(
-        spec.env,
-        vec![(
-            OsString::from("GEMINI_CLI_HOME"),
-            gemini_home(&repo).into_os_string()
-        )]
-    );
-    assert_eq!(
-        spec.args,
-        vec![
-            OsString::from("--policy"),
-            gemini_policy_path(&repo).into_os_string()
-        ]
-    );
-    assert!(gemini_home(&repo).ends_with("gemini-home"));
-    assert!(gemini_policy_path(&repo).ends_with("ralphy-policy.toml"));
-
-    // Gemini's containment is its OWN: no other vendor gets an env var, and
-    // the one vendor that does carry args carries a different flag.
-    let bare = spec_for(Agent::Codex, &repo, repo.clone(), "owner/fincal", (24, 80));
-    assert!(bare.args.is_empty() && bare.env.is_empty());
-}
-
 /// A repo whose `.ralphy/settings.json` opts into the console name.
 fn opted_in_repo(d: &tempfile::TempDir) -> PathBuf {
     let repo = d.path().to_path_buf();
@@ -391,34 +336,6 @@ fn no_vendor_is_ever_given_a_worktree_flag_and_the_cwd_is_the_checkout() {
         "the name opt-in is read from the primary"
     );
     assert_eq!(claude.args[0], OsString::from("--name"));
-}
-
-/// Gemini in a checkout stays contained by the PRIMARY tree's owned root:
-/// the home and the policy are `.ralphy/`-backed, and the checkout has none.
-/// The negative control pins that a regression reading `cwd` cannot pass.
-#[test]
-fn gemini_in_a_checkout_is_contained_by_the_primary_trees_root() {
-    let d = tempfile::tempdir().unwrap();
-    let root = d.path().to_path_buf();
-    let wt = root.join(".ralphy/worktrees/wt-a");
-    let spec = spec_for(Agent::Gemini, &root, wt.clone(), "owner/ralphy", (24, 80));
-    assert_eq!(
-        spec.env,
-        vec![(
-            OsString::from("GEMINI_CLI_HOME"),
-            gemini_home(&root).into_os_string()
-        )]
-    );
-    assert_eq!(
-        spec.args,
-        vec![
-            OsString::from("--policy"),
-            gemini_policy_path(&root).into_os_string()
-        ]
-    );
-    assert_eq!(spec.cwd, wt);
-    assert_ne!(gemini_home(&root), gemini_home(&wt));
-    assert_ne!(gemini_policy_path(&root), gemini_policy_path(&wt));
 }
 
 /// The refusal is the safe default: only an explicit `true` opens the upload.

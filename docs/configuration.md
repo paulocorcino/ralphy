@@ -236,68 +236,11 @@ tokens are not separable from a ledger record — Cursor's CLI folds them into t
 ordinary `input` field — so they simply ride the run's recorded token counts;
 Ralphy does not surface a separate estimate for them.
 
-## Gemini run defaults (`gemini.*`)
+## Removed agent: Gemini
 
-| Key | Flag | Values | Default |
-| --- | --- | --- | --- |
-| `gemini.plan_model` | `--plan-model` | a model id the CLI serves; `ralphy config set` lists the accepted set when it refuses one | none — the vendor routes |
-| `gemini.exec_model` | `--exec-model` | same | none — the vendor routes |
-
-```powershell
-ralphy config set gemini.plan_model gemini-2.5-pro
-ralphy config set gemini.exec_model gemini-3.5-flash
-```
-
-### The router tax
-
-Leave both unset and Ralphy omits `-m` entirely, which is not free: the CLI then
-asks a **router** which engine should serve the turn, and that question is itself
-a billed API call (the spike observed `gemini-3.1-flash-lite` in the
-`utility_router` role beside the answering engine). Every turn therefore costs
-**two requests instead of one**. Pinning a model per phase removes the routing
-call — which is why `ralphy init` prints the note when it finds this CLI
-installed (ADR-0043 D8).
-
-**The routing aliases do not remove the tax.** `auto`, `pro`, `flash` and
-`flash-lite` are accepted as pins, but each still names a *router* rather than an
-engine — the routing call is still made, and the run is still recorded as
-`gemini-routed`. Pin a concrete id (`gemini-2.5-pro`, `gemini-3.5-flash`, …) to
-actually drop to one request per turn.
-
-Validation is applied at `config set` time only, and only to the persisted keys.
-A `--plan-model`/`--exec-model` flag is passed through unfiltered on purpose: the vendor's id set is mutable by
-server-side experiment flags, so a stale local list must never block an id the
-CLI has just started serving. If the id really is unknown, the vendor answers
-`ModelNotFoundError … { code: 404 }` and the adapter turns it into a named stop
-quoting the id you asked for, not an unexplained failure.
-
-A run left unpinned is recorded under the model key `gemini-routed`, which
-carries **no price row** — a routed run reports an unpriced model rather than
-being attributed to an engine it may never have used.
-
-### Skills live in Ralphy's own root
-
-Ralphy's bundled skills (`reviewer`, `setup-pocock`, `staged-plan`) are
-materialized into `<repo>/.ralphy/gemini-home/.gemini/skills/` — the vendor's
-USER tier, inside the configuration root ADR-0043 D4 already owns. The
-operator's own `~/.gemini/skills` is neither read nor written.
-
-Confirm discovery by hand:
-
-```powershell
-$env:GEMINI_CLI_HOME = "<repo>/.ralphy/gemini-home"
-gemini skills list
-```
-
-which prints all three names at exit `0` with no model call. Ralphy itself
-runs this same probe once per phase and logs a warning naming any skill that
-did not appear, rather than failing the run.
-
-**Workspace-tier shadowing.** The vendor's own discovery order puts the
-WORKSPACE tier (`<repo>/.gemini/skills`, `<repo>/.agents/skills`) above the
-user tier Ralphy writes to. A repository that ships its own skill under one of
-those paths with a name colliding with `reviewer`, `setup-pocock` or
-`staged-plan` shadows Ralphy's — not worked around here, just recorded.
+The Gemini CLI agent was removed. Use `--agent antigravity`. A stored `gemini`
+section in your settings is ignored. `ralphy config unset gemini.plan_model` (and
+`gemini.exec_model`) still clears a stored key.
 
 ## Events sink keys (`events.*`)
 

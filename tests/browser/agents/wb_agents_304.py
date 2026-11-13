@@ -6,7 +6,7 @@ the daemon and `RALPHY_DAEMON_AGENT_OVERRIDE` pointing every "vendor" launch at
 the session test-child bin, so an agent console spawns the helper instead of a
 vendor CLI (no quota, no install requirement).
 
-Scenario 1   `GET /api/agents` from the page: 7 rows, claude→"1" … gemini→"7"
+Scenario 1   `GET /api/agents` from the page: 7 rows, claude→"1" … antigravity→"7"
 Scenario 2   with NO repo selected the menu renders the 7 roster labels + console
              last, agent rows `disabled` with the verbatim "select a repo first…"
 Scenario 3   selecting the fixture repo enables them
@@ -80,7 +80,7 @@ EXPECTED = [
     ("kimi", "4"),
     ("copilot", "5"),
     ("cursor", "6"),
-    ("gemini", "7"),
+    ("antigravity", "7"),
 ]
 NEEDS_REPO = "Open a project before you start an agent."
 
