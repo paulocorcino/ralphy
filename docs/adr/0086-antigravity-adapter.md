@@ -118,15 +118,17 @@ an interrupt, so a missing `Stop` cannot tell "not done" from "stopped".
 When a model is unset, `--model` is omitted and `agy` uses its default
 (today `gemini-4-argon-medium`, which depends on the plan). Ralphy passes a
 base id (`claude-sonnet-5-5`) with `--effort` from its effort ladder
-(ADR-0044); a model id that already ends in `-low`, `-medium` or `-high` is
-passed as it is, with no `--effort`. An unknown id, an unknown effort, or a
+(ADR-0044); a model id that already ends in `-low`, `-medium`, `-high` or
+`-xhigh` is passed as it is, with no `--effort`, and the price key strips the
+same four suffixes. An unknown id, an unknown effort, or a
 pair that conflicts is refused by `agy` with exit 1 before any model call;
 the adapter reports that as a setting error, not as an outcome of the issue.
 
 Rests on: [spike §4 and parity rows 10 and 24](../research/antigravity-cli-adapter-spike.md).
 A run with `--model` wrote nothing back into the root (§11), so omitting the
-flag does not inherit an old value. No listed model has `xhigh` or `max`;
-`gpt-oss-120b` has `medium` only.
+flag does not inherit an old value. No model of the spike had `xhigh` or
+`max`; `gpt-oss-120b` has `medium` only. `agy` 1.5.8 added
+`gemini-4-hydrogen-xhigh`, so `-xhigh` is a suffix too (#928).
 
 Rejected: a model list pinned in code (it is plan-scoped and changes with
 each self-update). Rejected: always passing the default model explicitly
@@ -330,8 +332,17 @@ Rejected: a private copy of the binary (242 MB, and which path the updater
 rewrites from a copy is not measured). Rejected: blocking the update host
 (a change to the machine outside Ralphy's tree).
 
-Open for #784: whether Ralphy's process-tree kill ends an updater that is
-replacing the binary, and whether the binary still runs after that.
+Measured in #784 (item 8): on Windows the updater is a child of the
+session's `agy`, so the tree kill reaches it. On Linux the updater starts in
+a new session and process group of its own, so the stop, which signals the
+session's process group, does not end it. This is accepted (#928): the
+updater may be replacing the shared binary, and a kill at that moment can
+leave a broken `agy` for every later run, and it ends by itself (3.6 s in
+the measure).
+
+Rejected: signalling, at the stop, each process whose parent is the
+session's `agy`. That kill is the risk above, and the updater ends without
+it.
 
 ### D12 — Remote control, `mic-serve` and the other daemons stay off
 
@@ -370,8 +381,16 @@ is bundled.
 Rejected: driving `agy` through `agy acp` (Agent Client Protocol) only for
 that switch: a second protocol, not probed.
 
-Open for #784: whether `swarm` disabled in the owned root is honored (`-p
-/skills` no longer lists it).
+Measured in #784 (item 5): the `config.json` switch does not take `swarm`
+out of `-p /skills`. The listed `swarm` is the built-in skill
+`native_swarm` (front matter `name: swarm`), not the plugin. A live probe
+in #928 found the switch: `config/skills.json` in the root with
+`{"exclude": ["native_swarm"]}`; `agy` matches the folder name, not the
+`name:`. Ralphy now writes that exclude too and keeps every other key of
+the file; the `config.json` switch stays, for the `swarm_board` sidecar of
+the plugin. Whether the swarm tools still reach the model is not measured,
+so the charter rule stays. Evidence:
+[928-agy-swarm-switch.md](../spike/evidence/928-agy-swarm-switch.md).
 
 ### D14 — The native plan mode is rejected
 
@@ -429,8 +448,15 @@ and the usage so far, and killed the running command.
 
 Rejected: `PATH` only (the binary is off `PATH` until a new shell).
 
-Open for #784: `SIGTERM` was seen only on a logged-out WSL run; a signed-in
-stop on Linux is checked live.
+Measured in #784 (item 3): a signed-in stop on Linux sent `SIGTERM` to the
+`agy` group, and `agy` wrote its `result` and was gone in 1.3 s.
+
+A signal to `ralphy run` itself (Ctrl+C, `SIGTERM`, `SIGINT`, `SIGHUP`, or a
+closed console on Windows) is a stop, as `ralphy stop` is: the run's handler
+raises the stop flag and the adapter stops `agy` as above. A second signal
+takes the default action. This is the
+[ADR-0054](./0054-cooperative-run-stop.md) amendment of 2026-11-13 (#928);
+before it, `ralphy run` exited 143 at once and `agy` finished its turn alone.
 
 ### D18 — Resume by conversation id; the id comes from the stream or the first hook event
 
@@ -649,14 +675,42 @@ logout), Flash only except the limit (item 2). The numbers are in
     Antigravity OAuth as the example. Ralphy runs Google's own binary and
     never touches its token; whether that is allowed is the operator's call.
 
-Found on the way, for a fix stage: the knowledge consolidation of
-`ralphy run` passes no `--model`, so it ran on `agy`'s default (Gemini 4
-Argon Medium); the run summary prices the raw id `gemini-3.8-flash-low`
-instead of its base id; the status file and `antigravity.log` keep only
-the last session of a run; the 1.5.8 ids `gemini-4-hydrogen-*` and
-`gemini-pro-orchestrator-g1-pro` have no price row, and `-xhigh` is not
-stripped by `price_key`; `ralphy doctor` says `antigravity hooks: not
-checked`.
+## Fixed in #928
+
+The gaps that #784 and the review of #926 found, one item per item of the
+issue, with `agy` 1.5.8 on 2026-11-13.
+
+1. Price by base id: the run report and the live meter price an `agy` id by
+   its base id (`gemini-3.8-flash-low` under `gemini-3.8-flash`), for the
+   run, the consolidation and each project row. Only an `agy` id is
+   stripped; another agent's id is priced as it is.
+2. Price rows: `gemini-4-hydrogen` has a row (input 1.5, output 7.5, cache
+   read 0.075 USD per 1M tokens, from models.dev, provider `google`, read
+   2026-11-13), and `-xhigh` is stripped as the other effort suffixes (D4).
+   `gemini-pro-orchestrator-g1-pro` has no public price: it stays unpriced,
+   shown as unknown, never as zero.
+3. Doctor: `ralphy doctor` has a `sign_in` line (`antigravity sign-in`, not
+   required, a warning when `agy models` fails), and the `agy` hook line is
+   a real check of the hook command, not `not checked`.
+4. Consolidation model: the end-of-run consolidation of `ralphy run` runs
+   on the run's exec model and effort, else on the plan model, else on
+   `agy`'s default. The standalone `ralphy consolidate` is unchanged.
+5. `swarm`: `config/skills.json` in the owned root excludes `native_swarm`,
+   found by a live probe (D13).
+6. Session files: each session of a run writes `antigravity-<n>.log` and
+   `antigravity-<n>.status.jsonl`, `n` the first number with no log yet; a
+   one-shot writes `<log stem>.status.jsonl` beside its log.
+7. Stop signals: Ctrl+C, `SIGTERM`, `SIGINT`, `SIGHUP` and a closed console
+   stop `ralphy run` as `ralphy stop` does, for every agent. The handlers
+   are installed in `run.rs` right after the run's logging; the snapshot
+   tick turns the signal into the stop flag; a second signal takes the
+   default action (D17).
+8. Stopped planner: an `agy` planner reaped by the stop returns
+   `PlanStopped` with its usage and conversation id; core writes a plan
+   line with outcome `stopped` to the ledger, and the usage counts in the
+   run total and its per-model split.
+9. Linux updater: it runs in its own session and process group, so the
+   stop does not end it; accepted, with no code (D11).
 
 ## Consequences
 
