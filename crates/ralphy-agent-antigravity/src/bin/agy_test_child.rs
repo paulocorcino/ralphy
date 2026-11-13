@@ -5,9 +5,10 @@
 //! records the order of its stdin lines and that line in `<root>/order.log`.
 //!
 //! The scenario is the text of `<root>/scenario`: `done` (the default), `plan`
-//! (`done` that also writes `.ralphy/plan.md`), `logged_out`, `limit` or
-//! `no_hook`. The adapter builds the child's environment, and a test may not
-//! change its own, so the scenario rides in the root the test chooses.
+//! (`done` that also writes `.ralphy/plan.md`), `logged_out`, `limit`,
+//! `no_hook` or `interrupted` (a task step, then a 60 s sleep until the stop).
+//! The adapter builds the child's environment, and a test may not change its
+//! own, so the scenario rides in the root the test chooses.
 
 use std::fs;
 use std::io::{BufRead, Write};
@@ -127,6 +128,10 @@ fn task(scenario: &str) -> ExitCode {
             .expect("the test child can write the plan");
     }
     turn(200, 20, 7);
+    if scenario == "interrupted" {
+        std::thread::sleep(Duration::from_secs(60));
+        return ExitCode::from(1);
+    }
     result("SUCCESS", "Work done.\nRALPHY_DONE_EXIT\n", None);
     ExitCode::SUCCESS
 }
