@@ -172,6 +172,16 @@ fn reset_hint(reset: Option<&ResetAt>) -> String {
     }
 }
 
+/// The operator's stop reaped the planner before it wrote a plan. An adapter
+/// returns this (wrapped in `anyhow::Error`) with the usage the session had
+/// already spent, so the runner can put that spend on the ledger.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("planning ended by the operator's stop")]
+pub struct PlanStopped {
+    pub usage: Usage,
+    pub session_id: Option<String>,
+}
+
 /// An agent refused to start a session because its hooks did not prove they
 /// run. This is a fault of the machine, not of the issue: the runner ends the
 /// run with this error, restores the repository, and leaves the issue's labels

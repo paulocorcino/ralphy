@@ -1,5 +1,7 @@
 //! The scripted agent, tracker and clock of the stop tests.
 
+use ralphy_core::PlanStopped;
+
 use super::*;
 
 /// Plans a feasible, lint-clean step and executes it green. `stop_at` names the
@@ -23,8 +25,14 @@ pub(crate) struct StoppingAgent {
 #[derive(Clone, Copy)]
 pub(crate) enum PlannerEnd {
     Reaped,
+    /// Reaped, and the adapter reports the usage the session had spent.
+    ReapedWithUsage,
     Finished,
 }
+
+/// The input tokens a planner reaped with usage reports, and its model.
+pub(crate) const STOPPED_PLAN_INPUT: u64 = 38369;
+pub(crate) const STOPPED_PLAN_MODEL: &str = "stopped-planner-model";
 
 impl StoppingAgent {
     pub(crate) fn new(stop_at: Option<u64>) -> Self {
@@ -64,8 +72,20 @@ impl Agent for StoppingAgent {
         if let Some((number, end)) = self.stop_in_plan {
             if number == issue.number {
                 ralphy_core::stop::request();
-                if matches!(end, PlannerEnd::Reaped) {
-                    anyhow::bail!("scripted planner produced no plan");
+                match end {
+                    PlannerEnd::Reaped => anyhow::bail!("scripted planner produced no plan"),
+                    PlannerEnd::ReapedWithUsage => {
+                        return Err(PlanStopped {
+                            usage: Usage {
+                                input: STOPPED_PLAN_INPUT,
+                                model: Some(STOPPED_PLAN_MODEL.into()),
+                                ..Usage::default()
+                            },
+                            session_id: Some("stopped-session".into()),
+                        }
+                        .into());
+                    }
+                    PlannerEnd::Finished => {}
                 }
             }
         }

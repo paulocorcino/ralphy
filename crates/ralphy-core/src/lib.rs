@@ -155,6 +155,7 @@ pub use settings::{Settings, VerifySettings};
 pub use tracker::{GhTracker, IssueTracker};
 pub use triage_draft::{DraftIssue, TriageDraft, TriageItem, TriageVerdict};
 pub use types::{
-    Execution, HooksUnproven, Issue, Outcome, Plan, PlanLimit, ResetAt, Usage, Workspace,
+    Execution, HooksUnproven, Issue, Outcome, Plan, PlanLimit, PlanStopped, ResetAt, Usage,
+    Workspace,
 };
 pub use verify::{VerifyReport, VerifySpec};
