@@ -111,6 +111,30 @@ fn the_owned_root_turns_swarm_off_and_keeps_other_keys() {
 }
 
 #[test]
+fn prepare_root_takes_swarm_out_of_the_skill_list() {
+    let root = tempfile::tempdir().unwrap();
+    let skills_json = root.path().join("config").join("skills.json");
+    crate::prepare_root(root.path()).unwrap();
+    assert_eq!(
+        read_json(&skills_json),
+        json!({ "exclude": ["native_swarm"] }),
+        "agy matches `exclude` against the skill's folder name"
+    );
+
+    fs::write(
+        &skills_json,
+        json!({ "entries": [{ "path": "x" }], "exclude": ["old"] }).to_string(),
+    )
+    .unwrap();
+    crate::prepare_root(root.path()).unwrap();
+    crate::prepare_root(root.path()).unwrap();
+    assert_eq!(
+        read_json(&skills_json),
+        json!({ "entries": [{ "path": "x" }], "exclude": ["old", "native_swarm"] })
+    );
+}
+
+#[test]
 fn a_workspace_hooks_file_is_found_up_to_the_repo_root() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path().join("repo");

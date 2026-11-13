@@ -1,0 +1,182 @@
+# Item 5 of #928: a switch that takes `swarm` out of `agy -p /skills`.
+# Windows 11 Pro 10.0.26300, agy 1.5.8 (<localappdata>\agy\bin\agy.exe), 2026-11-13.
+# Every call: agy --gemini_dir=<R> ..., <R> a new temp folder per root (signed in through
+# Credential Manager). /skills calls ran with MSYS_NO_PATHCONV=1 and --print-timeout 60s.
+# cwd: <repo> is C:\Dev\ralphy (has .agents/skills with three project skills); <cwd> is an
+# empty temp folder. `/skills` output is cut to the first column (the skill names).
+
+== (a) commands of the plugin manager, root R1, cwd <repo>
+$ agy --gemini_dir=<R1> --version
+1.5.8
+$ agy --gemini_dir=<R1> plugin --help
+Usage: agy.exe plugin <command> [arguments]
+
+Commands:
+  list [--json]          List installed plugins
+  import [source]        Import plugins from gemini or claude
+  install <target>       Install a plugin (supports plugin[@marketplace])
+  uninstall <name>       Uninstall a plugin
+  enable <name>          Enable a plugin
+  disable <name>         Disable a plugin
+  validate [path] [--strict] [--json]
+                         Check a plugin's manifest and files
+  link <mp> <target>     Generate link to a marketplace
+  help                   Show this help
+exit=0
+$ agy --gemini_dir=<R1> plugin list --json
+[]
+exit=0
+$ agy --gemini_dir=<R1> plugin list --help
+Error: unknown list option "--help": only --json is supported
+$ agy --gemini_dir=<R1> plugin enable --help
+Error: plugin "--help" not found or invalid
+$ agy --gemini_dir=<R1> plugin disable --help
+Error: plugin "--help" not found or invalid
+$ agy --gemini_dir=<R1> plugin uninstall --help
+Uninstalled plugin "--help"
+$ agy --gemini_dir=<R1> plugin install --help
+Error: install target must be a directory: --help
+# The subcommands have no --help: each reads --help as its argument.
+
+== (b) baseline, root R1
+$ agy --gemini_dir=<R1> -p /skills   (cwd <repo>, first run of R1, 15.6 s)
+agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows reviewer run-workflow setup-pocock staged-plan
+exit=0
+# config/config.json after the run: {"plugins":{"swarm":{"enabled":true}}}
+# Extracted: antigravity-cli/builtin/plugins/swarm (plugin.json + sidecars/swarm_board only)
+# and antigravity-cli/builtin/skills/native_swarm/SKILL.md, whose front matter is `name: swarm`.
+$ agy --gemini_dir=<R1> -p /skills   (cwd <repo>, second run)
+agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows reviewer run-workflow setup-pocock staged-plan
+exit=0
+$ agy --gemini_dir=<R1> -p "Reply with the single word OK." --model gemini-3.8-flash-low --print-timeout 120s   (cwd <cwd>, model turn 1 of 3)
+OK
+exit=0
+$ agy --gemini_dir=<R1> -p /skills   (cwd <cwd>)
+agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm
+exit=0
+
+== (b) baseline, root R2 (fresh), cwd <cwd>, no model turn
+$ agy --gemini_dir=<R2> -p /skills   (first run)
+agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow
+exit=0
+$ agy --gemini_dir=<R2> -p /skills   (second run)
+agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm
+exit=0
+$ agy --gemini_dir=<R2> -p /skills   (cwd: the stage worktree)
+agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm
+exit=0
+$ agy --gemini_dir=<R2> -p /skills   (cwd <repo>)
+agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows reviewer run-workflow setup-pocock staged-plan swarm
+exit=0
+$ agy --gemini_dir=<R2> -p /skills   (cwd <cwd>)
+agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm
+exit=0
+# The first runs of a fresh root sometimes miss `swarm` (R1 twice, R2 once, the skills-json
+# seed once below); every later run lists it. Each candidate below is therefore applied
+# after two seed runs, and judged on two runs after it.
+
+== (c) read-only scan of agy.exe (244 091 032 bytes), 1 MB chunks, printable strings within
+== 200 bytes of each needle. Counts of strings: swarm 6517, plugins. 1573, enabledPlugins 21,
+== disabledPlugins 0. The strings that name a setting:
+json:"enabledPlugins"   (in `struct { EnabledPlugins map[string]interface {} }`, the import of another agent's settings)
+planner_config.customization_discovery_config.plugins.builtin_plugin_names
+plugins.(*Manager).Disable / plugins.(*Manager).Enable / plugins.SetEnabledForDir
+"use `plugins.json` to enable specific plugins or inherit them from shared paths"
+"`skills.json` or `plugins.json` in your workspace"
+"Fixed the agent being blocked from reading your global rules and customization files in
+ `~/.gemini/config`, including ... `skills.json`, `rules.json`, `plugins.json`, and `agents.json`"
+google3/third_party/jetski/cli/swarm/live/live.enabled
+# No swarm-specific setting (no enable_swarm, swarm_enabled or the like) was found.
+# The built-in doc builtin/skills/agy-customizations/docs/json_configs.md says skills.json
+# and plugins.json in `~/.gemini/config/` take `entries`, `inherits` and a top-level
+# `exclude` of patterns matched against directory names.
+
+== (d) candidates, each on a fresh root, cwd <cwd>
+== candidate plugin-disable, fresh root R
+-- /skills seed 1: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- /skills seed 2: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- agy plugin disable swarm: Error: plugin "swarm" not found or invalid exit=1
+-- config.json: {"plugins":{"swarm":{"enabled":true}}}
+-- plugin list --json: []
+-- /skills after 1: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- /skills after 2: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- builtin/plugins/swarm present: yes; builtin/skills/native_swarm present: yes
+-- config.json after: {"plugins":{"swarm":{"enabled":true}}}
+
+== candidate config-key, fresh root R
+-- /skills seed 1: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- /skills seed 2: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- wrote config/config.json plugins.swarm.enabled=false
+-- config.json: {"plugins":{"swarm":{"enabled":false}}}
+-- plugin list --json: []
+-- /skills after 1: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- /skills after 2: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- builtin/plugins/swarm present: yes; builtin/skills/native_swarm present: yes
+-- config.json after: {"plugins":{"swarm":{"enabled":false}}}
+
+== candidate skills-json, fresh root R
+-- /skills seed 1: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow exit=0
+-- /skills seed 2: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- wrote config/skills.json {"exclude": ["native_swarm", "swarm"]}
+-- config.json: {"plugins":{"swarm":{"enabled":true}}}
+-- plugin list --json: []
+-- /skills after 1: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow exit=0
+-- /skills after 2: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow exit=0
+-- builtin/plugins/swarm present: yes; builtin/skills/native_swarm present: yes
+-- config.json after: {"plugins":{"swarm":{"enabled":true}}}
+
+== candidate skills-json-dir, fresh root R
+-- /skills seed 1: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- /skills seed 2: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- wrote config/skills.json {"exclude": ["native_swarm"]}
+-- config.json: {"plugins":{"swarm":{"enabled":true}}}
+-- plugin list --json: []
+-- /skills after 1: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow exit=0
+-- /skills after 2: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow exit=0
+-- builtin/plugins/swarm present: yes; builtin/skills/native_swarm present: yes
+-- config.json after: {"plugins":{"swarm":{"enabled":true}}}
+
+== candidate skills-json-name, fresh root R
+-- /skills seed 1: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- /skills seed 2: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- wrote config/skills.json {"exclude": ["swarm"]}
+-- config.json: {"plugins":{"swarm":{"enabled":true}}}
+-- plugin list --json: []
+-- /skills after 1: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- /skills after 2: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- builtin/plugins/swarm present: yes; builtin/skills/native_swarm present: yes
+-- config.json after: {"plugins":{"swarm":{"enabled":true}}}
+
+== candidate plugins-json, fresh root R
+-- /skills seed 1: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- /skills seed 2: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- wrote config/plugins.json {"exclude": ["swarm"]}
+-- config.json: {"plugins":{"swarm":{"enabled":true}}}
+-- plugin list --json: []
+-- /skills after 1: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- /skills after 2: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- builtin/plugins/swarm present: yes; builtin/skills/native_swarm present: yes
+-- config.json after: {"plugins":{"swarm":{"enabled":true}}}
+
+== candidate rm-plugin, fresh root R
+-- /skills seed 1: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- /skills seed 2: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- removed antigravity-cli/builtin/plugins/swarm
+-- config.json: {"plugins":{"swarm":{"enabled":true}}}
+-- plugin list --json: []
+-- /skills after 1: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- /skills after 2: agy-customizations antigravity-guide automation migrate-agent-settings migrate-workflows run-workflow swarm exit=0
+-- builtin/plugins/swarm present: no; builtin/skills/native_swarm present: yes
+-- config.json after: {"plugins":{"swarm":{"enabled":true}}}
+
+
+== (e) model turn 2 of 3, root of candidate skills-json-dir (native_swarm excluded), cwd <cwd>
+$ agy --gemini_dir=<R> -p "List the names of the skills available to you in this session, one per line, and nothing else. Do not call any tool." --model gemini-3.8-flash-low --print-timeout 240s
+agy-customizations
+antigravity-guide
+swarm_monitor
+exit=0 secs=6
+# The model's own list is partial (3 names), so it proves nothing either way about the
+# swarm tools; `swarm` is not in it. Turn 3 was not used.
+
+== (f) every temp root and the scan folder were deleted after the probe.
