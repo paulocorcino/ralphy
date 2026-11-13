@@ -13,9 +13,10 @@ use crate::document::{final_snapshot_path, snapshot_path, stop_path};
 /// ceremony around one more `remove_file`.
 ///
 /// Held for the whole run process, so `Drop` covers every normal and
-/// `?`-propagated exit. There is deliberately no signal handler: a killed
-/// process leaves both files behind, and those orphans are exactly what
-/// [`crate::list_runs`]'s dead-pid sweep recovers.
+/// `?`-propagated exit. `ralphy run` turns a stop signal into a stop, so this
+/// `Drop` runs on a Ctrl-C too (ADR-0054, 2026-11-13). A hard kill still leaves
+/// both files behind, and those orphans are what [`crate::list_runs`]'s
+/// dead-pid sweep recovers.
 #[derive(Debug)]
 pub struct SnapshotGuard {
     path: PathBuf,

@@ -205,6 +205,7 @@ fn engine_over(dir: &std::path::Path, runid: &str, md: &str) -> (SnapshotEngine,
         plan_abs: plan_abs.clone(),
         stop_path: ralphy_run_snapshot::stop_path(dir, runid),
         stop_seen: false,
+        stop_signal: || false,
     };
     (engine, plan_abs)
 }
@@ -402,6 +403,21 @@ fn ticks_without_a_sentinel_never_raise_the_flag() {
     assert!(!engine.stop_seen);
 }
 
+/// A stop signal is the stop `ralphy stop` makes: with no sentinel on disk,
+/// the next tick after the signal raises the flag.
+#[test]
+fn a_stop_signal_raises_the_stop_flag_on_the_next_tick() {
+    let _guard = StopFlagGuard::acquire();
+    let dir = tempfile::tempdir().unwrap();
+    let (mut engine, _plan) = engine_over(dir.path(), "01SIGNAL", "");
+    engine.on_tick(false);
+    assert!(!ralphy_core::stop::requested(), "no signal, no stop");
+
+    engine.stop_signal = || true;
+    engine.on_tick(false);
+    assert!(ralphy_core::stop::requested(), "the signal raises the flag");
+}
+
 #[test]
 fn engine_rewrites_only_when_the_projection_changes() {
     let dir = tempfile::tempdir().unwrap();
@@ -417,6 +433,7 @@ fn engine_rewrites_only_when_the_projection_changes() {
         plan_abs: dir.path().join(".ralphy").join("plan.md"),
         stop_path: ralphy_run_snapshot::stop_path(dir.path(), runid),
         stop_seen: false,
+        stop_signal: || false,
     };
     engine.on_start();
     let path = snapshot_path(dir.path(), runid);
