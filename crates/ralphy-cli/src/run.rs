@@ -38,6 +38,24 @@ use wiring::{
     ResolvedEffort,
 };
 
+/// The agent, model and effort of the end-of-run consolidation: an agy run
+/// uses its own models; every other agent keeps the vendor defaults.
+fn run_consolidator(
+    agent: CliAgent,
+    antigravity: &wiring::ResolvedAntigravity,
+) -> crate::Consolidator<'_> {
+    let (model, effort) = if matches!(agent, CliAgent::Antigravity) {
+        antigravity.consolidation_model()
+    } else {
+        crate::consolidate_defaults(agent)
+    };
+    crate::Consolidator {
+        agent,
+        model,
+        effort,
+    }
+}
+
 pub(crate) fn run_cmd(args: &RunArgs) -> Result<()> {
     // Anchors the `run.finished` `duration_s` (ADR-0019) — the run's wall-clock.
     let run_start = std::time::Instant::now();
@@ -399,7 +417,7 @@ fn work_the_queue(args: &RunArgs, work: &Work<'_>, workers: Workers) -> Result<(
     let presenter = &work.obs.presenter;
     let (notifier, events_handle, snapshot_handle) = workers;
     let consolidation_usage = finalize_run(
-        args.agent,
+        run_consolidator(args.agent, &resolved_antigravity),
         presenter,
         &result,
         args.dry_run,

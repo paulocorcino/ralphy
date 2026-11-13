@@ -9,7 +9,7 @@ use ralphy_core::{git, BranchMode, StopReason, Workspace};
 use tracing::warn;
 
 use super::summary::RunSummary;
-use crate::{pricing, ui, CliAgent};
+use crate::{pricing, ui};
 
 /// Knowledge consolidation trigger: a non-dry run that finished (`run_ok`) and left
 /// loose per-issue notes folds them into KNOWLEDGE.md, so the curated cache the next
@@ -24,9 +24,8 @@ use crate::{pricing, ui, CliAgent};
 /// already succeeded and the notes stay loose for a later retry. `ANTHROPIC_API_KEY`
 /// was already cleared up front. The session runs on the run's own executor
 /// `agent` (docs/adr/0031) — not a hardwired Claude — so a Kimi/Codex/OpenCode run
-/// never reaches for `claude`. The model/effort defaults come from
-/// `consolidate_defaults`: opus/medium for Claude (curation is judgment-heavy),
-/// the adapter's own default for the rest. 30-minute wall like the command.
+/// never reaches for `claude`. The caller's
+/// `Consolidator` names the model and effort. 30-minute wall like the command.
 ///
 /// Returns the consolidation invocation's token [`ralphy_core::Usage`] (issue #269) — default
 /// (zero) when the pass did not run or failed. The pass is a real vendor call, so
@@ -35,7 +34,7 @@ use crate::{pricing, ui, CliAgent};
 /// and returned for the caller to fold into this run's total and footer. This is
 /// run overhead, not issue work, so it never touches any per-issue rollup.
 pub(crate) fn maybe_consolidate_knowledge(
-    agent: CliAgent,
+    consolidator: crate::Consolidator<'_>,
     run_ok: bool,
     dry_run: bool,
     ws: &Workspace,
@@ -50,12 +49,6 @@ pub(crate) fn maybe_consolidate_knowledge(
     }
     ralphy_core::emit::knowledge_consolidating(u64::try_from(notes.len()).unwrap_or(u64::MAX));
     let run_dir = ws.run_dir(stamp);
-    let (model, effort) = crate::consolidate_defaults(agent);
-    let consolidator = crate::Consolidator {
-        agent,
-        model,
-        effort,
-    };
     match crate::run_consolidation(consolidator, ws, &run_dir, 30, &notes) {
         Ok((archived, usage)) => {
             ralphy_core::emit::knowledge_consolidated(u64::try_from(archived).unwrap_or(u64::MAX));
@@ -67,7 +60,7 @@ pub(crate) fn maybe_consolidate_knowledge(
                 &git::project_slug(repo),
                 &git::user_email(repo).unwrap_or_default(),
                 &git::user_name(repo).unwrap_or_default(),
-                agent.cli_name(),
+                consolidator.agent.cli_name(),
                 "consolidate",
                 &usage,
             );
