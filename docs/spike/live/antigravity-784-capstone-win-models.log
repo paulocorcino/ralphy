@@ -1,0 +1,26 @@
+# Models after the operator signed back in.
+# Windows 11 Pro 10.0.26300, agy 1.5.8, owned root <home>/.ralphy/antigravity-root, 2026-11-13 (#784 capstone).
+== 2026-11-13T02:59:14-03:00 agy --version: 1.5.8
+== ralphy models --agent antigravity
+gemini-4-argon-medium  Gemini 4 Argon (Medium)
+gemini-4-argon-high  Gemini 4 Argon (High)
+gemini-4-argon-low  Gemini 4 Argon (Low)
+gemini-4-hydrogen-high  Gemini 4 Hydrogen (High)
+gemini-4-hydrogen-xhigh  Gemini 4 Hydrogen (XHigh)
+gemini-4-hydrogen-medium  Gemini 4 Hydrogen (Medium)
+gemini-4-hydrogen-low  Gemini 4 Hydrogen (Low)
+gemini-pro-orchestrator-g1-pro  Orchestrator (Argon)
+gemini-3.8-flash-high  Gemini 3.8 Flash (High)
+gemini-3.8-flash-medium  Gemini 3.8 Flash (Medium)
+gemini-3.8-flash-low  Gemini 3.8 Flash (Low)
+claude-opus-5-5-low  Claude Opus 5.5 (Low)
+claude-opus-5-5-medium  Claude Opus 5.5 (Medium)
+claude-opus-5-5-high  Claude Opus 5.5 (High)
+claude-sonnet-5-5-low  Claude Sonnet 5.5 (Low)
+claude-sonnet-5-5-medium  Claude Sonnet 5.5 (Medium)
+claude-sonnet-5-5-high  Claude Sonnet 5.5 (High)
+gpt-oss-120b-medium  GPT-OSS 120B (Medium)
+exit=0
+== ralphy doctor (antigravity lines)
+[ok  ] antigravity: 1.5.8
+[warn] antigravity hooks: not checked: the check gave no result

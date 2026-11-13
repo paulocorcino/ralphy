@@ -1,0 +1,61 @@
+# Item 4: ralphy.exe copied to a folder with a space; one guarded session (consolidate, Flash); the hooks file Ralphy wrote.
+# Windows 11 Pro 10.0.26300, agy 1.5.8, owned root <home>/.ralphy/antigravity-root, 2026-11-13 (#784 capstone).
+== 2026-11-13T02:54:03-03:00 "<home>/AppData/Local/Temp/agy784/ralphy space/ralphy.exe" consolidate --agent antigravity --model gemini-3.8-flash-low
+Consolidating 1 note(s) into KNOWLEDGE.md: issue-131.md
+Done: KNOWLEDGE.md updated, 1 note(s) archived into .ralphy/knowledge/raw/.
+exit=0 secs=54
+== hooks.json after
+{
+  "ralphy": {
+    "PostInvocation": [
+      {
+        "command": "<home>\\AppData\\Local\\Temp\\agy784\\RALPHY~1\\ralphy.exe hook status antigravity",
+        "type": "command"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "<home>\\AppData\\Local\\Temp\\agy784\\RALPHY~1\\ralphy.exe hook status antigravity",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "PreInvocation": [
+      {
+        "command": "<home>\\AppData\\Local\\Temp\\agy784\\RALPHY~1\\ralphy.exe hook status antigravity",
+        "type": "command"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "<home>\\AppData\\Local\\Temp\\agy784\\RALPHY~1\\ralphy.exe hook guard --vendor antigravity",
+            "type": "command"
+          },
+          {
+            "command": "<home>\\AppData\\Local\\Temp\\agy784\\RALPHY~1\\ralphy.exe hook status antigravity",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "SessionStart": [
+      {
+        "command": "<home>\\AppData\\Local\\Temp\\agy784\\RALPHY~1\\ralphy.exe hook status antigravity",
+        "type": "command"
+      }
+    ],
+    "Stop": [
+      {
+        "command": "<home>\\AppData\\Local\\Temp\\agy784\\RALPHY~1\\ralphy.exe hook status antigravity",
+        "type": "command"
+      }
+    ]
+  }
+}

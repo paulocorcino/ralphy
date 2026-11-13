@@ -1,0 +1,28 @@
+# Item 9: two fresh git repositories (3 and 201 files), a fresh root each, one Flash run with two tool calls each; agy's own log searched.
+# Windows 11 Pro 10.0.26300, agy 1.5.8, owned root <home>/.ralphy/antigravity-root, 2026-11-13 (#784 capstone).
+# Pattern: upload
+# sync
+# index
+# merkle
+# embedd
+# snapshot
+# codebase
+# repository; endpoints: *.googleapis.com names in the log.
+== repo a: 3 files, exit=0 secs=14.2
+result: SUCCESS '3\nProbe repository a\n'
+tool calls: ['run_command', 'read_file']
+endpoints: ['daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels', 'daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist', 'daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent', 'jetski-webchannel.googleapis.com:443']
+log lines matching upload|sync|index|...: 4
+   I1113 02:55:56.475629      82 workflow_python.go:21] run_workflow Python: interpreter "", embedded true
+   I1113 02:56:02.648494       1 conversation_manager.go:727] project: synced active project to "CLI Project" (id=default-cli-project) from conversation switch
+   I1113 02:56:02.712245     766 encoder_embed.go:85] Installing/updating embedded webm_encoder binary to <home>\AppData\Local\Temp\agy784-root-a-p405_blp\antigravity-cli\bin\webm_encoder.exe
+   I1113 02:56:02.722305     766 monitor_config_manager_external.go:53] externalMonitorConfigManager: initialized with embedded config (3 monitors)
+== repo b: 201 files, exit=0 secs=10.0
+result: SUCCESS '201\nProbe repository b\n'
+tool calls: ['run_command', 'read_file']
+endpoints: ['daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels', 'daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist', 'daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent', 'jetski-webchannel.googleapis.com:443']
+log lines matching upload|sync|index|...: 4
+   I1113 02:56:11.726236      23 workflow_python.go:21] run_workflow Python: interpreter "", embedded true
+   I1113 02:56:15.208954       1 conversation_manager.go:727] project: synced active project to "CLI Project" (id=default-cli-project) from conversation switch
+   I1113 02:56:15.294933     467 encoder_embed.go:85] Installing/updating embedded webm_encoder binary to <home>\AppData\Local\Temp\agy784-root-b-st_1nv9p\antigravity-cli\bin\webm_encoder.exe
+   I1113 02:56:15.308397     467 monitor_config_manager_external.go:53] externalMonitorConfigManager: initialized with embedded config (3 monitors)

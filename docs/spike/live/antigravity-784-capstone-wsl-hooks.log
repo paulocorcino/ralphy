@@ -1,0 +1,69 @@
+# D9 on WSL: the hooks file Ralphy wrote and the hook processes sampled with their parents.
+# WSL Ubuntu on Windows 11, agy 1.5.8, owned root <home>/.ralphy/antigravity-root, 2026-11-13 (#784 capstone).
+# Binary: <home>/p1lint/target/debug/ralphy, debug build of feat/784-capstone a439c946.
+== hooks file Ralphy wrote: <root>/config/hooks.json
+{
+  "ralphy": {
+    "PostInvocation": [
+      {
+        "command": "'<home>/p1lint/target/debug/ralphy' hook status antigravity",
+        "type": "command"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "'<home>/p1lint/target/debug/ralphy' hook status antigravity",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "PreInvocation": [
+      {
+        "command": "'<home>/p1lint/target/debug/ralphy' hook status antigravity",
+        "type": "command"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "'<home>/p1lint/target/debug/ralphy' hook guard --vendor antigravity",
+            "type": "command"
+          },
+          {
+            "command": "'<home>/p1lint/target/debug/ralphy' hook status antigravity",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "SessionStart": [
+      {
+        "command": "'<home>/p1lint/target/debug/ralphy' hook status antigravity",
+        "type": "command"
+      }
+    ],
+    "Stop": [
+      {
+        "command": "'<home>/p1lint/target/debug/ralphy' hook status antigravity",
+        "type": "command"
+      }
+    ]
+  }
+}
+== hook processes sampled every 20 ms during the consolidation of run 1
+03:24:32.550 pid=31612 args=sh -c '<home>/p1lint/target/debug/ralphy' hook status antigravity | parent pid=27336 args=<home>/.local/bin/agy --gemini_dir=<home>/.ralphy/antigravity-root --output-format stream-json --input-format stream-json --dangerously-skip-permissions
+03:24:42.067 pid=33390 args=sh -c '<home>/p1lint/target/debug/ralphy' hook status antigravity | parent pid=27336 args=<home>/.local/bin/agy --gemini_dir=<home>/.ralphy/antigravity-root --output-format stream-json --input-format stream-json --dangerously-skip-permissions
+03:25:24.481 pid=40763 args=sh -c '<home>/p1lint/target/debug/ralphy' hook guard --vendor antigravity | parent pid=27336 args=<home>/.local/bin/agy --gemini_dir=<home>/.ralphy/antigravity-root --output-format stream-json --input-format stream-json --dangerously-skip-permissions
+03:25:33.149 pid=42699 args=sh -c '<home>/p1lint/target/debug/ralphy' hook status antigravity | parent pid=27336 args=<home>/.local/bin/agy --gemini_dir=<home>/.ralphy/antigravity-root --output-format stream-json --input-format stream-json --dangerously-skip-permissions
+== hook processes sampled during the stop run
+03:32:59.936 pid=1529 args=sh -c '<home>/p1lint/target/debug/ralphy' hook guard --vendor antigravity | parent pid=98034 args=<home>/.local/bin/agy --gemini_dir=<home>/.ralphy/antigravity-root --output-format stream-json --input-format stream-json --dangerously-skip-permissions --model gemini-3.8-flash-low
+03:32:59.949 pid=1530 args=<home>/p1lint/target/debug/ralphy hook guard --vendor antigravity | parent pid=1529 args=
+03:32:59.998 pid=1555 args=sh -c '<home>/p1lint/target/debug/ralphy' hook status antigravity | parent pid=98034 args=<home>/.local/bin/agy --gemini_dir=<home>/.ralphy/antigravity-root --output-format stream-json --input-format stream-json --dangerously-skip-permissions --model gemini-3.8-flash-low
+03:33:00.011 pid=1556 args=<home>/p1lint/target/debug/ralphy hook status antigravity | parent pid=1555 args=
+03:33:18.340 pid=4211 args=sh -c '<home>/p1lint/target/debug/ralphy' hook status antigravity | parent pid=98034 args=<home>/.local/bin/agy --gemini_dir=<home>/.ralphy/antigravity-root --output-format stream-json --input-format stream-json --dangerously-skip-permissions --model gemini-3.8-flash-low

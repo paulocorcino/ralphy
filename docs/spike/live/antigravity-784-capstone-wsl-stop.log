@@ -1,0 +1,105 @@
+# D17 on WSL: run 2 stopped by kill -TERM to the ralphy pid, run 3 by ralphy stop.
+# WSL Ubuntu on Windows 11, agy 1.5.8, owned root <home>/.ralphy/antigravity-root, 2026-11-13 (#784 capstone).
+# Binary: <home>/p1lint/target/debug/ralphy, debug build of feat/784-capstone a439c946.
+== run 2: ralphy run on #133 stopped with kill -TERM <ralphy pid> during planning
+== 2026-11-13T03:32:37-03:00 stop run, issue 133 in <tmp>/tmp.nOdVcGm1OR/FinCal
+ralphy pid=96755 pgid=57414
+🐸 Ralphy - v0.1.0-rc.43
+FinCal · master · https://github.com/paulocorcino/FinCal
+2026-11-13 03:32:39  [queue] queue built: 1 issue(s)
+2026-11-13 03:32:42  [plan] #133 capstone #784: WSL stop test (stopped on purpose) — planning
+03:32:44.157 agy child pid=98034 pgid=98034
+03:32:59.168 kill -TERM 96755
+== ralphy exit 143 after 0.00320888 s at 03:32:59.179
+agy pid 98034 still alive: 98034 <home>/.local/bin/agy --gemini_dir=<home>/.ralphy/antigravity-root --output-format stream-json --input-format stream-json --dangerously-skip-permissions --model gemini-3.8-flash-low
+98034 57406 98034 <home>/.local/bin/agy --gemini_dir=<home>/.ralphy/antigravity-root --output-format stream-json --input-format stream-json --dangerously-skip-permissions --model gemini-3.8-flash-low
+== agy processes (pid, ppid, pgid, sid) of run 2
+03:32:43.156 start pid=97826 ppid=96755 pgid=97826 sid=57414 args=<home>/.local/bin/agy --version
+03:32:44.190 start pid=98034 ppid=96755 pgid=98034 sid=57414 args=<home>/.local/bin/agy --gemini_dir=<home>/.ralphy/antigravity-root --output-format stream-json --input-format stream-json --dangerously-skip-permissions --model gemini-3.8-flash-low
+03:32:44.190 gone pid=97826
+03:32:45.224 start pid=98251 ppid=98034 pgid=98251 sid=98251 args=<home>/.local/bin/agy --bg-updater --app_data_dir=antigravity-cli --gemini_dir=<home>/.ralphy/antigravity-root
+03:32:46.269 start pid=98465 ppid=98251 pgid=98251 sid=98251 args=<home>/.local/bin/agy --version
+03:32:47.299 gone pid=98465
+03:32:48.844 gone pid=98251
+03:33:24.311 gone pid=98034
+== the orphaned agy 98034 ended by itself at 03:33:26; ralphy.log of run 2
+2026-11-13 03:32:37  INFO ralphy::run: ralphy run repo=<tmp>/tmp.nOdVcGm1OR/FinCal stamp=20261113-033237 dry_run=false
+2026-11-13 03:32:39  INFO ralphy_core::emit: queue built count=1 order=#133 stop_before=0 issues_json=[{"number":133,"title":"capstone #784: WSL stop test (stopped on purpose)","labels":[],"queue_status":"eligible","skip_reason":null,"blocked_by":[],"position":1}] assignee_filter= scope=issues [#133
+2026-11-13 03:32:39  INFO ralphy_core::emit: run started repo=paulocorcino/FinCal queue_labels=ready-for-agent,AFK agent="antigravity" plan_agent="antigravity" branch_mode="new" base=master deadline_hours=0.0
+2026-11-13 03:32:41  INFO ralphy_core::runner::branch: run branch created branch=afk/run-20261113-033237 base=master was=master
+2026-11-13 03:32:42  INFO ralphy_core::emit: issue started number=133 title=capstone #784: WSL stop test (stopped on purpose)
+2026-11-13 03:32:42  INFO ralphy_core::emit: planning cmd=antigravity model=gemini-3.8-flash-low effort= variant=
+2026-11-13 03:32:43  INFO ralphy_agent_antigravity::session: antigravity: agy version 1.5.8
+== agent-status.jsonl of run 2 (written after ralphy died, by the orphaned agy hooks)
+{"agent_id":null,"event":"SessionStart","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:32:48.110148604-03:00"}
+{"agent_id":null,"event":"PreInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:32:48.117931951-03:00"}
+{"agent_id":null,"event":"PostInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:32:50.014621536-03:00"}
+{"agent_id":null,"event":"Stop","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:32:50.027536924-03:00"}
+{"agent_id":null,"event":"PreInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:32:50.081461781-03:00"}
+{"agent_id":null,"event":"PreToolUse","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":"read_file","tool_use_id":"call_2824619607858899094","ts":"2026-11-13T03:32:52.593504933-03:00"}
+{"agent_id":null,"event":"PostToolUse","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":"read_file","tool_use_id":"call_2824619607858899094","ts":"2026-11-13T03:32:52.604219885-03:00"}
+{"agent_id":null,"event":"PreToolUse","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":"read_file","tool_use_id":"call_2824619607858898965","ts":"2026-11-13T03:32:52.619455419-03:00"}
+{"agent_id":null,"event":"PostToolUse","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":"read_file","tool_use_id":"call_2824619607858898965","ts":"2026-11-13T03:32:52.627523709-03:00"}
+{"agent_id":null,"event":"PostInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:32:52.640796944-03:00"}
+{"agent_id":null,"event":"PreInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:32:52.650226510-03:00"}
+{"agent_id":null,"event":"PreToolUse","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":"run_command","tool_use_id":"call_10875094798919203387","ts":"2026-11-13T03:32:55.053566024-03:00"}
+{"agent_id":null,"event":"PostToolUse","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":"run_command","tool_use_id":"call_10875094798919203387","ts":"2026-11-13T03:32:55.073551779-03:00"}
+{"agent_id":null,"event":"PostInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:32:55.082484096-03:00"}
+{"agent_id":null,"event":"PreInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:32:55.090567674-03:00"}
+{"agent_id":null,"event":"PreToolUse","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":"read_file","tool_use_id":"call_12834753559660458810","ts":"2026-11-13T03:32:57.429885236-03:00"}
+{"agent_id":null,"event":"PostToolUse","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":"read_file","tool_use_id":"call_12834753559660458810","ts":"2026-11-13T03:32:57.439052752-03:00"}
+{"agent_id":null,"event":"PostInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:32:57.450713291-03:00"}
+{"agent_id":null,"event":"PreInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:32:57.460800995-03:00"}
+{"agent_id":null,"event":"PreToolUse","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":"run_command","tool_use_id":"call_10214102063738331498","ts":"2026-11-13T03:32:59.939666481-03:00"}
+{"agent_id":null,"event":"PostToolUse","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":"run_command","tool_use_id":"call_10214102063738331498","ts":"2026-11-13T03:32:59.958374619-03:00"}
+{"agent_id":null,"event":"PostInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:32:59.971071418-03:00"}
+{"agent_id":null,"event":"PreInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:32:59.981784588-03:00"}
+{"agent_id":null,"event":"PreToolUse","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":"run_command","tool_use_id":"call_2786618110964911384","ts":"2026-11-13T03:33:06.759720275-03:00"}
+{"agent_id":null,"event":"PostToolUse","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":"run_command","tool_use_id":"call_2786618110964911384","ts":"2026-11-13T03:33:06.789673388-03:00"}
+{"agent_id":null,"event":"PostInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:33:06.808691078-03:00"}
+{"agent_id":null,"event":"PreInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:33:06.823652899-03:00"}
+{"agent_id":null,"event":"PreToolUse","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":"write_file","tool_use_id":"call_12591412315516481504","ts":"2026-11-13T03:33:18.291509903-03:00"}
+{"agent_id":null,"event":"PostToolUse","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":"write_file","tool_use_id":"call_12591412315516481504","ts":"2026-11-13T03:33:18.312104991-03:00"}
+{"agent_id":null,"event":"PostInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:33:18.332457922-03:00"}
+{"agent_id":null,"event":"PreInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:33:18.347156537-03:00"}
+{"agent_id":null,"event":"PreToolUse","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":"read_file","tool_use_id":"call_11117631152584327447","ts":"2026-11-13T03:33:21.021452230-03:00"}
+{"agent_id":null,"event":"PostToolUse","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":"read_file","tool_use_id":"call_11117631152584327447","ts":"2026-11-13T03:33:21.033531373-03:00"}
+{"agent_id":null,"event":"PostInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:33:21.049119951-03:00"}
+{"agent_id":null,"event":"PreInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:33:21.061758050-03:00"}
+{"agent_id":null,"event":"PostInvocation","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:33:23.526025315-03:00"}
+{"agent_id":null,"event":"Stop","notification_type":null,"question":null,"session_id":"ca70c7fa-697d-4d74-bed4-1f09f1be44c1","tool_name":null,"tool_use_id":null,"ts":"2026-11-13T03:33:23.534927576-03:00"}
+== store of the orphaned conversation ca70c7fa
+ca70c7fa-697d-4d74-bed4-1f09f1be44c1 ([51108, 1002, 104662], 9, {'Gemini 3.8 Flash (Low)'})
+== run 3: ralphy run on #133 stopped with ralphy stop during planning
+== 2026-11-13T03:33:57-03:00 cooperative stop run, issue 133 in <tmp>/tmp.cIjN5JgCfG/FinCal
+🐸 Ralphy - v0.1.0-rc.43
+FinCal · master · https://github.com/paulocorcino/FinCal
+2026-11-13 03:33:59  [queue] queue built: 1 issue(s)
+2026-11-13 03:34:03  [plan] #133 capstone #784: WSL stop test (stopped on purpose) — planning
+03:34:05.255 ralphy pid=7754, agy child pid=8017
+03:34:23.594 ralphy stop
+stop requested for run 01M79SST03756XZF1XGQN2SNQ5 (pid 7754).
+2026-11-13 03:34:24  [stop] stopped by the operator during #133
+2026-11-13 03:34:24  [warn] unknown model — add `big-pickle` to pricing.toml to price it
+2026-11-13 03:34:24  [warn] unknown model — add `claude-haiku-5-5` to pricing.toml to price it
+2026-11-13 03:34:24  [warn] unknown model — add `gemini-3.8-flash-low` to pricing.toml to price it
+2026-11-13 03:34:24  [warn] some tokens had no model attribution — not priced (shown as +?)
+[ok] 0 done · [blocked] 0 blocked · [skip] 1 skipped
+0 commit(s) on 'afk/run-20261113-033358'
+Stopped: you stopped the run during #133. Branch handed back with the work in place; #133 stays open.
+Left repo checked out on 'afk/run-20261113-033358' for inspection.
+➜  git merge afk/run-20261113-033358
+run: in 0 cr 0 cw 0 out 0 · $? · project: paulocorcino/FinCal in 507.1k cr 3.8M cw 354.4k out 167.7k · $1.15+?
+03:34:24.904 agy gone 1.29279 s after ralphy stop returned
+== ralphy exit 0 at 03:34:24.909
+== last 3 lines of the run's antigravity.log
+{"event":"step_update","step_update":{"conversation_id":"d0cabafc-b052-41af-90b2-d89e810be60b","step_index":9,"state":"DONE","step_type":"tool","tool_name":"read_file","duration_seconds":0.067739009,"tool_info":{"name":"read_file","parameters":{"Path":"<tmp>/tmp.cIjN5JgCfG/FinCal/.ralphy/environment.md"},"output":"21 lines, 1638 bytes"}}}
+{"event":"result","result":{"conversation_id":"d0cabafc-b052-41af-90b2-d89e810be60b","status":"ERROR","response":"","error":"interrupted","duration_seconds":12.818021177,"num_turns":2,"usage":{"input_tokens":38369,"output_tokens":160,"thinking_tokens":0,"cache_read_tokens":16423,"total_tokens":38529},"finished_reason":"interrupted"}}
+error: interrupted
+== ralphy.log stop lines
+2026-11-13 03:33:59  INFO ralphy_core::emit: queue built count=1 order=#133 stop_before=0 issues_json=[{"number":133,"title":"capstone #784: WSL stop test (stopped on purpose)","labels":[],"queue_status":"eligible","skip_reason":null,"blocked_by":[],"position":1}] assignee_filter= scope=issues [#133]
+2026-11-13 03:34:03  INFO ralphy_core::emit: issue started number=133 title=capstone #784: WSL stop test (stopped on purpose)
+2026-11-13 03:34:24  INFO ralphy_adapter_support::headless: operator stop — reaping the headless child instead of waiting out its budget
+2026-11-13 03:34:24  INFO ralphy_core::runner::queue_run: planning ended by the operator's stop number=133 error=antigravity produced no plan at <tmp>/tmp.cIjN5JgCfG/FinCal/.ralphy/plan.md (see <tmp>/tmp.cIjN5JgCfG/FinCal/.ralphy/runs/20261113-033358/antigravity.log)
+2026-11-13 03:34:24  INFO ralphy_core::emit: operator stop — halting run number=133
+2026-11-13 03:34:24  INFO ralphy_core::emit: run finished outcome="stopped" issues_done=0 issues_skipped=1 issues_total=1 issues_blocked=0 issues_hitl=0 issues_json=[{"number":133,"status":"non_green"}] up=0 cr=0 cw=0 out=0 duration_s=23
