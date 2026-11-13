@@ -2093,6 +2093,7 @@ dependencies = [
  "include_dir",
  "ralphy-adapter-support",
  "ralphy-core",
+ "ralphy-pricing",
  "ralphy-proc-util",
  "serde",
  "serde_json",

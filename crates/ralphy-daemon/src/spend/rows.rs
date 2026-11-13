@@ -46,10 +46,11 @@ pub(crate) fn recover_interactive_model<'a>(
 /// implementations of "did this line price" is exactly how they come to disagree
 /// about the same row.
 ///
-/// `model` is the model AFTER recovery; `session` is the row's non-empty
-/// `session_id`, which is what separates a gap that can still be closed from one
-/// that never will (ADR-0053 D4).
+/// `model` is the model AFTER recovery, of the row's `agent`; `session` is the
+/// row's non-empty `session_id`, which is what separates a gap that can still be
+/// closed from one that never will (ADR-0053 D4).
 pub(crate) fn price(
+    agent: &str,
     model: Option<&str>,
     session: Option<&str>,
     tokens: &TokenCounts,
@@ -61,7 +62,7 @@ pub(crate) fn price(
         return (None, None);
     }
     match model {
-        Some(model) => match prices.cost_usd(model, tokens) {
+        Some(model) => match prices.cost_usd(ralphy_pricing::price_key(agent, model), tokens) {
             Some(cost) => (Some(cost), None),
             None => (None, Some("no_price")),
         },
@@ -191,7 +192,8 @@ fn ledger_row<'a>(object: &'a Object, input: &SpendInput<'a>) -> Option<Priced<'
     let tokens = ledger_tokens(object);
     let session = field(object, "session_id").filter(|id| !id.is_empty());
     let model = recover_ledger_model(field(object, "model"), session, input.recovered);
-    let (usd, cause) = price(model, session, &tokens, input.prices);
+    let agent = field(object, "agent").unwrap_or("");
+    let (usd, cause) = price(agent, model, session, &tokens, input.prices);
     Some(Priced {
         source: Source::Ledger {
             issue: object
@@ -244,7 +246,8 @@ fn interactive_row<'a>(object: &'a Object, input: &SpendInput<'a>) -> Interactiv
     // `session.is_some()` rather than needing a rule of its own.
     let session = field(object, "session_id").filter(|id| !id.is_empty());
     let model = recover_interactive_model(field(object, "model"), session, input.recovered);
-    let (usd, cause) = price(model, session, &tokens, input.prices);
+    let agent = field(object, "agent").unwrap_or("");
+    let (usd, cause) = price(agent, model, session, &tokens, input.prices);
     InteractiveRow::Row(Priced {
         source: Source::Interactive,
         outcome: "",
@@ -271,7 +274,7 @@ fn civil_date(ts: Option<&str>) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spend::fixtures::{table, InteractiveRow, OPUS, PROJECT};
+    use crate::spend::fixtures::{table, table_of, InteractiveRow, OPUS, PROJECT};
     use crate::spend::Window;
 
     /// The shared verdict, arm by arm. The `None`-model pair is the one that
@@ -289,29 +292,50 @@ mod tests {
         };
 
         assert_eq!(
-            price(Some(OPUS), Some("s1"), &volume, &prices),
+            price("claude", Some(OPUS), Some("s1"), &volume, &prices),
             (Some(15.0), None)
         );
         assert_eq!(
-            price(Some("big-pickle"), Some("s1"), &volume, &prices).1,
+            price("claude", Some("big-pickle"), Some("s1"), &volume, &prices).1,
             Some("no_price"),
             "a REAL model the table lacks is one pricing.toml entry away"
         );
         assert_eq!(
-            price(None, Some("s1"), &volume, &prices).1,
+            price("claude", None, Some("s1"), &volume, &prices).1,
             Some("recoverable"),
             "a session id is a key a vendor store can still be read with"
         );
         assert_eq!(
-            price(None, None, &volume, &prices).1,
+            price("claude", None, None, &volume, &prices).1,
             Some("lost"),
             "no model AND no session: no key to any store exists"
         );
         // A zero-token line carries no spend and no gap, so it must not force a
         // floor marker — for either kind of row.
         assert_eq!(
-            price(None, None, &TokenCounts::default(), &prices),
+            price("claude", None, None, &TokenCounts::default(), &prices),
             (None, None)
+        );
+    }
+
+    /// Only an Antigravity id loses its effort suffix before the lookup: the
+    /// id of another vendor may end in `-high` and name another model.
+    #[test]
+    fn only_an_antigravity_id_prices_at_its_base_row() {
+        let volume = TokenCounts {
+            input: 1_000_000,
+            ..TokenCounts::default()
+        };
+        let flash = table_of(&["gemini-3.8-flash"]);
+        let low = "gemini-3.8-flash-low";
+        assert_eq!(
+            price("antigravity", Some(low), Some("s1"), &volume, &flash),
+            (Some(15.0), None)
+        );
+        let gpt = table_of(&["gpt-5.5"]);
+        assert_eq!(
+            price("codex", Some("gpt-5.5-high"), Some("s1"), &volume, &gpt).1,
+            Some("no_price")
         );
     }
 

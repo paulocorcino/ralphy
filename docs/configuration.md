@@ -374,9 +374,10 @@ login you already have works. On Linux the sign-in is a file inside the owned
 root, so sign in once for that folder:
 
 ```sh
-agy --gemini_dir=~/.ralphy/antigravity-root
+agy --gemini_dir="$HOME/.ralphy/antigravity-root"
 ```
 
-Use the absolute path of the folder: `agy` refuses a relative one. The first
-time, the console shows the terms of service and a folder trust question;
-Ralphy does not answer them for you.
+Use the absolute path of the folder: `agy` refuses a relative one, and the
+shell does not expand `~` after `=`. The first time, the console shows the
+terms of service and a folder trust question; Ralphy does not answer them for
+you.

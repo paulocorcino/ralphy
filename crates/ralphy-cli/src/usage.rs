@@ -119,7 +119,7 @@ fn usd_for_rows(rows: &[&UsageRow], table: &PriceTable) -> (Option<f64>, bool) {
     let mut by_model: BTreeMap<String, Usage> = BTreeMap::new();
     for row in rows {
         by_model
-            .entry(row.model.clone())
+            .entry(price_key(row).to_owned())
             .or_default()
             .add_tokens(&row.tokens);
     }
@@ -181,7 +181,12 @@ pub(crate) fn render_table(
 /// The per-row read-time USD, priced by the row's own model. `None` (rendered as
 /// an empty column) when the model is unpriced.
 fn row_usd(row: &UsageRow, table: &PriceTable) -> Option<f64> {
-    table.cost_usd(&row.model, &crate::pricing::counts(&row.tokens))
+    table.cost_usd(price_key(row), &crate::pricing::counts(&row.tokens))
+}
+
+/// The price-table key of a row's model, by the rule of the row's agent.
+fn price_key(row: &UsageRow) -> &str {
+    ralphy_pricing::price_key(&row.agent, &row.model)
 }
 
 /// Quote one CSV field per RFC 4180 when it carries a comma, quote, or newline.

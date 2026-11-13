@@ -344,3 +344,15 @@ fn config_json_prints_the_antigravity_keys() {
     }
     remove_scratch(&dir);
 }
+
+#[test]
+fn an_antigravity_model_that_starts_with_a_dash_is_refused() {
+    let (ws, dir) = tmp_ws("antigravity-model-dash");
+    for bad in ["-x", "--sandbox", ".gemini"] {
+        assert!(set(&ws, "antigravity.plan_model", bad).is_err(), "{bad:?}");
+        assert!(set(&ws, "antigravity.exec_model", bad).is_err(), "{bad:?}");
+    }
+    set(&ws, "antigravity.plan_model", "3-flash").unwrap();
+    assert_eq!(agy_settings(&ws).plan_model.as_deref(), Some("3-flash"));
+    remove_scratch(&dir);
+}

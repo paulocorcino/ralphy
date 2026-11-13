@@ -19,6 +19,8 @@ ralphy-adapter-support.workspace = true
 # The locator, the owned root and the hook command live here so the daemon
 # shares them without importing this crate (ADR-0032 §10, ADR-0086 D17).
 ralphy-proc-util.workspace = true
+# The effort-suffix rule of a price key, shared with the daemon.
+ralphy-pricing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

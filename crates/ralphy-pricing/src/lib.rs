@@ -21,10 +21,12 @@ use std::sync::{LazyLock, Mutex};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
+mod agent_key;
 pub mod fetch;
 mod floor;
 mod ingest;
 mod tokens;
+pub use agent_key::{antigravity_base_id, price_key};
 pub use tokens::fmt_tokens;
 
 /// A usage record's numeric token split, mirroring `ralphy_core::Usage`'s four

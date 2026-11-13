@@ -271,18 +271,22 @@ fn set_antigravity_effort(s: &mut Settings, key: &str, value: &str) -> Result<()
     })
 }
 
+/// One word of `[a-z0-9.-]` that starts with `[a-z0-9]`, so the id is never
+/// read as a flag of `agy`.
+fn is_agy_model_id(value: &str) -> bool {
+    let id_char = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit();
+    value.starts_with(id_char) && value.chars().all(|c| id_char(c) || c == '.' || c == '-')
+}
+
 /// Set `antigravity.plan_model` or `antigravity.exec_model`. The id list changes
-/// with each agy update, so only the shape is checked: one word of `[a-z0-9.-]`.
+/// with each agy update, so only the shape is checked by [`is_agy_model_id`].
 /// The CLI refuses an unknown id itself.
 fn set_antigravity_model(s: &mut Settings, key: &str, value: &str) -> Result<()> {
     let value = value.trim();
-    let one_word = !value.is_empty()
-        && value
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-');
-    if !one_word {
+    if !is_agy_model_id(value) {
         bail!(
-            "{key} must be one model id of lowercase letters, digits, '.' and '-', got '{value}'"
+            "{key} must be one model id of lowercase letters, digits, '.' and '-', \
+             starting with a letter or digit, got '{value}'"
         );
     }
     let plan = key == "antigravity.plan_model";
