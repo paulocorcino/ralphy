@@ -18,7 +18,7 @@ ralphy-adapter-support.workspace = true
 ralphy-proc-util.workspace = true
 
 [dev-dependencies]
-saphyr-parser = "0.2.1"
+saphyr-parser = "0.3.3"
 tempfile.workspace = true
 tracing-subscriber.workspace = true
 
