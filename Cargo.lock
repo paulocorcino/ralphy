@@ -2238,7 +2238,6 @@ dependencies = [
  "ralphy-agent-codex",
  "ralphy-agent-copilot",
  "ralphy-agent-cursor",
- "ralphy-agent-gemini",
  "ralphy-agent-kimi",
  "ralphy-agent-opencode",
  "ralphy-core",

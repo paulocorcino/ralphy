@@ -1,10 +1,9 @@
-//! The agent sections of the settings: Claude, Copilot, Cursor, Gemini and Antigravity keys.
+//! The agent sections of the settings: Claude, Copilot, Cursor and Antigravity keys.
 
 use super::*;
 use ralphy_agent_antigravity::AntigravitySettings;
 use ralphy_agent_copilot::CopilotSettings;
 use ralphy_agent_cursor::CursorSettings;
-use ralphy_agent_gemini::GeminiSettings;
 
 #[test]
 fn copilot_config_round_trip() {
@@ -102,56 +101,59 @@ fn cursor_config_round_trip() {
     remove_scratch(&dir);
 }
 
-/// ADR-0043 D8 (#257): the two Gemini per-phase pins persist, print, emit and
-/// clear — and an id the CLI no longer serves is refused HERE, before a spawn.
+/// A `gemini` section left in settings.json by an older version is ignored, with one
+/// warning that names the keys to use now.
 #[test]
-fn gemini_config_round_trip() {
-    let (ws, dir) = tmp_ws("gemini-config-round-trip");
+fn a_stored_gemini_section_prints_one_warning_naming_the_antigravity_keys() {
+    let (ws, dir) = tmp_ws("gemini-section-warning");
+    let clean = Settings::load(&ws).unwrap();
+    assert_eq!(view::stored_gemini_warning(&clean), None);
 
-    set(&ws, "gemini.plan_model", "gemini-2.5-pro").unwrap();
-    set(&ws, "gemini.exec_model", "gemini-3.5-flash").unwrap();
+    fs::create_dir_all(ws.ralphy_dir()).unwrap();
+    fs::write(
+        ws.settings_path(),
+        r#"{"gemini":{"plan_model":"gemini-2.5-pro"}}"#,
+    )
+    .unwrap();
     let s = Settings::load(&ws).unwrap();
-    let g: GeminiSettings = s.agent_settings(GeminiSettings::SECTION).unwrap();
-    assert_eq!(g.plan_model.as_deref(), Some("gemini-2.5-pro"));
-    assert_eq!(g.exec_model.as_deref(), Some("gemini-3.5-flash"));
+    let warning = view::stored_gemini_warning(&s).expect("a stored section warns");
+    assert!(warning.contains("antigravity.plan_model"), "{warning}");
+    assert!(warning.contains("antigravity.exec_model"), "{warning}");
+    assert_eq!(warning.lines().count(), 1, "{warning}");
 
-    let json = config_json(&ws).unwrap();
-    assert_eq!(
-        json["gemini.exec_model"],
-        serde_json::json!("gemini-3.5-flash")
-    );
-    assert_eq!(
-        json["gemini.plan_model"],
-        serde_json::json!("gemini-2.5-pro")
-    );
-    get(&ws, false).unwrap();
+    remove_scratch(&dir);
+}
 
-    // A padded value is trimmed on the way in, not stored raw to 404 later.
-    set(&ws, "gemini.exec_model", "  gemini-2.5-flash  ").unwrap();
-    let s = Settings::load(&ws).unwrap();
-    let g: GeminiSettings = s.agent_settings(GeminiSettings::SECTION).unwrap();
-    assert_eq!(g.exec_model.as_deref(), Some("gemini-2.5-flash"));
-    set(&ws, "gemini.exec_model", "gemini-3.5-flash").unwrap();
-
-    // The retired id is refused at configuration time, naming what was asked.
-    let err = set(&ws, "gemini.exec_model", "gemini-3-pro-preview")
-        .expect_err("a retired id must not be pinnable");
-    assert!(err.to_string().contains("gemini-3-pro-preview"), "{err}");
-    let s = Settings::load(&ws).unwrap();
-    let g: GeminiSettings = s.agent_settings(GeminiSettings::SECTION).unwrap();
-    assert_eq!(
-        g.exec_model.as_deref(),
-        Some("gemini-3.5-flash"),
-        "the refused write must leave the stored value alone"
-    );
+#[test]
+fn config_unset_still_removes_a_gemini_key() {
+    let (ws, dir) = tmp_ws("gemini-unset");
+    fs::create_dir_all(ws.ralphy_dir()).unwrap();
+    fs::write(
+        ws.settings_path(),
+        r#"{"gemini":{"plan_model":"gemini-2.5-pro","exec_model":"gemini-3.5-flash"}}"#,
+    )
+    .unwrap();
 
     unset(&ws, "gemini.plan_model").unwrap();
+    let s = Settings::load(&ws).unwrap();
+    let section = s.extra.get("gemini").expect("the other key stays stored");
+    assert_eq!(section.get("plan_model"), None);
+    assert!(section.get("exec_model").is_some());
+
     unset(&ws, "gemini.exec_model").unwrap();
     let s = Settings::load(&ws).unwrap();
-    let g: GeminiSettings = s.agent_settings(GeminiSettings::SECTION).unwrap();
-    assert_eq!(g.plan_model, None);
-    assert_eq!(g.exec_model, None);
+    assert_eq!(view::stored_gemini_warning(&s), None);
 
+    remove_scratch(&dir);
+}
+
+#[test]
+fn config_set_of_a_gemini_key_is_an_unknown_key() {
+    let (ws, dir) = tmp_ws("gemini-set-refused");
+    for key in ["gemini.plan_model", "gemini.exec_model"] {
+        let err = set(&ws, key, "gemini-3.5-flash").expect_err("set must refuse");
+        assert!(err.to_string().contains("unknown config key"), "{err}");
+    }
     remove_scratch(&dir);
 }
 
