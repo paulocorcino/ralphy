@@ -5,7 +5,7 @@ const PRE_INVOCATION_LINE: &str = r#"{"event":"PreInvocation","session_id":"c1",
 
 fn proof(dir: &Path, waiver: bool, window: Duration) -> Proof {
     Proof {
-        status_file: fresh_status_file(dir).expect("status file"),
+        status_file: fresh_status_file(&dir.join("session.log")).expect("status file"),
         log_file: dir.join("session.log"),
         root: dir.join("antigravity-root"),
         waiver,
@@ -109,13 +109,22 @@ fn a_sign_in_line_ends_the_wait_with_the_sign_in_message() {
 #[test]
 fn the_status_file_is_emptied_for_each_session() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let first = fresh_status_file(&dir.path().join("run")).expect("first");
+    let first = fresh_status_file(&dir.path().join("run").join("a.log")).expect("first");
     append(&first, SESSION_START_LINE);
     assert!(has_session_start(&first));
-    let second = fresh_status_file(&dir.path().join("run")).expect("second");
+    let second = fresh_status_file(&dir.path().join("run").join("a.log")).expect("second");
     assert_eq!(first, second);
     assert!(
         !has_session_start(&second),
         "an earlier session's line is no proof"
+    );
+}
+
+#[test]
+fn a_status_file_is_named_after_its_log() {
+    let log = Path::new("runs").join("consolidate.log");
+    assert_eq!(
+        status_file_for(&log),
+        Path::new("runs").join("consolidate.status.jsonl")
     );
 }

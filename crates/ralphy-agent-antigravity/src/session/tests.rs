@@ -5,7 +5,6 @@ fn session<'a>(dir: &'a Path, log_path: &'a Path) -> Session<'a> {
         program: Path::new("agy"),
         root: dir,
         work_dir: dir,
-        run_dir: dir,
         log_path,
         model: None,
         effort: None,
@@ -29,9 +28,9 @@ fn the_proof_message_is_one_fixed_ndjson_line() {
 }
 
 #[test]
-fn the_child_is_pointed_at_a_fresh_status_file_in_the_run_dir() {
+fn the_child_is_pointed_at_a_fresh_status_file_beside_the_log() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let stale = dir.path().join(status::STATUS_FILE);
+    let stale = dir.path().join("session.status.jsonl");
     fs::write(&stale, "{\"event\":\"SessionStart\"}\n").expect("stale line");
     let log = dir.path().join("session.log");
     let (cmd, status_file) = session(dir.path(), &log).command().expect("command");
@@ -56,4 +55,18 @@ fn a_refused_task_gets_no_start_context() {
     assert!(!format!("{:#}", spawn_context(signed_out)).contains(SPAWN_ERR));
     let missing = anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::NotFound));
     assert!(format!("{:#}", spawn_context(missing)).contains(SPAWN_ERR));
+}
+
+#[test]
+fn the_next_session_takes_the_first_free_number() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    assert_eq!(
+        next_session_log(dir.path()),
+        dir.path().join("antigravity-1.log")
+    );
+    fs::write(dir.path().join("antigravity-1.log"), "").expect("first log");
+    assert_eq!(
+        next_session_log(dir.path()),
+        dir.path().join("antigravity-2.log")
+    );
 }

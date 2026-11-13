@@ -70,7 +70,7 @@ impl Setup {
     }
 
     fn run_log(&self) -> String {
-        read(&self.run_dir.join("antigravity.log"))
+        read(&self.run_dir.join("antigravity-1.log"))
     }
 }
 
@@ -239,4 +239,38 @@ fn a_workspace_hooks_file_is_named_in_the_run_log() {
 
 fn is_unproven(cause: &(dyn std::error::Error + 'static)) -> bool {
     cause.is::<HooksUnproven>()
+}
+
+/// A plan then an execute in one run folder.
+fn plan_then_execute(setup: &Setup) {
+    let agent = setup.agent(None);
+    let ws = setup.ws();
+    fs::write(setup.root.join("scenario"), "plan").expect("scenario");
+    agent.plan(&issue(), &ws).expect("plan");
+    fs::write(setup.root.join("scenario"), "done").expect("scenario");
+    agent.execute(&plan(), &ws).expect("execute");
+}
+
+#[test]
+fn each_session_of_a_run_keeps_its_own_log() {
+    let setup = Setup::new("plan");
+    plan_then_execute(&setup);
+    for n in [1, 2] {
+        let log = read(&setup.run_dir.join(format!("antigravity-{n}.log")));
+        assert!(log.starts_with("agy version:"), "log {n}: {log:?}");
+    }
+}
+
+#[test]
+fn each_session_of_a_run_keeps_its_own_status_file() {
+    let setup = Setup::new("plan");
+    plan_then_execute(&setup);
+    for n in [1, 2] {
+        let status = read(&setup.run_dir.join(format!("antigravity-{n}.status.jsonl")));
+        assert_eq!(
+            status.matches("SessionStart").count(),
+            1,
+            "status {n}: {status:?}"
+        );
+    }
 }

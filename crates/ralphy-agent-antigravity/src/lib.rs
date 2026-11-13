@@ -69,9 +69,6 @@ pub const ACCEPTS_IMAGES: bool = true;
 /// The agent name: in events, ledger rows and `--agent antigravity`.
 const NAME: &str = "antigravity";
 
-/// The run's `agy` log, in the run dir.
-const LOG_FILE: &str = "antigravity.log";
-
 /// The planning prompt, assembled from `assets/prompts/plan/` and embedded so
 /// the binary is self-contained.
 const PROMPT_PLAN_ANTIGRAVITY: &str =
@@ -188,7 +185,7 @@ impl AntigravityAgent {
         Ok(Launch {
             program: self.program.clone().unwrap_or_else(command::agy_program),
             root,
-            log_path: self.run_dir.join(LOG_FILE),
+            log_path: session::next_session_log(&self.run_dir),
         })
     }
 
@@ -206,7 +203,6 @@ impl AntigravityAgent {
             program: &launch.program,
             root: &launch.root,
             work_dir,
-            run_dir: &self.run_dir,
             log_path: &launch.log_path,
             model,
             effort,

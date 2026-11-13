@@ -13,9 +13,6 @@ use ralphy_adapter_support::agent_state::StatusLine;
 use ralphy_adapter_support::PromptGate;
 use ralphy_core::HooksUnproven;
 
-/// The file name of a session's status file, in the session's run dir.
-pub(crate) const STATUS_FILE: &str = "agent-status.jsonl";
-
 /// The environment variable `hook status` reads the file path from.
 pub(crate) const STATUS_ENV: &str = "RALPHY_STATUS_FILE";
 
@@ -32,11 +29,20 @@ pub(crate) const WAIVER_KEY: &str = "antigravity.run_without_guard_proof_i_under
 /// on the first prompt.
 const SESSION_START: &str = "SessionStart";
 
-/// An empty status file in `dir`, made with its folder: the lines of an
-/// earlier session are not this session's proof.
-pub(crate) fn fresh_status_file(dir: &Path) -> Result<PathBuf> {
-    fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-    let path = dir.join(STATUS_FILE);
+/// The status file of the session that logs to `log`: its stem plus
+/// `.status.jsonl`, beside it.
+pub(crate) fn status_file_for(log: &Path) -> PathBuf {
+    let stem = log.file_stem().unwrap_or_default().to_string_lossy();
+    log.with_file_name(format!("{stem}.status.jsonl"))
+}
+
+/// An empty status file for the session that logs to `log`, made with its
+/// folder: the lines of an earlier session are not this session's proof.
+pub(crate) fn fresh_status_file(log: &Path) -> Result<PathBuf> {
+    let path = status_file_for(log);
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    }
     fs::write(&path, b"").with_context(|| format!("resetting {}", path.display()))?;
     Ok(path)
 }
