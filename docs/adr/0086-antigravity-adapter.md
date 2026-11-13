@@ -474,6 +474,8 @@ its companion `0043-gemini-validation.md`) gets the status
 `superseded by ADR-0086` and a back-reference line under it. Until then,
 ADR-0043 stays accepted: the Gemini adapter still ships.
 
+Done: #785 removed the Gemini crate and ADR-0043 is superseded.
+
 What carries over from ADR-0043, under this ADR's numbers:
 
 | ADR-0043 | Here | Change |
