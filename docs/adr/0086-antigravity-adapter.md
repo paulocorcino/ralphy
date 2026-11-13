@@ -591,6 +591,71 @@ or go with #785 (`tests/verbs/gemini_root.rs`,
    (ADR-0040 C9 sharpened); the spike saw no upload in a one-turn run.
 10. The vendor's terms (ADR-0043 D17 asked the same for Gemini).
 
+## Measured in #784
+
+2026-11-13, Windows 11 and Ubuntu 22.04 on WSL 2, `agy` 1.5.8 (1.5.7 at the
+logout), Flash only except the limit (item 2). The numbers are in
+[784-antigravity-capstone-live.md](../spike/evidence/784-antigravity-capstone-live.md).
+
+1. D7, Windows logged out: measured. `agy models` exits 1 with `Please sign
+   in to view available models`; `agy -p` prints `Authentication required`
+   at once and waits a fixed 60 s whatever `--print-timeout` says, exit 1,
+   `authentication failed or timed out`, as on WSL. `ralphy models` stops in
+   1 s and `ralphy run` about 1.5 s after planning starts, exit 1, with the
+   sign-in message. `ralphy doctor` does not report the signed-out state.
+2. D6, a real limit: observed on Windows. Five `claude-opus-5-5-high` calls
+   emptied the 5 h bucket of the `Claude and GPT models` group (weekly to
+   0.46; the Gemini group stayed at about 0.97). The sixth call exits 3 with
+   `status: "ERROR"`, `Individual quota reached. ... Resets in 4h41m14s.`,
+   usage 0, and an `AGY_ERROR` line with `RESOURCE_EXHAUSTED`, code 429,
+   `retryable: true`. `ralphy run` classified it as a limit and waited for
+   the reset (`remaining_min=280`), taken from `/quota`; the `Resets in`
+   text of stderr is not parsed.
+3. D5, D9, D17 on Linux: measured. A WSL run closed FinCal #132. Stream sum
+   equals store sum in every session on both hosts, and the run's recorded
+   usage equals both. The operator's stop (`ralphy stop`) sent `SIGTERM` to
+   the `agy` group, and `agy` wrote one `result` with `finished_reason:
+   "interrupted"` and the usage so far, and was gone in 1.3 s; the run
+   summary does not count that usage. A `SIGTERM` to the `ralphy` process
+   itself is not a stop: `ralphy run` exits 143 at once and `agy`, in its
+   own group, finishes its turn alone.
+4. D9, hooks from Ralphy's file: on Windows, `SessionStart` came about 3 s
+   after each launch, all six events fired, and a program path with a space
+   was written as the unquoted 8.3 short path and worked. On Linux, `agy`
+   runs each hook as `sh -c` on the single-quoted path Ralphy wrote;
+   `SessionStart` came about 7.5 s after each launch, and all six events
+   fired.
+5. D13, `swarm`: not honored for the skill list. With `swarm` disabled in
+   `config/config.json`, `agy -p /skills` still lists `swarm`.
+6. D8, two sessions at once in one root: both completed, each with its own
+   conversation, store and status file; `last_conversations.json` is keyed
+   by folder. Measured with two consolidation sessions, not two full runs.
+7. D2, 72 KB as one NDJSON line: read whole (74 936 bytes, the right answer).
+8. D11, the updater and the tree kill: the updater is a child of the
+   session's `agy`, so the Windows tree kill reaches it, but it lived 5 s
+   and no kill met it live; a kill during a binary replace needs a new
+   release and is not measured. `agy --version` runs after a session. On
+   Linux the updater starts in a new session and process group of its own,
+   so the Unix group kill does not reach it; it ended by itself in 3.6 s.
+9. ADR-0040 C9, upload A/B: two fresh repositories with tool calls; `agy`'s
+   log names only `loadCodeAssist`, `fetchAvailableModels` and
+   `streamGenerateContent` in both, with no upload,
+   sync or index line. Log evidence only, no network capture.
+10. Terms: <https://antigravity.google/terms> section 6 calls "using the
+    Service in connection with products not provided by us" and "third party
+    software ... to access the Service" a breach, with OpenClaw on
+    Antigravity OAuth as the example. Ralphy runs Google's own binary and
+    never touches its token; whether that is allowed is the operator's call.
+
+Found on the way, for a fix stage: the knowledge consolidation of
+`ralphy run` passes no `--model`, so it ran on `agy`'s default (Gemini 4
+Argon Medium); the run summary prices the raw id `gemini-3.8-flash-low`
+instead of its base id; the status file and `antigravity.log` keep only
+the last session of a run; the 1.5.8 ids `gemini-4-hydrogen-*` and
+`gemini-pro-orchestrator-g1-pro` have no price row, and `-xhigh` is not
+stripped by `price_key`; `ralphy doctor` says `antigravity hooks: not
+checked`.
+
 ## Consequences
 
 - The proof turn of D9 adds one small model call to every unattended

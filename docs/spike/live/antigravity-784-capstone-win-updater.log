@@ -1,0 +1,23 @@
+# Item 8: a Ralphy session in the owned root once the 15-minute updater window had passed, with every agy.exe process logged.
+# Windows 11 Pro 10.0.26300, agy 1.5.8, 2026-11-13 (#784 capstone).
+== 2026-11-13T03:10:32-03:00 ralphy consolidate --agent antigravity --model gemini-3.8-flash-low --max-minutes 1
+Consolidating 1 note(s) into KNOWLEDGE.md: issue-131.md
+Done: KNOWLEDGE.md updated, 1 note(s) archived into .ralphy/knowledge/raw/.
+exit=0 secs=63 end=2026-11-13T03:11:35-03:00
+== 2026-11-13T03:11:55-03:00 agy --version after: 1.5.8
+exit=0
+== agy.exe processes (watcher, every 0.5 s; two watchers ran, so each line is doubled)
+03:10:33.280 start pid=62680 parent=54776 cmd="<home>\AppData\Local\agy\bin\agy.exe" --gemini_dir=<home>\.ralphy\antigravity-root --output-format stream-json --input-format stream-json --dangerously-skip-permissions --model gemini-3.8-flash-low
+03:10:33.280 start pid=3224 parent=62680 cmd=<home>\AppData\Local\agy\bin\agy.exe --bg-updater --app_data_dir=antigravity-cli --gemini_dir=<home>\.ralphy\antigravity-root
+03:10:33.438 start pid=62680 parent=54776 cmd="<home>\AppData\Local\agy\bin\agy.exe" --gemini_dir=<home>\.ralphy\antigravity-root --output-format stream-json --input-format stream-json --dangerously-skip-permissions --model gemini-3.8-flash-low
+03:10:33.438 start pid=3224 parent=62680 cmd=<home>\AppData\Local\agy\bin\agy.exe --bg-updater --app_data_dir=antigravity-cli --gemini_dir=<home>\.ralphy\antigravity-root
+03:10:38.066 gone pid=3224
+03:10:38.204 gone pid=3224
+03:11:34.993 gone pid=62680
+03:11:35.371 gone pid=62680
+03:11:55.561 start pid=49036 parent=62144 cmd=<home>\AppData\Local\agy\bin\agy.exe --version
+03:11:56.244 gone pid=49036
+== agy log, auto_updater lines of the session
+I1113 03:10:33.351431       1 auto_updater.go:334] Spawned background update process with PID 3224
+== updater/update_status.json
+{"success":true,"message":"Already on the latest version."}
