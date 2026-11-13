@@ -1,0 +1,9 @@
+# Item 7: one NDJSON line of 72 KB of text on stdin, isolated root, Flash.
+# Windows 11 Pro 10.0.26300, agy 1.5.8, owned root <home>/.ralphy/antigravity-root, 2026-11-13 (#784 capstone).
+# Script: big_prompt.py (1 010 lines LINE nnnnn ...; asked for the last number).
+root=<home>\AppData\Local\Temp\agy784-root-1dozqayl
+ndjson line bytes=74936 last=01010
+exit=0 secs=7.0
+{"event": "init", "conversation_id": "bca1629f-164b-489e-aac3-1ea37bf302cc", "init": {"model": "gemini-3.8-flash-low", "cwd": "<home>\\AppData\\Local\\Temp\\agy784", "tools": ["ask_custom_permission", "ask_permission", "ask_question", "browser_click_element", "browser_drag_pixel_to_pixel", "browser_get_dom", "browser_get_network_request", "browser_input", "browser_list_network_requests", "browser_mouse_down", "browser_mouse_up", "browser_move_mouse", "browser_press_key", "browser_refresh_page", "browser_resize_window", "browser_scroll", "browser_scroll_dom", "browser_select_option",
+{"event": "result", "result": {"conversation_id": "bca1629f-164b-489e-aac3-1ea37bf302cc", "status": "SUCCESS", "response": "01010\n", "duration_seconds": 3.3325415, "num_turns": 1, "usage": {"input_tokens": 27573, "output_tokens": 97, "thinking_tokens": 92, "cache_read_tokens": 0, "total_tokens": 27670}}}
+stderr: 

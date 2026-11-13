@@ -591,6 +591,57 @@ or go with #785 (`tests/verbs/gemini_root.rs`,
    (ADR-0040 C9 sharpened); the spike saw no upload in a one-turn run.
 10. The vendor's terms (ADR-0043 D17 asked the same for Gemini).
 
+## Measured in #784
+
+2026-11-13, Windows 11, `agy` 1.5.8 (1.5.7 at the logout), Flash only. The
+numbers are in
+[784-antigravity-capstone-live.md](../spike/evidence/784-antigravity-capstone-live.md).
+WSL is not run yet: the operator has not signed in there.
+
+1. D7, Windows logged out: measured. `agy models` exits 1 with `Please sign
+   in to view available models`; `agy -p` prints `Authentication required`
+   at once and waits a fixed 60 s whatever `--print-timeout` says, exit 1,
+   `authentication failed or timed out`, as on WSL. `ralphy models` stops in
+   1 s and `ralphy run` about 1.5 s after planning starts, exit 1, with the
+   sign-in message. `ralphy doctor` does not report the signed-out state.
+2. D6, a real limit: not reached, by the operator's decision. The quota
+   read-out (0 tokens) has the shape the parser reads; no bucket is at 0.
+   The classifier's patterns are still not checked against a real limit.
+3. D5, D9, D17 on Linux: open (WSL not signed in). On Windows, stream sum
+   equals store sum in five sessions, and the run's recorded usage equals
+   both.
+4. D9, hooks from Ralphy's file: on Windows, `SessionStart` came about 3 s
+   after each launch, all six events fired, and a program path with a space
+   was written as the unquoted 8.3 short path and worked. Linux is open.
+5. D13, `swarm`: not honored for the skill list. With `swarm` disabled in
+   `config/config.json`, `agy -p /skills` still lists `swarm`.
+6. D8, two sessions at once in one root: both completed, each with its own
+   conversation, store and status file; `last_conversations.json` is keyed
+   by folder. Measured with two consolidation sessions, not two full runs.
+7. D2, 72 KB as one NDJSON line: read whole (74 936 bytes, the right answer).
+8. D11, the updater and the tree kill: the updater is a child of the
+   session's `agy`, so the Windows tree kill reaches it, but it lived 5 s
+   and no kill met it live; a kill during a binary replace needs a new
+   release and is not measured. `agy --version` runs after a session.
+9. ADR-0040 C9, upload A/B: two fresh repositories with tool calls; `agy`'s
+   log names only `loadCodeAssist`, `fetchAvailableModels` and
+   `streamGenerateContent` in both, with no upload,
+   sync or index line. Log evidence only, no network capture.
+10. Terms: <https://antigravity.google/terms> section 6 calls "using the
+    Service in connection with products not provided by us" and "third party
+    software ... to access the Service" a breach, with OpenClaw on
+    Antigravity OAuth as the example. Ralphy runs Google's own binary and
+    never touches its token; whether that is allowed is the operator's call.
+
+Found on the way, for a fix stage: the knowledge consolidation of
+`ralphy run` passes no `--model`, so it ran on `agy`'s default (Gemini 4
+Argon Medium); the run summary prices the raw id `gemini-3.8-flash-low`
+instead of its base id; the status file and `antigravity.log` keep only
+the last session of a run; the 1.5.8 ids `gemini-4-hydrogen-*` and
+`gemini-pro-orchestrator-g1-pro` have no price row, and `-xhigh` is not
+stripped by `price_key`; `ralphy doctor` says `antigravity hooks: not
+checked`.
+
 ## Consequences
 
 - The proof turn of D9 adds one small model call to every unattended

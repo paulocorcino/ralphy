@@ -1,0 +1,12 @@
+# D5: stream usage (step_update agent_response DONE) against the gen_metadata rows of the store, per conversation.
+# Windows 11 Pro 10.0.26300, agy 1.5.8, owned root <home>/.ralphy/antigravity-root, 2026-11-13 (#784 capstone).
+# Script: sum of input/output/cache_read; store rows decoded at 1.4 (2,3,5) and label at 1.21.
+== 2026-11-13T02:59:20-03:00 stream vs store, run 20261113-024834 (issue 131: plan+exec in antigravity.log, consolidation in consolidate.log)
+f816e34d-5763-42ac-b8a3-aff4dd4db492: stream calls=11 in=59790 out=1736 cache_read=122610 | store rows=11 in=59790 out=1736 cache_read=122610 labels=['Gemini 3.8 Flash (Low)'] | equal=True
+25db3d9a-2845-4ec9-ae24-ac1d0444740e: stream calls=11 in=33978 out=875 cache_read=104042 | store rows=11 in=33978 out=875 cache_read=104042 labels=['Gemini 4 Argon (Medium)'] | equal=True
+== space-ws 20261113-025404
+72f16ec9-8aa4-4953-890b-6daeec6fe003: stream calls=15 in=179797 out=846 cache_read=0 | store rows=15 in=179797 out=846 cache_read=0 labels=['Gemini 3.8 Flash (Low)'] | equal=True
+== conc-a 20261113-025629
+bb6ed659-fcb9-42ac-aac0-94f4fed68461: stream calls=15 in=179226 out=938 cache_read=0 | store rows=15 in=179226 out=938 cache_read=0 labels=['Gemini 3.8 Flash (Low)'] | equal=True
+== conc-b 20261113-025629
+c4b8fe55-f5f0-4016-b758-f5347cf25239: stream calls=33 in=233834 out=1984 cache_read=431423 | store rows=33 in=233834 out=1984 cache_read=431423 labels=['Gemini 3.8 Flash (Low)'] | equal=True

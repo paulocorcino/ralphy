@@ -1,0 +1,15 @@
+# Item 1: ralphy run --agent antigravity --only-issue 108 on a temp FinCal clone while signed out; measured by the parent agent.
+# Windows 11 Pro 10.0.26300, 2026-11-13.
+exit 1 secs 21.2
+STDOUT
+ 🐙 Ralphy - v0.1.0-rc.43
+FinCal · master · https://github.com/paulocorcino/FinCal
+
+STDERR
+ 2026-11-13 02:38:24  [queue] queue built: 1 issue(s)
+2026-11-13 02:38:35  [plan] #108 Transferência: par vinculado neutro entre Contas — planning
+Error: the prompt was held and not sent
+
+Caused by:
+    Antigravity is not signed in for Ralphy. Run `agy --gemini_dir="<home>\.ralphy\antigravity-root"` with no other argument, sign in, then run Ralphy again. (see <home>/AppData/Local/Temp/tmp.6eMYn5Va2X/FinCal\.ralphy\runs\20261113-023818\antigravity.log)
+
