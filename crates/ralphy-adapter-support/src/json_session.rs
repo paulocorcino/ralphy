@@ -19,7 +19,7 @@ use anyhow::{bail, Context, Result};
 
 use crate::headless::{run_headless_held, PromptHeld};
 use crate::scaffold::{ensure_dir, remove_stale_file};
-use crate::{failed_run_stop, run_headless, PromptGate, RunFacts, RunStop};
+use crate::{failed_run_stop, PromptGate, RunFacts, RunStop};
 
 /// The vendor-specific inputs to [`run_json_session`]: the built command, the
 /// prompt, paths, and the exact error wording. The `(see <log>)` suffix is
@@ -104,7 +104,7 @@ pub fn run_json_session<T>(
     auth_error: impl Fn(&str) -> bool,
     validate: impl Fn(&str) -> Result<T>,
 ) -> Result<T> {
-    json_session(session, None, auth_error, validate)
+    json_session(session, None, None, auth_error, validate)
 }
 
 /// [`run_json_session`] with the prompt held behind `gate`: the child is spawned,
@@ -116,12 +116,25 @@ pub fn run_json_session_held<T>(
     auth_error: impl Fn(&str) -> bool,
     validate: impl Fn(&str) -> Result<T>,
 ) -> Result<T> {
-    json_session(session, Some(gate), auth_error, validate)
+    json_session(session, None, Some(gate), auth_error, validate)
 }
 
-fn json_session<T>(
-    session: JsonSession<'_>,
-    gate: Option<PromptGate<'_>>,
+/// [`run_json_session_held`] with `preamble` written to the child's stdin before
+/// the gate runs; stdin stays open until the gate releases the prompt.
+pub fn run_json_session_with_preamble<'a, T>(
+    session: JsonSession<'a>,
+    preamble: &'a str,
+    gate: PromptGate<'a>,
+    auth_error: impl Fn(&str) -> bool,
+    validate: impl Fn(&str) -> Result<T>,
+) -> Result<T> {
+    json_session(session, Some(preamble), Some(gate), auth_error, validate)
+}
+
+fn json_session<'a, T>(
+    session: JsonSession<'a>,
+    preamble: Option<&'a str>,
+    gate: Option<PromptGate<'a>>,
     auth_error: impl Fn(&str) -> bool,
     validate: impl Fn(&str) -> Result<T>,
 ) -> Result<T> {
@@ -150,6 +163,7 @@ fn json_session<T>(
             auth_msg,
             timeout_msg,
         },
+        preamble,
         gate,
         auth_error,
     )?;
@@ -202,7 +216,7 @@ pub fn run_init_session<T>(
 }
 
 /// Sibling of [`run_json_session`] for one-shots that produce **no JSON artifact**
-/// (Claude's `consolidate_knowledge`): spawn via [`run_headless`], combine
+/// (Claude's `consolidate_knowledge`): spawn via [`run_headless`](crate::run_headless), combine
 /// stdout+stderr into the log and persist it at `log_path`, `bail!` on an auth
 /// failure, then `bail!` on a wall timeout — in that exact order — and return the
 /// combined log verbatim on success. This is the shared body [`run_json_session`]
@@ -217,7 +231,7 @@ pub fn run_text_session(
     session: TextSession<'_>,
     auth_error: impl Fn(&str) -> bool,
 ) -> Result<String> {
-    text_session(session, None, auth_error)
+    text_session(session, None, None, auth_error)
 }
 
 /// [`run_text_session`] with the prompt held behind `gate`: the child is spawned,
@@ -228,12 +242,24 @@ pub fn run_text_session_held(
     gate: PromptGate<'_>,
     auth_error: impl Fn(&str) -> bool,
 ) -> Result<String> {
-    text_session(session, Some(gate), auth_error)
+    text_session(session, None, Some(gate), auth_error)
 }
 
-fn text_session(
-    session: TextSession<'_>,
-    gate: Option<PromptGate<'_>>,
+/// [`run_text_session_held`] with `preamble` written to the child's stdin before
+/// the gate runs; stdin stays open until the gate releases the prompt.
+pub fn run_text_session_with_preamble<'a>(
+    session: TextSession<'a>,
+    preamble: &'a str,
+    gate: PromptGate<'a>,
+    auth_error: impl Fn(&str) -> bool,
+) -> Result<String> {
+    text_session(session, Some(preamble), Some(gate), auth_error)
+}
+
+fn text_session<'a>(
+    session: TextSession<'a>,
+    preamble: Option<&'a str>,
+    gate: Option<PromptGate<'a>>,
     auth_error: impl Fn(&str) -> bool,
 ) -> Result<String> {
     let TextSession {
@@ -246,11 +272,8 @@ fn text_session(
         timeout_msg,
     } = session;
 
-    let r = match gate {
-        Some(gate) => run_headless_held(cmd, prompt, timeout, gate),
-        None => run_headless(cmd, prompt, timeout),
-    }
-    .map_err(|e| with_spawn_context(e, spawn_err))?;
+    let r = run_headless_held(cmd, prompt, timeout, preamble, gate)
+        .map_err(|e| with_spawn_context(e, spawn_err))?;
     let facts = RunFacts::from(&r);
     let mut log = r.stdout;
     log.push_str(&r.stderr);

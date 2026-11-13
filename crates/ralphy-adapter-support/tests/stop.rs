@@ -150,3 +150,71 @@ fn the_builder_path_reports_a_stop_as_a_stop_not_a_timeout() {
     assert!(!r.exited_cleanly, "a reaped child did not exit cleanly");
     remove_scratch(&log_path);
 }
+
+/// Run the test child's `drive-stop` mode with extra Windows creation `flags`
+/// and return the one result line it prints.
+fn drive_stop(mode: &str, flags: u32) -> String {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_headless_test_child"));
+    cmd.args(["drive-stop", mode])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(&mut cmd, flags);
+    #[cfg(not(windows))]
+    let _: u32 = flags;
+    let out = cmd.output().expect("the driver child starts");
+    assert!(
+        out.status.success(),
+        "the driver failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// The ways a test spawns the driver: on Windows with a hidden console of its
+/// own, and with none; elsewhere as is.
+fn driver_shapes() -> &'static [(&'static str, u32)] {
+    if cfg!(windows) {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        &[
+            ("console", CREATE_NO_WINDOW),
+            ("no console", DETACHED_PROCESS),
+        ]
+    } else {
+        &[("as is", 0)]
+    }
+}
+
+/// The exit code of the test child on the stop signal: its own SIGTERM handler
+/// on Unix, `STATUS_CONTROL_C_EXIT` of the default `CTRL_BREAK_EVENT` handler on Windows.
+const SIGNALLED_EXIT: i32 = if cfg!(windows) {
+    0xC000_013A_u32.cast_signed()
+} else {
+    7
+};
+
+#[test]
+fn a_cooperative_stop_reaps_a_child_that_exits_on_the_signal() {
+    for &(shape, flags) in driver_shapes() {
+        let line = drive_stop("cooperative", flags);
+        assert_eq!(
+            line,
+            format!("exit_code=Some({SIGNALLED_EXIT}) stopped=true kept=true"),
+            "{shape}: the child exited on the signal, was reported as a stop, and its line \
+             was kept"
+        );
+    }
+}
+
+#[test]
+fn a_plain_stop_still_kills_the_tree_at_once() {
+    for &(shape, flags) in driver_shapes() {
+        let line = drive_stop("plain", flags);
+        assert_eq!(
+            line, "exit_code=None stopped=true kept=true",
+            "{shape}: a call without cooperative stop is killed, with no exit status"
+        );
+    }
+}

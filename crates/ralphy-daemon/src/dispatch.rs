@@ -14,25 +14,24 @@
 //! REGISTRY (ADR-0036 §1–2): each [`Verb`] carries an [`EffectClass`]; only
 //! `Spawn` verbs reach the CLI, and [`spawn_argv`] is their argv table.
 //!
-//! TEARDOWN INVARIANT (the inverse of `session`'s): a dispatched run keeps its
-//! OWN lifecycle. The daemon must NEVER kill it on shutdown or client
-//! disconnect (PRD #157 story 18/20). The [`Child`] handle here is `wait`-only:
-//! it has no kill and dropping it does not kill. The teardown arms of the run's
-//! relay (`routes::ws_command::stream`) enforce the rest.
+//! TEARDOWN INVARIANT (the inverse of `session`'s): a dispatched run keeps its OWN lifecycle. The
+//! daemon must NEVER kill it on shutdown or client disconnect (PRD #157 story 18/20). The
+//! [`Child`] handle here is `wait`-only: it has no kill and dropping it does not kill. The
+//! teardown arms of the run's relay (`routes::ws_command::stream`) enforce the rest.
 //!
-//! OUTPUT STREAMING (issue #180): the child's stdout and stderr are merged into
-//! one OS pipe ([`Child::take_output`]) that the `spawn` channel streams to the
-//! UI log pane. A Rust child ignores `SIGPIPE`, so a daemon crash does not kill
-//! it. The duty is on the DAEMON: a live daemon MUST drain the pipe to EOF, so
-//! it never fills and stalls the child. The handler's detached drain task does
-//! this; its channel to the browser is bounded, and a browser that does not take
-//! a frame within the stream's send deadline is given up, so the drain discards.
+//! OUTPUT STREAMING (issue #180): the child's stdout and stderr are merged into one OS pipe
+//! ([`Child::take_output`]) that the `spawn` channel streams to the UI log pane. A Rust child
+//! ignores `SIGPIPE`, so a daemon crash does not kill it. The duty is on the DAEMON: a live daemon
+//! MUST drain the pipe to EOF, so it never fills and stalls the child. The handler's detached
+//! drain task does this; its channel to the browser is bounded, and a browser that does not take a
+//! frame within the stream's send deadline is given up, so the drain discards.
 //!
-//! The [`Spawner`]/[`Child`] seam keeps this module unit-testable: a `FakeSpawner`
-//! records the argv and returns a preset exit code without touching the OS.
+//! The [`Spawner`]/[`Child`] seam keeps this module unit-testable: a `FakeSpawner` records the argv
+//! and returns a preset exit code without touching the OS.
 
 use crate::session::Agent;
 
+mod antigravity;
 mod argv;
 mod gemini;
 mod host;
@@ -47,13 +46,13 @@ pub use argv::{
     project_remove_argv, run_stop_argv, spawn_argv, sync_argv, sync_status_argv, worktree_add_argv,
     worktree_list_argv, worktree_remove_argv, ArgvError,
 };
-pub use gemini::gemini_root_argv;
 pub use host::{host_argv, host_password};
 pub use registry::project_add_argv;
 #[cfg(test)]
 pub(crate) use spawn::MAX_COLLECT_CHILDREN;
 pub use spawn::{collect, dispatch, ralphy_exe, Child, ProcessSpawner, Spawner, REPLY_DEADLINE};
 pub(crate) use spawn::{collect_within, Collected, COLLECT_SLOTS};
+pub use {antigravity::antigravity_root_argv, gemini::gemini_root_argv};
 
 /// The effect class of a verb (ADR-0036 §2): `Native` runs in-daemon,
 /// `Observe`/`Query` read state, `Spawn` launches a detached `ralphy` child,
@@ -103,6 +102,7 @@ impl BranchMode {
 /// so `session::Agent`'s public API does not widen.
 pub(crate) fn agent_flag(a: Agent) -> &'static str {
     match a {
+        Agent::Antigravity => "antigravity",
         Agent::Claude => "claude",
         Agent::Codex => "codex",
         Agent::Copilot => "copilot",

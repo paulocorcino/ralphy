@@ -19,6 +19,11 @@ pub(crate) const PROJECT: &str = "acme/widget";
 /// Inline rather than `PriceTable::defaults()` so a seed refresh cannot move an
 /// arithmetic assertion out from under these tests.
 pub(crate) fn table() -> PriceTable {
+    table_of(&[OPUS, SECOND])
+}
+
+/// The same rates for each of `models`.
+pub(crate) fn table_of(models: &[&str]) -> PriceTable {
     let price = || ralphy_pricing::ModelPrice {
         input: 15.0,
         output: 75.0,
@@ -26,7 +31,7 @@ pub(crate) fn table() -> PriceTable {
         cache_creation: 18.75,
     };
     PriceTable::from_layers(
-        BTreeMap::from([(OPUS.to_owned(), price()), (SECOND.to_owned(), price())]),
+        models.iter().map(|m| ((*m).to_owned(), price())).collect(),
         BTreeMap::new(),
         BTreeMap::new(),
         BTreeMap::new(),

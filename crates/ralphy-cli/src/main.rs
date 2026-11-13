@@ -20,6 +20,7 @@ use tracing::warn;
 #[macro_use]
 mod output;
 
+mod antigravity;
 mod blob;
 mod changes;
 mod cli;
@@ -84,8 +85,8 @@ fn main() -> Result<ExitCode> {
             hook::run_stop_hook();
             Ok(())
         }
-        Command::Hook(HookCommand::Guard { cost_gate }) => {
-            return Ok(guard::run_guard_hook(cost_gate))
+        Command::Hook(HookCommand::Guard { cost_gate, vendor }) => {
+            return Ok(guard::run_guard_hook(vendor, cost_gate))
         }
         Command::Hook(HookCommand::Post) => {
             hook::run_post_hook();
@@ -112,6 +113,7 @@ fn main() -> Result<ExitCode> {
         Command::Blob(cmd) => blob::blob(cmd),
         Command::Sync(cmd) => sync::sync(cmd),
         Command::Gemini(cmd) => gemini::gemini(cmd),
+        Command::Antigravity(cmd) => antigravity::antigravity(&cmd),
         Command::Stop(args) => stop::stop(&args),
         Command::Update(args) => return update::run(&args),
     };
@@ -157,7 +159,8 @@ pub(crate) fn consolidate_defaults(
 ) -> (Option<&'static str>, Option<&'static str>) {
     match agent {
         CliAgent::Claude => (Some("opus"), Some("medium")),
-        CliAgent::Codex
+        CliAgent::Antigravity
+        | CliAgent::Codex
         | CliAgent::Copilot
         | CliAgent::Cursor
         | CliAgent::Gemini
@@ -223,6 +226,11 @@ fn consolidate_with_agent(
         CliAgent::OpenCode => {
             ralphy_agent_opencode::consolidate_knowledge(ws, run_dir, model, effort, timeout)
         }
+        CliAgent::Antigravity => ralphy_agent_antigravity::consolidate_knowledge(
+            ws,
+            run_dir,
+            antigravity::one_shot_options(ws.repo_root(), model, effort, timeout),
+        ),
     }
 }
 
@@ -411,64 +419,36 @@ mod tests {
         }
     }
 
-    /// #237: the four one-shot dispatch sites must route Copilot to REAL work, not
-    /// #259, the same pin one vendor over: each `Agent::Gemini`/`CliAgent::Gemini`
-    /// arm must make its REAL call, and the "not yet wired" bail must be gone from
-    /// every dispatch source — checking only for the bail's absence would pass on an
-    /// arm silently swapped to another vendor's same-signature function.
-    ///
-    /// Stronger than its siblings on purpose (self-review, #259): the call is
-    /// asserted INSIDE the Gemini arm, not merely somewhere in the file. A
-    /// whole-file `contains` is satisfied by the gemini call sitting in another
-    /// vendor's arm — which is the exact swap the doc comment claims to catch.
+    /// #237, #259: each one-shot dispatch arm of each vendor makes its REAL
+    /// call, asserted INSIDE the arm: a whole-file `contains` would pass on a
+    /// call that drifted into another vendor's arm of the same signature.
     #[test]
-    fn gemini_one_shots_are_wired() {
-        let stale_bail = concat!("not yet wired for ", "--agent gemini");
-        let cases: [(&str, &str, &str); 4] = [
-            (
-                include_str!("init/run.rs"),
-                concat!("Agent::", "Gemini =>"),
-                concat!("ralphy_agent_gemini::", "diagnose_repo("),
-            ),
-            (
-                include_str!("init/issues.rs"),
-                concat!("Agent::", "Gemini =>"),
-                concat!("ralphy_agent_gemini::", "draft_issues("),
-            ),
-            (
-                include_str!("triage.rs"),
-                concat!("Agent::", "Gemini =>"),
-                concat!("ralphy_agent_gemini::", "triage_issues("),
-            ),
+    fn every_vendor_one_shot_is_wired() {
+        let sites = [
+            (include_str!("init/run.rs"), "Agent::", "diagnose_repo("),
+            (include_str!("init/issues.rs"), "Agent::", "draft_issues("),
+            (include_str!("triage.rs"), "Agent::", "triage_issues("),
             (
                 include_str!("main.rs"),
-                concat!("CliAgent::", "Gemini =>"),
-                concat!("ralphy_agent_gemini::", "consolidate_knowledge("),
+                "CliAgent::",
+                "consolidate_knowledge(",
             ),
         ];
-        for (src, arm, real_call) in cases {
-            assert!(!src.contains(stale_bail), "stale one-shot bail found");
-            // The dispatch arm, and only it, in whitespace-free text: from the
-            // `Gemini=>` marker to the next arm's `=>`. A call that drifted into
-            // a neighbouring vendor's arm is outside this window and reds.
-            let code: String = src.split_whitespace().collect();
-            let arm: String = arm.split_whitespace().collect();
-            let start = code
-                .find(&arm)
-                .unwrap_or_else(|| panic!("no {arm} dispatch arm"))
-                + arm.len();
-            let end = code
-                .split_at(start)
-                .1
-                .find("=>")
-                .map_or(code.len(), |i| start + i);
-            assert!(
-                code.split_at(end).0.split_at(start).1.contains(real_call),
-                "expected {real_call} inside the {arm} arm, not merely in the file"
-            );
+        for (variant, krate) in [("Gemini", "gemini"), ("Antigravity", "antigravity")] {
+            for (src, enum_path, verb) in sites {
+                assert!(!src.contains(&format!("not yet wired for --agent {krate}")));
+                // The arm, in whitespace-free text: from its `=>` to the next `=>`.
+                let code: String = src.split_whitespace().collect();
+                let arm = format!("{enum_path}{variant}=>");
+                let call = format!("ralphy_agent_{krate}::{verb}");
+                let start = code.find(&arm).unwrap_or_else(|| panic!("no {arm} arm"));
+                let rest = code.split_at(start + arm.len()).1;
+                let body = rest.split_at(rest.find("=>").unwrap_or(rest.len())).0;
+                assert!(body.contains(&call), "expected {call} inside the {arm} arm");
+            }
+            // ADR-0043 D8, ADR-0086 D4: the model of a one-shot is the plan's own.
+            let agent = <CliAgent as clap::ValueEnum>::from_str(krate, false).expect("a CLI agent");
+            assert_eq!(consolidate_defaults(agent), (None, None), "{krate}");
         }
-        // ADR-0043 D8: the model axis is an account entitlement, not a complexity
-        // tier — nothing here recommends one.
-        assert_eq!(consolidate_defaults(CliAgent::Gemini), (None, None));
     }
 }

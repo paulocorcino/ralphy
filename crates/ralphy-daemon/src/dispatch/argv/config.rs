@@ -39,17 +39,20 @@ fn well_shaped_key(key: &str) -> bool {
 ///   session whose hooks did not prove they run go on, so the guard may not
 ///   run: set remotely, it turns off the one check that the guard is there
 ///   (ADR-0072 D6).
+/// - `antigravity.run_without_guard_proof_i_understand_the_risk` is the same
+///   hatch for an Antigravity session (ADR-0086 D9).
 ///
 /// `pub(crate)` so the settings-panel gate in `lib.rs` can assert the schema
 /// declares each of these `readonly` — a key denied here but offered as an
 /// editable field is a control that takes an edit and answers "refused".
-pub(crate) const LOCAL_ONLY_KEYS: [&str; 6] = [
+pub(crate) const LOCAL_ONLY_KEYS: [&str; 7] = [
     "verify.command",
     "copilot.allow_builtin_mcp_servers_i_understand_the_risk",
     "cursor.allow_codebase_indexing_i_understand_the_risk",
     "events.token",
     "queue.trust_all_comments",
     "claude.run_without_guard_proof_i_understand_the_risk",
+    "antigravity.run_without_guard_proof_i_understand_the_risk",
 ];
 
 /// Whether `key` may be set through the daemon's `config.set`/`config.unset`.

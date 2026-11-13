@@ -2085,6 +2085,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ralphy-agent-antigravity"
+version = "0.1.0-rc.43"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "include_dir",
+ "ralphy-adapter-support",
+ "ralphy-core",
+ "ralphy-pricing",
+ "ralphy-proc-util",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
 name = "ralphy-agent-claude"
 version = "0.1.0-rc.43"
 dependencies = [
@@ -2216,6 +2233,7 @@ dependencies = [
  "indicatif",
  "qrcode",
  "ralphy-adapter-support",
+ "ralphy-agent-antigravity",
  "ralphy-agent-claude",
  "ralphy-agent-codex",
  "ralphy-agent-copilot",

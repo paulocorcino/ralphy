@@ -162,7 +162,7 @@ type AdapterEmitSite = (
     &'static [&'static str],
 );
 
-/// The nine adapter call sites of `emit::planning`/`emit::executing`, pinned
+/// The adapter call sites of `emit::planning`/`emit::executing`, pinned
 /// per site.
 ///
 /// The round-trips in `super::super::roundtrip` prove the two HELPERS; they
@@ -184,6 +184,24 @@ type AdapterEmitSite = (
 /// is a negative scan, so an adapter that stops emitting altogether would make
 /// it *more* satisfied while the run's phase never advances.
 const ADAPTER_EMIT_SITES: &[AdapterEmitSite] = &[
+    (
+        "crates/ralphy-agent-antigravity/src/lib.rs",
+        1,
+        1,
+        &[
+            "NAME",
+            "model.unwrap_or(\"\")",
+            "effort.unwrap_or(\"\")",
+            "\"\"",
+        ],
+        &[
+            "NAME",
+            "0",
+            "model.unwrap_or(\"\")",
+            "effort.unwrap_or(\"\")",
+            "\"\"",
+        ],
+    ),
     (
         "crates/ralphy-agent-claude/src/lib.rs",
         1,

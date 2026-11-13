@@ -153,4 +153,28 @@ mod tests {
             }
         }
     }
+
+    /// The five base ids of the Antigravity adapter price to their listed rate
+    /// (1M of each token kind), each field checked through the sum.
+    #[test]
+    fn every_agy_base_id_prices_through_the_floor() {
+        let table = PriceTable::defaults();
+        let tokens = one_million_each();
+        let rows: &[(&str, f64)] = &[
+            ("gemini-4-argon", 2.0 + 10.0 + 0.1),
+            ("gemini-3.8-flash", 0.75 + 3.75 + 0.075),
+            ("claude-opus-5-5", 4.0 + 20.0 + 0.2 + 5.0),
+            ("claude-sonnet-5-5", 2.0 + 10.0 + 0.1 + 2.5),
+            ("gpt-oss-120b", 0.09 + 0.36),
+        ];
+        for &(id, expected) in rows {
+            let got = table
+                .cost_usd(id, &tokens)
+                .unwrap_or_else(|| panic!("{id} must price from the floor"));
+            assert!(
+                (got - expected).abs() < 1e-9,
+                "{id}: expected {expected}, got {got}"
+            );
+        }
+    }
 }

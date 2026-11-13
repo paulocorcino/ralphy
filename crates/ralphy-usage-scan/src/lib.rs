@@ -5,8 +5,9 @@
 //!
 //! This slice ships the **Claude** ([`claude`]), **Codex** ([`codex`]),
 //! **`OpenCode`** ([`opencode`]), **Kimi** ([`kimi`]), **Copilot**
-//! ([`copilot`]), **Cursor** ([`cursor`]), and **Gemini** ([`gemini`]) modules. The
-//! one-module-per-vendor shape (§7) leaves room for more to follow. The [`kimi`]
+//! ([`copilot`]), **Cursor** ([`cursor`]), **Gemini** ([`gemini`]), and
+//! **Antigravity** ([`antigravity`]) modules. The one-module-per-vendor shape
+//! (§7) leaves room for more to follow. The [`kimi`]
 //! module carries a tokscale-derived (`junhoyeo/tokscale`, MIT) parser — that
 //! attribution lives in `kimi.rs`, not here; this file owns only the shared
 //! record contract.
@@ -16,6 +17,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+pub mod antigravity;
 mod attribution;
 pub mod claude;
 pub mod codex;
@@ -28,6 +30,7 @@ pub mod recovery;
 mod since;
 mod walk;
 
+pub use antigravity::scan_antigravity;
 pub use claude::scan_claude;
 pub use codex::scan_codex;
 pub use copilot::{scan_copilot, session_reasoning_effort, session_tokens};
@@ -168,6 +171,18 @@ pub struct CursorScan<'a> {
 #[derive(Debug)]
 pub struct GeminiScan<'a> {
     pub gemini_dir: &'a Path,
+    pub run_session_ids: &'a HashSet<String>,
+    pub repos: &'a [RegisteredRepo],
+    pub since: Option<&'a str>,
+}
+
+/// Everything the Antigravity scan reads: `root` is the folder `agy` gets as
+/// `--gemini_dir`, under which the scan opens each `antigravity-cli/conversations/*.db`
+/// read-only. Plus the run-owned ids to exclude, the repo registry for
+/// attribution, and an optional `since` lower bound on `last_ts`.
+#[derive(Debug)]
+pub struct AntigravityScan<'a> {
+    pub root: &'a Path,
     pub run_session_ids: &'a HashSet<String>,
     pub repos: &'a [RegisteredRepo],
     pub since: Option<&'a str>,

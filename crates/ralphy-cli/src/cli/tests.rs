@@ -309,7 +309,14 @@ fn internal_commands_are_listed_apart_and_still_parse() {
             .collect()
     };
     let internal = [
-        "hook", "branch", "label", "changes", "blob", "sync", "gemini",
+        "hook",
+        "branch",
+        "label",
+        "changes",
+        "blob",
+        "sync",
+        "gemini",
+        "antigravity",
     ];
     assert_eq!(names(footer), internal);
     for name in internal {
@@ -371,6 +378,7 @@ fn internal_commands_are_listed_apart_and_still_parse() {
         vec!["ralphy", "worktree", "remove", "--", "-x"],
         vec!["ralphy", "sync", "status"],
         vec!["ralphy", "hook", "status"],
+        vec!["ralphy", "antigravity", "prepare-root"],
         vec!["ralphy", "issues", "--format", "json", "--board"],
     ] {
         if let Err(e) = Cli::try_parse_from(&argv) {

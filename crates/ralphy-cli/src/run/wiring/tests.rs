@@ -28,7 +28,14 @@ fn every_arm_passes_each_translated_effort_to_the_adapter() {
     let code: String = include_str!("../wiring.rs").split_whitespace().collect();
     let code = code.split("#[cfg(test)]mod").next().unwrap_or_default();
     let arms = [
-        "Claude", "Codex", "Copilot", "Cursor", "Gemini", "Kimi", "OpenCode",
+        "Claude",
+        "Codex",
+        "Copilot",
+        "Cursor",
+        "Gemini",
+        "Kimi",
+        "OpenCode",
+        "Antigravity",
     ];
     let arm = |name: &str| -> &str {
         let head = format!("CliAgent::{name}=>");
@@ -179,7 +186,8 @@ fn check_agents_present_uses_the_given_locator() {
         | CliAgent::Copilot
         | CliAgent::Gemini
         | CliAgent::Kimi
-        | CliAgent::OpenCode => false,
+        | CliAgent::OpenCode
+        | CliAgent::Antigravity => false,
     };
     assert!(check_agents_present(CliAgent::Cursor, CliAgent::Cursor, by_binary).is_ok());
 
@@ -335,6 +343,10 @@ fn resolve_cursor_allow_indexing_comes_from_settings_only() {
 #[test]
 fn build_agent_builds_every_agent_the_cli_accepts() {
     use clap::{Parser, ValueEnum};
+    use ralphy_agent_antigravity::AntigravitySettings;
+    use ralphy_agent_copilot::CopilotSettings;
+    use ralphy_agent_cursor::CursorSettings;
+    use ralphy_agent_gemini::GeminiSettings;
     let claude = ResolvedClaude {
         plan_model: String::new(),
         default_exec_model: String::new(),
@@ -350,6 +362,10 @@ fn build_agent_builds_every_agent_the_cli_accepts() {
             panic!("expected the run subcommand");
         };
         assert_eq!(args.agent, *agent, "{name}");
+        let none = ResolvedEffort {
+            plan: None,
+            exec: None,
+        };
         let built = build_agent(
             *agent,
             &args,
@@ -357,17 +373,11 @@ fn build_agent_builds_every_agent_the_cli_accepts() {
             None,
             None,
             &claude,
-            ResolvedEffort {
-                plan: None,
-                exec: None,
-            },
-            &resolve_copilot(
-                None,
-                None,
-                &ralphy_agent_copilot::CopilotSettings::default(),
-            ),
-            &resolve_cursor(None, None, &ralphy_agent_cursor::CursorSettings::default()),
-            &resolve_gemini(None, None, &ralphy_agent_gemini::GeminiSettings::default()),
+            none,
+            &resolve_copilot(None, None, &CopilotSettings::default()),
+            &resolve_cursor(None, None, &CursorSettings::default()),
+            &resolve_gemini(None, None, &GeminiSettings::default()),
+            &resolve_antigravity(None, None, none, &AntigravitySettings::default()),
             Some(0),
         );
         assert_eq!(built.name(), name, "--agent {name} built another adapter");

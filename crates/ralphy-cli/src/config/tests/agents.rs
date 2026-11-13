@@ -1,6 +1,7 @@
-//! The agent sections of the settings: Claude, Copilot, Cursor and Gemini keys.
+//! The agent sections of the settings: Claude, Copilot, Cursor, Gemini and Antigravity keys.
 
 use super::*;
+use ralphy_agent_antigravity::AntigravitySettings;
 use ralphy_agent_copilot::CopilotSettings;
 use ralphy_agent_cursor::CursorSettings;
 use ralphy_agent_gemini::GeminiSettings;
@@ -230,5 +231,128 @@ fn copilot_effort_config_round_trip() {
         "a refused set must persist nothing"
     );
 
+    remove_scratch(&dir);
+}
+
+fn agy_settings(ws: &Workspace) -> AntigravitySettings {
+    let s = Settings::load(ws).unwrap();
+    s.agent_settings(AntigravitySettings::SECTION).unwrap()
+}
+
+#[test]
+fn antigravity_model_keys_round_trip() {
+    let (ws, dir) = tmp_ws("antigravity-model-round-trip");
+
+    set(&ws, "antigravity.plan_model", "gemini-3.8-pro").unwrap();
+    set(&ws, "antigravity.exec_model", "gemini-3.8-flash-low").unwrap();
+    let a = agy_settings(&ws);
+    assert_eq!(a.plan_model.as_deref(), Some("gemini-3.8-pro"));
+    assert_eq!(a.exec_model.as_deref(), Some("gemini-3.8-flash-low"));
+    let j = config_json(&ws).unwrap();
+    assert_eq!(
+        j["antigravity.plan_model"],
+        serde_json::json!("gemini-3.8-pro")
+    );
+    get(&ws, false).unwrap();
+
+    unset(&ws, "antigravity.plan_model").unwrap();
+    unset(&ws, "antigravity.exec_model").unwrap();
+    let a = agy_settings(&ws);
+    assert_eq!((a.plan_model, a.exec_model), (None, None));
+    let j = config_json(&ws).unwrap();
+    assert_eq!(j["antigravity.exec_model"], serde_json::Value::Null);
+
+    remove_scratch(&dir);
+}
+
+#[test]
+fn antigravity_effort_keys_accept_only_the_core_lexicon() {
+    for (index, value) in ["low", "medium", "high", "xhigh", "max"]
+        .into_iter()
+        .enumerate()
+    {
+        let (ws, dir) = tmp_ws(&format!("antigravity-effort-{index}"));
+        set(&ws, "antigravity.plan_effort", value).unwrap();
+        set(&ws, "antigravity.exec_effort", value).unwrap();
+        let a = agy_settings(&ws);
+        assert_eq!(a.plan_effort.as_deref(), Some(value));
+        assert_eq!(a.exec_effort.as_deref(), Some(value));
+        remove_scratch(dir);
+    }
+
+    for invalid in ["none", "minimal", "extreme"] {
+        for key in ["antigravity.plan_effort", "antigravity.exec_effort"] {
+            let (ws, dir) = tmp_ws(&format!("{key}-{invalid}"));
+            assert!(set(&ws, key, invalid).is_err());
+            let a = agy_settings(&ws);
+            assert_eq!((a.plan_effort, a.exec_effort), (None, None));
+            remove_scratch(dir);
+        }
+    }
+}
+
+#[test]
+fn antigravity_waiver_is_set_only_on_this_machine() {
+    const KEY: &str = "antigravity.run_without_guard_proof_i_understand_the_risk";
+    let (ws, dir) = tmp_ws("antigravity-waiver");
+    assert!(!agy_settings(&ws).run_without_guard_proof_i_understand_the_risk);
+
+    set(&ws, KEY, "true").unwrap();
+    let raw = fs::read_to_string(ws.settings_path()).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(
+        v["antigravity"]["run_without_guard_proof_i_understand_the_risk"],
+        serde_json::json!(true)
+    );
+    assert_eq!(config_json(&ws).unwrap()[KEY], serde_json::json!(true));
+
+    let err = set(&ws, KEY, "yes").expect_err("only 'true'/'false' are accepted");
+    assert!(err.to_string().contains("'true' or 'false'"), "{err}");
+    assert!(agy_settings(&ws).run_without_guard_proof_i_understand_the_risk);
+
+    unset(&ws, KEY).unwrap();
+    assert!(!agy_settings(&ws).run_without_guard_proof_i_understand_the_risk);
+    assert_eq!(config_json(&ws).unwrap()[KEY], serde_json::json!(false));
+
+    remove_scratch(&dir);
+}
+
+#[test]
+fn an_antigravity_model_with_a_space_or_empty_is_refused() {
+    let (ws, dir) = tmp_ws("antigravity-model-shape");
+    for bad in ["", "   ", "gemini 3.8", "Gemini-3.8", "gemini/3.8"] {
+        assert!(set(&ws, "antigravity.plan_model", bad).is_err(), "{bad:?}");
+        assert!(set(&ws, "antigravity.exec_model", bad).is_err(), "{bad:?}");
+    }
+    let a = agy_settings(&ws);
+    assert_eq!((a.plan_model, a.exec_model), (None, None));
+    remove_scratch(&dir);
+}
+
+#[test]
+fn config_json_prints_the_antigravity_keys() {
+    let (ws, dir) = tmp_ws("antigravity-config-json");
+    let j = config_json(&ws).unwrap();
+    for key in [
+        "antigravity.plan_model",
+        "antigravity.exec_model",
+        "antigravity.plan_effort",
+        "antigravity.exec_effort",
+        "antigravity.run_without_guard_proof_i_understand_the_risk",
+    ] {
+        assert!(j.get(key).is_some(), "{key} missing from config --json");
+    }
+    remove_scratch(&dir);
+}
+
+#[test]
+fn an_antigravity_model_that_starts_with_a_dash_is_refused() {
+    let (ws, dir) = tmp_ws("antigravity-model-dash");
+    for bad in ["-x", "--sandbox", ".gemini"] {
+        assert!(set(&ws, "antigravity.plan_model", bad).is_err(), "{bad:?}");
+        assert!(set(&ws, "antigravity.exec_model", bad).is_err(), "{bad:?}");
+    }
+    set(&ws, "antigravity.plan_model", "3-flash").unwrap();
+    assert_eq!(agy_settings(&ws).plan_model.as_deref(), Some("3-flash"));
     remove_scratch(&dir);
 }

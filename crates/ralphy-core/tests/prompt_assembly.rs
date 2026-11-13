@@ -42,8 +42,9 @@ const SLOTS: [&str; 8] = [
     "mode-rules",
 ];
 
-const VARIANTS: [(&str, &str); 8] = [
+const VARIANTS: [(&str, &str); 9] = [
     ("claude", "prompt.plan.md"),
+    ("antigravity", "prompt.plan.antigravity.md"),
     ("codex", "prompt.plan.codex.md"),
     ("copilot", "prompt.plan.copilot.md"),
     ("cursor", "prompt.plan.cursor.md"),

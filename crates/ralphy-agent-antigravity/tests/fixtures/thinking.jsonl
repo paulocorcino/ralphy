@@ -1,0 +1,3 @@
+{"event":"init","conversation_id":"00000000-0000-4000-8000-000000000003","init":{"model":"gemini-3.8-flash-low","cwd":"<tmp>/repo","tools":["read_file"]}}
+{"event":"step_update","step_update":{"conversation_id":"00000000-0000-4000-8000-000000000003","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":3.1,"usage":{"input_tokens":13731,"output_tokens":648,"thinking_tokens":314,"cache_read_tokens":14386,"total_tokens":14379}}}
+{"event":"result","result":{"conversation_id":"00000000-0000-4000-8000-000000000003","status":"SUCCESS","response":"ok\n","duration_seconds":3.2,"num_turns":1,"usage":{"input_tokens":13731,"output_tokens":648,"thinking_tokens":314,"cache_read_tokens":14386,"total_tokens":14379}}}

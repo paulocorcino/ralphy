@@ -1,0 +1,227 @@
+# agy hook payloads, shell of run_command, empty hook stdout, two stdin turns (ADR-0086 D2/D9/D12; #784 Stage 1, 2026-11-12).
+# Windows 11, agy 1.5.6, isolated root --gemini_dir=<tmp>\gd (auth from the Windows keyring), model gemini-3.8-flash-low,
+# --input-format stream-json --output-format stream-json --dangerously-skip-permissions. Paths: <home> = %USERPROFILE%.
+# Recorder: <python> -I rec.py <PreToolUse reply> <other reply> <dir>; it saves each stdin payload whole, then replies.
+# hooks.json (agy format: top-level key = hook name; tool events wrap handlers in {matcher, hooks:[..]}, others are flat):
+#   {"ralphy-probe":{"SessionStart":[{"type":"command","command":"<cmd>"}],"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"<cmd>"}]}], ...}}
+# A first attempt wrapped the events in a top-level "hooks" key: agy logged 'invalid hook "hooks": command hook must specify command' and ran none.
+# Tool names in the stream and payloads: run_command, write_file, edit_file, read_file. The init tool list also names write_to_file,
+# replace_file_content, multi_replace_file_content, sed_file, notebook_edit; asked to use them by name (probe P5), the model answered
+# that only write_file and edit_file are available to it, and no PreToolUse fired.
+# Init tool list elided below as [...].
+
+## P1 payloads: PreToolUse prints {"decision":"allow"}, other events print {}
+prompt: run `echo probe`; create a.txt (one,two,three); edit line two with the edit tool; read a.txt.
+Hook order (rec_p1 events.log): SessionStart, then per model call PreInvocation, [PreToolUse, PostToolUse], PostInvocation; last PreInvocation, PostInvocation, Stop.
+Tools called, with toolCall.args shape: run_command {CommandLine,WaitMsBeforeAsync,toolSummary}; write_file {Path,Content}; edit_file {Path,Target,Replacement}; read_file {Path}.
+toolCall = {args, id, name}; stepIdx on PreToolUse and PostToolUse; PostToolUse adds error; Stop adds terminationReason,fullyIdle,continuationActive,executionNum,error.
+Paths inside payloads: workspacePaths and transcriptPath use forward slashes; cwd and args.Path use backslashes. a.txt ended 'one
+TWO
+three
+'.
+Payload files are in crates/ralphy-cli/tests/fixtures/antigravity-hooks/.
+--- stream:
+
+## p1 pre=allow other=braces exit=0
+   0.44 in: {"event": "user", "message": {"role": "user", "content": "Do these four things in order using your tools. 1) run the shell command: echo probe 2) create a file named a.txt with three lines: one, two, three 3) with your edit tool (not by rewriting the file) change the line two to TWO in a.txt 4) read a.txt. Then reply DONE."}}
+  33.12 out: {"event":"init","conversation_id":"4c9e68ec-9c07-43f0-9292-aa15a321723d","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy784root\\repo_p1","tools":[…]
+  33.36 out: {"event":"step_update","step_update":{"conversation_id":"4c9e68ec-9c07-43f0-9292-aa15a321723d","step_index":0,"state":"DONE","step_type":"user_input"}}
+  37.91 out: {"event":"step_update","step_update":{"conversation_id":"4c9e68ec-9c07-43f0-9292-aa15a321723d","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":3.7011447,"usage":{"input_tokens":8345,"output_tokens":36,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8381}}}
+  37.94 out: {"event":"step_update","step_update":{"conversation_id":"4c9e68ec-9c07-43f0-9292-aa15a321723d","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo probe"}}}}
+  42.58 out: {"event":"step_update","step_update":{"conversation_id":"4c9e68ec-9c07-43f0-9292-aa15a321723d","step_index":2,"state":"DONE","step_type":"tool","tool_name":"run_command","duration_seconds":4.7106984,"tool_info":{"name":"run_command","parameters":{"CommandLine":"echo probe"},"output":"Created At: 2026-11-12T13:46:08-03:00\nCompleted At: 2026-11-12T13:46:12-03:00\nCommand exited with code 0.\n\nCommand output:\nprobe\r\n"}}}
+  46.41 out: {"event":"step_update","step_update":{"conversation_id":"4c9e68ec-9c07-43f0-9292-aa15a321723d","step_index":3,"state":"DONE","step_type":"agent_response","duration_seconds":3.3770137,"usage":{"input_tokens":8468,"output_tokens":54,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8522}}}
+  46.41 out: {"event":"step_update","step_update":{"conversation_id":"4c9e68ec-9c07-43f0-9292-aa15a321723d","step_index":4,"state":"ACTIVE","step_type":"tool","tool_name":"write_file","tool_info":{"name":"write_file","parameters":{"Path":"<home>\\AppData\\Local\\Temp\\agy784root\\repo_p1\\a.txt"}}}}
+  46.95 out: {"event":"step_update","step_update":{"conversation_id":"4c9e68ec-9c07-43f0-9292-aa15a321723d","step_index":4,"state":"DONE","step_type":"tool","tool_name":"write_file","duration_seconds":0.5962421,"tool_info":{"name":"write_file","parameters":{"Path":"<home>\\AppData\\Local\\Temp\\agy784root\\repo_p1\\a.txt"}}}}
+  50.22 out: {"event":"step_update","step_update":{"conversation_id":"4c9e68ec-9c07-43f0-9292-aa15a321723d","step_index":5,"state":"DONE","step_type":"agent_response","duration_seconds":2.6805233,"usage":{"input_tokens":8598,"output_tokens":55,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8653}}}
+  50.22 out: {"event":"step_update","step_update":{"conversation_id":"4c9e68ec-9c07-43f0-9292-aa15a321723d","step_index":6,"state":"ACTIVE","step_type":"tool","tool_name":"edit_file","tool_info":{"name":"edit_file","parameters":{"Path":"<home>\\AppData\\Local\\Temp\\agy784root\\repo_p1\\a.txt"}}}}
+  50.56 out: {"event":"step_update","step_update":{"conversation_id":"4c9e68ec-9c07-43f0-9292-aa15a321723d","step_index":6,"state":"DONE","step_type":"tool","tool_name":"edit_file","duration_seconds":0.4034373,"tool_info":{"name":"edit_file","parameters":{"Path":"<home>\\AppData\\Local\\Temp\\agy784root\\repo_p1\\a.txt"}}}}
+  54.34 out: {"event":"step_update","step_update":{"conversation_id":"4c9e68ec-9c07-43f0-9292-aa15a321723d","step_index":7,"state":"DONE","step_type":"agent_response","duration_seconds":3.3412634,"usage":{"input_tokens":8770,"output_tokens":43,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8813}}}
+  54.34 out: {"event":"step_update","step_update":{"conversation_id":"4c9e68ec-9c07-43f0-9292-aa15a321723d","step_index":8,"state":"ACTIVE","step_type":"tool","tool_name":"read_file","tool_info":{"name":"read_file","parameters":{"Path":"<home>\\AppData\\Local\\Temp\\agy784root\\repo_p1\\a.txt"}}}}
+  54.60 out: {"event":"step_update","step_update":{"conversation_id":"4c9e68ec-9c07-43f0-9292-aa15a321723d","step_index":8,"state":"DONE","step_type":"tool","tool_name":"read_file","duration_seconds":0.3484302,"tool_info":{"name":"read_file","parameters":{"Path":"<home>\\AppData\\Local\\Temp\\agy784root\\repo_p1\\a.txt"},"output":"3 lines, 14 bytes"}}}
+  57.22 out: {"event":"step_update","step_update":{"conversation_id":"4c9e68ec-9c07-43f0-9292-aa15a321723d","step_index":9,"state":"ACTIVE","step_type":"agent_response","text_delta":"DONE"}}
+  57.27 out: {"event":"step_update","step_update":{"conversation_id":"4c9e68ec-9c07-43f0-9292-aa15a321723d","step_index":9,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":2.3836371,"usage":{"input_tokens":8907,"output_tokens":1,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8908}}}
+  57.53 out: {"event":"result","result":{"conversation_id":"4c9e68ec-9c07-43f0-9292-aa15a321723d","status":"SUCCESS","response":"DONE\n","duration_seconds":24.086311,"num_turns":1,"usage":{"input_tokens":43088,"output_tokens":189,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":43277}}}
+--- events.log:
+1794501963.882 SessionStart
+1794501964.194 PreInvocation
+1794501968.815 PreToolUse
+1794501972.745 PostToolUse
+1794501972.988 PostInvocation
+1794501973.182 PreInvocation
+1794501976.719 PreToolUse
+1794501977.092 PostToolUse
+1794501977.441 PostInvocation
+1794501977.621 PreInvocation
+1794501980.540 PreToolUse
+1794501980.718 PostToolUse
+1794501980.868 PostInvocation
+1794501981.123 PreInvocation
+1794501984.631 PreToolUse
+1794501984.776 PostToolUse
+1794501984.920 PostInvocation
+1794501985.047 PreInvocation
+1794501987.580 PostInvocation
+1794501987.701 Stop
+
+--- repo files: ['a.txt']
+a.txt: 'one\nTWO\nthree\n'
+## Finding: PreToolUse payload: toolCall {name, args, id}; names write_file, edit_file, read_file, run_command; path key is args.Path
+
+
+## P2 shell: prompt `echo %COMSPEC% $PSVersionTable` as one run_command
+## p2 pre=allow other=braces exit=0
+   0.01 in: {"event": "user", "message": {"role": "user", "content": "Run exactly this one shell command with your command tool, and show me its raw output: echo %COMSPEC% $PSVersionTable"}}
+   4.69 out: {"event":"init","conversation_id":"70348a5c-e8ab-4583-b295-52b359e63a2b","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy784root\\repo_p2","tools":[…]
+   5.29 out: {"event":"step_update","step_update":{"conversation_id":"70348a5c-e8ab-4583-b295-52b359e63a2b","step_index":0,"state":"DONE","step_type":"user_input"}}
+  10.68 out: {"event":"step_update","step_update":{"conversation_id":"70348a5c-e8ab-4583-b295-52b359e63a2b","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":2.8911379,"usage":{"input_tokens":8300,"output_tokens":49,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8349}}}
+  10.71 out: {"event":"step_update","step_update":{"conversation_id":"70348a5c-e8ab-4583-b295-52b359e63a2b","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo %COMSPEC% $PSVersionTable"}}}}
+  17.11 out: {"event":"step_update","step_update":{"conversation_id":"70348a5c-e8ab-4583-b295-52b359e63a2b","step_index":2,"state":"DONE","step_type":"tool","tool_name":"run_command","duration_seconds":6.4303446,"tool_info":{"name":"run_command","parameters":{"CommandLine":"echo %COMSPEC% $PSVersionTable"},"output":"Created At: 2026-11-12T13:46:47-03:00\nCompleted At: 2026-11-12T13:46:53-03:00\nCommand exited with code 0.\n\nCommand output:\n%COMSPEC%\r\n\r\nName                           Value\r\n----                           -----\r\nPSVersion                      7.6.10\r\nPSEdition                      Core\r\nGitCommitId                    7.6.10\r\nOS                             Microsoft Windows 10.0.26300\r\nPlatform                       Win32NT\r\nPSCompatibleVersions           {1.0, 2.0, 3.0, 4.0…}\r\nPSRemotingProtocolVersion      2.4\r\nSerializationVersion           1.1.0.1\r\nWSManStackVersion              3.0\r\n\r\n"}}}
+  22.25 out: {"event":"step_update","step_update":{"conversation_id":"70348a5c-e8ab-4583-b295-52b359e63a2b","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"Here is"}}
+  22.39 out: {"event":"step_update","step_update":{"conversation_id":"70348a5c-e8ab-4583-b295-52b359e63a2b","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":" the raw out"}}
+  22.47 out: {"event":"step_update","step_update":{"conversation_id":"70348a5c-e8ab-4583-b295-52b359e63a2b","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"put from executing the command:\n\n```text\n%COMSPEC%\n\n"}}
+  22.54 out: {"event":"step_update","step_update":{"conversation_id":"70348a5c-e8ab-4583-b295-52b359e63a2b","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"Name                    "}}
+  22.70 out: {"event":"step_update","step_update":{"conversation_id":"70348a5c-e8ab-4583-b295-52b359e63a2b","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"       Value\n----                           ----"}}
+  22.79 out: {"event":"step_update","step_update":{"conversation_id":"70348a5c-e8ab-4583-b295-52b359e63a2b","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"-\nPSVersion                      7.6"}}
+  22.87 out: {"event":"step_update","step_update":{"conversation_id":"70348a5c-e8ab-4583-b295-52b359e63a2b","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":".10\nPSEdition                      Core\nGitCommi"}}
+  22.96 out: {"event":"step_update","step_update":{"conversation_id":"70348a5c-e8ab-4583-b295-52b359e63a2b","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"tId                    7"}}
+  23.09 out: {"event":"step_update","step_update":{"conversation_id":"70348a5c-e8ab-4583-b295-52b359e63a2b","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":".6.10\nOS                             Microsoft Windows 10.0.26300\nPlatform                       Win32NT\nPSCompatibleVersions           {1.0, 2.0, 3.0, 4.0…}\nPSRemotingProtocolVersion      2.4\nSerializationVersion           1.1.0.1\nWSManStackVersion              3.0\n```\n","duration_seconds":3.760919,"usage":{"input_tokens":8554,"output_tokens":135,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8689}}}
+  26.60 out: {"event":"result","result":{"conversation_id":"70348a5c-e8ab-4583-b295-52b359e63a2b","status":"SUCCESS","response":"Here is the raw output from executing the command:\n\n```text\n%COMSPEC%\n\nName                           Value\n----                           -----\nPSVersion                      7.6.10\nPSEdition                      Core\nGitCommitId                    7.6.10\nOS                             Microsoft Windows 10.0.26300\nPlatform                       Win32NT\nPSCompatibleVersions           {1.0, 2.0, 3.0, 4.0…}\nPSRemotingProtocolVersion      2.4\nSerializationVersion           1.1.0.1\nWSManStackVersion              3.0\n```\n","duration_seconds":18.1999598,"num_turns":1,"usage":{"input_tokens":16854,"output_tokens":184,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":17038}}}
+--- events.log:
+1794502003.118 SessionStart
+1794502004.522 PreInvocation
+1794502009.912 PreToolUse
+1794502013.741 PostToolUse
+1794502015.425 PostInvocation
+1794502016.024 PreInvocation
+1794502020.884 PostInvocation
+1794502023.320 Stop
+
+--- repo files: []
+cmd.exe would expand %COMSPEC% and print $PSVersionTable literally; the output kept '%COMSPEC%' literal and printed a PSVersionTable table (PSVersion 7.6.10, PSEdition Core).
+## Finding: run_command shell: pwsh
+
+
+## P3a PreToolUse prints nothing (exit 0), other events print {}
+## p3a pre=empty other=braces exit=0
+   0.20 in: {"event": "user", "message": {"role": "user", "content": "Run the shell command: echo emptyprobe  Then reply DONE."}}
+  10.93 out: {"event":"init","conversation_id":"2274a0d8-ef1c-474c-b795-ffca7300c4f5","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy784root\\repo_p3a","tools":[…]
+  11.50 out: {"event":"step_update","step_update":{"conversation_id":"2274a0d8-ef1c-474c-b795-ffca7300c4f5","step_index":0,"state":"DONE","step_type":"user_input"}}
+  18.14 out: {"event":"step_update","step_update":{"conversation_id":"2274a0d8-ef1c-474c-b795-ffca7300c4f5","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":3.5885918,"usage":{"input_tokens":8283,"output_tokens":37,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8320}}}
+  18.14 out: {"event":"step_update","step_update":{"conversation_id":"2274a0d8-ef1c-474c-b795-ffca7300c4f5","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo emptyprobe"}}}}
+  25.29 out: {"event":"step_update","step_update":{"conversation_id":"2274a0d8-ef1c-474c-b795-ffca7300c4f5","step_index":2,"state":"DONE","step_type":"tool","tool_name":"run_command","duration_seconds":7.187271,"tool_info":{"name":"run_command","parameters":{"CommandLine":"echo emptyprobe"},"output":"Created At: 2026-11-12T13:47:25-03:00\nCompleted At: 2026-11-12T13:47:30-03:00\nCommand exited with code 0.\n\nCommand output:\nemptyprobe\r\n"}}}
+  30.33 out: {"event":"step_update","step_update":{"conversation_id":"2274a0d8-ef1c-474c-b795-ffca7300c4f5","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"DONE."}}
+  30.38 out: {"event":"step_update","step_update":{"conversation_id":"2274a0d8-ef1c-474c-b795-ffca7300c4f5","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":2.0186101,"usage":{"input_tokens":8408,"output_tokens":2,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8410}}}
+  33.00 out: {"event":"result","result":{"conversation_id":"2274a0d8-ef1c-474c-b795-ffca7300c4f5","status":"SUCCESS","response":"DONE.\n","duration_seconds":19.3412982,"num_turns":1,"usage":{"input_tokens":16691,"output_tokens":39,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":16730}}}
+--- events.log:
+1794502040.605 SessionStart
+1794502041.414 PreInvocation
+1794502045.971 PreToolUse
+1794502052.033 PostToolUse
+1794502053.593 PostInvocation
+1794502055.263 PreInvocation
+1794502058.954 PostInvocation
+1794502060.005 Stop
+
+--- repo files: []
+The tool ran (PostToolUse fired, output 'emptyprobe'). Contrast p3d: PreToolUse printing {} denied ('tool call denied by pre-tool hook:'; no PostToolUse).
+## Finding: empty PreToolUse stdout: allows
+
+
+## P3d contrast: PreToolUse prints {}
+## p3d pre=braces other=braces exit=0
+   0.16 in: {"event": "user", "message": {"role": "user", "content": "Run the shell command: echo bracesprobe  Then reply DONE."}}
+  10.71 out: {"event":"init","conversation_id":"c5334015-991a-4a58-9efd-34fc8f794b87","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy784root\\repo_p3d","tools":[…]
+  11.25 out: {"event":"step_update","step_update":{"conversation_id":"c5334015-991a-4a58-9efd-34fc8f794b87","step_index":0,"state":"DONE","step_type":"user_input"}}
+  14.70 out: {"event":"step_update","step_update":{"conversation_id":"c5334015-991a-4a58-9efd-34fc8f794b87","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":3.0926984,"usage":{"input_tokens":8284,"output_tokens":38,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8322}}}
+  14.70 out: {"event":"step_update","step_update":{"conversation_id":"c5334015-991a-4a58-9efd-34fc8f794b87","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo bracesprobe"}}}}
+  14.89 out: {"event":"step_update","step_update":{"conversation_id":"c5334015-991a-4a58-9efd-34fc8f794b87","step_index":2,"state":"ERROR","step_type":"tool","tool_name":"run_command","duration_seconds":0.2108387,"tool_info":{"name":"run_command","parameters":{"CommandLine":"echo bracesprobe"},"error":{"type":"TOOL_ERROR","message":"tool call denied by pre-tool hook:"}}}}
+  17.56 out: {"event":"step_update","step_update":{"conversation_id":"c5334015-991a-4a58-9efd-34fc8f794b87","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"The command execution was denied by"}}
+  17.59 out: {"event":"step_update","step_update":{"conversation_id":"c5334015-991a-4a58-9efd-34fc8f794b87","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":" a pre-tool hook restriction in this"}}
+  17.62 out: {"event":"step_update","step_update":{"conversation_id":"c5334015-991a-4a58-9efd-34fc8f794b87","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":" environment. \n\nDONE.\n","duration_seconds":2.4591741,"usage":{"input_tokens":8353,"output_tokens":20,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8373}}}
+  17.88 out: {"event":"result","result":{"conversation_id":"c5334015-991a-4a58-9efd-34fc8f794b87","status":"SUCCESS","response":"The command execution was denied by a pre-tool hook restriction in this environment. \n\nDONE.\n","duration_seconds":6.8340686,"num_turns":1,"usage":{"input_tokens":16637,"output_tokens":58,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":16695}}}
+--- events.log:
+1794502274.519 SessionStart
+1794502274.686 PreInvocation
+1794502277.960 PreToolUse
+1794502278.104 PostInvocation
+1794502278.245 PreInvocation
+1794502280.855 PostInvocation
+1794502280.980 Stop
+
+--- repo files: []
+
+## P3b PreToolUse allow, every other event prints {"decision":"deny","reason":"probe-deny"}
+## p3b pre=allow other=deny exit=0
+   0.12 in: {"event": "user", "message": {"role": "user", "content": "Run the shell command: echo otherdeny  Then reply DONE."}}
+   9.82 out: {"event":"init","conversation_id":"61edd977-cdb4-4ff7-866b-b27bffdfdd59","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy784root\\repo_p3b","tools":[…]
+  10.34 out: {"event":"step_update","step_update":{"conversation_id":"61edd977-cdb4-4ff7-866b-b27bffdfdd59","step_index":0,"state":"DONE","step_type":"user_input"}}
+  15.80 out: {"event":"step_update","step_update":{"conversation_id":"61edd977-cdb4-4ff7-866b-b27bffdfdd59","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":3.0319653,"usage":{"input_tokens":8273,"output_tokens":37,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8310}}}
+  15.87 out: {"event":"step_update","step_update":{"conversation_id":"61edd977-cdb4-4ff7-866b-b27bffdfdd59","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo otherdeny"}}}}
+  20.57 out: {"event":"step_update","step_update":{"conversation_id":"61edd977-cdb4-4ff7-866b-b27bffdfdd59","step_index":2,"state":"DONE","step_type":"tool","tool_name":"run_command","duration_seconds":4.7930245,"tool_info":{"name":"run_command","parameters":{"CommandLine":"echo otherdeny"},"output":"Created At: 2026-11-12T13:47:57-03:00\nCompleted At: 2026-11-12T13:48:01-03:00\nCommand exited with code 0.\n\nCommand output:\notherdeny\r\n"}}}
+  25.98 out: {"event":"step_update","step_update":{"conversation_id":"61edd977-cdb4-4ff7-866b-b27bffdfdd59","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"DONE."}}
+  26.03 out: {"event":"step_update","step_update":{"conversation_id":"61edd977-cdb4-4ff7-866b-b27bffdfdd59","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":2.3120398,"usage":{"input_tokens":8398,"output_tokens":2,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8400}}}
+  33.11 out: {"event":"result","result":{"conversation_id":"61edd977-cdb4-4ff7-866b-b27bffdfdd59","status":"SUCCESS","response":"DONE.\n","duration_seconds":15.7385565,"num_turns":1,"usage":{"input_tokens":16671,"output_tokens":39,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":16710}}}
+--- events.log:
+1794502073.913 SessionStart
+1794502074.715 PreInvocation
+1794502078.891 PreToolUse
+1794502082.367 PostToolUse
+1794502084.048 PostInvocation
+1794502085.597 PreInvocation
+1794502089.647 PostInvocation
+1794502094.928 Stop
+
+--- repo files: []
+## P3c PreToolUse prints nothing, every other event prints {"decision":"allow"}
+## p3c pre=empty other=allow exit=0
+   0.39 in: {"event": "user", "message": {"role": "user", "content": "Run the shell command: echo otherallow  Then reply DONE."}}
+  30.10 out: {"event":"init","conversation_id":"79efbae1-6ca5-4124-ae5f-ad71cc0bb782","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy784root\\repo_p3c","tools":[…]
+  30.99 out: {"event":"step_update","step_update":{"conversation_id":"79efbae1-6ca5-4124-ae5f-ad71cc0bb782","step_index":0,"state":"DONE","step_type":"user_input"}}
+  37.08 out: {"event":"step_update","step_update":{"conversation_id":"79efbae1-6ca5-4124-ae5f-ad71cc0bb782","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":2.8291151,"usage":{"input_tokens":8273,"output_tokens":37,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8310}}}
+  37.10 out: {"event":"step_update","step_update":{"conversation_id":"79efbae1-6ca5-4124-ae5f-ad71cc0bb782","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo otherallow"}}}}
+  41.13 out: {"event":"step_update","step_update":{"conversation_id":"79efbae1-6ca5-4124-ae5f-ad71cc0bb782","step_index":2,"state":"DONE","step_type":"tool","tool_name":"run_command","duration_seconds":4.0905068,"tool_info":{"name":"run_command","parameters":{"CommandLine":"echo otherallow"},"output":"Created At: 2026-11-12T13:48:56-03:00\nCompleted At: 2026-11-12T13:48:59-03:00\nCommand exited with code 0.\n\nCommand output:\notherallow\r\n"}}}
+  45.93 out: {"event":"step_update","step_update":{"conversation_id":"79efbae1-6ca5-4124-ae5f-ad71cc0bb782","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"DONE."}}
+  46.01 out: {"event":"step_update","step_update":{"conversation_id":"79efbae1-6ca5-4124-ae5f-ad71cc0bb782","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":2.4861051,"usage":{"input_tokens":8398,"output_tokens":2,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8400}}}
+  48.55 out: {"event":"result","result":{"conversation_id":"79efbae1-6ca5-4124-ae5f-ad71cc0bb782","status":"SUCCESS","response":"DONE.\n","duration_seconds":15.2282921,"num_turns":1,"usage":{"input_tokens":16671,"output_tokens":39,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":16710}}}
+--- events.log:
+1794502131.019 SessionStart
+1794502133.195 PreInvocation
+1794502136.607 PreToolUse
+1794502139.917 PostToolUse
+1794502141.451 PostInvocation
+1794502142.310 PreInvocation
+1794502146.083 PostInvocation
+1794502147.451 Stop
+
+--- repo files: []
+In p3b the deny on SessionStart/PreInvocation/PostToolUse/PostInvocation/Stop changed nothing: the tool ran, 8 hook events fired, result SUCCESS. In p3c an allow on other events changed nothing either.
+## Finding: allow on other events: ignored
+
+
+## P4 two turns on one stdin: line 1 written at once, line 2 written when SessionStart was logged, then stdin closed
+## p4 pre=allow other=braces exit=0
+   0.02 in: {"event": "user", "message": {"role": "user", "content": "Reply with the single word READY."}}
+   5.85 out: {"event":"init","conversation_id":"ea6a1927-0a03-4ba2-8ac0-982dbf31923d","init":{"model":"gemini-3.8-flash-low","cwd":"<home>\\AppData\\Local\\Temp\\agy784root\\repo_p4","tools":[…]
+   6.06 out: {"event":"step_update","step_update":{"conversation_id":"ea6a1927-0a03-4ba2-8ac0-982dbf31923d","step_index":0,"state":"DONE","step_type":"user_input"}}
+   6.26 in: {"event": "user", "message": {"role": "user", "content": "Reply with RALPHY_DONE_EXIT as the last line."}}
+   9.28 out: {"event":"step_update","step_update":{"conversation_id":"ea6a1927-0a03-4ba2-8ac0-982dbf31923d","step_index":1,"state":"ACTIVE","step_type":"agent_response","text_delta":"READY"}}
+   9.33 out: {"event":"step_update","step_update":{"conversation_id":"ea6a1927-0a03-4ba2-8ac0-982dbf31923d","step_index":1,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":2.898235,"usage":{"input_tokens":8272,"output_tokens":1,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8273}}}
+  11.57 out: {"event":"result","result":{"conversation_id":"ea6a1927-0a03-4ba2-8ac0-982dbf31923d","status":"SUCCESS","response":"READY\n","duration_seconds":3.3847487,"num_turns":1,"usage":{"input_tokens":8272,"output_tokens":1,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8273}}}
+  12.00 out: {"event":"step_update","step_update":{"conversation_id":"ea6a1927-0a03-4ba2-8ac0-982dbf31923d","step_index":2,"state":"DONE","step_type":"user_input"}}
+  15.51 out: {"event":"step_update","step_update":{"conversation_id":"ea6a1927-0a03-4ba2-8ac0-982dbf31923d","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"RALPHY_DONE_EXIT"}}
+  15.56 out: {"event":"step_update","step_update":{"conversation_id":"ea6a1927-0a03-4ba2-8ac0-982dbf31923d","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":2.6711532,"usage":{"input_tokens":8352,"output_tokens":6,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":8358}}}
+  17.16 out: {"event":"result","result":{"conversation_id":"ea6a1927-0a03-4ba2-8ac0-982dbf31923d","status":"SUCCESS","response":"RALPHY_DONE_EXIT\n","duration_seconds":9.6197851,"num_turns":2,"usage":{"input_tokens":16624,"output_tokens":7,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":16631}}}
+--- events.log:
+1794502287.814 SessionStart
+1794502287.959 PreInvocation
+1794502292.201 PostInvocation
+1794502293.033 Stop
+1794502294.266 PreInvocation
+1794502297.728 PostInvocation
+1794502298.574 Stop
+
+--- repo files: []
+Order: init, [user_input step 0], turn-1 agent_response, result 1 (num_turns 1, response READY), user_input step 2 (turn 2 starts only after result 1), turn-2 agent_response, result 2 (num_turns 2, response RALPHY_DONE_EXIT, usage = sum of both turns). Hooks: SessionStart once, then PreInvocation/PostInvocation/Stop per turn. Exit 0 after stdin closed.
+Turn 2 was written 0.2 s after turn 1 started; agy queued it and did not run it in parallel.
+## Finding: two stdin turns: 2 result lines, init, turn 1 steps, result 1, turn 2 steps, result 2
+

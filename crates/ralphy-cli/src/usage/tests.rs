@@ -215,3 +215,23 @@ fn export_json_is_an_array_with_numeric_usd_for_priced_and_null_for_unpriced() {
         arr[3]
     );
 }
+
+/// Only an Antigravity id loses its effort suffix before the lookup: the id of
+/// another vendor may end in `-high` and name another model.
+#[test]
+fn only_an_antigravity_row_prices_at_its_base_row() {
+    let table = PriceTable::defaults();
+    let ts = "2026-06-15T10:00:00+00:00";
+    let of = |agent: &str, model: &str| UsageRow {
+        agent: agent.into(),
+        ..row(model, "execute", ("a@x.io", "rc5"), ts, tok(1_000, 100))
+    };
+    let base = row_usd(&of("antigravity", "gemini-3.8-flash"), &table);
+    assert!(base.is_some(), "the base id has a row");
+    let low = of("antigravity", "gemini-3.8-flash-low");
+    assert_eq!(row_usd(&low, &table), base);
+    assert_eq!(usd_for_rows(&[&low], &table), (base, false));
+
+    assert!(row_usd(&of("codex", "gpt-5.5"), &table).is_some());
+    assert_eq!(row_usd(&of("codex", "gpt-5.5-high"), &table), None);
+}

@@ -2,8 +2,9 @@
 //! binary. Every module reaches the daemon through the `console` channels of
 //! the page socket (`/ws`). Every module points the session launcher at the
 //! helper child through the same process-wide `RALPHY_DAEMON_AGENT_OVERRIDE`
-//! value, and the CLI at `command_test_child` through `RALPHY_EXE_OVERRIDE`, and
-//! sets no other env var, so they can share a process.
+//! value, and the CLI at `command_test_child` through `RALPHY_EXE_OVERRIDE`.
+//! Only `session_ws_antigravity` sets another, `RALPHY_DAEMON_DIR`, which
+//! nextest keeps apart by running each test in its own process.
 #![expect(
     clippy::tests_outside_test_module,
     reason = "an integration test crate is the test module"
@@ -19,6 +20,7 @@ mod console_record;
 mod console_ws;
 mod session_persistence;
 mod session_ws;
+mod session_ws_antigravity;
 mod session_ws_checkout;
 mod session_ws_cursor;
 mod session_ws_gemini;

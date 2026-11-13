@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 mod agent_launch;
+mod antigravity_root;
 mod bridge;
 mod console_launch;
 mod gemini_root;

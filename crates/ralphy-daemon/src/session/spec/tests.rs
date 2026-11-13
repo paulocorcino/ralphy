@@ -210,6 +210,7 @@ fn all_enumerates_every_enum_variant() {
             Agent::Gemini => 4,
             Agent::Kimi => 5,
             Agent::OpenCode => 6,
+            Agent::Antigravity => 7,
         }
     }
     let mut tags: Vec<u8> = Agent::ALL.iter().copied().map(tag).collect();
@@ -217,8 +218,52 @@ fn all_enumerates_every_enum_variant() {
     tags.dedup();
     assert_eq!(
         tags,
-        (0..=6).collect::<Vec<u8>>(),
+        (0..=7).collect::<Vec<u8>>(),
         "Agent::ALL must list every variant exactly once"
+    );
+}
+
+#[test]
+fn antigravity_parses_from_its_query_name() {
+    assert_eq!(Agent::from_query("antigravity"), Some(Agent::Antigravity));
+    assert_eq!(
+        Agent::Antigravity.program_name(),
+        "agy",
+        "the CLI installs `agy`"
+    );
+}
+
+#[test]
+fn the_agy_program_is_found_by_the_shared_locator() {
+    assert_eq!(
+        Agent::Antigravity.locate_program(),
+        ralphy_proc_util::antigravity::locate_agy(),
+        "the console finds agy where the adapter's runs find it"
+    );
+}
+
+/// The one argument is the owned root, absolute; a console passes no autonomy flag.
+#[test]
+fn an_antigravity_console_gets_the_owned_root_flag() {
+    let root = ralphy_proc_util::antigravity::owned_root().expect("a home folder");
+    assert!(
+        root.is_absolute(),
+        "agy refuses a relative root: {}",
+        root.display()
+    );
+    let spec = spec_for(
+        Agent::Antigravity,
+        Path::new("r"),
+        PathBuf::from("r"),
+        "o/r",
+        (24, 80),
+    );
+    let mut flag = OsString::from("--gemini_dir=");
+    flag.push(&root);
+    assert_eq!(spec.args, vec![flag]);
+    assert!(
+        spec.env.is_empty(),
+        "the root is a flag, not the environment"
     );
 }
 

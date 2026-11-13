@@ -235,10 +235,8 @@ fn annotate_ledger_row(
     prices: &PriceTable,
 ) {
     let tokens = ledger_tokens(object);
-    let session = field(object, "session_id").filter(|id| !id.is_empty());
-    let model = rows::recover_ledger_model(field(object, "model"), session, recovered);
-    let (_, cause) = rows::price(model, session, &tokens, prices);
-    if let Some(cause) = cause {
+    let recover = rows::recover_ledger_model;
+    if let Some(cause) = unpriced_cause(object, &tokens, recover, recovered, prices) {
         object.insert("unpriced_cause".into(), serde_json::Value::from(cause));
     }
 }
@@ -257,12 +255,28 @@ fn annotate_interactive_row(
         );
         return;
     };
-    let session = field(object, "session_id").filter(|id| !id.is_empty());
-    let model = rows::recover_interactive_model(field(object, "model"), session, recovered);
-    let (_, cause) = rows::price(model, session, &tokens, prices);
-    if let Some(cause) = cause {
+    let recover = rows::recover_interactive_model;
+    if let Some(cause) = unpriced_cause(object, &tokens, recover, recovered, prices) {
         object.insert("unpriced_cause".into(), serde_json::Value::from(cause));
     }
+}
+
+/// The model of a row after recovery, by the rule of its kind of row.
+type RecoverModel<'a> =
+    fn(Option<&'a str>, Option<&str>, &'a BTreeMap<String, String>) -> Option<&'a str>;
+
+/// Why one row does not price, or `None` when it prices.
+fn unpriced_cause<'a>(
+    object: &'a serde_json::Map<String, serde_json::Value>,
+    tokens: &TokenCounts,
+    recover: RecoverModel<'a>,
+    recovered: &'a BTreeMap<String, String>,
+    prices: &PriceTable,
+) -> Option<&'static str> {
+    let session = field(object, "session_id").filter(|id| !id.is_empty());
+    let model = recover(field(object, "model"), session, recovered);
+    let agent = field(object, "agent").unwrap_or("");
+    rows::price(agent, model, session, tokens, prices).1
 }
 
 /// One string field of a JSON object, or `None` when absent or not a string.

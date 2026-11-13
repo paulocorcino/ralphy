@@ -265,13 +265,19 @@ fn console_hooks_name_the_binary_without_the_verbatim_prefix() {
     );
 }
 
-/// Claude and Codex have hooks, `OpenCode` has its state plugin; no other
-/// agent gives a state. The match names every variant, so a new agent
-/// has to choose.
+/// Claude, Codex and Antigravity have hooks, `OpenCode` has its state
+/// plugin; no other agent gives a state. The match names every variant, so a
+/// new agent has to choose.
 #[test]
 fn every_agent_has_a_state_source() {
     for agent in Agent::ALL {
-        let want = if matches!(agent, Agent::Claude | Agent::Codex | Agent::OpenCode) {
+        let hooked = [
+            Agent::Antigravity,
+            Agent::Claude,
+            Agent::Codex,
+            Agent::OpenCode,
+        ];
+        let want = if hooked.contains(&agent) {
             StateSource::Hooks
         } else {
             StateSource::None
@@ -365,4 +371,67 @@ fn an_opencode_console_with_no_line_is_silent() {
         None,
         "the plugin's first line"
     );
+}
+
+/// Each row of the fixture is a sequence of status lines from the hook log of
+/// `agy` and the state after each line: `null` for no change, else the state
+/// and, for a `done`, its cause after a colon.
+#[test]
+fn the_antigravity_map_matches_its_fixture() {
+    let rows: Vec<Value> = serde_json::from_str(include_str!(
+        "../../tests/fixtures/antigravity_agent_state_mapping.json"
+    ))
+    .expect("the fixture is JSON");
+    assert!(rows.len() >= 6, "the fixture covers each case");
+    for row in &rows {
+        let mut fold = Fold::new();
+        let mut shown = Vec::new();
+        for line in row["lines"].as_array().expect("lines") {
+            let parsed = StatusLine::parse(&line.to_string()).expect("a status line");
+            let folded = fold.apply(&parsed, HookVendor::Antigravity.map());
+            shown.push(folded.map_or(Value::Null, |o| match o.cause {
+                Some(cause) => format!("{}:{}", o.state.as_str(), cause.as_str()).into(),
+                None => o.state.as_str().into(),
+            }));
+        }
+        assert_eq!(Value::Array(shown), row["states"], "{}", row["why"]);
+    }
+}
+
+#[test]
+fn state_source_of_antigravity_is_hooks() {
+    assert_eq!(state_source(Agent::Antigravity), StateSource::Hooks);
+    assert_eq!(
+        HookVendor::of(Agent::Antigravity),
+        Some(HookVendor::Antigravity)
+    );
+}
+
+/// An Antigravity console gets an empty status file and its path in
+/// `RALPHY_STATUS_FILE`, and no settings file: its hooks are in the owned root.
+#[test]
+fn an_antigravity_console_gets_its_status_file() {
+    let store = tempfile::tempdir().unwrap();
+    let repo = tempfile::tempdir().unwrap();
+    let files =
+        StatusFiles::for_agent(Agent::Antigravity, store.path(), 4).expect("Antigravity has hooks");
+    assert_eq!((&files.settings, &files.plugin), (&None, &None));
+    let spec = crate::session::spec_with_status(
+        Agent::Antigravity,
+        repo.path(),
+        repo.path().to_path_buf(),
+        "owner/r",
+        None,
+        24,
+        80,
+        Some(files.clone()),
+    );
+    let named = spec
+        .env
+        .iter()
+        .find(|(key, _)| key == STATUS_ENV)
+        .map(|(_, value)| PathBuf::from(value));
+    assert_eq!(named.as_ref(), Some(&files.status), "{:?}", spec.env);
+    assert_eq!(std::fs::read(&files.status).unwrap(), b"");
+    assert_eq!(spec.status, Some(files));
 }

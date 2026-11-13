@@ -28,6 +28,7 @@ use crate::session::Agent;
 
 pub mod fold;
 
+mod antigravity;
 mod claude;
 mod codex;
 pub(crate) mod opencode;
@@ -279,7 +280,7 @@ pub enum StateSource {
 /// without choosing one (docs/adr/0059 A1, docs/adr/0040 Tier 4).
 pub fn state_source(agent: Agent) -> StateSource {
     match agent {
-        Agent::Claude | Agent::Codex | Agent::OpenCode => StateSource::Hooks,
+        Agent::Antigravity | Agent::Claude | Agent::Codex | Agent::OpenCode => StateSource::Hooks,
         Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi => StateSource::None,
     }
 }
@@ -287,6 +288,8 @@ pub fn state_source(agent: Agent) -> StateSource {
 /// A vendor whose hooks fill a console's status file, and how its lines fold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HookVendor {
+    /// Antigravity, whose hooks live in the owned root (ADR-0086 D9).
+    Antigravity,
     Claude,
     Codex,
     /// `OpenCode`, whose state plugin writes the lines (ADR-0085 D2).
@@ -300,6 +303,7 @@ impl HookVendor {
             Agent::Claude => Some(HookVendor::Claude),
             Agent::Codex => Some(HookVendor::Codex),
             Agent::OpenCode => Some(HookVendor::OpenCode),
+            Agent::Antigravity => Some(HookVendor::Antigravity),
             Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi => None,
         }
     }
@@ -340,6 +344,7 @@ impl HookVendor {
 
     fn map(self) -> MapFn {
         match self {
+            HookVendor::Antigravity => antigravity::antigravity_signal,
             HookVendor::Claude => claude::claude_signal,
             HookVendor::Codex => codex::launched,
             HookVendor::OpenCode => opencode::opencode_signal,
@@ -352,7 +357,7 @@ impl HookVendor {
     fn is_first_line(self, line: &StatusLine) -> bool {
         match self {
             HookVendor::OpenCode => line.event == opencode::PLUGIN_LOADED,
-            HookVendor::Claude | HookVendor::Codex => false,
+            HookVendor::Antigravity | HookVendor::Claude | HookVendor::Codex => false,
         }
     }
 
@@ -361,7 +366,7 @@ impl HookVendor {
     /// it. `OpenCode`'s plugin runs in `OpenCode` and never starts it.
     pub(crate) fn runs_the_ralphy_program(self) -> bool {
         match self {
-            HookVendor::Claude | HookVendor::Codex => true,
+            HookVendor::Antigravity | HookVendor::Claude | HookVendor::Codex => true,
             HookVendor::OpenCode => false,
         }
     }
@@ -369,10 +374,10 @@ impl HookVendor {
     /// Whether the vendor sends an event when the operator grants a
     /// permission (ADR-0085 D7.5): Claude sends `PostToolUse` as the tool
     /// runs, `OpenCode` sends `permission.replied`; Codex sends nothing until
-    /// the tool ends.
+    /// the tool ends. Antigravity reports no permission wait, so none is open.
     fn sends_a_grant(self) -> bool {
         match self {
-            HookVendor::Claude | HookVendor::OpenCode => true,
+            HookVendor::Antigravity | HookVendor::Claude | HookVendor::OpenCode => true,
             HookVendor::Codex => false,
         }
     }

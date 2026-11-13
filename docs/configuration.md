@@ -348,3 +348,36 @@ apply.
 - [Getting started](./getting-started.md) — first steps on a fresh repo.
 - [Event contract](./events.md) — the CloudEvents payload, field by field.
 - [Scheduling](./scheduling.md) — running unattended on a timer.
+
+## Antigravity run defaults (`antigravity.*`)
+
+| Key | Meaning |
+| --- | --- |
+| `antigravity.plan_model` | Model of the plan phase. Unset: `agy` uses the default model of your plan. List the ids with `ralphy models --agent antigravity`. |
+| `antigravity.exec_model` | Model of the execute phase. Same rules. |
+| `antigravity.plan_effort` | Effort of the plan phase: a level such as `low`, `medium` or `high`. Sent only with a model id that has no effort suffix. |
+| `antigravity.exec_effort` | Effort of the execute phase. Same rules. |
+| `antigravity.run_without_guard_proof_i_understand_the_risk` | **Danger.** An Antigravity session must prove that its hooks run before it gets the task; without the proof it is refused. `true` lets such a session go on. Local only: `ralphy config set` on this machine; the daemon refuses to set it. |
+
+```powershell
+ralphy config set antigravity.exec_model gemini-3.8-flash
+ralphy config set antigravity.exec_effort low
+```
+
+Ralphy runs `agy` with its own settings folder (the owned root), one per
+operating system user: `antigravity-root` in the Ralphy data folder
+(`~/.ralphy` unless `RALPHY_DAEMON_DIR` says otherwise). Your own `~/.gemini`
+is never read or changed.
+
+On Windows, `agy` keeps the sign-in in Windows Credential Manager, so the
+login you already have works. On Linux the sign-in is a file inside the owned
+root, so sign in once for that folder:
+
+```sh
+agy --gemini_dir="$HOME/.ralphy/antigravity-root"
+```
+
+Use the absolute path of the folder: `agy` refuses a relative one, and the
+shell does not expand `~` after `=`. The first time, the console shows the
+terms of service and a folder trust question; Ralphy does not answer them for
+you.

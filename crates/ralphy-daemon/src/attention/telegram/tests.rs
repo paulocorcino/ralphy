@@ -252,6 +252,17 @@ fn the_message_links_to_the_console() {
 /// A notifier built in a unit test, as every daemon router of a test builds
 /// one, reaches no Telegram API: each call fails before any network.
 #[test]
+fn telegram_names_the_antigravity_agent() {
+    let mut console = request(Kind::ConsoleWaiting, "console:8", at(0));
+    console.vendor = "antigravity".to_owned();
+    assert!(
+        subject_of(&console).starts_with("Antigravity console"),
+        "{}",
+        subject_of(&console)
+    );
+}
+
+#[test]
 fn a_unit_test_notifier_reaches_no_api() {
     let notifier = Notifier::new(
         PathBuf::from("telegram.toml"),

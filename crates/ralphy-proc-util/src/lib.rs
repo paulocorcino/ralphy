@@ -4,13 +4,16 @@
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 
+pub mod antigravity;
 pub mod cursor;
 pub mod elevated;
 pub mod exe;
 pub mod hook_form;
 pub mod pid;
+mod stop;
 
 pub use pid::pid_is_alive;
+pub use stop::{exit_on_stop_signal, send_stop_signal, stop_within, stoppable_group};
 
 /// Put `cmd`'s child into its own process group (Unix), so [`kill_tree`] can
 /// signal the whole tree; a no-op elsewhere. Call it before `spawn`.

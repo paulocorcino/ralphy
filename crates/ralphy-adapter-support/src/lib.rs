@@ -51,8 +51,9 @@ pub use forge_deny::DENIED_FORGE_WRITES;
 
 mod json_session;
 pub use json_session::{
-    run_init_session, run_json_session, run_json_session_held, run_text_session,
-    run_text_session_held, strip_bom, JsonSession, TextSession,
+    run_init_session, run_json_session, run_json_session_held, run_json_session_with_preamble,
+    run_text_session, run_text_session_held, run_text_session_with_preamble, strip_bom,
+    JsonSession, TextSession,
 };
 
 #[cfg(test)]

@@ -38,8 +38,9 @@ impl StatusFiles {
         let claude = StatusFiles::for_session(sessions_dir, id);
         match HookVendor::of(agent)? {
             HookVendor::Claude => Some(claude),
-            HookVendor::Codex => Some(StatusFiles {
-                vendor: HookVendor::Codex,
+            // Codex takes its hooks as arguments; Antigravity's are in its owned root.
+            vendor @ (HookVendor::Codex | HookVendor::Antigravity) => Some(StatusFiles {
+                vendor,
                 settings: None,
                 status: claude.status,
                 plugin: None,

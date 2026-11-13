@@ -13,7 +13,7 @@ How long it waits depends on what the agent reports:
 
 - **Claude** and **Codex** report when the limit resets. Ralphy waits until that time,
   plus five minutes.
-- **Kimi**, **OpenCode**, **Copilot**, **Cursor** and **Gemini** report no reset time
+- **Kimi**, **OpenCode**, **Copilot**, **Cursor**, **Gemini** and **Antigravity** report no reset time
   Ralphy can use. Ralphy waits about 30 minutes, tries again, and repeats until the limit
   clears.
 
@@ -35,6 +35,11 @@ cumulative balance as a token meter (`↑` input, `⚡` cache write, `❄` cache
 `↓` output) plus a read-time USD estimate priced per model (`~$?` when a model has no
 known price). USD is only ever a read-time projection — it never enters the ledger, so
 re-pricing never rewrites history.
+
+Antigravity counts differ from the others in two ways. Its CLI reports no
+cache-creation count, so that part of the meter stays at zero. And a run with no
+pinned model gets its model name from Antigravity's own store after the run, not
+before it; the price is looked up then.
 
 Read the ledger after the fact with `ralphy usage`:
 

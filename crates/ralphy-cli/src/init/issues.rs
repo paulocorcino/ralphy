@@ -274,6 +274,10 @@ pub(crate) fn draft_with_agent(
         Agent::Opencode => {
             ralphy_agent_opencode::draft_issues(repo, out_path, req, model, effort, timeout)
         }
+        Agent::Antigravity => {
+            let options = crate::antigravity::one_shot_options(repo, model, effort, timeout);
+            ralphy_agent_antigravity::draft_issues(repo, out_path, req, options)
+        }
     }
 }
 

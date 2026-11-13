@@ -15,6 +15,7 @@ use ralphy_adapter_support::{
     run_headless, run_headless_logged, run_headless_logged_watched, HeadlessCall,
 };
 
+mod preamble;
 mod reaping;
 mod session;
 

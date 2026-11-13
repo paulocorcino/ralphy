@@ -70,7 +70,9 @@ pub struct HeadlessCall<'a> {
     kill_on_stderr_line: Option<LinePredicate>,
     idle: IdleWatch,
     degraded_line: Option<LinePredicate>,
+    preamble: Option<&'a str>,
     gate: Option<PromptGate<'a>>,
+    stop_grace: Option<Duration>,
 }
 
 // The command is left out: its environment can hold a secret for the child.
@@ -95,8 +97,20 @@ impl<'a> HeadlessCall<'a> {
             kill_on_stderr_line: None,
             idle: IdleWatch::default(),
             degraded_line: None,
+            preamble: None,
             gate: None,
+            stop_grace: None,
         }
+    }
+
+    /// Write `preamble` to the child's stdin before the gate of
+    /// [`hold_prompt`](Self::hold_prompt) runs, and keep stdin open: the
+    /// prompt follows only once the gate returns `Ok`. A gate error still sends
+    /// no prompt, but the preamble was already sent.
+    #[must_use]
+    pub fn preamble(mut self, preamble: &'a str) -> Self {
+        self.preamble = Some(preamble);
+        self
     }
 
     /// Hold the prompt behind `gate`: the child is spawned and its output is
@@ -106,6 +120,15 @@ impl<'a> HeadlessCall<'a> {
     #[must_use]
     pub fn hold_prompt(mut self, gate: PromptGate<'a>) -> Self {
         self.gate = Some(gate);
+        self
+    }
+
+    /// On an operator stop, the wall timeout or the idle watchdog, first ask the
+    /// child's process group to end and wait up to `grace` for it to exit with
+    /// its output; then end what is left of the tree.
+    #[must_use]
+    pub fn cooperative_stop(mut self, grace: Duration) -> Self {
+        self.stop_grace = Some(grace);
         self
     }
 
@@ -201,7 +224,9 @@ fn run_headless_logged_impl(call: HeadlessCall<'_>) -> Result<HeadlessRun> {
         kill_on_stderr_line,
         idle,
         degraded_line,
+        preamble,
         gate,
+        stop_grace,
     } = call;
     // Open the log up front so both streams can be teed to it as they arrive: the
     // run stays observable live and the partial output survives a crash of THIS
@@ -226,11 +251,13 @@ fn run_headless_logged_impl(call: HeadlessCall<'_>) -> Result<HeadlessRun> {
     });
 
     let guards = Guards {
+        preamble,
         log: sink,
         switch,
         idle,
         degraded,
         gate,
+        stop_grace,
     };
     let r = drive_headless(cmd, prompt, timeout, guards)?;
     let exited_cleanly = r.exited_cleanly();

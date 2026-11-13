@@ -1,0 +1,29 @@
+[package]
+name = "ralphy-agent-antigravity"
+version = "0.1.0-rc.43"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Antigravity CLI adapter for Ralphy: drives headless `agy` behind the core Agent contract."
+
+[dependencies]
+anyhow.workspace = true
+# The reset of a limit is an instant (`ResetAt.at`).
+chrono.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+include_dir.workspace = true
+ralphy-core.workspace = true
+ralphy-adapter-support.workspace = true
+# The locator, the owned root and the hook command live here so the daemon
+# shares them without importing this crate (ADR-0032 §10, ADR-0086 D17).
+ralphy-proc-util.workspace = true
+# The effort-suffix rule of a price key, shared with the daemon.
+ralphy-pricing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

@@ -21,6 +21,7 @@ fn accepts_images_reflects_crate_consts() {
     assert!(Agent::Gemini.accepts_images());
     assert!(!Agent::Kimi.accepts_images());
     assert!(!Agent::Opencode.accepts_images());
+    assert!(Agent::Antigravity.accepts_images());
     // ALL must hold every variant once: a new variant that never joins ALL
     // is invisible to `ralphy init`'s agent report. `value_variants` is the
     // enum's own list, so this holds with no count to update.
@@ -53,6 +54,7 @@ fn newcomers_go_last_in_all() {
             Agent::Copilot,
             Agent::Cursor,
             Agent::Gemini,
+            Agent::Antigravity,
         ]
     );
 }
@@ -215,6 +217,7 @@ agents:
   copilot: absent
   cursor: absent
   gemini: absent
+  antigravity: absent
 result: 3 blocker(s)
 ";
     assert_eq!(format_report(&f, &evaluate_gate(&f)), want);

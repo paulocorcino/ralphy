@@ -7,9 +7,9 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use ralphy_usage_scan::{
-    scan_claude, scan_codex, scan_copilot, scan_cursor, scan_gemini, scan_kimi, scan_opencode,
-    ClaudeScan, CodexScan, CopilotScan, CursorScan, GeminiScan, KimiScan, OpenCodeScan,
-    RegisteredRepo,
+    scan_antigravity, scan_claude, scan_codex, scan_copilot, scan_cursor, scan_gemini, scan_kimi,
+    scan_opencode, AntigravityScan, ClaudeScan, CodexScan, CopilotScan, CursorScan, GeminiScan,
+    KimiScan, OpenCodeScan, RegisteredRepo,
 };
 
 use crate::registry::RegistryStore;
@@ -269,16 +269,17 @@ pub fn gemini_dir_path() -> anyhow::Result<PathBuf> {
     Ok(PathBuf::from(home).join(".gemini"))
 }
 
-/// Scan the Claude, Codex, `OpenCode`, Kimi, Copilot, Cursor AND Gemini stores for
-/// interactive usage records, excluding sessions the ledger already owns (their
-/// `session_id` appears in `run_records`), and serialize each to JSON
-/// (ADR-0033 §2/§6). `registry.repos` supplies the project/actor attribution.
-/// Read-only: no scan writes (the Copilot scan reads a private copy, never the
-/// live store). The Codex records are chained after the Claude ones, then the
-/// `OpenCode` ones, then the Kimi ones, then the Copilot ones, then the Cursor
-/// ones — whose `tokens` is always `null` (ADR-0042 D11: no count exists) — then
-/// the Gemini ones, whose counts are a LOWER BOUND (ADR-0043 D10: the router's
-/// tokens never reach disk).
+/// The Antigravity store: the root Ralphy owns for every `agy` it starts, in the
+/// Ralphy folder (`RALPHY_DAEMON_DIR` when set; ADR-0086 D8).
+pub fn antigravity_root_path() -> anyhow::Result<PathBuf> {
+    ralphy_proc_util::antigravity::owned_root()
+}
+
+/// Scan every vendor store for interactive usage records, minus the sessions the
+/// ledger owns (`session_id` in `run_records`), each as JSON (ADR-0033 §2/§6).
+/// `registry.repos` gives the project/actor. Read-only: the Copilot scan reads a
+/// private copy. Cursor `tokens` is always `null` (ADR-0042 D11); Gemini counts
+/// are a LOWER BOUND (ADR-0043 D10).
 pub fn interactive_records(
     stores: &StorePaths,
     registry: &RegistryStore,
@@ -341,6 +342,12 @@ pub fn interactive_records(
         repos: &repos,
         since,
     });
+    let antigravity = scan_antigravity(&AntigravityScan {
+        root: &stores.antigravity_root,
+        run_session_ids: &run_session_ids,
+        repos: &repos,
+        since,
+    });
     claude
         .iter()
         .chain(codex.iter())
@@ -349,6 +356,7 @@ pub fn interactive_records(
         .chain(copilot.iter())
         .chain(cursor.iter())
         .chain(gemini.iter())
+        .chain(antigravity.iter())
         .filter_map(|r| serde_json::to_value(r).ok())
         .collect()
 }

@@ -11,6 +11,7 @@ mod support;
 #[path = "../../../ralphy-daemon/tests/support/golden.rs"]
 mod golden;
 
+mod antigravity_root;
 mod blob;
 mod changes;
 mod checkout_cwd;
