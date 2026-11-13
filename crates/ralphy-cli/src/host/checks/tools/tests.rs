@@ -159,3 +159,20 @@ fn an_older_doctor_without_hook_lines_still_parses() {
     assert!(json.contains("\"tool\":\"hooks\""), "{json}");
     assert_eq!(parse_doctor(&out(0, &json, "")), Some(newer));
 }
+
+#[test]
+fn parse_doctor_keeps_a_sign_in_line() {
+    let mut with = report(true);
+    with.tools.push(ToolLine {
+        required: false,
+        ..line(
+            Tool::SignIn,
+            "antigravity sign-in",
+            false,
+            Some("agy --gemini_dir=x"),
+        )
+    });
+    let json = serde_json::to_string(&with).expect("json");
+    assert!(json.contains("\"tool\":\"sign_in\""), "{json}");
+    assert_eq!(parse_doctor(&out(0, &json, "")), Some(with));
+}

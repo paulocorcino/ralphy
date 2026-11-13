@@ -26,6 +26,10 @@ pub(crate) fn probe() -> MachineFacts {
             .iter()
             .map(|a| scope.spawn(move || agent_program(*a).map(|p| (*a, version_of(&p)))))
             .collect();
+        let agy_signed_in = scope.spawn(|| {
+            agent_program(Agent::Antigravity)
+                .map(|_| ralphy_agent_antigravity::probe_antigravity_login())
+        });
         let hooks: Vec<_> = Agent::ALL
             .iter()
             .filter(|a| source_of(**a) == StateSource::Hooks)
@@ -52,6 +56,7 @@ pub(crate) fn probe() -> MachineFacts {
                 .into_iter()
                 .filter_map(|h| h.join().expect(join))
                 .collect(),
+            antigravity_signed_in: agy_signed_in.join().expect(join),
             linger,
             hooks: hooks
                 .into_iter()
@@ -140,7 +145,10 @@ pub(super) fn hook_command(agent: Agent, cli: &Path) -> Option<hook_form::HookCo
     match agent {
         Agent::Claude => Some(ralphy_daemon::agent_state::console_hook(cli)),
         Agent::Codex => Some(ralphy_daemon::agent_state::codex_check_hook()),
-        Agent::Copilot | Agent::Cursor | Agent::Kimi | Agent::Opencode | Agent::Antigravity => None,
+        Agent::Antigravity => ralphy_proc_util::exe::running_exe()
+            .ok()
+            .map(|exe| ralphy_proc_util::antigravity::check_hook(&exe)),
+        Agent::Copilot | Agent::Cursor | Agent::Kimi | Agent::Opencode => None,
     }
 }
 

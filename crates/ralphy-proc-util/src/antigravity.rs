@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 
+use crate::hook_form::{hook_for_version, HookCommand, EXEC_FORM_FROM};
+
 /// The one name the CLI installs. The IDE launcher `antigravity.cmd` is another program.
 const NAME: &str = "agy";
 
@@ -74,6 +76,14 @@ fn ralphy_dir(daemon_dir: Option<OsString>, home: Option<PathBuf>) -> Result<Pat
     }
     let home = home.context("could not find the home folder for the Antigravity root")?;
     Ok(home.join(".ralphy"))
+}
+
+/// The command `ralphy doctor` runs to check the `agy` hook: the program and
+/// the arguments of the hooks file, run without a shell.
+pub fn check_hook(exe: &Path) -> HookCommand {
+    let (major, minor, patch) = EXEC_FORM_FROM;
+    let version = format!("{major}.{minor}.{patch}");
+    hook_for_version(Some(&version), exe, &["hook", "status", "antigravity"])
 }
 
 /// The shell `agy` runs a hook command with.

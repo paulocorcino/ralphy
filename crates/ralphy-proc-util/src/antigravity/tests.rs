@@ -174,3 +174,12 @@ fn the_windows_short_path_lookup_gives_a_form_cmd_can_run() {
         Err(err) => assert!(format!("{err:#}").contains("with space"), "{err:#}"),
     }
 }
+
+#[test]
+fn the_antigravity_check_hook_runs_hook_status_without_a_shell() {
+    let hook = check_hook(Path::new("ralphy"));
+    assert_eq!(hook.form(), crate::hook_form::HookForm::Exec);
+    let entry = hook.entry();
+    assert_eq!(entry["command"], "ralphy");
+    assert_eq!(entry["args"], serde_json::json!(STATUS_ARGS));
+}
