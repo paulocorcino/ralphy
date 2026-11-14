@@ -147,7 +147,7 @@ The component names are CONTEXT.md terms.
 | `ralphy-pricing` and `ralphy-release` are leaf crates | ADR-0034, ADR-0056 | the same test |
 | `ralphy-git-read` is a leaf crate | ADR-0069 | the same test |
 | `ralphy-telegram` is a leaf crate | ADR-0085 D14 | the same test |
-| `ralphy-wording` is a leaf crate, and the daemon still does not import `ralphy-core` to read a wording | ADR-0078 | None yet (planned: the same test) |
+| `ralphy-wording` is a leaf crate, and the daemon still does not import `ralphy-core` to read a wording | ADR-0078 | the same test, and `wording_depends_only_on_serde` (`crates/xtask/tests/crate_dependencies.rs`) |
 | The daemon links no vendor crate and does not import `ralphy-core` | ADR-0032 §10 | `daemon_manifest_has_no_vendor_dependency` (`crates/ralphy-daemon/src/roster.rs`); the core half has none yet |
 | No `tokio` or `reqwest` in the CLI; the async stack stays in the daemon | ADR-0032 | `cli_manifest_pins_ureq_excludes_reqwest_tokio` (`crates/ralphy-cli/src/pricing.rs`) |
 | The daemon may observe the working tree as bytes; anything that interprets or changes a repo is a `ralphy` invocation, except read-only git facts through `ralphy-git-read` (ADR-0069) | ADR-0036 §3 | None yet |
