@@ -134,7 +134,7 @@ The component names are CONTEXT.md terms.
 | Composition root (names every vendor, wires everything) | `ralphy-cli` |
 | Workbench UI | `crates/ralphy-daemon/assets/ui/` |
 | Process and PTY helpers | `ralphy-proc-util`, `ralphy-pty` |
-| Wording catalog, Text domain, Failure (planned, [ADR-0078](./adr/0078-one-wording-catalog-for-every-surface.md)) | the format in `ralphy-wording`; the text in `assets/wording/<text-domain>.json`; the enum of each text domain in the crate that owns its facts |
+| Wording catalog, Text domain ([ADR-0078](./adr/0078-one-wording-catalog-for-every-surface.md)); Failure (planned) | the format in `ralphy-wording` (real, and read by `ralphy-cli` and, as a JSON module, by the workbench); the text in `assets/wording/<text-domain>.json`; the enum of each text domain in the crate that owns its facts |
 
 ## 5. Allowed edges
 
@@ -264,6 +264,9 @@ any code, including code that does not exist yet. A behaviour test is not one.
 | A new ADR has a closed-set status and kind and, if structural, a Compliance section | `new_adrs_have_a_closed_status_and_kind` (`crates/xtask/tests/adr_map.rs`), from ADR-0068 on |
 | This file stays true | `the_architecture_map_cites_real_adrs_and_every_structural_one` (`crates/xtask/tests/adr_map.rs`): every ADR cited here exists, and every structural ADR from ADR-0068 on is cited |
 | The browser and the daemon agree on each reply | shared replies in `crates/ralphy-daemon/ui-tests/fixtures/`, written by the Rust tests (`tests/support/golden.rs`) and read by `ui-tests/shared-replies.test.mjs`; `message_types_without_a_shared_reply_match_the_baseline` (`crates/xtask/tests/ui_contract/`), a ratchet on message types without one (ADR-0070) |
+| A run status or outcome has one wording, in `assets/wording/run.json`: no surface writes its icon or fallback by hand | `value_wordings_have_one_source` (`crates/xtask/tests/ratchets/`), a ratchet on those literals in the terminal, Telegram and workbench sources, with its counted sites listed and a target of 0 statuses (ADR-0078) |
+| The catalog and the code agree on each run value, both ways | `issue_status_matches_the_catalog` and `run_outcome_matches_the_catalog` (`crates/ralphy-cli/src/wording/tests.rs`): every value has an entry and every entry has a value |
+| A catalog text follows the written voice | `cargo run -p xtask -- ui-copy --check`, which reads the catalog values as `wording:value` (ADR-0065, ADR-0078) |
 | Every error text the UI compares is one the Rust code produces | `every_error_literal_the_ui_compares_is_produced_by_rust` (`crates/xtask/tests/ui_contract/`, ADR-0070) |
 | A limit repeated in the UI equals its Rust constant | `every_mirrored_limit_equals_its_rust_constant` (`crates/xtask/tests/ui_contract/`, ADR-0070) |
 
