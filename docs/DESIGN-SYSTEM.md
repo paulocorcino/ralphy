@@ -250,7 +250,148 @@ the Runs, Spend and Board panels.
 
 ## Keyboard
 
-All shortcuts and the keys of each component: [Keyboard](./design-system/keyboard.md).
+Read from the code on 2026-11-14, at commit `55928b55`. The files are in
+`crates/ralphy-daemon/assets/ui/`; the line is the line of the listener or
+of the binding. A new shortcut gets a row here in the same change as its
+code. How each component shows its keys: [Keyboard](./design-system/keyboard.md).
+
+### The rules the shortcuts follow
+
+- A page shortcut uses **Alt+Shift** with no Ctrl and no Meta. Keys are
+  matched on `e.code`, so the keyboard layout does not change them.
+- A page shortcut does nothing while `$store.modals.consoleShortcutsBlocked()`
+  is true: no login, a blocking dialog or "What's new" is open, or the focus
+  is in an input, a textarea, an editable element or the code editor
+  (`wb-modals-store.ts:229`). The helper input of a terminal is a textarea,
+  so a terminal blocks them too, except where the next rule says otherwise.
+- A terminal gives some Alt+Shift chords to the page instead of to the child
+  program: Alt+Shift+0 to 9 and Alt+Shift+R on the page that has the shell,
+  and Alt+Shift+arrows in a column or in the grid of a console tab
+  (`pageTakesChord`, `wb-console-press.ts:31`). Every other key in a
+  terminal goes to xterm, and xterm sends it to the child program.
+- The dialogs built in TypeScript (`wb-messages.ts`, `wb-console-worktree.ts`,
+  `wb-notes-menus.ts`) listen on the document in the capture phase and stop
+  Escape and Enter, so a terminal does not take them first.
+
+### Shortcuts
+
+| Action                                                                                    | Keys                                              | Component                   | Code                                     |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------- | --------------------------- | ---------------------------------------- |
+| Open the search: files when a project is open, projects otherwise                         | `/`                                               | Page                        | `wb-wire.ts:447`                         |
+| Open the files search, also from the code editor and from a terminal                      | Ctrl+Shift+F (Cmd+Shift+F on macOS)               | Page                        | `wb-wire.ts:458`                         |
+| Run the row with that digit in the Consoles menu                                          | Alt+Shift+0 to 9                                  | Consoles menu               | `wb-consoles-tab-menus.ts:309`           |
+| Open the Consoles menu on its command field                                               | Alt+Shift+R                                       | Consoles menu               | `wb-consoles-tab-menus.ts:309`           |
+| Go to fence 1 to 12                                                                       | Alt+Shift+F1 to F12                               | Fences menu                 | `wb-consoles-tab-menus.ts:329`           |
+| Walk the columns (Left, Right) and the rows of a column (Up, Down), or else the fences    | Alt+Shift+arrows                                  | Stage                       | `wb-consoles-tab.ts:448`                 |
+| Copy the selection of a terminal                                                          | Ctrl+Insert                                       | Terminal                    | `wb-console-press.ts:53`                 |
+| End the drag of a window where it is                                                      | Escape                                            | Session window              | `wb-stage-window-gestures.ts:196`        |
+| Scroll the stage sideways                                                                 | Shift+wheel                                       | Stage                       | `wb-stage-view.ts:428`                   |
+| Close the top modal                                                                       | Escape                                            | Modal                       | `wb-modals-store.ts:177`                 |
+| Keep the focus inside the top modal                                                       | Tab, Shift+Tab                                    | Modal                       | `wb-modals-store.ts:185`                 |
+| Confirm, when no button has the focus                                                     | Enter                                             | Confirm dialog              | `wb-confirm-dialog.part.html:16`         |
+| Send the answer                                                                           | Enter                                             | Prompt dialog               | `wb-prompt-dialog.part.html:32`          |
+| Cancel; confirm when the confirm button has the focus                                     | Escape; Enter                                     | Confirm built in TypeScript | `wb-messages.ts:120`                     |
+| Cancel; create the worktree (or cancel, when Cancel has the focus)                        | Escape; Enter                                     | New worktree dialog         | `wb-console-worktree.ts:133`             |
+| Close the Markdown help                                                                   | Escape, or Enter on Close                         | Note help dialog            | `wb-notes-menus.ts:247`                  |
+| Switch to the first branch in the list, or create the branch typed                        | Enter                                             | Branch dialog               | `wb-branch-dialog.part.html:30`          |
+| Move in the folder list; take the folder; add the project                                 | Up, Down; Enter or Tab; Enter                     | Add a project dialog        | `wb-add-project-dialog.ts:85`            |
+| Go to the next step; check the host again                                                 | Enter                                             | Hosts dialog                | `wb-hosts-dialog.part.html:65`, `:155`   |
+| Confirm the update with the code                                                          | Enter                                             | Update dialog               | `wb-release-dialogs.part.html:61`        |
+| Send the password; cancel                                                                 | Enter; Escape                                     | Security step-up            | `wb-security-dialog.part.html:23`        |
+| Save the password                                                                         | Enter                                             | Security dialog             | `wb-security-dialog.part.html:71`, `:75` |
+| Confirm the authenticator code                                                            | Enter                                             | Security dialog             | `wb-security-dialog.part.html:115`       |
+| Save the Telegram token                                                                   | Enter                                             | Settings dialog             | `wb-settings-dialog.part.html:185`       |
+| Go back one box and clear it; move between the boxes                                      | Backspace on an empty box; Left, Right            | Login code                  | `wb-login.ts:123`                        |
+| Move between the enabled rows, wrapping at the ends; go to the first or last row          | Up, Down; Home, End                               | Dropdown menu, context menu | `wb-arrow-keys.ts:69`                    |
+| Move between the tabs; go to the first or last tab                                        | Left, Right; Home, End                            | Tab list                    | `wb-arrow-keys.ts:69`                    |
+| Open the tab that has the focus                                                           | Enter, Space                                      | Canvas tab                  | `index.html:276`                         |
+| Close the menu                                                                            | Escape                                            | Checkout menu               | `wb-console-checkout.ts:258`             |
+| Close the menu                                                                            | Escape                                            | Encoding menu               | `wb-viewer-encoding.ts:129`              |
+| Swap in the first console of the list; close the menu                                     | Enter; Escape                                     | Columns menu filter         | `wb-consoles-tab-columns.part.html:39`   |
+| Run the command; close the field                                                          | Enter; Escape                                     | Consoles menu command field | `wb-consoles-tab-menus.part.html:60`     |
+| Clear the field                                                                           | Escape                                            | Projects search             | `index.html:168`                         |
+| Search now; close the search                                                              | Enter; Escape                                     | Files search                | `wb-files.part.html:69`                  |
+| Open the diff of the row                                                                  | Enter                                             | Changes panel               | `wb-changes-panel.part.html:81`, `:104`  |
+| Save the name; cancel                                                                     | Enter; Escape                                     | Console title               | `wb-console-title.ts:321`                |
+| Save the name; cancel                                                                     | Enter; Escape                                     | Fence name                  | `wb-stage-fences.ts:245`                 |
+| Save the title; cancel                                                                    | Enter; Escape                                     | Note title                  | `wb-notes-chrome.ts:107`                 |
+| Save the file name; cancel                                                                | Enter; Escape                                     | Note rename                 | `wb-notes-chrome.ts:336`                 |
+| Save the note                                                                             | Ctrl+S (Cmd+S)                                    | Note card                   | `wb-notes-build.ts:167`                  |
+| Leave the editor; a second Escape leaves the card                                         | Escape                                            | Note card                   | `wb-notes-build.ts:167`                  |
+| Save the file                                                                             | Ctrl+S (Cmd+S)                                    | Code editor                 | `wb-file-viewer-code.ts:77`              |
+| Next match; the match before; close                                                       | Enter; Shift+Enter; Escape                        | Markdown search             | `wb-viewer-markdown.ts:229`              |
+| Zoom in; zoom out; fit; close; keep the focus inside                                      | `+` or `=`; `-`; `0`; Escape; Tab                 | Zoom overlay                | `wb-zoom-overlay.ts:341`                 |
+| Rename                                                                                    | F2 (Enter on macOS)                               | Files tree                  | `wb-files-mount.ts:153`                  |
+| Show the properties                                                                       | Alt+Enter                                         | Files tree                  | `wb-files-mount.ts:178`                  |
+
+Keys that come from a library and are not listed: the arrow keys of the
+files tree (Wunderbaum), the keys of the code editor (Monaco) and of the
+note editor (Milkdown), and every key that a terminal sends to its child
+(xterm). The touch key strip is a row of buttons, not shortcuts:
+[Touch key strip](./design-system/touch-keys.md).
+
+### Conflicts
+
+Found by reading the code and the vendored xterm (`vendor/xterm.js`). None
+of them was tried in a browser.
+
+1. **An Alt+Shift chord that the page takes from a terminal can be lost.**
+   `pageTakesChord` gives Alt+Shift+0 to 9 and Alt+Shift+R to the page
+   always, and Alt+Shift+arrows always in a column or a console tab grid.
+   xterm then does not send the key to the child program. When the page
+   then finds nothing to do (no row with that digit, a disabled row, one
+   console only, or a dialog that blocks shortcuts), the key does nothing at
+   all: neither the page nor the child program gets it. A child program
+   that binds these chords (Meta+Shift+arrows, Meta+Shift+digit) never gets
+   them. Code: `wb-console-press.ts:31`, `wb-consoles-tab-menus.ts:309`,
+   `wb-consoles-tab.ts:448`.
+2. **Alt+Shift+F1 to F12 do not work from a terminal.** They are not in
+   `pageTakesChord`, so xterm sends them to the child program (`ESC [1;4P`
+   and the like) and stops the event. The fence listener also refuses them
+   while a terminal has the focus. The digits, R and the arrows work from a
+   terminal; the fence keys do not. There is no conflict with the child
+   program, but the rule is not the same for all page shortcuts. Code:
+   `wb-consoles-tab-menus.ts:329`.
+3. **Escape during a window drag goes to the child program.** The drag
+   listens for Escape on the document, in the bubble phase. When a terminal
+   has the focus, xterm sends Escape to the child program and stops the
+   event, so the drag does not end and the child program gets an Escape.
+   Code: `wb-stage-window-gestures.ts:196`.
+4. **Escape that closes the checkout menu is not stopped.** The listener is
+   on the document, in the capture phase, and does not stop the event. When
+   a terminal still has the focus, the same Escape closes the menu and goes
+   to the child program. The encoding menu has the same shape
+   (`wb-viewer-encoding.ts:129`), but it opens in a file viewer, away from a
+   terminal. Code: `wb-console-checkout.ts:258`.
+5. **Alt+Shift on Windows.** With two or more keyboard layouts installed,
+   Windows can use Left Alt+Shift to change the input language. Every page
+   shortcut starts with Alt+Shift. Not measured with the workbench.
+
+Checked, and no conflict found:
+
+- `/` stays in a terminal: the terminal's textarea blocks the shortcut.
+- Ctrl+Shift+F in a terminal: xterm sends nothing for Ctrl+Shift with a
+  letter and lets the event go on, so the page takes it and the child
+  program loses nothing.
+- Ctrl+Insert copies only when the terminal has a selection; with no
+  selection the key goes to the child program. Ctrl+C always goes to the
+  child program. Ctrl+Shift+C is not used: in Chrome and Edge it opens the
+  developer tools, and a page cannot take it.
+- Ctrl+S is taken only in a note card and in the code editor. In a
+  terminal, Ctrl+S goes to the child program.
+- Alt+Shift+arrows and Shift+Alt+F of the code editor: the page shortcuts
+  are blocked while the code editor has the focus.
+- The keys of a modal: the modal keeps the focus inside, so a terminal does
+  not have the focus while a modal is open.
+
+### Gaps
+
+- Most dropdown menus do not close on Escape. Only the checkout menu, the
+  encoding menu, the Columns menu filter and the command field of the
+  Consoles menu do.
+- ADR-0064 §13 names Escape and Ctrl+Enter for the editor of a diagram in a
+  note. No workbench code binds them; if they work, the note editor library
+  binds them.
 
 ## Measuring a change
 
