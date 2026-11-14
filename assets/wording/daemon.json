@@ -5,7 +5,7 @@
     "ralphy-failed": {
       "cause": "the ralphy command failed",
       "remedy": "The daemon log has the reason.",
-      "note": "A ralphy command the daemon ran failed with an error that has no failure of its own. The error chain is in the detail cause and in the daemon log."
+      "note": "A ralphy command that the daemon ran failed, and no other failure in the catalog matches its error. The full error chain is in the detail cause and in the daemon log."
     }
   },
   "retired": []
