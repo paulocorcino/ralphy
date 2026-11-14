@@ -11,6 +11,7 @@ use crate::routes::blocking_read;
 use crate::{checkout, confine, dispatch, note, protocol, session, textcodec};
 
 mod collect;
+mod failure;
 mod observe;
 mod write;
 

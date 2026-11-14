@@ -163,6 +163,11 @@ async fn each_verb_relays_its_own_argv(port: u16, slug: &str) {
         "no sibling's argv leaked into the unstage leg: {msg:?}"
     );
 
+    // The commit reply is a failure, not the child's text: its argv is read
+    // from the log the child appends to.
+    let argv_dir = tempfile::tempdir().expect("a temporary folder");
+    let argv_file = argv_dir.path().join("argv.log");
+    std::env::set_var("RALPHY_TEST_ARGV_FILE", &argv_file);
     let committed = ask(
         port,
         3,
@@ -170,7 +175,9 @@ async fn each_verb_relays_its_own_argv(port: u16, slug: &str) {
         serde_json::json!({ "repo": slug, "message": "hello" }),
     )
     .await;
-    let msg = relayed(&committed);
+    std::env::remove_var("RALPHY_TEST_ARGV_FILE");
+    relayed(&committed);
+    let msg = std::fs::read_to_string(&argv_file).expect("the child wrote its argv");
     assert!(
         msg.contains("changes commit --message=hello"),
         "the commit argv must reach the child; got: {msg:?}"

@@ -22,6 +22,8 @@
 //! pipe after this child exits.
 //! `RALPHY_TEST_FLOOD_BYTES` makes it write that many `o` bytes to stdout and
 //! `e` bytes to stderr, interleaved, and exit 0 with nothing else printed.
+//! `RALPHY_TEST_FAILURE_LINE` is written as the last stderr line, with exit 1,
+//! when the argv has `--failure-format json`.
 //!
 //! Called as `antigravity prepare-root`, it stands in for that subcommand and
 //! decides by files in its working directory, not by the environment (one
@@ -101,6 +103,9 @@ fn main() {
             .read_to_string(&mut input)
             .expect("reading stdin");
         println!("dispatch-stdin: {input}");
+    }
+    if let Ok(line) = std::env::var("RALPHY_TEST_FAILURE_LINE") {
+        failure_line(&args, &line);
     }
     println!("command_test_child exiting {code}");
     if let Ok(argv_file) = std::env::var("RALPHY_TEST_ARGV_FILE") {
@@ -239,4 +244,16 @@ fn claude_version() {
     }
     println!("2.1.200 (Claude Code)");
     std::process::exit(0);
+}
+
+/// Write `line` to stderr and exit 1 when `args` asks for a JSON failure.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a test helper child reports to its test by its exit code"
+)]
+fn failure_line(args: &[String], line: &str) {
+    if args.windows(2).any(|w| w == ["--failure-format", "json"]) {
+        eprintln!("{line}");
+        std::process::exit(1);
+    }
 }

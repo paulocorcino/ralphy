@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use super::{collect_config, failed_reply, not_answered, spawn_cwd, OneshotRepo};
+use super::{collect_config, failed_reply, failure, not_answered, spawn_cwd, OneshotRepo};
 use crate::{dispatch, protocol, session};
 
 type Argv = Result<Vec<String>, dispatch::ArgvError>;
@@ -132,6 +132,11 @@ pub(super) async fn mutate(
             return serde_json::json!({ "status": "error", "message": "invalid mutation options" });
         }
     };
+    let argv = if failure::is_moved(verb) {
+        failure::json_argv(argv)
+    } else {
+        argv
+    };
     match run(verb, cmd, repo_path, argv, daemon_id).await {
         Ok(collected) => mutate_reply(verb, collected),
         Err(reply) => reply,
@@ -179,6 +184,9 @@ fn mutate_reply(verb: dispatch::Verb, collected: dispatch::Collected) -> serde_j
             } else {
                 serde_json::json!({ "status": "ok", "message": msg })
             }
+        }
+        dispatch::Collected::Done(_, output) if failure::is_moved(verb) => {
+            failure::failed_reply(&output)
         }
         dispatch::Collected::Done(_, output) => {
             let msg = String::from_utf8_lossy(&output.merged()).into_owned();

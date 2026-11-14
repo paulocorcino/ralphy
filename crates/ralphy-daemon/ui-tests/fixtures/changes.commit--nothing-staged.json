@@ -1,0 +1,13 @@
+{
+  "failure": {
+    "code": "nothing-staged",
+    "details": {},
+    "domain": "working-tree",
+    "text": {
+      "cause": "nothing is staged",
+      "remedy": "Stage a file first."
+    }
+  },
+  "message": "nothing is staged. Stage a file first.",
+  "status": "error"
+}
