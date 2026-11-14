@@ -430,11 +430,7 @@ fn shell_pins_the_frame_chrome() {
             (#338)"
         );
     }
-    // The layer's value: above the consoles' ceiling of 120 (`Z_CEIL`).
-    assert!(
-        css.contains("--z-frame: 130;"),
-        "the frame layer must stay at 130, above the consoles (#338)"
-    );
+    assert!(css.contains("--z-frame: 130;"), "frame layer over Z_CEIL (#338)");
 }
 
 /// The per-client view (#339) and — the part that can silently regress — the
