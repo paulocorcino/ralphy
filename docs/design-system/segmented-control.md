@@ -62,4 +62,4 @@ is a second copy of the same control, found in the audit.
 
 ## Keyboard
 
-See Keyboard section.
+See [Keyboard](./keyboard.md).

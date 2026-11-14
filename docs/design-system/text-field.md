@@ -72,4 +72,4 @@ difference found in the audit, not a decision. Do not add a third class.
 
 ## Keyboard
 
-See Keyboard section.
+See [Keyboard](./keyboard.md).

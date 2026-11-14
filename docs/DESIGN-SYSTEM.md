@@ -85,28 +85,38 @@ Shadows: `0 10px 30px rgba(0,0,0,0.55)` on menus and floating windows,
 
 ## Components
 
-| Component                                                 | Class                       | Used in  |
-| --------------------------------------------------------- | --------------------------- | -------- |
-| [Button](./design-system/button.md)                       | `.btn`                      | 21 parts |
-| [Modal](./design-system/modal.md)                         | `.modal`                    | 13 parts |
-| [Dropdown menu](./design-system/dropdown.md)              | `.dropdown`                 | 7 parts  |
-| [Text field](./design-system/text-field.md)               | `.set-input`, `.host-input` | 6 parts  |
-| [Segmented control](./design-system/segmented-control.md) | `.seg`                      | 3 parts  |
+| Component                                                 | Class                          | Used in  |
+| --------------------------------------------------------- | ------------------------------ | -------- |
+| [Button](./design-system/button.md)                       | `.btn`                         | 21 parts |
+| [Modal](./design-system/modal.md)                         | `.modal`                       | 13 parts |
+| [Dropdown menu](./design-system/dropdown.md)              | `.dropdown`                    | 7 parts  |
+| [Text field](./design-system/text-field.md)               | `.set-input`, `.host-input`    | 6 parts  |
+| [Segmented control](./design-system/segmented-control.md) | `.seg`                         | 3 parts  |
+| [Icon](./design-system/icon.md)                           | `.bi`, `x-icon`                | 23 parts |
+| [Status text](./design-system/status-text.md)             | `*-empty`, `*-error`, `*-help` | 18 parts |
+| [Chip and badge](./design-system/chip-badge.md)           | 10 classes                     | 10 parts |
+| [Tab](./design-system/tab.md)                             | `.tab`                         | 1 page   |
+| [Context menu](./design-system/context-menu.md)           | `.ctxmenu`, `.ctx-item`        | 1 page   |
+| [Checkbox and switch](./design-system/checkbox-switch.md) | `input`, `.switch`             | 1 part   |
+| [Card](./design-system/card.md)                           | `.sec-card`                    | 1 part   |
+| [Kbd hint](./design-system/kbd.md)                        | `.kbd`                         | 1 part   |
+| [Toast and flash line](./design-system/toast.md)          | `.wb-toast`                    | Code     |
+| [Command block](./design-system/command-block.md)         | `.rel-cmd`                     | 2 parts  |
 
 The count is the number of `*.part.html` files and pages that use the
-class, measured on 2026-11-14 with `grep -l`.
+class, measured on 2026-11-14 with `grep -l`. "Code" means the element is
+built in TypeScript, not in a part.
 
-## Differences between ADR-0035 and the code
+Larger patterns have their own ADR and CSS file and are not listed as
+components: the session window (ADR-0035 §4), the note card (ADR-0064),
+the Runs, Spend and Board panels.
 
-Found during this audit. They are listed, not fixed.
+## Keyboard
 
-- ADR-0035 lists `--danger-border` and `--console-bg-hi`. `01-base.css` does
-  not define them. `.btn.danger` mixes its border with `color-mix` instead.
-- `--live`, `--info`, `--font-ui` and the note tones are in the code but not
-  in ADR-0035.
-- Two text field classes with different grounds: `.set-input` on `--log-bg`
-  and `.host-input` on `--bg`. See [Text field](./design-system/text-field.md).
-- `.btn` has no focus style of its own: the browser outline shows focus.
-  `.seg-btn`, `.dropdown-item` and `.modal-x` start with `all: unset`, which
-  also removes the browser outline, and they define no `:focus-visible`
-  style. Read from the CSS; not checked in a browser.
+All shortcuts and the keys of each component: [Keyboard](./design-system/keyboard.md).
+
+## Audit and plan
+
+What is not consistent today, the decisions to make, the proposed tokens
+and shared classes, and the order of the work:
+[audit](./design-system/audit.md). Nothing in it is applied yet.

@@ -58,4 +58,4 @@ dialog picks one of the two with
 
 ## Keyboard
 
-See Keyboard section.
+See [Keyboard](./keyboard.md).

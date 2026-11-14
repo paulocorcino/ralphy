@@ -83,4 +83,4 @@ that opened them. A danger confirm shows `bi-exclamation-triangle` in
 
 ## Keyboard
 
-See Keyboard section.
+See [Keyboard](./keyboard.md).

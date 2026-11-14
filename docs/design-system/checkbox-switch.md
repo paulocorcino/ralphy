@@ -1,0 +1,47 @@
+# Checkbox and switch
+
+Two controls for a yes or no value. A checkbox is a plain
+`<input type="checkbox">`. A switch is `.switch` around a hidden checkbox.
+
+## When to use it
+
+- Use a checkbox in a list or a form where the value is saved with a
+  button, for example a row to include.
+- Use a switch when the change takes effect at once and turns a protection
+  or a feature on or off: the cards of the Security dialog.
+- Use a [Segmented control](./segmented-control.md) when there are more
+  than two values, or when the two values need names.
+
+## Reference markup
+
+Switch, from `wb-security-dialog.part.html`:
+
+```html
+<label class="switch">
+  <input type="checkbox" :checked="…" @change="…">
+  <span class="switch-track"></span>
+</label>
+```
+
+Checkbox: a plain `<input type="checkbox">`. `01-base.css` draws every
+checkbox that is not inside `.switch`. Do not add a class to it.
+
+## States
+
+| State                 | Checkbox                                      | Switch                                                                                                         |
+| --------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Default               | 16px box, `--log-bg`, `--border-focus` border | 38 × 20px track, `--log-bg`, knob `--text-muted`                                                               |
+| Checked               | Gold box and gold tick                        | Gold track, knob `--console-text`, moved 18px                                                                  |
+| Focus                 | 1px `--console-text` outline, offset 2px      | No style: the input is hidden and the track shows nothing                                                      |
+| Disabled              | `opacity: 0.5`                                | No style: the "Require login" switch is disabled until TOTP is set up, and it looks the same as an enabled one |
+| Empty, error, loading | Not used                                      | Not used                                                                                                       |
+
+## Files
+
+- `styles/01-base.css`: the checkbox
+- `styles/08-modals.css`: `.switch`, `.switch-track`
+- `wb-security-dialog.part.html`: the only part that uses `.switch`
+
+## Keyboard
+
+See [Keyboard](./keyboard.md). Space toggles both, from the browser.

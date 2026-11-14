@@ -1,0 +1,169 @@
+# Design system audit, 2026-11-14
+
+An audit of the workbench styles (`crates/ralphy-daemon/assets/ui/styles/`,
+13 files, 11,827 lines) and parts. It measures where the page has no single
+rule, and it proposes a plan. Nothing here is applied yet. Each step of the
+plan is its own change, with a browser check before and after.
+
+The numbers come from a script that reads every declaration outside
+comments. They count declarations, not elements on screen.
+
+## 1. Inventory
+
+| Layer      | What exists                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Tokens     | 36 custom properties in `01-base.css`: 10 neutrals, 6 accents, 8 note tones, 5 type, 7 layout. All 36 are used           |
+| Elements   | Button, text field, checkbox, switch, icon, kbd, chip and badge                                                          |
+| Components | Modal, dropdown menu, context menu, segmented control, tab, card, toast, command block, status text                      |
+| Patterns   | Settings row, modal form, panel (Runs, Spend, Board), session window, note card. Each has its own ADR or CSS file        |
+| Governance | ADR-0035 for the palette, ADR-0065 for the words. No rule for sizes, spacing, z-index or new components before this file |
+
+## 2. What is consistent
+
+- **Color.** 32 distinct hex values, and 24 of them are token values. Only
+  8 raw hex values are left (section 4). 61 `color-mix()` calls build tints
+  from tokens instead of new hex values.
+- **Font family.** 46 of 52 `font-family` declarations use a token; 5 spell the stack by hand.
+- **Radius.** `var(--radius)` is the most used value (55).
+- **Motion.** 8 durations, mostly `0.12s` and `0.15s`. Small and calm, as
+  ADR-0035 asks.
+
+## 3. Fragmentation: one shape, many rules
+
+| Area           | Measured                                                                                                                              | Should be      |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| Font size      | 52 distinct values. Top: 0.8rem (42), 0.72rem (41), 0.78rem (32), 0.7rem (25), 0.82rem (23), 0.74rem (18), 0.76rem (14), 0.75rem (14) | 6 steps        |
+| Spacing        | 78 distinct values in 826 padding, margin and gap declarations                                                                        | 8 steps        |
+| Radius         | 13 values: `--radius`, 999px, 4px (the token value written by hand, 27), 6px, 3px, 50%, 8px, 2px, 1px, 5px, 12px, 10px, 7px           | 6 names        |
+| z-index        | 21 values from 0 to 3000, no names                                                                                                    | Named layers   |
+| Shadow         | 28 distinct `box-shadow` values                                                                                                       | 3 levels       |
+| Empty state    | 12 classes, 5 sizes, 3 centered and 1 italic                                                                                          | 1 class        |
+| Error line     | 18 classes, 5 sizes, 1 with a box                                                                                                     | 1 class        |
+| Help line      | 4 classes, 2 sizes                                                                                                                    | 1 class        |
+| Chip and badge | 10 classes, 5 sizes, 4 grounds                                                                                                        | 1 class, tones |
+| Menu row       | `.dropdown-item` (six names) and `.ctx-item`: one shape, two sizes (0.82 and 0.8rem), two disabled opacities (0.4 and 0.45)           | 1 rule         |
+| Text field     | `.set-input` on `--log-bg` and `.host-input` on `--bg`                                                                                | 1 class        |
+| Segmented      | `.seg` and a second copy in `.files-search .seg`                                                                                      | 1 rule         |
+| Icons          | Bootstrap Icons (100 uses) and Lucide (55 uses)                                                                                       | 1 library      |
+
+## 4. Drift: the code and ADR-0035
+
+| Finding                                                                                             | Where                                                                                       |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| ADR-0035 lists `--danger-border` and `--console-bg-hi`; the CSS has neither                         | `01-base.css`                                                                               |
+| `--live`, `--info`, `--font-ui` and the note tones are not in ADR-0035                              | ADR-0035 §1                                                                                 |
+| `#d29922` (3 uses) is an amber with no token: attention badge, urgent dot                           | `02-rail-sidebar.css:79`, `12-spend.css:916`, `:964`                                        |
+| `#3fb950` is a green beside `--live`                                                                | `12-spend.css:915`                                                                          |
+| `#dea584` is a color with no token                                                                  | `02-rail-sidebar.css:653`                                                                   |
+| `var(--danger, #e5484d)`: a fallback that never applies, 8 times                                    | `03-runs.css`, `04-canvas.css`, `10-kanban.css`                                             |
+| `var(--surface-2, …)` and `var(--mono, …)` read tokens that do not exist; the fallback always wins  | `04-canvas.css:418`, `11-appended.css:149`, `:172`                                          |
+| 5 declarations spell the monospace stack instead of `var(--font-mono)`, one of them a shorter stack | `01-base.css:134`, `06-consoles.css:970`, `07-viewers.css:166`, `:795`, `08-modals.css:610` |
+| The toast is the only chrome element in `--font-ui`                                                 | `13-notes.css:1196`                                                                         |
+| The command block sizes in `px`; the chrome sizes in `rem`                                          | `12-spend.css:980`                                                                          |
+
+## 5. Accessibility gaps
+
+Read from the CSS and the markup; not yet checked in a browser.
+
+1. **Focus is not visible on many controls.** 28 rules start with
+   `all: unset`, which also removes the browser outline, and 20 set
+   `outline: none`. There are only 15 `:focus-visible` rules. `.seg-btn`,
+   `.dropdown-item`, `.ctx-item`, `.modal-x` and `.tab-close` have none.
+2. **A tab cannot be reached with the keyboard.** `.tab` is a `div` with a
+   click handler and no `tabindex` (`index.html`).
+3. **A disabled switch looks enabled.** No `.switch input:disabled` rule.
+   "Require login" is disabled until TOTP is set up.
+4. **No arrow keys** in menus or in segmented tablists. Only Tab moves.
+
+## 6. Decisions only a person can make
+
+| #   | Question                                       | Recommendation                                                                                                                                                   |
+| --- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Which icon library do new icons use?           | Lucide. It is the newer path (`x-icon`, 2026-09-27), it draws SVG that takes the text color and stroke. Move the 100 Bootstrap uses over time, not in one change |
+| D2  | Is amber a third accent, `--warn`?             | Yes. It already does a job, "needs attention", that neither gold nor terracotta does. It needs an ADR-0035 amendment                                             |
+| D3  | One text field ground: `--log-bg` or `--bg`?   | `--log-bg`. It is the ground of `.set-input`, the checkbox, the switch track and the segmented track                                                             |
+| D4  | One focus ring for all controls?               | Yes: `1px solid var(--console-text)`, offset 2px. The checkbox already uses it                                                                                   |
+| D5  | Merge font sizes that differ by less than 1px? | Yes, with a screenshot of each panel before and after                                                                                                            |
+
+## 7. Proposed tokens
+
+Not in `01-base.css` yet. The values are the most used ones today, so most
+declarations keep their value.
+
+**Type** (on the 13px body):
+
+| Token      | Value     | Takes today's          |
+| ---------- | --------- | ---------------------- |
+| `--fs-2xs` | `0.66rem` | 0.64, 0.65, 0.66, 0.68 |
+| `--fs-xs`  | `0.72rem` | 0.7, 0.72, 0.74, 0.75  |
+| `--fs-sm`  | `0.78rem` | 0.76, 0.78             |
+| `--fs-md`  | `0.8rem`  | 0.8, 0.82              |
+| `--fs-lg`  | `0.9rem`  | 0.85, 0.9              |
+| `--fs-xl`  | `1.15rem` | 1.05, 1.15             |
+
+The largest move is 0.85 → 0.9rem, 0.65px. Sizes in `em` inside rendered
+prose follow the reading tokens and do not change.
+
+**Spacing:** `--sp-1` 0.15rem, `--sp-2` 0.25rem, `--sp-3` 0.35rem, `--sp-4`
+0.5rem, `--sp-5` 0.6rem, `--sp-6` 0.8rem, `--sp-7` 1rem, `--sp-8` 1.5rem.
+Each value today moves to the nearest step.
+
+**Radius:** `--radius-sm` 3px, `--radius` 4px, `--radius-md` 6px,
+`--radius-lg` 8px, `--radius-xl` 10px, `--radius-pill` 999px. 50% stays
+for a circle.
+
+**Layers:** `--z-window` (the consoles, up to 120), `--z-panel` 150,
+`--z-ctxmenu` 200, `--z-modal` 500, `--z-modal-ask` 520, `--z-dropdown`
+1000, `--z-toast` 3000. The values stay; only the names are new. Note that
+a dropdown (1000) is above a modal (500) today.
+
+**Shadows:** `--shadow-float` `0 10px 30px rgba(0,0,0,0.55)` for menus and
+windows, `--shadow-modal` `0 24px 70px rgba(0,0,0,0.6)`, and
+`--shadow-toast` `0 4px 18px rgba(0,0,0,0.4)`.
+
+**Color:** `--warn` (D2), and `--focus-ring` (D4).
+
+## 8. Proposed shared classes
+
+| Class         | Replaces                              | Look                                                                         |
+| ------------- | ------------------------------------- | ---------------------------------------------------------------------------- |
+| `.empty-note` | 12 `*-empty` classes                  | `--text-muted`, `--fs-sm`; the place sets padding and alignment              |
+| `.error-line` | 18 `*-error` classes                  | `--danger`, `--fs-sm`                                                        |
+| `.help-text`  | `.run-help`, `.set-help`, `.sec-note` | `--text-muted`, `--fs-xs`, line height 1.5                                   |
+| `.chip`       | 10 chip and badge classes             | Pill, `--fs-2xs`, tones: `neutral`, `gold`, `live`, `warn`, `danger`, `info` |
+| `.menu-item`  | `.dropdown-item` rule and `.ctx-item` | One rule; the old names stay as aliases while old queries need them          |
+| `.text-field` | `.set-input`, `.host-input`           | D3                                                                           |
+
+A domain class can stay next to the shared one when code queries it, for
+example `class="error-line move-error"`.
+
+## 9. Plan, in order
+
+Each step is one change, with a browser check of the panels it touches.
+
+1. **Tokens with no visible change.** Add the layer, radius, shadow and
+   focus tokens with today's values and use them. Remove the dead
+   fallbacks (`#e5484d`), replace `--surface-2` and `--mono` with real
+   tokens, and use `var(--font-mono)` in the 5 places. Nothing moves on
+   screen.
+2. **Accessibility.** One focus ring for every `all: unset` control (D4).
+   A disabled style for the switch. Make `.tab` reachable with the
+   keyboard. These change what a keyboard user sees, so they come early.
+3. **Status text.** `.empty-note`, `.error-line`, `.help-text`. Small and
+   low risk; many places.
+4. **Controls.** `.menu-item`, `.text-field` (D3), one segmented rule.
+5. **Chip and badge** with tones, and `--warn` (D2, ADR-0035 amendment).
+6. **Type and spacing scales** (D5), one CSS file per change.
+7. **Icons** (D1), as panels are touched for other work.
+
+## 10. Keeping it
+
+- [DESIGN-SYSTEM.md](../DESIGN-SYSTEM.md) holds the rule: no new
+  component, color, spacing value or shortcut without an entry.
+- After step 1, stylelint (already in the gate) can refuse a hex color
+  outside `01-base.css` (`color-no-hex` with an override for that file).
+  After steps 3 and 6, it can refuse a font size or spacing that is not a
+  token (`declaration-strict-value`, a plugin to add). A count that may
+  only go down, like the other ratchets, lets the old sites stay until
+  their step.
+- Run the measure again after each step and update section 3.

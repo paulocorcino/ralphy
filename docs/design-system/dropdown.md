@@ -63,4 +63,4 @@ A new menu uses `.dropdown-item` unless an old query must stay inert.
 
 ## Keyboard
 
-See Keyboard section.
+See [Keyboard](./keyboard.md).
