@@ -34,20 +34,24 @@ tools, and a page cannot take it. Ctrl+C belongs to the child program.
 
 ## Keys inside components
 
-| Component                                   | Keys                                                                                                                               |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| [Modal](./modal.md)                         | Escape closes the top modal. Enter confirms a confirm dialog when no button has focus. Tab and Shift+Tab stay inside the top modal |
-| [Dropdown menu](./dropdown.md)              | Tab moves between rows. Escape closes the checkout menu. No arrow keys                                                             |
-| [Text field](./text-field.md)               | Enter saves and Escape cancels in the title, fence name and note rename fields                                                     |
-| [Segmented control](./segmented-control.md) | Tab moves between segments. No arrow keys                                                                                          |
-| [Button](./button.md)                       | Enter and Space, from the browser                                                                                                  |
-| [Tab](./tab.md)                             | Tab reaches each tab; Enter or Space opens it                                                                                      |
-| Files tree                                  | F2 renames. Alt+Enter shows the properties                                                                                         |
-| Note editor                                 | Ctrl+S (Cmd+S) saves. Escape leaves the editor                                                                                     |
-| Markdown search                             | Enter: next match. Shift+Enter: the one before. Escape closes                                                                      |
-| Add a project dialog                        | Up and Down move in the list. Enter or Tab picks                                                                                   |
+| Component                                   | Keys                                                                                                                                       |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| [Modal](./modal.md)                         | Escape closes the top modal. Enter confirms a confirm dialog when no button has focus. Tab and Shift+Tab stay inside the top modal         |
+| [Dropdown menu](./dropdown.md)              | Up and Down move between the enabled rows and wrap at the ends; Home and End go to the first and last row; Escape closes the checkout menu |
+| [Text field](./text-field.md)               | Enter saves and Escape cancels in the title, fence name and note rename fields                                                             |
+| [Segmented control](./segmented-control.md) | Tab reaches each segment. In a tab list (`role="tablist"`), Left and Right move between the tabs                                           |
+| [Button](./button.md)                       | Enter and Space, from the browser                                                                                                          |
+| [Tab](./tab.md)                             | Tab reaches the tab bar; Left and Right move between tabs, Home and End to the ends; Enter or Space opens a tab                            |
+| Files tree                                  | F2 renames. Alt+Enter shows the properties                                                                                                 |
+| Note editor                                 | Ctrl+S (Cmd+S) saves. Escape leaves the editor                                                                                             |
+| Markdown search                             | Enter: next match. Shift+Enter: the one before. Escape closes                                                                              |
+| Add a project dialog                        | Up and Down move in the list. Enter or Tab picks                                                                                           |
 
 ## Where the keys are shown
 
 A menu row shows its shortcut at the right in a [kbd hint](./kbd.md). A
 button shows it in its `title`, for example "Search files (Ctrl+Shift+F)".
+
+The arrow keys of every menu (`.dropdown`, `.ctxmenu`) and every tab list
+are one document listener, in `wb-arrow-keys.ts`. A text field inside a
+menu keeps its own arrow keys.

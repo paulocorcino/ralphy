@@ -45,6 +45,7 @@ import { createMessages } from "./wb-messages.ts";
 import { createStack, createGestures } from "./wb-stage-stack.ts";
 import { shell } from "./app.ts";
 import { wire } from "./wb-wire.ts";
+import { wireArrowKeys } from "./wb-arrow-keys.ts";
 import { iconDirective } from "./wb-icon.ts";
 import { projectsStore } from "./wb-projects-store.ts";
 import { connectionStore } from "./wb-connection-store.ts";
@@ -91,6 +92,7 @@ window.WBNotes = createNotes(window, document, {
 // them about unsaved work before a build reload, and the store `tabs` hands
 // them a file it detaches.
 const detached = wire(window, document, { messages });
+wireArrowKeys(document);
 Alpine.directive("icon", iconDirective);
 // The modal stack, the confirm, the prompt and the flash line, first: the
 // door and every store and component after it flash and ask through it. It

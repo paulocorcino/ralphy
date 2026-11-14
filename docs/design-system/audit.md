@@ -118,7 +118,8 @@ No page error in any mode. No horizontal scroll in any mode.
 8. **The Settings modal does not fit a phone.** At 390px it keeps two
    columns: the Bind address field is cut at the right edge, and the scope
    chip wraps onto three lines.
-9. **No arrow keys** in menus or in segmented tablists. Only Tab moves.
+9. **No arrow keys** in menus or in tab lists. Only Tab moved. Fixed
+   after the plan (`wb-arrow-keys.ts`), checked in Chromium.
 
 ## 6. Decisions
 
