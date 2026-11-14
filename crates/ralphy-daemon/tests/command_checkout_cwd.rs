@@ -325,16 +325,21 @@ async fn other_verbs_run_at_the_root(port: u16, slug: &str, root: &Path) {
 /// (f) The Mutate arm follows the same cwd rule.
 async fn mutates_run_in_the_worktree(port: u16, slug: &str) {
     // (f) The Mutate arm: same cwd rule, argv unchanged, relayed on exit 1.
+    // The commit reply is a failure, not the child's text: read its echo file.
     std::env::set_var("RALPHY_TEST_EXIT_CODE", "1");
-    let msg = relayed(
-        &ask(
-            port,
-            7,
-            "changes.commit",
-            json!({ "repo": slug, "message": "m", "checkout": "wt-a" }),
-        )
-        .await,
-    );
+    let echo_dir = tempfile::tempdir().expect("a temporary folder");
+    let echo_file = echo_dir.path().join("echo.log");
+    std::env::set_var("RALPHY_TEST_ECHO_FILE", &echo_file);
+    let reply = ask(
+        port,
+        7,
+        "changes.commit",
+        json!({ "repo": slug, "message": "m", "checkout": "wt-a" }),
+    )
+    .await;
+    std::env::remove_var("RALPHY_TEST_ECHO_FILE");
+    relayed(&reply);
+    let msg = std::fs::read_to_string(&echo_file).expect("the child wrote its echo");
     assert_in_worktree(&msg, "changes.commit");
     assert!(
         msg.contains("changes commit --message=m"),

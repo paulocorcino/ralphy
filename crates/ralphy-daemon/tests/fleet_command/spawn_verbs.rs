@@ -300,13 +300,8 @@ async fn git_verbs_run_on_the_peer(
             "changes commit --message=peer commit",
         ),
     ] {
-        let reply = ask(local_port, id, verb, payload).await;
-        let message = reply.get("message").and_then(serde_json::Value::as_str);
-        assert!(
-            message.is_some(),
-            "{verb} did not relay child output: {reply}"
-        );
-        let message = message.expect("checked by the assert above");
+        let message = child_echo(local_port, id, verb, payload).await;
+        let message = message.as_str();
         assert!(
             ran_in(message, peer_repo.path()),
             "{verb} must execute in the peer repo: {message}"

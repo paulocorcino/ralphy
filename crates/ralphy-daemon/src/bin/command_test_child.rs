@@ -24,6 +24,8 @@
 //! `e` bytes to stderr, interleaved, and exit 0 with nothing else printed.
 //! `RALPHY_TEST_FAILURE_LINE` is written as the last stderr line, with exit 1,
 //! when the argv has `--failure-format json`.
+//! `RALPHY_TEST_ECHO_FILE` names a path the child appends its `dispatch-argv:`
+//! and `dispatch-cwd:` lines to, for a reply that does not carry its stdout.
 //!
 //! Called as `antigravity prepare-root`, it stands in for that subcommand and
 //! decides by files in its working directory, not by the environment (one
@@ -86,16 +88,7 @@ fn main() {
     eprintln!("dispatch-stderr-marker");
     // Echo the argv so the run-params test can assert the composed flags reached
     // the child (proving `spawn_argv` → CLI end to end).
-    println!(
-        "dispatch-argv: {}",
-        std::env::args().skip(1).collect::<Vec<_>>().join(" ")
-    );
-    println!(
-        "dispatch-cwd: {}",
-        std::env::current_dir()
-            .map(|path| path.display().to_string())
-            .unwrap_or_default()
-    );
+    echo_argv_and_cwd();
     if std::env::var_os("RALPHY_TEST_READ_STDIN").is_some() {
         use std::io::Read;
         let mut input = String::new();
@@ -255,5 +248,28 @@ fn failure_line(args: &[String], line: &str) {
     if args.windows(2).any(|w| w == ["--failure-format", "json"]) {
         eprintln!("{line}");
         std::process::exit(1);
+    }
+}
+
+/// Print the argv and the cwd, and append them to `RALPHY_TEST_ECHO_FILE` when set.
+fn echo_argv_and_cwd() {
+    let echo = format!(
+        "dispatch-argv: {}
+dispatch-cwd: {}
+",
+        std::env::args().skip(1).collect::<Vec<_>>().join(" "),
+        std::env::current_dir()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default()
+    );
+    print!("{echo}");
+    if let Ok(echo_file) = std::env::var("RALPHY_TEST_ECHO_FILE") {
+        use std::io::Write;
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&echo_file)
+            .and_then(|mut f| f.write_all(echo.as_bytes()))
+            .expect("appending to the echo file");
     }
 }
