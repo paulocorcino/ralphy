@@ -107,3 +107,36 @@ fn emoji_icons_lead_the_counts_line() {
     );
     assert_eq!(lines[0], "✅ 3 done · ⛔ 1 blocked · ⏭️ 2 skipped");
 }
+
+#[test]
+fn counts_line_uses_the_catalog_icons() {
+    use ralphy_wording::ValueSet;
+    for emoji in [true, false] {
+        let opts = RenderOpts {
+            color: false,
+            emoji,
+        };
+        let lines = render_totals_panel(&data(), opts);
+        let hitl = lines
+            .iter()
+            .find(|l| l.contains("waiting"))
+            .expect("hitl line");
+        for status in IssueStatus::all() {
+            let w = status.wording();
+            let icon = if emoji { &w.icon } else { &w.fallback };
+            let icon = icon.as_deref().expect("icon");
+            let shown = match status {
+                IssueStatus::Done | IssueStatus::Blocked | IssueStatus::Skipped => &lines[0],
+                IssueStatus::Hitl => hitl,
+                IssueStatus::Planning
+                | IssueStatus::Executing
+                | IssueStatus::Planned
+                | IssueStatus::Infeasible
+                | IssueStatus::NeedsSplit
+                | IssueStatus::NonGreen => continue,
+            };
+            assert!(shown.contains(icon), "{status:?} emoji={emoji}: {shown}");
+            assert!(shown.contains(&w.text), "{status:?} text: {shown}");
+        }
+    }
+}

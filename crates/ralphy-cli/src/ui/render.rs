@@ -6,6 +6,7 @@
 use std::time::Duration;
 
 use console::Style;
+use ralphy_wording::ValueWording;
 
 mod line;
 mod meter;
@@ -90,6 +91,25 @@ pub(crate) fn pick(emoji: &'static str, ascii: &'static str, use_emoji: bool) ->
     } else {
         ascii
     }
+}
+
+/// The catalog icon of a value, or its fallback when the channel shows no emoji.
+pub(crate) fn pick_value(wording: &'static ValueWording, use_emoji: bool) -> &'static str {
+    if use_emoji {
+        value_icon(wording)
+    } else {
+        value_fallback(wording)
+    }
+}
+
+/// The icon of a value; its text when the entry has no icon.
+pub(crate) fn value_icon(wording: &'static ValueWording) -> &'static str {
+    wording.icon.as_deref().unwrap_or(wording.text.as_str())
+}
+
+/// The plain-text form of the icon; the value text when the entry has none.
+pub(crate) fn value_fallback(wording: &'static ValueWording) -> &'static str {
+    wording.fallback.as_deref().unwrap_or(wording.text.as_str())
 }
 
 /// `13s` or `2m05s`.

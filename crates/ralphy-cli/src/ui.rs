@@ -66,15 +66,19 @@ impl FinishOutcome {
         }
     }
 
-    /// `(emoji, ascii fallback, semantic colour)` — the ADR-0006 D4 icon table.
+    /// `(emoji, ascii fallback, semantic colour)`: icon and fallback from the catalog.
     pub(crate) fn glyph(self) -> (&'static str, &'static str, Style) {
-        match self {
-            FinishOutcome::Done => ("✅", "[ok]", Style::new().green()),
-            FinishOutcome::Blocked => ("⛔", "[blocked]", Style::new().red()),
-            FinishOutcome::Timeout => ("⏱️", "[timeout]", Style::new().yellow()),
-            FinishOutcome::Stuck => ("🪨", "[stuck]", Style::new().red()),
-            FinishOutcome::Limit => ("🌙", "[limit]", Style::new().yellow()),
-        }
+        let wording = self.wording();
+        let style = match self {
+            FinishOutcome::Done => Style::new().green(),
+            FinishOutcome::Blocked | FinishOutcome::Stuck => Style::new().red(),
+            FinishOutcome::Timeout | FinishOutcome::Limit => Style::new().yellow(),
+        };
+        (
+            render::value_icon(wording),
+            render::value_fallback(wording),
+            style,
+        )
     }
 }
 

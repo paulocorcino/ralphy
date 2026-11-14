@@ -67,13 +67,6 @@ impl ValueSet for FinishOutcome {
 
 impl IssueStatus {
     /// The text, icon and fallback of this status in the catalog.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the console and Telegram read it in a later change"
-        )
-    )]
     pub(crate) fn wording(self) -> &'static ValueWording {
         entry(self)
     }
@@ -81,10 +74,6 @@ impl IssueStatus {
 
 impl FinishOutcome {
     /// The text, icon and fallback of this outcome in the catalog.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the console reads it in a later change")
-    )]
     pub(crate) fn wording(self) -> &'static ValueWording {
         entry(self)
     }

@@ -452,3 +452,44 @@ fn fmt_duration_formats_minutes_and_seconds() {
     assert_eq!(fmt_duration(Duration::from_secs(133)), "2m13s");
     assert_eq!(fmt_duration(Duration::from_secs(120)), "2m00s");
 }
+
+#[test]
+fn finish_outcome_shows_its_catalog_wording() {
+    use ralphy_wording::ValueSet;
+    let ts = Local.with_ymd_and_hms(2026, 6, 10, 14, 3, 21).unwrap();
+    for outcome in FinishOutcome::all() {
+        let w = outcome.wording();
+        let outcome = format!("{outcome:?}");
+        let event = RunEvent::NonGreen { number: 9, outcome };
+        for (emoji, want) in [(true, &w.icon), (false, &w.fallback)] {
+            let opts = RenderOpts {
+                color: false,
+                emoji,
+            };
+            let line = render_line(&event, &ts, &LineExtra::default(), opts).unwrap();
+            assert!(line.contains(want.as_deref().unwrap()), "{emoji}: {line}");
+        }
+    }
+}
+
+#[test]
+fn phase_icons_come_from_the_catalog() {
+    for (phase, status) in [
+        (Phase::Planning, IssueStatus::Planning),
+        (Phase::Executing, IssueStatus::Executing),
+    ] {
+        let w = status.wording();
+        for (emoji, want) in [(true, &w.icon), (false, &w.fallback)] {
+            let opts = RenderOpts {
+                color: false,
+                emoji,
+            };
+            let (s, t) = (Duration::from_secs(1), "T");
+            let line = render_active_line(phase, 7, t, None, None, s, None, opts, 200);
+            assert!(
+                line.starts_with(want.as_deref().unwrap()),
+                "{emoji}: {line}"
+            );
+        }
+    }
+}
