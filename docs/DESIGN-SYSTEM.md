@@ -36,14 +36,14 @@ Use the token, never its hex value. Monaco cannot read CSS variables, so
 
 ### Accents
 
-| Token              | Value     | Use                                         |
-| ------------------ | --------- | ------------------------------------------- |
-| `--console-text`   | `#e8d9a8` | Gold: the free console, the primary action  |
-| `--console-bg`     | `#2b2410` | Gold ground                                 |
-| `--console-border` | `#5a4a1e` | Gold border                                 |
-| `--danger`         | `#c56b5c` | Offline, errors, destructive actions        |
-| `--live`           | `#7fae7f` | A live daemon or console, a passed check    |
-| `--info`           | `#6f9fc0` | Planning and sleep states in the Runs trail |
+| Token              | Value     | Use                                                        |
+| ------------------ | --------- | ---------------------------------------------------------- |
+| `--console-text`   | `#e8d9a8` | Gold: the free console, the primary action, the focus ring |
+| `--console-bg`     | `#2b2410` | Gold ground                                                |
+| `--console-border` | `#5a4a1e` | Gold border                                                |
+| `--danger`         | `#ce8174` | Offline, errors, destructive actions                       |
+| `--live`           | `#7fae7f` | A live daemon or console, a passed check                   |
+| `--info`           | `#6f9fc0` | Planning and sleep states in the Runs trail                |
 
 ### Note tones
 

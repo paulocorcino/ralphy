@@ -34,7 +34,7 @@ Measured in Chromium on 2026-11-14. In a modal: padding 4.8px 11.2px, gap 5.6px,
 
 24 to 27px high in every mode. The same size on touch, on purpose (audit, D7).
 
-Contrast, measured: the default and gold buttons pass 4.5:1 (8.5 and 10.9). The danger button's text is 3.63:1, under 4.5:1; see the audit, D6.
+Contrast, measured: the default and gold buttons pass 4.5:1 (8.5 and 10.9). The danger button's text is 4.52:1 since `--danger` became `#ce8174` (audit, D6).
 
 ## Variants
 
@@ -54,7 +54,7 @@ dialog picks one of the two with
 | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | Default  | `--surface` ground, `0.8rem` text, `0.3rem 0.7rem` padding                                                                        |
 | Hover    | `--surface-hi` ground. `danger`: 14% `--danger` mix                                                                               |
-| Focus    | No style of its own. The browser outline shows focus: measured, it is visible (Chromium draws two rings)                          |
+| Focus    | The focus ring: 1px `--focus-ring` (gold), offset 2px                                                                             |
 | Disabled | `opacity: 0.5`, `cursor: default`. Bound with `:disabled="…"`                                                                     |
 | Empty    | Not used: a button always has a label                                                                                             |
 | Error    | Not used: the error shows in the form, not on the button                                                                          |

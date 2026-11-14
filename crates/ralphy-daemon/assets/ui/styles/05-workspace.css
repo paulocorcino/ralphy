@@ -351,7 +351,7 @@
 .console-choice .row-try:hover,
 .console-choice .row-try:focus-visible {
   background: var(--surface-hi);
-  outline: 1px solid var(--console-border);
+  outline: 1px solid var(--focus-ring);
 }
 /* Always visible, never hover-only: the command console was hard to find
    when it hid behind a setting. Muted until pointed at. */
@@ -373,7 +373,7 @@
 .console-choice .row-run:focus-visible {
   color: var(--console-text);
   background: var(--surface-hi);
-  outline: 1px solid var(--console-border);
+  outline: 1px solid var(--focus-ring);
 }
 .console-run {
   display: flex;
@@ -512,7 +512,7 @@
   background: var(--surface-hi);
 }
 .column-dir-btn:focus-visible {
-  outline: 1px solid var(--border-focus);
+  outline: 1px solid var(--focus-ring);
   outline-offset: -1px;
 }
 .column-group-head {

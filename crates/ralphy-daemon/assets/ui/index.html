@@ -264,16 +264,16 @@
            live at the strip's right edge — kept above the workspace so a
            floating console can never cover them. -->
       <div class="tabbar">
-        <div class="tabstrip">
+        <div class="tabstrip" role="tablist" aria-label="Open tabs">
           <!-- one tab per entry in `$store.tabs.tabs`: index 0 is the fixed Consoles tab
                (not closable); the rest are opened files. Click activates,
                MIDDLE-click (button 1) or × closes — `auxclick` also fires for the
                right button, which must never cost the operator their tab. -->
           <template x-for="t in $store.tabs.tabs" :key="t.id">
             <div
-              class="tab"
+              class="tab" role="tab" tabindex="0" :aria-selected="$store.tabs.active === t.id"
               :class="{ active: $store.tabs.active === t.id, pinned: $store.tabs.slot?.kind === 'pin' && $store.tabs.slot.id === t.id, fixed: !t.closable }"
-              @click="$store.tabs.activate(t.id)"
+              @click="$store.tabs.activate(t.id)" @keydown.enter.self.prevent="$store.tabs.activate(t.id)" @keydown.space.self.prevent="$store.tabs.activate(t.id)"
               @auxclick.prevent="$event.button === 1 && t.closable && $store.tabs.closeTab(t.id)"
               @contextmenu.prevent="$store.tabs.showTabMenu($event.clientX, $event.clientY, t)"
               :title="t.path || t.title"

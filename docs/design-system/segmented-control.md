@@ -58,7 +58,7 @@ is a second copy of the same control, found in the audit.
 | Default  | Track: `--log-bg`, `--border`, radius `999px`. Segment: `0.78rem`, `--text-muted` |
 | Hover    | Segment text `--text`                                                             |
 | On       | Gold: `--console-text` on `--console-bg`, inset `--console-border` ring           |
-| Focus    | No style. `all: unset` removes the browser outline. Not measured in the browser   |
+| Focus    | The focus ring: 1px `--focus-ring` (gold), offset 2px                             |
 | Disabled | `.seg-btn.unavailable`: `opacity: 0.45` and a line through the text               |
 | Empty    | Hidden: the Hosts tabs show only when there is a host                             |
 | Error    | Not used                                                                          |

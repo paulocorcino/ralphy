@@ -54,15 +54,15 @@ A new menu uses `.dropdown-item` unless an old query must stay inert.
 
 ## States
 
-| State    | What the code does                                                                                           |
-| -------- | ------------------------------------------------------------------------------------------------------------ |
-| Default  | `.dropdown`: `--surface`, `--border`, radius `6px`, shadow, `z-index: 1000`. Row: `0.82rem`, `--text`        |
-| Hover    | Row ground `--surface-hi`                                                                                    |
-| Focus    | No style. `all: unset` removes the browser outline. Measured: 7 of 7 rows show no change when they get focus |
-| Disabled | `opacity: 0.4`, `cursor: not-allowed`, no hover ground                                                       |
-| Empty    | The `.dropdown-head` says so: "No consoles yet"                                                              |
-| Error    | A `.side-error` line under the head (`--danger`, `0.78rem`)                                                  |
-| Loading  | Not used: the menu reads data the page already has                                                           |
+| State    | What the code does                                                                                    |
+| -------- | ----------------------------------------------------------------------------------------------------- |
+| Default  | `.dropdown`: `--surface`, `--border`, radius `6px`, shadow, `z-index: 1000`. Row: `0.82rem`, `--text` |
+| Hover    | Row ground `--surface-hi`                                                                             |
+| Focus    | The focus ring, drawn inside the row (offset -2px)                                                    |
+| Disabled | `opacity: 0.4`, `cursor: not-allowed`, no hover ground                                                |
+| Empty    | The `.dropdown-head` says so: "No consoles yet"                                                       |
+| Error    | A `.side-error` line under the head (`--danger`, `0.78rem`)                                           |
+| Loading  | Not used: the menu reads data the page already has                                                    |
 
 ## Files
 

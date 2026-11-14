@@ -831,6 +831,18 @@
   background: var(--console-bg);
   border-color: var(--console-border);
 }
+.switch input:focus-visible + .switch-track {
+  outline: 1px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+/* A switch the daemon will not let the operator turn: dimmed, as a disabled
+   checkbox is. */
+.switch:has(input:disabled) {
+  cursor: not-allowed;
+}
+.switch input:disabled + .switch-track {
+  opacity: 0.5;
+}
 .switch input:checked + .switch-track::before {
   transform: translate(18px, -50%);
   background: var(--console-text);

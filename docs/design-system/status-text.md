@@ -42,7 +42,7 @@ Measured in Chromium on 2026-11-14. Set by each class: padding from none to 2rem
 
 Wraps on a phone; nothing else changes.
 
-Contrast, measured: an empty state or help line passes (5.5:1 on `--chrome`). An error line is 4.02:1 on `--chrome` and 3.63:1 on `--surface`, under 4.5:1; see the audit, D6.
+Contrast, measured: an empty state or help line passes (5.5:1 on `--chrome`). An error line is 5.01:1 on `--chrome` and 4.52:1 on `--surface` since `--danger` became `#ce8174` (audit, D6).
 
 ## What the classes share, and where they differ
 

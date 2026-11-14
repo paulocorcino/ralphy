@@ -43,15 +43,15 @@ The close button is 16 × 16px in every mode. The same size on touch, on purpose
 
 ## Variants and states
 
-| State                           | What the code does                                                                                                                         |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Default                         | `--chrome`, `--text-muted`, `0.8rem`, at most 220px, title cut with an ellipsis                                                            |
-| Hover                           | `--surface`                                                                                                                                |
-| Active                          | `--bg` ground, `--text`, a 2px gold line at the top                                                                                        |
-| Pinned                          | A gold pin icon and a 2px gold line at the bottom                                                                                          |
-| Fixed                           | No close button                                                                                                                            |
-| Focus                           | None: the tab is a `div` with no `tabindex`. Measured: Tab skips the tab; its close button and the `+` button get focus but show no change |
-| Disabled, empty, error, loading | Not used                                                                                                                                   |
+| State                           | What the code does                                                                                                                 |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Default                         | `--chrome`, `--text-muted`, `0.8rem`, at most 220px, title cut with an ellipsis                                                    |
+| Hover                           | `--surface`                                                                                                                        |
+| Active                          | `--bg` ground, `--text`, a 2px gold line at the top                                                                                |
+| Pinned                          | A gold pin icon and a 2px gold line at the bottom                                                                                  |
+| Fixed                           | No close button                                                                                                                    |
+| Focus                           | The tab is in the Tab order (`tabindex="0"`, `role="tab"`). Enter or Space opens it. Its close and `+` buttons show the focus ring |
+| Disabled, empty, error, loading | Not used                                                                                                                           |
 
 A middle click closes a closable tab. A right click opens the
 [Context menu](./context-menu.md).

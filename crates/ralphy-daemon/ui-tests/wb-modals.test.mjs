@@ -240,6 +240,49 @@ test("a modal focuses its first control on open and gives focus back on close", 
   assert.deepEqual(focused, []);
 });
 
+test("Tab and Shift+Tab stay inside the open modal", () => {
+  const { scope: state } = loadComponent("wbRuns", { window: { requestAnimationFrame: () => {} } });
+  // The page's stub document, which the store reads.
+  const doc = globalThis.document;
+  const el = (name) => {
+    const e = { name, disabled: false, getClientRects: () => [{}], classList: { contains: () => false } };
+    e.focus = () => (doc.activeElement = e);
+    return e;
+  };
+  const [field, cancel, ok] = [el("field"), el("cancel"), el("ok")];
+  const behind = el("rail button");
+  const inside = new Set([field, cancel, ok]);
+  const dialog = { contains: (x) => inside.has(x), querySelectorAll: () => [field, cancel, ok] };
+  const scrimEl = { querySelector: () => dialog };
+  const b = state.$store.modals.scrim("runOpen", () => state.closeRunModal());
+  const tab = (shiftKey = false) => {
+    const e = { key: "Tab", shiftKey, prevented: false, preventDefault: () => (e.prevented = true) };
+    b["@keydown.tab.window"].call(withEl(state, scrimEl), e);
+    return e;
+  };
+  state.runOpen = true;
+  b["x-effect"].call(withEl(state, scrimEl));
+
+  doc.activeElement = ok;
+  assert.equal(tab().prevented, true);
+  assert.equal(doc.activeElement, field, "Tab on the last control goes to the first");
+  assert.equal(tab(true).prevented, true);
+  assert.equal(doc.activeElement, ok, "Shift+Tab on the first control goes to the last");
+
+  doc.activeElement = cancel;
+  assert.equal(tab().prevented, false, "between controls the browser moves the focus");
+
+  doc.activeElement = behind;
+  tab();
+  assert.equal(doc.activeElement, field, "focus behind the scrim comes back to the modal");
+
+  // A confirm asked over this modal is now the top: this one keeps out of it.
+  state.$store.modals.modalOpened("$store.modals.confirmModal.open", scrimEl);
+  doc.activeElement = ok;
+  assert.equal(tab().prevented, false);
+  assert.equal(doc.activeElement, ok);
+});
+
 test("every dialog in the document is marked modal", () => {
   const dialogs = Array.from(HTML.matchAll(/<div\b(?:[^>"]|"[^"]*")*>/gu), (m) => m[0]).filter((t) =>
     /\brole="(?:alert)?dialog"/u.test(t),

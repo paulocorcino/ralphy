@@ -127,7 +127,7 @@
 }
 .attention-main:focus-visible,
 .attention-dismiss:focus-visible {
-  outline: 1px solid var(--border-focus);
+  outline: 1px solid var(--focus-ring);
   outline-offset: -1px;
 }
 .attention-main:disabled {

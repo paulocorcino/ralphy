@@ -953,7 +953,7 @@
   border-color: var(--border-focus);
 }
 .zoom-bar-btn:focus-visible {
-  outline: 2px solid var(--border-focus);
+  outline: 1px solid var(--focus-ring);
   outline-offset: 1px;
 }
 @media (any-pointer: coarse) {

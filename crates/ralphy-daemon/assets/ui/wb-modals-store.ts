@@ -68,6 +68,39 @@ function blockingDialogOpen(modals: { modalOpen(path: string): boolean }) {
   );
 }
 
+// The dialog of a scrim, and the controls in it a key can reach: visible and
+// enabled, in document order.
+function dialogControls(scrimEl: Element) {
+  const dialog = scrimEl.querySelector('[role="dialog"], [role="alertdialog"]') ?? scrimEl;
+  const controls = Array.from(
+    dialog.querySelectorAll<HTMLElement & { disabled?: boolean }>(
+      'button, input, select, textarea, [href], [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((el) => el.disabled !== true && el.getClientRects().length > 0);
+  return { dialog, controls };
+}
+
+// Tab and Shift+Tab go round the controls of the open modal and never leave
+// it for the page behind the scrim.
+function keepTabInside(e: KeyboardEvent, scrimEl: Element) {
+  const { dialog, controls } = dialogControls(scrimEl);
+  const first = controls[0];
+  const last = controls.at(-1);
+  if (!first || !last) {
+    e.preventDefault();
+    return;
+  }
+  const active = document.activeElement;
+  const outside = !dialog.contains(active);
+  if (e.shiftKey && (outside || active === first)) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && (outside || active === last)) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
 // Why `name` cannot be a single directory entry, or "" when it can.
 function nameProblem(name: string) {
   if (!name) return "name is required";
@@ -148,6 +181,10 @@ export function modalsStore(_deps: ModalsStoreDeps) {
             close();
           }
         },
+        // Only the top modal keeps the focus, as only it answers Escape.
+        "@keydown.tab.window"(this: { $el: Element }, e: KeyboardEvent) {
+          if (Boolean(isOpen(this)) && self.isTopModal(path)) keepTabInside(e, this.$el);
+        },
         // Watches the flag, not the close methods: `logOff()` clears flags
         // directly, and that close must still pop the stack.
         "x-effect"(this: { $el: Element }) {
@@ -173,13 +210,8 @@ export function modalsStore(_deps: ModalsStoreDeps) {
       // One frame later: `x-show` has flipped by then, and a modal that focuses
       // its own field on open (Branch, Prompt) has already done so.
       window.requestAnimationFrame(() => {
-        const dialog = scrimEl.querySelector('[role="dialog"], [role="alertdialog"]') ?? scrimEl;
+        const { dialog, controls } = dialogControls(scrimEl);
         if (dialog.contains(document.activeElement)) return;
-        const controls = Array.from(
-          dialog.querySelectorAll<HTMLElement & { disabled?: boolean }>(
-            'button, input, select, textarea, [href], [tabindex]:not([tabindex="-1"])',
-          ),
-        ).filter((el) => el.disabled !== true && el.getClientRects().length > 0);
         // The header ✕ is the last resort: it leads every modal, and the
         // operator came for the content.
         (controls.find((el) => !el.classList.contains("modal-x")) ?? controls[0])?.focus();

@@ -30,7 +30,7 @@
      hierarchy comes from the step, not from maximum luminance. */
   --text-strong: #e9e1d4;
   --text-muted: #a49c91;
-  --danger: #c56b5c;
+  --danger: #ce8174;
   --console-text: #e8d9a8;
   --console-bg: #2b2410;
   --console-border: #5a4a1e;
@@ -142,8 +142,28 @@ input[type="checkbox"]:not(.switch input):checked::before {
   transform: translateY(-1px) rotate(-45deg);
 }
 input[type="checkbox"]:not(.switch input):focus-visible {
-  outline: 1px solid var(--console-text);
+  outline: 1px solid var(--focus-ring);
   outline-offset: 2px;
+}
+/* The one focus ring (ADR-0035, amendment of 2026-11-14). `:root` lifts it
+   over the `all: unset` of a control's own rule, which removes the browser
+   outline. A full-width row draws it inside, where its menu cannot clip it. */
+:root :is(button, a[href], summary, select, [role="tab"]):focus-visible {
+  outline: 1px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+:root
+  :is(
+    .dropdown-item,
+    .window-item,
+    .fence-item,
+    .note-item,
+    .column-item,
+    .console-tab-item,
+    .ctx-item,
+    .settings-navitem
+  ):focus-visible {
+  outline-offset: -2px;
 }
 input[type="checkbox"]:not(.switch input):disabled {
   opacity: 0.5;

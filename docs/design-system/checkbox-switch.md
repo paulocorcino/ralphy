@@ -38,13 +38,13 @@ Measured in Chromium on 2026-11-14. Checkbox 16 × 16px, radius 3px. Switch 38 �
 
 ## States
 
-| State                 | Checkbox                                      | Switch                                                                                                         |
-| --------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Default               | 16px box, `--log-bg`, `--border-focus` border | 38 × 20px track, `--log-bg`, knob `--text-muted`                                                               |
-| Checked               | Gold box and gold tick                        | Gold track, knob `--console-text`, moved 18px                                                                  |
-| Focus                 | 1px `--console-text` outline, offset 2px      | No style: the input is hidden and the track shows nothing                                                      |
-| Disabled              | `opacity: 0.5`                                | No style: the "Require login" switch is disabled until TOTP is set up, and it looks the same as an enabled one |
-| Empty, error, loading | Not used                                      | Not used                                                                                                       |
+| State                 | Checkbox                                      | Switch                                           |
+| --------------------- | --------------------------------------------- | ------------------------------------------------ |
+| Default               | 16px box, `--log-bg`, `--border-focus` border | 38 × 20px track, `--log-bg`, knob `--text-muted` |
+| Checked               | Gold box and gold tick                        | Gold track, knob `--console-text`, moved 18px    |
+| Focus                 | 1px `--focus-ring` outline, offset 2px        | The same ring on the track                       |
+| Disabled              | `opacity: 0.5`                                | Track at `opacity: 0.5`, cursor `not-allowed`    |
+| Empty, error, loading | Not used                                      | Not used                                         |
 
 ## Files
 

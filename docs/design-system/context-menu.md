@@ -36,7 +36,7 @@ Measured in Chromium on 2026-11-14. Menu: padding 4px, radius 6px. Row: padding 
 
 Rows are 28px high in every mode.
 
-Contrast, measured: a row passes (8.5:1). A danger row is 3.63:1, under 4.5:1; see the audit, D6.
+Contrast, measured: a row passes (8.5:1). A danger row is 4.52:1 since `--danger` became `#ce8174` (audit, D6).
 
 ## States
 
@@ -45,7 +45,7 @@ Contrast, measured: a row passes (8.5:1). A danger row is 3.63:1, under 4.5:1; s
 | Default               | Fixed, `z-index: 200`, `--surface`, radius `6px`, shadow. Row `0.8rem`, icon `--text-muted` |
 | Hover                 | Row ground `--surface-hi`                                                                   |
 | Danger                | `.ctx-item.danger`: text and icon `--danger`                                                |
-| Focus                 | No style. `all: unset` removes the browser outline                                          |
+| Focus                 | The focus ring, drawn inside the row (offset -2px)                                          |
 | Disabled              | `opacity: 0.45`, `cursor: default`                                                          |
 | Empty, error, loading | Not used                                                                                    |
 

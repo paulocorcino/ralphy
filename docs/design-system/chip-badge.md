@@ -54,12 +54,12 @@ one `.chip` with tones.
 
 ## States
 
-| State                 | What the code does                                                          |
-| --------------------- | --------------------------------------------------------------------------- |
-| Hover                 | `.branch-chip`, `.checkout-chip`, `.kanban-plan-chip`: one step up          |
-| Focus                 | Measured: `.branch-chip` is a button and gets focus, with no visible change |
-| Disabled              | `.branch-chip.disabled`: dimmed, no hover                                   |
-| Empty, error, loading | Not used                                                                    |
+| State                 | What the code does                                                 |
+| --------------------- | ------------------------------------------------------------------ |
+| Hover                 | `.branch-chip`, `.checkout-chip`, `.kanban-plan-chip`: one step up |
+| Focus                 | A chip that is a button (`.branch-chip`) shows the focus ring      |
+| Disabled              | `.branch-chip.disabled`: dimmed, no hover                          |
+| Empty, error, loading | Not used                                                           |
 
 ## Files
 

@@ -1,4 +1,4 @@
 ---
-kind: internal
+kind: fix
 ---
-The workbench styles name their radii, layers, shadows and focus ring as design tokens.
+In the workbench, Tab stays inside an open dialog, every control shows keyboard focus, and Tab reaches the canvas tabs.

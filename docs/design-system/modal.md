@@ -74,14 +74,14 @@ that opened them. A danger confirm shows `bi-exclamation-triangle` in
 
 ## States
 
-| State    | What the code does                                                                                                                                                                                                                          |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Default  | Shown when the open flag named in `scrim()` is true                                                                                                                                                                                         |
-| Focus    | `scrim()` moves focus into the modal and back to the opener on close (`wb-modals-store.ts`). Measured: Tab is not kept inside. After the last control it goes on to the rail, the sidebar and the consoles behind the scrim, in every modal |
-| Disabled | Not used on the modal. Its foot buttons are disabled instead                                                                                                                                                                                |
-| Empty    | Per modal: for example `.move-empty` in `wb-move-dialog.part.html`                                                                                                                                                                          |
-| Error    | Per modal: a `.side-error` or `.move-error` line in the body                                                                                                                                                                                |
-| Loading  | Per modal: a busy flag disables the primary button                                                                                                                                                                                          |
+| State    | What the code does                                                                                                                                            |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Default  | Shown when the open flag named in `scrim()` is true                                                                                                           |
+| Focus    | `scrim()` focuses the first control on open, keeps Tab and Shift+Tab inside the top modal, and gives focus back to the opener on close (`wb-modals-store.ts`) |
+| Disabled | Not used on the modal. Its foot buttons are disabled instead                                                                                                  |
+| Empty    | Per modal: for example `.move-empty` in `wb-move-dialog.part.html`                                                                                            |
+| Error    | Per modal: a `.side-error` or `.move-error` line in the body                                                                                                  |
+| Loading  | Per modal: a busy flag disables the primary button                                                                                                            |
 
 ## Files
 

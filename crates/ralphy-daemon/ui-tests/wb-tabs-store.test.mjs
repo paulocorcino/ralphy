@@ -4,7 +4,7 @@
 // callback at once unless a test makes it a sink.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadShell } from "./harness.mjs";
+import { assembledPage, loadShell, valueIn, withoutComments } from "./harness.mjs";
 
 // The viewer pin (#406): a tab is pinned to the checkout it was opened in, the
 // pin is part of its identity, and an explicit `null` is the primary — not
@@ -404,5 +404,29 @@ test("renderMenu sets a label as text, never as markup", () => {
     for (const w of el.innerHTMLWrites) {
       assert.ok(!w.includes("<img"), `innerHTML took the label: ${w}`);
     }
+  }
+});
+
+// The canvas tab is a `div`: the page gives it the focus and the keys a tab
+// has. The expressions are read out of the page and run on a real store.
+test("a canvas tab takes the focus, and Enter or Space opens it", () => {
+  const html = withoutComments(assembledPage("index.html"));
+  const tag = html.match(/<div\s+class="tab"[^>]*>/u)?.[0] ?? "";
+  assert.match(tag, /\brole="tab"/u);
+  assert.match(tag, /\btabindex="0"/u);
+  assert.match(html, /class="tabstrip" role="tablist"/u);
+
+  const { state, window } = loadShell();
+  window.WBView = { patch() {}, read: () => null };
+  window.Alpine.nextTick = () => {};
+  state.$store.projects.setOpen("owner/repo");
+  state.$store.tabs.openTab({ project: "owner/repo", path: "a.md", title: "a.md", ftype: "markdown", content: "x" });
+  const file = state.$store.tabs.tabs.at(-1);
+  for (const key of ["enter", "space"]) {
+    state.$store.tabs.activate("consoles");
+    const expr = tag.match(new RegExp(`@keydown\\.${key}\\.self\\.prevent="([^"]+)"`, "u"))?.[1];
+    assert.ok(expr, `the tab answers ${key}`);
+    valueIn({ $store: state.$store, t: file }, expr);
+    assert.equal(state.$store.tabs.active, file.id, `${key} opens the tab`);
   }
 });
