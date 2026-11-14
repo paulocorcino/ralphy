@@ -5,6 +5,8 @@ use std::process::Command as ProcCommand;
 
 use anyhow::{Context, Result};
 
+#[cfg(target_os = "macos")]
+use super::launchd_plist;
 use super::{
     render_install, render_query, render_uninstall, AutostartSpec, Platform, PowerShellFlavor,
     LAUNCHD_LABEL, UNIT_NAME,

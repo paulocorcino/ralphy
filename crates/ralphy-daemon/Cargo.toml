@@ -166,10 +166,10 @@ tokio = { version = "1", features = ["test-util"] }
 # the source text. The parser rewrites `.ts` import paths to `.js`; the strip
 # crate already depends on it, so it adds no crate of its own.
 anyhow.workspace = true
-swc_ts_fast_strip = "59"
-swc_common = "26"
-swc_ecma_ast = "29"
-swc_ecma_parser = "46"
+swc_ts_fast_strip = "60"
+swc_common = "27"
+swc_ecma_ast = "30"
+swc_ecma_parser = "47"
 
 [lints]
 workspace = true

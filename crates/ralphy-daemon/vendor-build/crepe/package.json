@@ -8,7 +8,7 @@
     "build": "node build.mjs"
   },
   "devDependencies": {
-    "@milkdown/crepe": "7.22.3",
+    "@milkdown/crepe": "7.23.0",
     "esbuild": "0.28.2"
   },
   "overrides": {
