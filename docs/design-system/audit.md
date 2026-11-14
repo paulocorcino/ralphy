@@ -47,26 +47,26 @@ measured.
 | Error line     | Step 4 done: one rule, `.error-line`                                                                                                  | 1 class        |
 | Help line      | Step 4 done: one rule, `.help-text`                                                                                                   | 1 class        |
 | Chip and badge | 10 classes, 5 sizes, 4 grounds                                                                                                        | 1 class, tones |
-| Menu row       | `.dropdown-item` (six names) and `.ctx-item`: one shape, two sizes (0.82 and 0.8rem), two disabled opacities (0.4 and 0.45)           | 1 rule         |
-| Text field     | `.set-input` on `--log-bg` and `.host-input` on `--bg`                                                                                | 1 class        |
-| Segmented      | `.seg` and a second copy in `.files-search .seg`                                                                                      | 1 rule         |
+| Menu row       | Step 5 done: one rule, `.menu-item`                                                                                                   | 1 rule         |
+| Text field     | Step 5 done: one rule, `.text-field`, on `--log-bg`                                                                                   | 1 rule         |
+| Segmented      | Step 5 done: one rule, with a small size `.seg-sm`                                                                                    | 1 rule         |
 | Icons          | Bootstrap Icons (100 uses) and Lucide (55 uses)                                                                                       | 1 library      |
 
 ## 4. Drift: the code and ADR-0035
 
-| Finding                                                                                                                        | Where                                                                                       |
-| ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| ADR-0035 lists `--danger-border` and `--console-bg-hi`; the CSS has neither                                                    | `01-base.css`                                                                               |
-| `--live`, `--info`, `--font-ui` and the note tones are not in ADR-0035                                                         | ADR-0035 §1                                                                                 |
-| `#d29922` (3 uses) is an amber with no token: attention badge, urgent dot                                                      | `02-rail-sidebar.css:79`, `12-spend.css:916`, `:964`                                        |
-| `#3fb950` is a green beside `--live`                                                                                           | `12-spend.css:915`                                                                          |
-| `#dea584` is a color with no token                                                                                             | `02-rail-sidebar.css:653`                                                                   |
-| `var(--danger, #e5484d)`: a fallback that never applies, 8 times                                                               | `03-runs.css`, `04-canvas.css`, `10-kanban.css`                                             |
-| `var(--surface-2, …)` and `var(--mono, …)` read tokens that do not exist; the fallback always wins                             | `04-canvas.css:418`, `11-appended.css:149`, `:172`                                          |
-| 5 declarations spell the monospace stack instead of `var(--font-mono)`, one of them a shorter stack                            | `01-base.css:134`, `06-consoles.css:970`, `07-viewers.css:166`, `:795`, `08-modals.css:610` |
-| The toast is the only chrome element in `--font-ui`                                                                            | `13-notes.css:1196`                                                                         |
-| The command block sizes in `px`; the chrome sizes in `rem`                                                                     | `12-spend.css:980`                                                                          |
-| The kbd hint in a menu head has no box: the rule covers only `.kbd` inside a row. Measured: two looks for one hint in one menu | `05-workspace.css:644`                                                                      |
+| Finding                                                                                             | Where                                                                                       |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| ADR-0035 lists `--danger-border` and `--console-bg-hi`; the CSS has neither                         | `01-base.css`                                                                               |
+| `--live`, `--info`, `--font-ui` and the note tones are not in ADR-0035                              | ADR-0035 §1                                                                                 |
+| `#d29922` (3 uses) is an amber with no token: attention badge, urgent dot                           | `02-rail-sidebar.css:79`, `12-spend.css:916`, `:964`                                        |
+| `#3fb950` is a green beside `--live`                                                                | `12-spend.css:915`                                                                          |
+| `#dea584` is a color with no token                                                                  | `02-rail-sidebar.css:653`                                                                   |
+| `var(--danger, #e5484d)`: a fallback that never applies, 8 times                                    | `03-runs.css`, `04-canvas.css`, `10-kanban.css`                                             |
+| `var(--surface-2, …)` and `var(--mono, …)` read tokens that do not exist; the fallback always wins  | `04-canvas.css:418`, `11-appended.css:149`, `:172`                                          |
+| 5 declarations spell the monospace stack instead of `var(--font-mono)`, one of them a shorter stack | `01-base.css:134`, `06-consoles.css:970`, `07-viewers.css:166`, `:795`, `08-modals.css:610` |
+| The toast is the only chrome element in `--font-ui`                                                 | `13-notes.css:1196`                                                                         |
+| The command block sizes in `px`; the chrome sizes in `rem`                                          | `12-spend.css:980`                                                                          |
+| Fixed in step 5: the kbd hint in a menu head had no box; one `.kbd` rule now                        | `05-workspace.css:644`                                                                      |
 
 ## 5. Accessibility and modes, measured in a browser
 

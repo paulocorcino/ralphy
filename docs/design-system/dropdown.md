@@ -50,7 +50,8 @@ Rows are 27px high in every mode.
 The row grammar is one rule with six class names: `.dropdown-item`,
 `.window-item`, `.fence-item`, `.note-item`, `.column-item`,
 `.console-tab-item`. They share one CSS rule in `styles/05-workspace.css`.
-A new menu uses `.dropdown-item` unless an old query must stay inert.
+A new menu uses `.menu-item`. The context menu row (`.ctx-item`) is in the
+same rule.
 
 ## States
 

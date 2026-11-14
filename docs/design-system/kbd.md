@@ -34,7 +34,7 @@ From `wb-consoles-tab-menus.part.html`:
 
 ## Spacing
 
-Measured in Chromium on 2026-11-14. In a row: padding 0.32px 5.44px, 16px high, 10.56px text, radius 4px. In the menu head the hint has no box: the CSS rule does not cover `.dropdown-head .kbd`, so it shows as plain muted text at 11.52px.
+Measured in Chromium on 2026-11-14. In a row: padding 0.32px 5.44px, 16px high, 10.56px text, radius 4px. The menu head shows it with the same box.52px.
 
 ## Modes
 
@@ -47,8 +47,7 @@ Same in every mode.
 | Default | `0.66rem`, `--text-muted`, `--log-bg`, `--border`, radius `4px`, pushed right |
 | Others  | Not used: the row carries hover and disabled                                  |
 
-The style applies only inside `.dropdown-item`, `.fence-item` and
-`.console-choice .row-run`. A `.kbd` elsewhere is not styled.
+One rule for every `.kbd`, in a row or in a menu head.
 
 ## Files
 

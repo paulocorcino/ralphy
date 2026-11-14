@@ -1,7 +1,7 @@
 # Text field
 
-A one-line input or a native `<select>`. There are two classes today:
-`.set-input` and `.host-input`.
+A one-line input or a native `<select>`. Class `.text-field`; `.set-input`
+and `.host-input` are older names for the same rule.
 
 Layer: element (atom). Made of: no smaller part.
 
@@ -41,7 +41,7 @@ A form field, from `wb-hosts-dialog.part.html`:
 
 ## Spacing
 
-Measured in Chromium on 2026-11-14. `.set-input`: padding 5.6px 8px, 28px high. `.host-input`: padding 4.8px 7.2px, 27px high. Radius 4px. A settings row pads 11.2px top and bottom.
+Measured in Chromium on 2026-11-14. Padding 5.6px 8px, 28px high, for every name. Radius 4px. A settings row pads 11.2px top and bottom.
 
 ## Modes
 
@@ -49,27 +49,25 @@ Measured in Chromium on 2026-11-14. `.set-input`: padding 5.6px 8px, 28px high. 
 
 ## Variants
 
-| Class                | Ground     | Size      | Notes                      |
-| -------------------- | ---------- | --------- | -------------------------- |
-| `.set-input`         | `--log-bg` | `0.82rem` | `min-width: 220px`         |
-| `.set-input.set-num` | `--log-bg` | `0.82rem` | `100px` wide, for a number |
-| `.set-input.mono`    | `--log-bg` | `0.82rem` | Monospace, full width      |
-| `.host-input`        | `--bg`     | `0.8rem`  | Width from its grid        |
-
-The two classes have the same job and different values. This is a
-difference found in the audit, not a decision. Do not add a third class.
+| Class                | Notes                                                                |
+| -------------------- | -------------------------------------------------------------------- |
+| `.text-field`        | The shared look: `--log-bg`, `0.82rem`, padding 5.6px 8px, 28px high |
+| `.set-input`         | Also `min-width: 220px`, for a settings row                          |
+| `.set-input.set-num` | `100px` wide, for a number                                           |
+| `.set-input.mono`    | Monospace, full width                                                |
+| `.host-input`        | Width from its grid in the Hosts dialog                              |
 
 ## States
 
-| State     | What the code does                                                                     |
-| --------- | -------------------------------------------------------------------------------------- |
-| Default   | `--border` hairline, radius `--radius`                                                 |
-| Focus     | `.set-input`: outline off, border `--border-focus`. `.host-input`: the browser outline |
-| Disabled  | `.set-input`: `opacity: 0.6`, `not-allowed`. `.host-input`: `opacity: 0.6`             |
-| Read-only | `.host-input[readonly]`: text in `--text-muted`                                        |
-| Empty     | A `placeholder` attribute, for example "Current password"                              |
-| Error     | No style on the field. A `.side-error` line shows the message                          |
-| Loading   | Not used on the field                                                                  |
+| State     | What the code does                                            |
+| --------- | ------------------------------------------------------------- |
+| Default   | `--border` hairline, radius `--radius`                        |
+| Focus     | Outline off, border `--border-focus`, for every name          |
+| Disabled  | `opacity: 0.6`, cursor `not-allowed`                          |
+| Read-only | `.host-input[readonly]`: text in `--text-muted`               |
+| Empty     | A `placeholder` attribute, for example "Current password"     |
+| Error     | No style on the field. A `.side-error` line shows the message |
+| Loading   | Not used on the field                                         |
 
 ## Files
 

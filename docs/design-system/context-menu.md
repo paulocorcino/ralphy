@@ -40,20 +40,19 @@ Contrast, measured: a row passes (8.5:1). A danger row is 4.52:1 since `--danger
 
 ## States
 
-| State                 | What the code does                                                                          |
-| --------------------- | ------------------------------------------------------------------------------------------- |
-| Default               | Fixed, `z-index: 200`, `--surface`, radius `6px`, shadow. Row `0.8rem`, icon `--text-muted` |
-| Hover                 | Row ground `--surface-hi`                                                                   |
-| Danger                | `.ctx-item.danger`: text and icon `--danger`                                                |
-| Focus                 | The focus ring, drawn inside the row (offset -2px)                                          |
-| Disabled              | `opacity: 0.45`, `cursor: default`                                                          |
-| Empty, error, loading | Not used                                                                                    |
+| State                 | What the code does                                                                                                     |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Default               | Fixed, `z-index: var(--z-ctxmenu)`, `--surface`, radius 6px, shadow. Row: the menu row, `0.82rem`; icon `--text-muted` |
+| Hover                 | Row ground `--surface-hi`                                                                                              |
+| Danger                | `.ctx-item.danger`: text and icon `--danger`                                                                           |
+| Focus                 | The focus ring, drawn inside the row (offset -2px)                                                                     |
+| Disabled              | `opacity: 0.4`, cursor `not-allowed`                                                                                   |
+| Empty, error, loading | Not used                                                                                                               |
 
 A click anywhere or a scroll hides it (`hideContextMenu` in `wb-wire.ts`).
 
-The row is almost the same rule as the [Dropdown menu](./dropdown.md) row,
-with other values: `0.8rem` against `0.82rem`, `0.45` against `0.4` when
-disabled. See the [audit](./audit.md).
+The row is the same rule as the [Dropdown menu](./dropdown.md) row
+(`.menu-item`), in `styles/05-workspace.css`.
 
 ## Files
 

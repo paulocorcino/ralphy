@@ -287,7 +287,11 @@
 /* `.window-item` is the Go-to picker's row (issue #337), `.fence-item` the
    fence picker's (issue #343) and `.note-item` the note picker's (ADR-0064
    §10): the same menu grammar under DIFFERENT class names, so every existing
-   `.dropdown-item` query scoped to the New-console menu stays inert. */
+   `.dropdown-item` query scoped to the New-console menu stays inert.
+   `.menu-item` is the shared name for a new menu; `.ctx-item` is the
+   context menu's row. */
+.menu-item,
+.ctx-item,
 .dropdown-item,
 .window-item,
 .fence-item,
@@ -306,6 +310,8 @@
   font-size: 0.82rem;
   cursor: pointer;
 }
+.menu-item:not(:disabled):hover,
+.ctx-item:not(:disabled):hover,
 .dropdown-item:not(:disabled):hover,
 .window-item:hover,
 .fence-item:hover,
@@ -318,6 +324,8 @@
    inert (the plain console, which falls back to the home dir, stays enabled). */
 /* `.fence-item` joins it for the fence cap: the three share the `all: unset` base
    above, so they share how a refused row looks. */
+.menu-item:disabled,
+.ctx-item:disabled,
 .dropdown-item:disabled,
 .fence-item:disabled,
 .note-item:disabled,
@@ -641,9 +649,7 @@
 }
 /* keyboard-accelerator hint, right-aligned in the row — the same treatment in
    the New-console menu and the Fence menu, because it is the same promise */
-.dropdown-item .kbd,
-.fence-item .kbd,
-.console-choice .row-run .kbd {
+.kbd {
   margin-left: auto;
   font: inherit;
   font-size: 0.66rem;

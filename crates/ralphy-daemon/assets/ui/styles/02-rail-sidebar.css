@@ -302,31 +302,9 @@
   outline: none;
   border-color: var(--border-focus);
 }
-/* The Name | Content toggle: one segmented control, the "on" half lit. */
+/* The Name | Content toggle is the small segmented control (`.seg-sm`). */
 .files-search .seg {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
   flex: none;
-}
-.files-search .seg button {
-  all: unset;
-  cursor: pointer;
-  padding: 0.25rem 0.5rem;
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  background: var(--log-bg);
-}
-.files-search .seg button + button {
-  border-left: 1px solid var(--border);
-}
-.files-search .seg button:hover {
-  color: var(--text);
-}
-.files-search .seg button.on {
-  color: var(--text);
-  background: var(--surface-hi);
 }
 .head-act.on {
   background: var(--surface-hi);

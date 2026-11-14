@@ -157,6 +157,7 @@ input[type="checkbox"]:not(.switch input):focus-visible {
 }
 :root
   :is(
+    .menu-item,
     .dropdown-item,
     .window-item,
     .fence-item,

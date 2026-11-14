@@ -87,34 +87,9 @@
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-float);
 }
-.ctx-item {
-  all: unset;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.35rem 0.55rem;
-  border-radius: var(--radius);
-  color: var(--text);
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-.ctx-item:hover {
-  background: var(--surface-hi);
-}
 .ctx-item .bi {
   color: var(--text-muted);
   font-size: 0.9rem;
-}
-/* A greyed row keeps its place and its `title` says why (the tab menu's slot
-   items under the split's width floor). */
-.ctx-item:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.ctx-item:disabled:hover {
-  background: none;
 }
 .ctx-item.danger {
   color: var(--danger);

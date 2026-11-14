@@ -572,7 +572,11 @@
   font-size: 0.85rem;
   color: var(--text);
 }
-.set-input {
+/* The text field (docs/design-system/text-field.md). `.text-field` is the
+   shared name; `.set-input` and `.host-input` are its older names. */
+.text-field,
+.set-input,
+.host-input {
   font: inherit;
   font-size: 0.82rem;
   color: var(--text);
@@ -580,14 +584,20 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.35rem 0.5rem;
+}
+.set-input {
   min-width: 220px;
 }
+.text-field:focus,
+.host-input:focus,
 .set-input:focus {
   outline: none;
   border-color: var(--border-focus);
 }
 /* A key the daemon refuses to write is shown, not edited. Dimmed rather than
    hidden: the operator still has to be able to read what the gate is. */
+.text-field:disabled,
+.host-input:disabled,
 .set-input:disabled {
   opacity: 0.6;
   cursor: not-allowed;

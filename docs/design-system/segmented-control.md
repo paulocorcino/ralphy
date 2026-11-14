@@ -43,13 +43,10 @@ About 22px high, from the CSS. The same size on touch, on purpose (audit, D7).
 
 ## Variants
 
-| Variant | Markup                                              | Where        |
-| ------- | --------------------------------------------------- | ------------ |
-| Default | `.seg` with `.seg-btn` children                     | Hosts dialog |
-| Sidebar | `.files-search .seg` with plain `<button>` children | Files search |
-
-The sidebar variant has its own rules in `styles/02-rail-sidebar.css`. It
-is a second copy of the same control, found in the audit.
+| Variant | Markup                                                 | Where                |
+| ------- | ------------------------------------------------------ | -------------------- |
+| Default | `.seg` with `.seg-btn` children                        | Hosts dialog         |
+| Small   | `.seg.seg-sm`: padding 2.4px 8px, `--fs-xs`, 19px high | Files search toolbar |
 
 ## States
 
@@ -66,8 +63,7 @@ is a second copy of the same control, found in the audit.
 
 ## Files
 
-- `styles/03-runs.css`: `.seg`, `.seg-btn`
-- `styles/02-rail-sidebar.css`: `.files-search .seg`
+- `styles/03-runs.css`: `.seg`, `.seg-btn`, `.seg-sm`
 - `wb-hosts-dialog.part.html`, `wb-files.part.html`, `wb-runs-panel.part.html`
 
 ## Keyboard
