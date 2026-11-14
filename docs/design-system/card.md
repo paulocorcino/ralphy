@@ -4,6 +4,8 @@ A bordered box that groups one setting or one fact with its title, a
 state badge and its controls. Classes `.sec-card`, `.sec-card-head`,
 `.sec-card-title`.
 
+Layer: component (molecule). Made of: a title with an [icon](./icon.md), a [badge](./chip-badge.md), a [switch](./checkbox-switch.md), [help text](./status-text.md), [buttons](./button.md).
+
 ## When to use it
 
 - Use it inside a modal body, for one item among a few that each have a
@@ -28,6 +30,14 @@ From `wb-security-dialog.part.html`:
   <div class="sec-actions">…</div>
 </div>
 ```
+
+## Spacing
+
+Measured in Chromium on 2026-11-14. Padding 12.8px 14.4px, radius 8px. Title: 14.4px, gap 6.4px. Cards in a modal stand 12.8px apart.
+
+## Modes
+
+Wraps on a phone; nothing else changes.
 
 ## States
 

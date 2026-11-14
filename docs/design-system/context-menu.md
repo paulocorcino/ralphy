@@ -3,6 +3,8 @@
 The menu that opens at the pointer on a right click. One element for the
 whole page, `#ctxmenu.ctxmenu`; code writes its rows (`.ctx-item`).
 
+Layer: component (molecule). Made of: rows with an [icon](./icon.md), separators.
+
 ## When to use it
 
 - Use it for the acts on one thing under the pointer: a tab, a file.
@@ -25,6 +27,16 @@ b.className = "ctx-item" + (it.danger === true ? " danger" : "");
 ```
 
 A separator is `<div class="ctx-sep">`.
+
+## Spacing
+
+Measured in Chromium on 2026-11-14. Menu: padding 4px, radius 6px. Row: padding 5.6px 8.8px, gap 8px, 28px high.
+
+## Modes
+
+Rows are 28px high in every mode.
+
+Contrast, measured: a row passes (8.5:1). A danger row is 3.63:1, under 4.5:1; see the audit, D6.
 
 ## States
 

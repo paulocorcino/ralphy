@@ -3,6 +3,8 @@
 A row of two to four pill buttons. One of them is on. Classes `.seg` and
 `.seg-btn`.
 
+Layer: component (molecule). Made of: buttons (`.seg-btn`).
+
 ## When to use it
 
 - Use it to choose one value of a small set, when every value fits on
@@ -31,6 +33,14 @@ The on segment carries the class `on`. When the control switches tabs, it
 has `role="tablist"` and each segment `role="tab"` with `aria-selected`.
 When it chooses a value, it has `role="group"` and an `aria-label`.
 
+## Spacing
+
+Measured in Chromium on 2026-11-14. Track: padding 2px, radius 999px. Segment: padding 3.52px 12px, from the CSS (`0.22rem 0.75rem`). Not measured in the browser: no segmented control was on screen in the measured views.
+
+## Modes
+
+About 22px high, from the CSS: under the 44px touch size.
+
 ## Variants
 
 | Variant | Markup                                              | Where        |
@@ -48,7 +58,7 @@ is a second copy of the same control, found in the audit.
 | Default  | Track: `--log-bg`, `--border`, radius `999px`. Segment: `0.78rem`, `--text-muted` |
 | Hover    | Segment text `--text`                                                             |
 | On       | Gold: `--console-text` on `--console-bg`, inset `--console-border` ring           |
-| Focus    | No style. `all: unset` removes the browser outline                                |
+| Focus    | No style. `all: unset` removes the browser outline. Not measured in the browser   |
 | Disabled | `.seg-btn.unavailable`: `opacity: 0.45` and a line through the text               |
 | Empty    | Hidden: the Hosts tabs show only when there is a host                             |
 | Error    | Not used                                                                          |

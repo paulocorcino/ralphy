@@ -3,6 +3,8 @@
 A small glyph before a label. Two icon libraries are in use today:
 Bootstrap Icons (a font) and Lucide (inline SVG).
 
+Layer: element (atom). Made of: no smaller part.
+
 ## When to use it
 
 - Put an icon before the text of a [Button](./button.md), a menu row or a
@@ -24,6 +26,14 @@ directive:
 ```html
 <svg x-icon="'chevron-down'"></svg>
 ```
+
+## Spacing
+
+Measured in Chromium on 2026-11-14. No spacing of its own. The gap comes from the element around it.
+
+## Modes
+
+Measured sizes: 11.5 to 14.4px.
 
 ## The two libraries
 

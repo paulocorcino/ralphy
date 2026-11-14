@@ -55,15 +55,77 @@ Six tones for note cards, and two inks for a solid card: `--note-ochre`,
 
 | Token               | Value                             | Use                 |
 | ------------------- | --------------------------------- | ------------------- |
-| `--font-mono`       | `ui-monospace, SFMono-Regular, …` | All chrome (13px)   |
+| `--font-mono`       | `ui-monospace, SFMono-Regular, …` | All chrome          |
 | `--font-ui`         | `ui-sans-serif, system-ui, …`     | Rendered prose only |
 | `--reading-size`    | `14px`                            | Prose body size     |
 | `--reading-measure` | `100ch`                           | Prose line length   |
 | `--reading-leading` | `1.7`                             | Prose line height   |
 
-The chrome sizes are `rem` values on a 13px body, not tokens. Common sizes:
-`0.72rem` (menu heads, foot notes), `0.78rem` (segments, small text),
-`0.8rem` (buttons), `0.82rem` (fields, menu rows), `0.85rem` (labels).
+The body is 13px, but `rem` is relative to the root, which is 16px. So
+`0.8rem` is 12.8px, a little smaller than the body. The chrome sizes are
+`rem` values, not tokens. Common sizes, measured in Chromium:
+
+| Value     | Pixels  | Used for                                  |
+| --------- | ------- | ----------------------------------------- |
+| `0.66rem` | 10.56px | Kbd hint, scope chip                      |
+| `0.68rem` | 10.88px | State badge, change count                 |
+| `0.72rem` | 11.52px | Menu head, branch chip, foot note         |
+| `0.76rem` | 12.16px | Help line under a setting                 |
+| `0.78rem` | 12.48px | Segments, empty state, error line         |
+| `0.8rem`  | 12.8px  | Button, tab, context menu row, host field |
+| `0.82rem` | 13.12px | Menu row, settings field                  |
+| `13px`    | 13px    | Body, modal title                         |
+| `0.85rem` | 13.6px  | Settings label, toast                     |
+| `0.9rem`  | 14.4px  | Card title                                |
+
+## Spacing
+
+Spacing values are `rem` literals, not tokens. Measured in Chromium:
+
+| Place                 | Padding (top, sides)      | Gap    | Height |
+| --------------------- | ------------------------- | ------ | ------ |
+| Button in a modal     | 4.8px, 11.2px             | 5.6px  | 27px   |
+| Button in a toolbar   | 0, 8.8px                  | 5.6px  | 24px   |
+| Text field (settings) | 5.6px, 8px                | -      | 28px   |
+| Text field (host)     | 4.8px, 7.2px              | -      | 27px   |
+| Menu row              | 5.6px, 8.8px              | 8px    | 27px   |
+| Context menu row      | 5.6px, 8.8px              | 8px    | 28px   |
+| Menu, context menu    | 4px                       | -      | -      |
+| Modal head            | 11.2px, 14.4px            | 8px    | 47px   |
+| Modal foot            | 9.6px, 14.4px             | 12.8px | 47px   |
+| Settings row          | 11.2px, 0                 | -      | -      |
+| Card                  | 12.8px, 14.4px            | -      | -      |
+| State badge           | 0.8px, 8px                | -      | 17px   |
+| Toast                 | 7.2px, 9.6px              | 9.6px  | 40px   |
+| Tab                   | 0, 8px right, 11.2px left | 6.4px  | 39px   |
+
+The rhythm: a control is 24 to 28px high. Inside a row, the gap between an
+icon and its text is 5.6 to 8px. A container (menu, modal part, card) pads
+4px, about 10px or about 14px. The [audit](./design-system/audit.md)
+proposes one scale for these values.
+
+## Layers
+
+The components are sorted by layer, as in atomic design. The layer says
+what a component may be made of: a component uses only the layers below it.
+
+| Layer                  | Members                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------ |
+| Tokens                 | The custom properties above                                                                      |
+| Elements (atoms)       | Button, text field, checkbox and switch, icon, kbd hint, chip and badge, status text             |
+| Components (molecules) | Segmented control, tab, card, toast, command block, touch key strip, dropdown menu, context menu |
+| Components (organisms) | Modal                                                                                            |
+| Patterns               | Settings row, modal form, session window, the Runs, Spend and Board panels, note card            |
+
+## Modes
+
+Each component was measured in Chromium in four modes on 2026-11-14:
+desktop (1440 × 900), 150% zoom (960 × 600), tablet with touch
+(1024 × 768) and phone (390 × 844, touch). Sizes and spacing are the same
+in every mode; only text wrapping changes. The phone moves the sidebar over
+the canvas (`max-width: 560px`) and shows the [touch key
+strip](./design-system/touch-keys.md) on a console. The detached console
+and fence pages were not measured.
 
 ### Shape and layout
 
@@ -85,23 +147,24 @@ Shadows: `0 10px 30px rgba(0,0,0,0.55)` on menus and floating windows,
 
 ## Components
 
-| Component                                                 | Class                          | Used in  |
-| --------------------------------------------------------- | ------------------------------ | -------- |
-| [Button](./design-system/button.md)                       | `.btn`                         | 21 parts |
-| [Modal](./design-system/modal.md)                         | `.modal`                       | 13 parts |
-| [Dropdown menu](./design-system/dropdown.md)              | `.dropdown`                    | 7 parts  |
-| [Text field](./design-system/text-field.md)               | `.set-input`, `.host-input`    | 6 parts  |
-| [Segmented control](./design-system/segmented-control.md) | `.seg`                         | 3 parts  |
-| [Icon](./design-system/icon.md)                           | `.bi`, `x-icon`                | 23 parts |
-| [Status text](./design-system/status-text.md)             | `*-empty`, `*-error`, `*-help` | 18 parts |
-| [Chip and badge](./design-system/chip-badge.md)           | 10 classes                     | 10 parts |
-| [Tab](./design-system/tab.md)                             | `.tab`                         | 1 page   |
-| [Context menu](./design-system/context-menu.md)           | `.ctxmenu`, `.ctx-item`        | 1 page   |
-| [Checkbox and switch](./design-system/checkbox-switch.md) | `input`, `.switch`             | 1 part   |
-| [Card](./design-system/card.md)                           | `.sec-card`                    | 1 part   |
-| [Kbd hint](./design-system/kbd.md)                        | `.kbd`                         | 1 part   |
-| [Toast and flash line](./design-system/toast.md)          | `.wb-toast`                    | Code     |
-| [Command block](./design-system/command-block.md)         | `.rel-cmd`                     | 2 parts  |
+| Component                                                 | Class                           | Used in  |
+| --------------------------------------------------------- | ------------------------------- | -------- |
+| [Button](./design-system/button.md)                       | `.btn`                          | 21 parts |
+| [Modal](./design-system/modal.md)                         | `.modal`                        | 13 parts |
+| [Dropdown menu](./design-system/dropdown.md)              | `.dropdown`                     | 7 parts  |
+| [Text field](./design-system/text-field.md)               | `.set-input`, `.host-input`     | 6 parts  |
+| [Segmented control](./design-system/segmented-control.md) | `.seg`                          | 3 parts  |
+| [Icon](./design-system/icon.md)                           | `.bi`, `x-icon`                 | 23 parts |
+| [Status text](./design-system/status-text.md)             | `*-empty`, `*-error`, `*-help`  | 18 parts |
+| [Chip and badge](./design-system/chip-badge.md)           | 10 classes                      | 10 parts |
+| [Tab](./design-system/tab.md)                             | `.tab`                          | 1 page   |
+| [Context menu](./design-system/context-menu.md)           | `.ctxmenu`, `.ctx-item`         | 1 page   |
+| [Checkbox and switch](./design-system/checkbox-switch.md) | `input`, `.switch`              | 1 part   |
+| [Card](./design-system/card.md)                           | `.sec-card`                     | 1 part   |
+| [Kbd hint](./design-system/kbd.md)                        | `.kbd`                          | 1 part   |
+| [Toast and flash line](./design-system/toast.md)          | `.wb-toast`                     | Code     |
+| [Command block](./design-system/command-block.md)         | `.rel-cmd`                      | 2 parts  |
+| [Touch key strip](./design-system/touch-keys.md)          | `.session-keys`, `.session-key` | Code     |
 
 The count is the number of `*.part.html` files and pages that use the
 class, measured on 2026-11-14 with `grep -l`. "Code" means the element is

@@ -3,6 +3,8 @@
 One entry of the tab bar above the canvas. Classes `.tabbar`, `.tabstrip`,
 `.tab`. Index 0 is the fixed Consoles tab; the others are open files.
 
+Layer: component (molecule). Made of: an [icon](./icon.md), a title, a close button.
+
 ## When to use it
 
 - Use it only in the canvas tab bar, for a file or a console opened in its
@@ -31,17 +33,25 @@ From `index.html`:
 </div>
 ```
 
+## Spacing
+
+Measured in Chromium on 2026-11-14. Padding 0 8px 0 11.2px, gap 6.4px, 39px high. The close button is 16 × 16px.
+
+## Modes
+
+The close button is 16 × 16px in every mode: under the 24px minimum of WCAG 2.2 and the 44px touch size.
+
 ## Variants and states
 
-| State                           | What the code does                                                              |
-| ------------------------------- | ------------------------------------------------------------------------------- |
-| Default                         | `--chrome`, `--text-muted`, `0.8rem`, at most 220px, title cut with an ellipsis |
-| Hover                           | `--surface`                                                                     |
-| Active                          | `--bg` ground, `--text`, a 2px gold line at the top                             |
-| Pinned                          | A gold pin icon and a 2px gold line at the bottom                               |
-| Fixed                           | No close button                                                                 |
-| Focus                           | None: the tab is a `div` with no `tabindex`                                     |
-| Disabled, empty, error, loading | Not used                                                                        |
+| State                           | What the code does                                                                                                                         |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Default                         | `--chrome`, `--text-muted`, `0.8rem`, at most 220px, title cut with an ellipsis                                                            |
+| Hover                           | `--surface`                                                                                                                                |
+| Active                          | `--bg` ground, `--text`, a 2px gold line at the top                                                                                        |
+| Pinned                          | A gold pin icon and a 2px gold line at the bottom                                                                                          |
+| Fixed                           | No close button                                                                                                                            |
+| Focus                           | None: the tab is a `div` with no `tabindex`. Measured: Tab skips the tab; its close button and the `+` button get focus but show no change |
+| Disabled, empty, error, loading | Not used                                                                                                                                   |
 
 A middle click closes a closable tab. A right click opens the
 [Context menu](./context-menu.md).

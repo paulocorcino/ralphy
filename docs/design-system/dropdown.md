@@ -3,6 +3,8 @@
 A list of actions that opens under a button. Classes `.menu-wrap`,
 `.dropdown`, `.dropdown-head`, `.dropdown-item`.
 
+Layer: component (molecule). Made of: menu rows, [icons](./icon.md), [kbd hints](./kbd.md), [status text](./status-text.md).
+
 ## When to use it
 
 - Use it for a list of actions or targets behind one toolbar button: the
@@ -35,6 +37,14 @@ From `wb-consoles-tab-menus.part.html`:
 
 A row with a shortcut puts it last, in `<kbd class="kbd">`.
 
+## Spacing
+
+Measured in Chromium on 2026-11-14. Menu: padding 4px, radius 6px. Head: padding 4.8px 8px, 25px high. Row: padding 5.6px 8.8px, gap 8px, 27px high.
+
+## Modes
+
+Rows are 27px high in every mode.
+
 ## Variants
 
 The row grammar is one rule with six class names: `.dropdown-item`,
@@ -44,15 +54,15 @@ A new menu uses `.dropdown-item` unless an old query must stay inert.
 
 ## States
 
-| State    | What the code does                                                                                    |
-| -------- | ----------------------------------------------------------------------------------------------------- |
-| Default  | `.dropdown`: `--surface`, `--border`, radius `6px`, shadow, `z-index: 1000`. Row: `0.82rem`, `--text` |
-| Hover    | Row ground `--surface-hi`                                                                             |
-| Focus    | No style. `all: unset` removes the browser outline                                                    |
-| Disabled | `opacity: 0.4`, `cursor: not-allowed`, no hover ground                                                |
-| Empty    | The `.dropdown-head` says so: "No consoles yet"                                                       |
-| Error    | A `.side-error` line under the head (`--danger`, `0.78rem`)                                           |
-| Loading  | Not used: the menu reads data the page already has                                                    |
+| State    | What the code does                                                                                           |
+| -------- | ------------------------------------------------------------------------------------------------------------ |
+| Default  | `.dropdown`: `--surface`, `--border`, radius `6px`, shadow, `z-index: 1000`. Row: `0.82rem`, `--text`        |
+| Hover    | Row ground `--surface-hi`                                                                                    |
+| Focus    | No style. `all: unset` removes the browser outline. Measured: 7 of 7 rows show no change when they get focus |
+| Disabled | `opacity: 0.4`, `cursor: not-allowed`, no hover ground                                                       |
+| Empty    | The `.dropdown-head` says so: "No consoles yet"                                                              |
+| Error    | A `.side-error` line under the head (`--danger`, `0.78rem`)                                                  |
+| Loading  | Not used: the menu reads data the page already has                                                           |
 
 ## Files
 

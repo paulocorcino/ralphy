@@ -34,18 +34,18 @@ tools, and a page cannot take it. Ctrl+C belongs to the child program.
 
 ## Keys inside components
 
-| Component                                   | Keys                                                                                                                                      |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| [Modal](./modal.md)                         | Escape closes the top modal. Enter confirms a confirm dialog when no button has focus. Tab moves inside the zoom overlay only (`trapTab`) |
-| [Dropdown menu](./dropdown.md)              | Tab moves between rows. Escape closes the checkout menu. No arrow keys                                                                    |
-| [Text field](./text-field.md)               | Enter saves and Escape cancels in the title, fence name and note rename fields                                                            |
-| [Segmented control](./segmented-control.md) | Tab moves between segments. No arrow keys                                                                                                 |
-| [Button](./button.md)                       | Enter and Space, from the browser                                                                                                         |
-| [Tab](./tab.md)                             | None: a tab is a `div` and does not take focus                                                                                            |
-| Files tree                                  | F2 renames. Alt+Enter shows the properties                                                                                                |
-| Note editor                                 | Ctrl+S (Cmd+S) saves. Escape leaves the editor                                                                                            |
-| Markdown search                             | Enter: next match. Shift+Enter: the one before. Escape closes                                                                             |
-| Add a project dialog                        | Up and Down move in the list. Enter or Tab picks                                                                                          |
+| Component                                   | Keys                                                                                                                                                                                                       |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Modal](./modal.md)                         | Escape closes the top modal. Enter confirms a confirm dialog when no button has focus. Tab is not kept inside a modal: measured, it goes on to the page behind. Only the zoom overlay keeps it (`trapTab`) |
+| [Dropdown menu](./dropdown.md)              | Tab moves between rows. Escape closes the checkout menu. No arrow keys                                                                                                                                     |
+| [Text field](./text-field.md)               | Enter saves and Escape cancels in the title, fence name and note rename fields                                                                                                                             |
+| [Segmented control](./segmented-control.md) | Tab moves between segments. No arrow keys                                                                                                                                                                  |
+| [Button](./button.md)                       | Enter and Space, from the browser                                                                                                                                                                          |
+| [Tab](./tab.md)                             | None: a tab is a `div` and does not take focus                                                                                                                                                             |
+| Files tree                                  | F2 renames. Alt+Enter shows the properties                                                                                                                                                                 |
+| Note editor                                 | Ctrl+S (Cmd+S) saves. Escape leaves the editor                                                                                                                                                             |
+| Markdown search                             | Enter: next match. Shift+Enter: the one before. Escape closes                                                                                                                                              |
+| Add a project dialog                        | Up and Down move in the list. Enter or Tab picks                                                                                                                                                           |
 
 ## Where the keys are shown
 

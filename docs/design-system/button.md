@@ -2,6 +2,8 @@
 
 A text button, with an optional icon before the text. Class `.btn`.
 
+Layer: element (atom). Made of: an optional [icon](./icon.md) and a text.
+
 ## When to use it
 
 - Use it for an action in a modal foot, a toolbar or a row: Cancel, Save,
@@ -24,6 +26,16 @@ From `wb-confirm-dialog.part.html` and `wb-settings-dialog.part.html`:
 </button>
 ```
 
+## Spacing
+
+Measured in Chromium on 2026-11-14. In a modal: padding 4.8px 11.2px, gap 5.6px, 27px high. In a toolbar (`.canvas-tools .btn`): padding 0 8.8px, 24px high. Radius 4px. On a phone the toolbar gap is 3.2px.
+
+## Modes
+
+24 to 27px high in every mode, also on a phone: under the 44px touch size.
+
+Contrast, measured: the default and gold buttons pass 4.5:1 (8.5 and 10.9). The danger button's text is 3.63:1, under 4.5:1; see the audit, D6.
+
 ## Variants
 
 | Variant | Markup               | Look                              | Use                                |
@@ -42,7 +54,7 @@ dialog picks one of the two with
 | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | Default  | `--surface` ground, `0.8rem` text, `0.3rem 0.7rem` padding                                                                        |
 | Hover    | `--surface-hi` ground. `danger`: 14% `--danger` mix                                                                               |
-| Focus    | No style of its own. The browser outline shows focus                                                                              |
+| Focus    | No style of its own. The browser outline shows focus: measured, it is visible (Chromium draws two rings)                          |
 | Disabled | `opacity: 0.5`, `cursor: default`. Bound with `:disabled="…"`                                                                     |
 | Empty    | Not used: a button always has a label                                                                                             |
 | Error    | Not used: the error shows in the form, not on the button                                                                          |

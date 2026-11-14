@@ -5,16 +5,22 @@ An audit of the workbench styles (`crates/ralphy-daemon/assets/ui/styles/`,
 rule, and it proposes a plan. Nothing here is applied yet. Each step of the
 plan is its own change, with a browser check before and after.
 
-The numbers come from a script that reads every declaration outside
-comments. They count declarations, not elements on screen.
+Two kinds of numbers are used. Sections 2 to 4 come from a script that
+reads every CSS declaration outside comments; they count declarations, not
+elements on screen. Section 5 comes from Chromium (Playwright) against a
+daemon with a scratch store, in four modes: desktop 1440 × 900, 150% zoom
+(960 × 600), tablet with touch (1024 × 768) and phone (390 × 844, touch).
+It reads computed styles, walks the page with Tab, and computes contrast
+from the colors on screen. The detached console and fence pages were not
+measured.
 
 ## 1. Inventory
 
 | Layer      | What exists                                                                                                              |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------ |
 | Tokens     | 36 custom properties in `01-base.css`: 10 neutrals, 6 accents, 8 note tones, 5 type, 7 layout. All 36 are used           |
-| Elements   | Button, text field, checkbox, switch, icon, kbd, chip and badge                                                          |
-| Components | Modal, dropdown menu, context menu, segmented control, tab, card, toast, command block, status text                      |
+| Elements   | Button, text field, checkbox, switch, icon, kbd, chip and badge, status text                                             |
+| Components | Modal, dropdown menu, context menu, segmented control, tab, card, toast, command block, touch key strip                  |
 | Patterns   | Settings row, modal form, panel (Runs, Spend, Board), session window, note card. Each has its own ADR or CSS file        |
 | Governance | ADR-0035 for the palette, ADR-0065 for the words. No rule for sizes, spacing, z-index or new components before this file |
 
@@ -48,49 +54,83 @@ comments. They count declarations, not elements on screen.
 
 ## 4. Drift: the code and ADR-0035
 
-| Finding                                                                                             | Where                                                                                       |
-| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| ADR-0035 lists `--danger-border` and `--console-bg-hi`; the CSS has neither                         | `01-base.css`                                                                               |
-| `--live`, `--info`, `--font-ui` and the note tones are not in ADR-0035                              | ADR-0035 §1                                                                                 |
-| `#d29922` (3 uses) is an amber with no token: attention badge, urgent dot                           | `02-rail-sidebar.css:79`, `12-spend.css:916`, `:964`                                        |
-| `#3fb950` is a green beside `--live`                                                                | `12-spend.css:915`                                                                          |
-| `#dea584` is a color with no token                                                                  | `02-rail-sidebar.css:653`                                                                   |
-| `var(--danger, #e5484d)`: a fallback that never applies, 8 times                                    | `03-runs.css`, `04-canvas.css`, `10-kanban.css`                                             |
-| `var(--surface-2, …)` and `var(--mono, …)` read tokens that do not exist; the fallback always wins  | `04-canvas.css:418`, `11-appended.css:149`, `:172`                                          |
-| 5 declarations spell the monospace stack instead of `var(--font-mono)`, one of them a shorter stack | `01-base.css:134`, `06-consoles.css:970`, `07-viewers.css:166`, `:795`, `08-modals.css:610` |
-| The toast is the only chrome element in `--font-ui`                                                 | `13-notes.css:1196`                                                                         |
-| The command block sizes in `px`; the chrome sizes in `rem`                                          | `12-spend.css:980`                                                                          |
+| Finding                                                                                                                        | Where                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| ADR-0035 lists `--danger-border` and `--console-bg-hi`; the CSS has neither                                                    | `01-base.css`                                                                               |
+| `--live`, `--info`, `--font-ui` and the note tones are not in ADR-0035                                                         | ADR-0035 §1                                                                                 |
+| `#d29922` (3 uses) is an amber with no token: attention badge, urgent dot                                                      | `02-rail-sidebar.css:79`, `12-spend.css:916`, `:964`                                        |
+| `#3fb950` is a green beside `--live`                                                                                           | `12-spend.css:915`                                                                          |
+| `#dea584` is a color with no token                                                                                             | `02-rail-sidebar.css:653`                                                                   |
+| `var(--danger, #e5484d)`: a fallback that never applies, 8 times                                                               | `03-runs.css`, `04-canvas.css`, `10-kanban.css`                                             |
+| `var(--surface-2, …)` and `var(--mono, …)` read tokens that do not exist; the fallback always wins                             | `04-canvas.css:418`, `11-appended.css:149`, `:172`                                          |
+| 5 declarations spell the monospace stack instead of `var(--font-mono)`, one of them a shorter stack                            | `01-base.css:134`, `06-consoles.css:970`, `07-viewers.css:166`, `:795`, `08-modals.css:610` |
+| The toast is the only chrome element in `--font-ui`                                                                            | `13-notes.css:1196`                                                                         |
+| The command block sizes in `px`; the chrome sizes in `rem`                                                                     | `12-spend.css:980`                                                                          |
+| The kbd hint in a menu head has no box: the rule covers only `.kbd` inside a row. Measured: two looks for one hint in one menu | `05-workspace.css:644`                                                                      |
 
-## 5. Accessibility gaps
+## 5. Accessibility and modes, measured in a browser
 
-Read from the CSS and the markup; not yet checked in a browser.
+No page error in any mode. No horizontal scroll in any mode.
 
-1. **Focus is not visible on many controls.** 28 rules start with
-   `all: unset`, which also removes the browser outline, and 20 set
-   `outline: none`. There are only 15 `:focus-visible` rules. `.seg-btn`,
-   `.dropdown-item`, `.ctx-item`, `.modal-x` and `.tab-close` have none.
-2. **A tab cannot be reached with the keyboard.** `.tab` is a `div` with a
-   click handler and no `tabindex` (`index.html`).
-3. **A disabled switch looks enabled.** No `.switch input:disabled` rule.
+1. **Focus leaves a modal.** In Settings, Security, Hosts, Add a project
+   and the confirm dialog, Tab goes on after the last control to the rail,
+   the sidebar and the consoles behind the scrim. The modal has
+   `aria-modal="true"` but does not keep focus. Only the zoom overlay does
+   (`trapTab` in `wb-zoom-overlay.ts`). The first focus is right: `scrim()`
+   focuses the first control (Cancel in a confirm).
+2. **Focus is not visible on many controls.** Measured, these get focus
+   and show no change: every rail button, the sidebar header buttons
+   (refresh, add a project, add a host), `.head-act`, `.tab-close`,
+   `.tab-add`, `.branch-chip`, `.dropdown-item` (7 of 7), `.settings-navitem`
+   (13 of 13) and the avatar button. In the CSS, 28 rules start with
+   `all: unset` and 20 set `outline: none`; there are 15 `:focus-visible`
+   rules. Where the browser outline is left, it is visible: Chromium draws
+   two rings. `.set-input` shows focus with its border.
+3. **A tab cannot be reached with the keyboard.** Measured: Tab skips
+   `.tab`, a `div` with a click handler and no `tabindex`.
+4. **A disabled switch looks enabled.** No `.switch input:disabled` rule.
    "Require login" is disabled until TOTP is set up.
-4. **No arrow keys** in menus or in segmented tablists. Only Tab moves.
+5. **Danger text is under 4.5:1.** WCAG AA asks 4.5:1 for text this size.
+   `--danger` gives 3.63 on `--surface` (danger button, danger menu row),
+   4.02 on `--chrome` (error lines in the sidebar and modals), 4.07 on
+   `--log-bg`. `--text-muted` gives 4.12 on `--surface-hi` (a muted label on
+   a hovered row). Every other token pair passes: `--text` 7.0 to 10.2,
+   `--text-muted` 5.0 to 6.0 on the other grounds. Disabled text is dimmed
+   on purpose and WCAG does not count it.
+6. **Field edges are faint.** `--border` against the ground around it is
+   1.38:1 on `--surface` and 1.65:1 on `--bg`. WCAG 1.4.11 asks 3:1 for the
+   edge of a control. The field ground differs from the modal ground too,
+   which helps, but only a little.
+7. **Touch targets are small in every mode.** No control except the touch
+   key strip reaches 44px, on the phone too. Under the 24px minimum of WCAG
+   2.2: `.tab-close` 16 × 16, `.project-remove` 18 × 18, the checkbox
+   16 × 16, `.branch-chip` 19px high, and the console title bar buttons
+   (full screen, maximize, restart, lock, close) 22 × 22. Sizes and spacing
+   do not change between desktop, tablet and phone.
+8. **The Settings modal does not fit a phone.** At 390px it keeps two
+   columns: the Bind address field is cut at the right edge, and the scope
+   chip wraps onto three lines.
+9. **No arrow keys** in menus or in segmented tablists. Only Tab moves.
 
 ## 6. Decisions only a person can make
 
-| #   | Question                                       | Recommendation                                                                                                                                                   |
-| --- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | Which icon library do new icons use?           | Lucide. It is the newer path (`x-icon`, 2026-09-27), it draws SVG that takes the text color and stroke. Move the 100 Bootstrap uses over time, not in one change |
-| D2  | Is amber a third accent, `--warn`?             | Yes. It already does a job, "needs attention", that neither gold nor terracotta does. It needs an ADR-0035 amendment                                             |
-| D3  | One text field ground: `--log-bg` or `--bg`?   | `--log-bg`. It is the ground of `.set-input`, the checkbox, the switch track and the segmented track                                                             |
-| D4  | One focus ring for all controls?               | Yes: `1px solid var(--console-text)`, offset 2px. The checkbox already uses it                                                                                   |
-| D5  | Merge font sizes that differ by less than 1px? | Yes, with a screenshot of each panel before and after                                                                                                            |
+| #   | Question                                       | Recommendation                                                                                                                                                     |
+| --- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| D1  | Which icon library do new icons use?           | Lucide. It is the newer path (`x-icon`, 2026-09-27), it draws SVG that takes the text color and stroke. Move the 100 Bootstrap uses over time, not in one change   |
+| D2  | Is amber a third accent, `--warn`?             | Yes. It already does a job, "needs attention", that neither gold nor terracotta does. It needs an ADR-0035 amendment                                               |
+| D3  | One text field ground: `--log-bg` or `--bg`?   | `--log-bg`. It is the ground of `.set-input`, the checkbox, the switch track and the segmented track                                                               |
+| D4  | One focus ring for all controls?               | Yes: `1px solid var(--console-text)`, offset 2px. The checkbox already uses it                                                                                     |
+| D5  | Merge font sizes that differ by less than 1px? | Yes, with a screenshot of each panel before and after                                                                                                              |
+| D6  | How does danger text reach 4.5:1?              | Lighten `--danger` to `#ce8174`: same hue, 4.52 on `--surface`, 5.01 on `--chrome`. One token, every danger text follows. It needs an ADR-0035 amendment           |
+| D7  | Do controls grow on a touch screen?            | Yes, under `(pointer: coarse)` only: a 44px hit area, from padding or a larger invisible box. The desktop look does not change. Start with the controls under 24px |
+| D8  | Settings on a phone: one column?               | Yes: below 560px, the section list above the section, as the sidebar does                                                                                          |
 
 ## 7. Proposed tokens
 
 Not in `01-base.css` yet. The values are the most used ones today, so most
 declarations keep their value.
 
-**Type** (on the 13px body):
+**Type** (`rem` is 16px, so `0.8rem` is 12.8px):
 
 | Token      | Value     | Takes today's          |
 | ---------- | --------- | ---------------------- |
@@ -101,8 +141,9 @@ declarations keep their value.
 | `--fs-lg`  | `0.9rem`  | 0.85, 0.9              |
 | `--fs-xl`  | `1.15rem` | 1.05, 1.15             |
 
-The largest move is 0.85 → 0.9rem, 0.65px. Sizes in `em` inside rendered
-prose follow the reading tokens and do not change.
+The largest moves are 1.05 → 1.15rem (1.6px, 2 places) and 0.85 → 0.9rem
+(0.8px, 11 places). Every other move is 0.48px or less. Sizes in `em`
+inside rendered prose follow the reading tokens and do not change.
 
 **Spacing:** `--sp-1` 0.15rem, `--sp-2` 0.25rem, `--sp-3` 0.35rem, `--sp-4`
 0.5rem, `--sp-5` 0.6rem, `--sp-6` 0.8rem, `--sp-7` 1rem, `--sp-8` 1.5rem.
@@ -146,15 +187,20 @@ Each step is one change, with a browser check of the panels it touches.
    fallbacks (`#e5484d`), replace `--surface-2` and `--mono` with real
    tokens, and use `var(--font-mono)` in the 5 places. Nothing moves on
    screen.
-2. **Accessibility.** One focus ring for every `all: unset` control (D4).
-   A disabled style for the switch. Make `.tab` reachable with the
-   keyboard. These change what a keyboard user sees, so they come early.
-3. **Status text.** `.empty-note`, `.error-line`, `.help-text`. Small and
+2. **Accessibility.** Keep Tab inside an open modal, in `scrim()`, so
+   every modal gets it at once. One focus ring for every control that
+   removes the outline (D4). A disabled style for the switch. Make `.tab`
+   reachable with the keyboard. Danger text at 4.5:1 (D6). These change
+   what a keyboard user sees, so they come early.
+3. **Touch and phone.** A 44px hit area under `(pointer: coarse)` (D7),
+   and Settings in one column on a phone (D8).
+4. **Status text.** `.empty-note`, `.error-line`, `.help-text`. Small and
    low risk; many places.
-4. **Controls.** `.menu-item`, `.text-field` (D3), one segmented rule.
-5. **Chip and badge** with tones, and `--warn` (D2, ADR-0035 amendment).
-6. **Type and spacing scales** (D5), one CSS file per change.
-7. **Icons** (D1), as panels are touched for other work.
+5. **Controls.** `.menu-item`, `.text-field` (D3), one segmented rule, one
+   kbd hint rule.
+6. **Chip and badge** with tones, and `--warn` (D2, ADR-0035 amendment).
+7. **Type and spacing scales** (D5), one CSS file per change.
+8. **Icons** (D1), as panels are touched for other work.
 
 ## 10. Keeping it
 
@@ -162,7 +208,7 @@ Each step is one change, with a browser check of the panels it touches.
   component, color, spacing value or shortcut without an entry.
 - After step 1, stylelint (already in the gate) can refuse a hex color
   outside `01-base.css` (`color-no-hex` with an override for that file).
-  After steps 3 and 6, it can refuse a font size or spacing that is not a
+  After steps 4 and 7, it can refuse a font size or spacing that is not a
   token (`declaration-strict-value`, a plugin to add). A count that may
   only go down, like the other ratchets, lets the old sites stay until
   their step.

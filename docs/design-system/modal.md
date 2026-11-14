@@ -3,6 +3,8 @@
 A dialog over a dimmed page. It has a head, a body and a foot. Classes
 `.modal-scrim`, `.modal`, `.modal-head`, `.modal-foot`.
 
+Layer: component (organism). Made of: [buttons](./button.md), [icons](./icon.md), `.modal-x`, [text fields](./text-field.md), [cards](./card.md), [status text](./status-text.md).
+
 ## When to use it
 
 - Use it for a task that needs the whole attention of the operator:
@@ -44,6 +46,14 @@ in `wb-modals-store.ts`. A click on the scrim closes nothing, so a stray
 click does not lose what the modal holds. Only its own buttons and Escape
 close it.
 
+## Spacing
+
+Measured in Chromium on 2026-11-14. Head: padding 11.2px 14.4px, gap 8px, 47px high. Foot: padding 9.6px 14.4px, gap 12.8px, 47px high. Body: set by each modal. Radius 10px.
+
+## Modes
+
+On a phone (390px) the Settings modal keeps its two columns: the Bind address field is cut at the right edge, and the scope chip wraps onto three lines.
+
 ## Parts
 
 | Part           | Look                                                                                                      |
@@ -64,14 +74,14 @@ that opened them. A danger confirm shows `bi-exclamation-triangle` in
 
 ## States
 
-| State    | What the code does                                                                          |
-| -------- | ------------------------------------------------------------------------------------------- |
-| Default  | Shown when the open flag named in `scrim()` is true                                         |
-| Focus    | `scrim()` moves focus into the modal and back to the opener on close (`wb-modals-store.ts`) |
-| Disabled | Not used on the modal. Its foot buttons are disabled instead                                |
-| Empty    | Per modal: for example `.move-empty` in `wb-move-dialog.part.html`                          |
-| Error    | Per modal: a `.side-error` or `.move-error` line in the body                                |
-| Loading  | Per modal: a busy flag disables the primary button                                          |
+| State    | What the code does                                                                                                                                                                                                                          |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Default  | Shown when the open flag named in `scrim()` is true                                                                                                                                                                                         |
+| Focus    | `scrim()` moves focus into the modal and back to the opener on close (`wb-modals-store.ts`). Measured: Tab is not kept inside. After the last control it goes on to the rail, the sidebar and the consoles behind the scrim, in every modal |
+| Disabled | Not used on the modal. Its foot buttons are disabled instead                                                                                                                                                                                |
+| Empty    | Per modal: for example `.move-empty` in `wb-move-dialog.part.html`                                                                                                                                                                          |
+| Error    | Per modal: a `.side-error` or `.move-error` line in the body                                                                                                                                                                                |
+| Loading  | Per modal: a busy flag disables the primary button                                                                                                                                                                                          |
 
 ## Files
 

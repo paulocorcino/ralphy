@@ -3,6 +3,8 @@
 A small box that shows a keyboard shortcut at the right of a menu row.
 Element `<kbd class="kbd">`.
 
+Layer: element (atom). Made of: text.
+
 ## When to use it
 
 - Use it at the end of a [Dropdown menu](./dropdown.md) row whose act has
@@ -29,6 +31,14 @@ From `wb-consoles-tab-menus.part.html`:
   <kbd class="kbd" x-text="it.digit"></kbd>
 </button>
 ```
+
+## Spacing
+
+Measured in Chromium on 2026-11-14. In a row: padding 0.32px 5.44px, 16px high, 10.56px text, radius 4px. In the menu head the hint has no box: the CSS rule does not cover `.dropdown-head .kbd`, so it shows as plain muted text at 11.52px.
+
+## Modes
+
+Same in every mode.
 
 ## States
 

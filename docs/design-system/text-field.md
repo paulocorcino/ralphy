@@ -3,6 +3,8 @@
 A one-line input or a native `<select>`. There are two classes today:
 `.set-input` and `.host-input`.
 
+Layer: element (atom). Made of: no smaller part.
+
 ## When to use it
 
 - Use `.set-input` in a settings row (`.set-row`) and in the security and
@@ -36,6 +38,14 @@ A form field, from `wb-hosts-dialog.part.html`:
 <input type="text" id="host-user" class="host-input" :value="addHost.user"
        :readonly="!!addHost.alias" …>
 ```
+
+## Spacing
+
+Measured in Chromium on 2026-11-14. `.set-input`: padding 5.6px 8px, 28px high. `.host-input`: padding 4.8px 7.2px, 27px high. Radius 4px. A settings row pads 11.2px top and bottom.
+
+## Modes
+
+27 to 28px high in every mode.
 
 ## Variants
 

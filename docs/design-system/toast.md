@@ -4,6 +4,8 @@ Two short messages that go away by themselves. The **toast** floats at the
 bottom of the page and may carry one act, such as Undo. The **flash line**
 is one line of text in the Runs panel.
 
+Layer: component (molecule). Made of: text, an optional action button, a close button.
+
 ## When to use it
 
 - Use a toast after an act that can be undone: one line, one verb.
@@ -23,6 +25,14 @@ el.className = "wb-toast";
 line.className = "wb-toast-text";
 btn.className = "wb-toast-action";
 ```
+
+## Spacing
+
+Measured in Chromium on 2026-11-14. Padding 7.2px 9.6px, gap 9.6px, 40px high, radius 6px.
+
+## Modes
+
+Same in every mode.
 
 ## States
 

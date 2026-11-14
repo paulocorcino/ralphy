@@ -4,6 +4,8 @@ A small rounded label. A **chip** names a thing and may be clicked. A
 **badge** gives a count or a state and is never clicked. There is no
 shared class today: ten classes draw this shape.
 
+Layer: element (atom). Made of: text, sometimes an [icon](./icon.md).
+
 ## When to use it
 
 - Use a chip for a branch, a checkout, a scope or a filter on a list.
@@ -21,6 +23,14 @@ A state badge, from `wb-security-dialog.part.html`:
   <span class="sec-badge" :class="… ? 'on' : 'off'" x-text="…"></span>
 </div>
 ```
+
+## Spacing
+
+Measured in Chromium on 2026-11-14. State badge: padding 0.8px 8px, 17px high, 10.88px text. Branch chip: padding 1.28px 6.4px, 19px high.
+
+## Modes
+
+On a phone the scope chip in Settings wraps onto three lines (44px high).
 
 ## The classes that exist
 
@@ -44,11 +54,12 @@ one `.chip` with tones.
 
 ## States
 
-| State                        | What the code does                                                 |
-| ---------------------------- | ------------------------------------------------------------------ |
-| Hover                        | `.branch-chip`, `.checkout-chip`, `.kanban-plan-chip`: one step up |
-| Disabled                     | `.branch-chip.disabled`: dimmed, no hover                          |
-| Focus, empty, error, loading | Not used                                                           |
+| State                 | What the code does                                                          |
+| --------------------- | --------------------------------------------------------------------------- |
+| Hover                 | `.branch-chip`, `.checkout-chip`, `.kanban-plan-chip`: one step up          |
+| Focus                 | Measured: `.branch-chip` is a button and gets focus, with no visible change |
+| Disabled              | `.branch-chip.disabled`: dimmed, no hover                                   |
+| Empty, error, loading | Not used                                                                    |
 
 ## Files
 

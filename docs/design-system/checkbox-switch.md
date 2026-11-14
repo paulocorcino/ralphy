@@ -3,6 +3,8 @@
 Two controls for a yes or no value. A checkbox is a plain
 `<input type="checkbox">`. A switch is `.switch` around a hidden checkbox.
 
+Layer: element (atom). Made of: no smaller part.
+
 ## When to use it
 
 - Use a checkbox in a list or a form where the value is saved with a
@@ -25,6 +27,14 @@ Switch, from `wb-security-dialog.part.html`:
 
 Checkbox: a plain `<input type="checkbox">`. `01-base.css` draws every
 checkbox that is not inside `.switch`. Do not add a class to it.
+
+## Spacing
+
+Measured in Chromium on 2026-11-14. Checkbox 16 × 16px, radius 3px. Switch 38 × 20px, knob 14px.
+
+## Modes
+
+Same size in every mode: the checkbox is under the 24px minimum.
 
 ## States
 

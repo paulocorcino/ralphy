@@ -3,6 +3,8 @@
 A command that the operator copies and runs in their own terminal, with a
 copy button. Classes `.rel-cmd-row`, `.rel-cmd`.
 
+Layer: component (molecule). Made of: a `code`, a `.modal-x` copy button.
+
 ## When to use it
 
 - Use it for a command the operator must run by hand: an update, the SSH
@@ -22,6 +24,14 @@ From `wb-hosts-dialog.part.html`:
           aria-label="Copy the command"><i class="bi bi-copy"></i></button>
 </span>
 ```
+
+## Spacing
+
+Measured in Chromium on 2026-11-14. Padding 2px 2px 2px 10px, gap 6px, radius 4px, from the CSS. Not measured in the browser: it shows only when a host needs a manual step.
+
+## Modes
+
+Not measured.
 
 ## States
 

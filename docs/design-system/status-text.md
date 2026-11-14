@@ -4,6 +4,8 @@ Three kinds of small text that tell the operator about the state of a
 place. There is no shared class today: 12 classes draw an empty state, 18
 an error line, and 4 a help line.
 
+Layer: element (atom). Made of: text, sometimes an inline `code`.
+
 ## When to use each
 
 - **Empty state**: a list or a panel has nothing to show. Say what is
@@ -31,6 +33,16 @@ From `wb-settings-dialog.part.html`:
 ```html
 <p class="set-help" x-text="…"></p>
 ```
+
+## Spacing
+
+Measured in Chromium on 2026-11-14. Set by each class: padding from none to 2rem. See the table below.
+
+## Modes
+
+Wraps on a phone; nothing else changes.
+
+Contrast, measured: an empty state or help line passes (5.5:1 on `--chrome`). An error line is 4.02:1 on `--chrome` and 3.63:1 on `--surface`, under 4.5:1; see the audit, D6.
 
 ## What the classes share, and where they differ
 
