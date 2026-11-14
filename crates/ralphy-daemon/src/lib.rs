@@ -78,6 +78,7 @@ pub mod tree;
 pub(crate) mod uploads;
 pub mod usage;
 pub mod watch;
+pub mod wording;
 
 mod routes;
 mod serve;
@@ -86,6 +87,8 @@ mod serve;
 // (#518, amendment M6).
 #[cfg(unix)]
 pub use serve::socket;
+
+pub use wording::DaemonFailure;
 
 #[cfg(test)]
 use routes::{

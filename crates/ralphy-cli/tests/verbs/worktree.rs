@@ -170,7 +170,8 @@ fn changes_commit_with_nothing_staged_exits_non_zero_with_prose() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(
         stderr.trim(),
-        "Error: nothing is staged",
+        "error: nothing is staged
+Stage a file first.",
         "the catalog failure is the whole chain, with no context above it"
     );
     assert!(

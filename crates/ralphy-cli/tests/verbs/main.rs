@@ -19,6 +19,7 @@ mod checkouts;
 mod config_get;
 mod daemon_cli;
 mod doctor;
+mod failure;
 mod hook_status;
 mod install_path;
 mod lock_refusal;
