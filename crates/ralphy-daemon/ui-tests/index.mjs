@@ -127,3 +127,4 @@ import "./wb-console-checkout.test.mjs";
 import "./wb-console-press.test.mjs";
 import "./wb-consoles-tab-paint.test.mjs";
 import "./wb-desk-restore.test.mjs";
+import "./wb-wording.test.mjs";

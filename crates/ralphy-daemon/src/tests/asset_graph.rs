@@ -376,3 +376,34 @@ fn no_part_file_is_served() {
         "a part is put into its page and never served: {parts:?}"
     );
 }
+
+/// The served tree holds each wording catalog as its source bytes.
+#[test]
+fn the_served_tree_holds_the_wording_catalog() {
+    let source = include_bytes!("../../../../assets/wording/run.json");
+    let served = UI
+        .get_file("wording/run.json")
+        .expect("the served tree must hold wording/run.json");
+    assert_eq!(
+        served.contents(),
+        source,
+        "wording/run.json must be served as it is"
+    );
+}
+
+/// The browser loads the catalog at its served path, as a JSON module.
+#[test]
+fn the_catalog_import_is_rewritten_to_the_served_path() {
+    let js = UI
+        .get_file("wb-wording.js")
+        .and_then(|f| f.contents_utf8())
+        .expect("wb-wording.js is embedded UTF-8");
+    let import = js
+        .lines()
+        .find(|l| l.starts_with("import run from "))
+        .expect("wb-wording.js imports the run catalog");
+    assert_eq!(
+        squeeze(import),
+        squeeze(r#"import run from "./wording/run.json" with { type: "json" };"#)
+    );
+}

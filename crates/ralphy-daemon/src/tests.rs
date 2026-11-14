@@ -394,7 +394,10 @@ mod stage_fence_list;
 mod stage_fences;
 mod stage_plane;
 mod telegram_claim_auth;
+// The import rule of the build script, compiled here for its unit tests.
 mod template_sinks;
+#[path = "../build/ui_import.rs"]
+mod ui_import;
 mod usage_records;
 mod usage_spend;
 mod vendor_manifest;

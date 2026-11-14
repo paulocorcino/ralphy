@@ -22,6 +22,7 @@
    Glyphs are the union of the Telegram sink + terminal presenter tables.
 --------------------------------------------------------------------------- */
 
+import "./wb-wording.ts";
 import {
   FEASIBLE_HEAD,
   FEASIBLE_YES,
