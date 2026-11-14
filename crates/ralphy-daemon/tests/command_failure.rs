@@ -3,15 +3,14 @@
 //! `command_test_child`, pointed at via `RALPHY_EXE_OVERRIDE`; it writes
 //! `RALPHY_TEST_FAILURE_LINE` to stderr when its argv asks for JSON.
 //!
-//! Each test sets process-global variables: nextest runs each test in its own
-//! process.
+//! Each test sets process-global variables: a lock serializes them.
 #![expect(
     clippy::tests_outside_test_module,
     reason = "an integration test crate is the test module"
 )]
 #![expect(
     clippy::disallowed_methods,
-    reason = "nextest runs each test in its own process, so a test may change its environment"
+    reason = "the tests hold ENV_LOCK while they change the environment"
 )]
 
 #[path = "support/golden.rs"]
@@ -47,6 +46,7 @@ fn nothing_staged_line() -> String {
 /// line the child writes, or none. The child exits 1. The daemon stops when
 /// the returned guard drops.
 async fn daemon(line: Option<&str>) -> (u16, Running) {
+    let guard = ENV_LOCK.lock().await;
     let dir = tempfile::tempdir().expect("a temporary folder");
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
@@ -78,11 +78,19 @@ async fn daemon(line: Option<&str>) -> (u16, Running) {
     tokio::spawn(async move {
         axum::serve(listener, app).await.expect("the daemon serves");
     });
-    (port, (dir, tx))
+    (port, (dir, tx, guard))
 }
 
-/// What keeps a test daemon alive: its folder and its shutdown sender.
-type Running = (tempfile::TempDir, tokio::sync::watch::Sender<bool>);
+/// What keeps a test daemon alive: its folder, its shutdown sender, and the
+/// lock on the process environment until the test ends.
+type Running = (
+    tempfile::TempDir,
+    tokio::sync::watch::Sender<bool>,
+    tokio::sync::MutexGuard<'static, ()>,
+);
+
+/// The tests set one process environment; plain `cargo test` runs them as threads.
+static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// One command round-trip on its own page socket, returning the reply payload.
 async fn ask(port: u16, verb: &str, payload: serde_json::Value) -> serde_json::Value {
@@ -153,6 +161,30 @@ async fn a_missing_failure_line_is_ralphy_failed() {
 }
 
 #[tokio::test]
+async fn a_ralphy_failed_line_loses_its_cause() {
+    const MARKER: &str = "CAUSE-MARKER-7f3a";
+    let line = serde_json::json!({
+        "failure": {
+            "domain": "daemon",
+            "code": "ralphy-failed",
+            "details": { "cause": MARKER },
+            "text": { "cause": "the command failed", "remedy": "Try again." },
+        },
+        "chain": MARKER,
+    })
+    .to_string();
+    let (port, _dir) = daemon(Some(&line)).await;
+    let reply = commit(port).await;
+    assert_eq!(reply["failure"]["domain"], "daemon", "{reply}");
+    assert_eq!(reply["failure"]["code"], "ralphy-failed", "{reply}");
+    assert!(
+        reply["failure"]["details"].get("cause").is_none(),
+        "{reply}"
+    );
+    assert!(!reply.to_string().contains(MARKER), "{reply}");
+}
+
+#[tokio::test]
 async fn an_unmoved_verb_keeps_its_argv() {
     let line = nothing_staged_line();
     let (port, _dir) = daemon(Some(&line)).await;
@@ -190,14 +222,16 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Written {
 
 #[tokio::test(flavor = "current_thread")]
 async fn the_chain_goes_to_the_log_not_the_reply() {
+    let line = nothing_staged_line();
+    let (port, _dir) = daemon(Some(&line)).await;
+    // Under the lock, so no other test registers a log callsite while this one listens.
     let written = Written::default();
     let subscriber = tracing_subscriber::fmt()
         .with_writer(written.clone())
         .with_ansi(false)
         .finish();
     let _log = tracing::subscriber::set_default(subscriber);
-    let line = nothing_staged_line();
-    let (port, _dir) = daemon(Some(&line)).await;
+    tracing::callsite::rebuild_interest_cache();
     let reply = commit(port).await;
     assert!(!reply.to_string().contains("CHAIN-ONLY-TEXT"), "{reply}");
     let log = String::from_utf8_lossy(&written.0.lock().expect("a test lock")).into_owned();
