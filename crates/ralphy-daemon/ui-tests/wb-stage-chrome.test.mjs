@@ -3,6 +3,9 @@
 // console and no browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { UI } from "./harness.mjs";
 import { createChrome } from "../assets/ui/wb-stage-chrome.ts";
 import { createGestures } from "../assets/ui/wb-stage-stack.ts";
 
@@ -247,4 +250,17 @@ test("a record with a rect and max is maximized after the window is on the stage
   buildChrome("shell", "~", { kind: "console", rect, max: false }, "console");
   buildChrome("shell", "~", { kind: "console", max: true }, "console");
   assert.equal(calls.length, 1);
+});
+
+// The consoles climb to `Z_CEIL` (wb-stage-stack.ts) and then renormalize;
+// every named layer of `01-base.css` must stay above them, or a raised
+// console covers the frame chrome, a menu or a modal.
+test("every named layer sits above the consoles' ceiling", () => {
+  const stack = readFileSync(join(UI, "wb-stage-stack.ts"), "utf8");
+  const ceil = Number(/const Z_CEIL = (\d+);/u.exec(stack)?.[1]);
+  assert.ok(ceil > 0, "Z_CEIL is read from wb-stage-stack.ts");
+  const base = readFileSync(join(UI, "styles", "01-base.css"), "utf8");
+  const layers = [...base.matchAll(/(--z-[a-z-]+): (\d+);/gu)];
+  assert.ok(layers.length > 0, "01-base.css names its layers");
+  for (const [, name, value] of layers) assert.ok(Number(value) > ceil, `${name} ${value} > ${ceil}`);
 });

@@ -430,7 +430,6 @@ fn shell_pins_the_frame_chrome() {
             (#338)"
         );
     }
-    assert!(css.contains("--z-frame: 130;"), "frame layer over Z_CEIL (#338)");
 }
 
 /// The per-client view (#339) and — the part that can silently regress — the
