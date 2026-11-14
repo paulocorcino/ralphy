@@ -252,6 +252,22 @@ the Runs, Spend and Board panels.
 
 All shortcuts and the keys of each component: [Keyboard](./design-system/keyboard.md).
 
+## Measuring a change
+
+A change to the styles is measured before and after, in a real browser,
+against a daemon on its own port and scratch store:
+
+```sh
+python tests/browser/workbench/wb_design_measure.py .ralphy/m-before
+# change the styles, rebuild, then:
+python tests/browser/workbench/wb_design_measure.py .ralphy/m-after
+python tests/browser/workbench/wb_design_measure_diff.py \n  .ralphy/m-before/measure.json .ralphy/m-after/measure.json
+```
+
+A change that should not move anything gives `diffs: 0`. The focus of the
+Files search field can differ between two runs of the same code: it is
+timing, not a change.
+
 ## Audit and plan
 
 What is not consistent today, the decisions to make, the proposed tokens

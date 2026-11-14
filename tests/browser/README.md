@@ -42,3 +42,12 @@ UI module in `crates/ralphy-daemon/assets/ui/` where one exists.
 A script that imports another script's helpers puts that script's folder on
 `sys.path`. The `notes/` scripts use `columns/wb_columns_473.py`, and
 `fence/wb_fence_redetach_476.py` uses `notes/wb_note_detach_draft.py`.
+
+## The design system measure
+
+`workbench/wb_design_measure.py` is not a pass or fail check: it measures
+the components of the workbench in four modes and writes the numbers and
+screenshots to `.ralphy/design-measure/`. Run it before and after a change
+to the styles, then compare the two runs with
+`workbench/wb_design_measure_diff.py`. See
+[docs/DESIGN-SYSTEM.md](../../docs/DESIGN-SYSTEM.md).
