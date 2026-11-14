@@ -28,18 +28,34 @@ impl ValueSet for IssueStatus {
     const SET: &'static str = "issue-status";
 
     fn all() -> &'static [Self] {
-        &[
-            Self::Planning,
-            Self::Executing,
-            Self::Planned,
-            Self::Done,
-            Self::Skipped,
-            Self::Blocked,
-            Self::Infeasible,
-            Self::NeedsSplit,
-            Self::NonGreen,
-            Self::Hitl,
-        ]
+        const ALL: &[IssueStatus] = &[
+            IssueStatus::Planning,
+            IssueStatus::Executing,
+            IssueStatus::Planned,
+            IssueStatus::Done,
+            IssueStatus::Skipped,
+            IssueStatus::Blocked,
+            IssueStatus::Infeasible,
+            IssueStatus::NeedsSplit,
+            IssueStatus::NonGreen,
+            IssueStatus::Hitl,
+        ];
+        // A new variant stops this match compiling, so ALL cannot miss one.
+        for status in ALL {
+            match status {
+                IssueStatus::Planning
+                | IssueStatus::Executing
+                | IssueStatus::Planned
+                | IssueStatus::Done
+                | IssueStatus::Skipped
+                | IssueStatus::Blocked
+                | IssueStatus::Infeasible
+                | IssueStatus::NeedsSplit
+                | IssueStatus::NonGreen
+                | IssueStatus::Hitl => {}
+            }
+        }
+        ALL
     }
 
     fn key(self) -> &'static str {
@@ -51,13 +67,24 @@ impl ValueSet for FinishOutcome {
     const SET: &'static str = "run-outcome";
 
     fn all() -> &'static [Self] {
-        &[
-            Self::Done,
-            Self::Blocked,
-            Self::Timeout,
-            Self::Stuck,
-            Self::Limit,
-        ]
+        const ALL: &[FinishOutcome] = &[
+            FinishOutcome::Done,
+            FinishOutcome::Blocked,
+            FinishOutcome::Timeout,
+            FinishOutcome::Stuck,
+            FinishOutcome::Limit,
+        ];
+        // A new variant stops this match compiling, so ALL cannot miss one.
+        for outcome in ALL {
+            match outcome {
+                FinishOutcome::Done
+                | FinishOutcome::Blocked
+                | FinishOutcome::Timeout
+                | FinishOutcome::Stuck
+                | FinishOutcome::Limit => {}
+            }
+        }
+        ALL
     }
 
     fn key(self) -> &'static str {

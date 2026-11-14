@@ -44,13 +44,20 @@ pub fn fill(template: &str, args: &[(&str, &str)]) -> Result<String, FillError> 
     if let Some((extra, _)) = args.iter().find(|(name, _)| !names.contains(name)) {
         return Err(FillError::Extra((*extra).to_owned()));
     }
-    let mut out = template.to_owned();
-    for name in names {
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some((before, after)) = rest.split_once('{') {
+        let Some((name, tail)) = after.split_once('}') else {
+            break;
+        };
         let Some((_, value)) = args.iter().find(|(n, _)| *n == name) else {
             return Err(FillError::Missing(name.to_owned()));
         };
-        out = out.replace(&format!("{{{name}}}"), value);
+        out.push_str(before);
+        out.push_str(value);
+        rest = tail;
     }
+    out.push_str(rest);
     Ok(out)
 }
 
@@ -68,6 +75,12 @@ mod tests {
     fn replaces_every_placeholder() {
         let out = fill("{a} and {b} and {a}", &[("a", "1"), ("b", "2")]);
         assert_eq!(out.as_deref(), Ok("1 and 2 and 1"));
+    }
+
+    #[test]
+    fn a_value_is_not_filled_again() {
+        let out = fill("{a} {b}", &[("a", "{b}"), ("b", "x")]);
+        assert_eq!(out.as_deref(), Ok("{b} x"));
     }
 
     #[test]
