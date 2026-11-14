@@ -46,6 +46,7 @@ ralphy-usage-scan.workspace = true
 ralphy-pricing.workspace = true
 ralphy-release.workspace = true
 ralphy-telegram.workspace = true
+ralphy-wording.workspace = true
 sha2.workspace = true
 # Host-key fingerprints for `ralphy host key` (#497); already in Cargo.lock
 # through ralphy-daemon.

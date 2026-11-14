@@ -6,7 +6,7 @@ use crate::runstate::{SkipKind, UsageLite};
 /// or `stop-before` skip) from 🤷 infeasible (an empty plan), 🧩 needs-split (a
 /// bundle verdict awaiting a human split) and ⛔ blocked (a `Blocked` execution
 /// outcome) from a generic non-green stop.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum IssueStatus {
     Planning,
     Executing,
@@ -28,7 +28,7 @@ pub(crate) enum IssueStatus {
 
 impl IssueStatus {
     /// Whether this is a terminal status (the issue will not change further).
-    pub(crate) fn is_terminal(&self) -> bool {
+    pub(crate) fn is_terminal(self) -> bool {
         matches!(
             self,
             IssueStatus::Planned
@@ -46,7 +46,7 @@ impl IssueStatus {
     /// `Some(name)` for a terminal status (one of `planned|done|skipped|blocked|
     /// infeasible|needs_split|non_green|hitl`), `None` for the non-terminal
     /// `Planning`/`Executing` — the rollup includes only terminal entries.
-    pub(crate) fn status_wire(&self) -> Option<&'static str> {
+    pub(crate) fn status_wire(self) -> Option<&'static str> {
         match self {
             IssueStatus::Planned => Some("planned"),
             IssueStatus::Done => Some("done"),

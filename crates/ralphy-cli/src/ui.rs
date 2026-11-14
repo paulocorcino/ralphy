@@ -80,7 +80,7 @@ impl FinishOutcome {
 
 /// The phase icon for the live active line, derived from the folded status. `None`
 /// for every terminal status — the issue is finished, so there is no active line.
-pub(crate) fn active_phase(status: &IssueStatus) -> Option<Phase> {
+pub(crate) fn active_phase(status: IssueStatus) -> Option<Phase> {
     match status {
         IssueStatus::Planning => Some(Phase::Planning),
         IssueStatus::Executing => Some(Phase::Executing),

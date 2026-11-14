@@ -1,0 +1,99 @@
+{
+  "domain": "run",
+  "values": {
+    "issue-status": {
+      "planning": {
+        "text": "planning",
+        "icon": "🧠",
+        "fallback": "[plan]",
+        "note": "An issue whose plan is being written. Shown on the run panel, the Telegram card and the console line."
+      },
+      "executing": {
+        "text": "executing",
+        "icon": "⚙️",
+        "fallback": "[exec]",
+        "note": "An issue whose plan is being executed. Shown on the run panel, the Telegram card and the console line."
+      },
+      "planned": {
+        "text": "planned only",
+        "icon": "📝",
+        "fallback": "[planned]",
+        "note": "An issue that got a plan and was not executed, as in a dry run. Shown on the run panel and the Telegram card."
+      },
+      "done": {
+        "text": "done",
+        "icon": "✅",
+        "fallback": "[ok]",
+        "note": "An issue that was executed and closed. Shown on the run panel, the Telegram card and the console totals."
+      },
+      "skipped": {
+        "text": "skipped",
+        "icon": "⏭️",
+        "fallback": "[skip]",
+        "note": "An issue the queue did not run, for example because a dependency is open. Shown on the run panel, the Telegram card and the console."
+      },
+      "blocked": {
+        "text": "blocked",
+        "icon": "⛔",
+        "fallback": "[blocked]",
+        "note": "An issue whose execution stopped as blocked. Shown on the run panel, the Telegram card and the console totals."
+      },
+      "infeasible": {
+        "text": "infeasible",
+        "icon": "🤷",
+        "fallback": "[infeasible]",
+        "note": "An issue whose plan has no step. Shown on the run panel and the Telegram card."
+      },
+      "needs_split": {
+        "text": "needs split",
+        "icon": "🧩",
+        "fallback": "[split]",
+        "note": "An issue that holds several tasks and waits for a person to split it. Shown on the run panel, the Telegram card and the console line."
+      },
+      "non_green": {
+        "text": "non-green",
+        "icon": "❌",
+        "fallback": "[non-green]",
+        "note": "An issue that stopped without a green result for another reason. Shown on the run panel and the Telegram card."
+      },
+      "hitl": {
+        "text": "waiting on human",
+        "icon": "🙋",
+        "fallback": "[hitl]",
+        "note": "An issue that waits for a person because of a human gate in its dependencies. Shown on the run panel, the Telegram card and the console."
+      }
+    },
+    "run-outcome": {
+      "done": {
+        "text": "done",
+        "icon": "✅",
+        "fallback": "[ok]",
+        "note": "The execution finished green. Shown on the console line of a finished issue."
+      },
+      "blocked": {
+        "text": "blocked",
+        "icon": "⛔",
+        "fallback": "[blocked]",
+        "note": "The agent reported that it cannot go on. Shown on the console line of a finished issue."
+      },
+      "timeout": {
+        "text": "timeout",
+        "icon": "⏱️",
+        "fallback": "[timeout]",
+        "note": "The execution used its whole time budget. Shown on the console line of a finished issue."
+      },
+      "stuck": {
+        "text": "stuck",
+        "icon": "🪨",
+        "fallback": "[stuck]",
+        "note": "The execution stopped without a known outcome. Shown on the console line of a finished issue."
+      },
+      "limit": {
+        "text": "limit",
+        "icon": "🌙",
+        "fallback": "[limit]",
+        "note": "The vendor's usage limit stopped the execution. Shown on the console line of a finished issue."
+      }
+    }
+  }
+}

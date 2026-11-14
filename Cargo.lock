@@ -2233,6 +2233,7 @@ dependencies = [
  "ralphy-run-snapshot",
  "ralphy-telegram",
  "ralphy-usage-scan",
+ "ralphy-wording",
  "regex",
  "serde",
  "serde_json",

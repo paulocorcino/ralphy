@@ -136,7 +136,7 @@ fn block(state: &RunState, number: u64) -> IssueBlock {
             } else {
                 e.title.clone()
             },
-            status: status_wire(&e.status).to_owned(),
+            status: status_wire(e.status).to_owned(),
             kind: e.kind.map(|k| k.skip_wire().to_owned()),
             blocked_by: e.blocked_by.clone(),
             model: e.model.clone(),
@@ -156,7 +156,7 @@ fn block(state: &RunState, number: u64) -> IssueBlock {
 /// The terminal statuses use `status_wire` so the snapshot and the
 /// `run.finished.issues` rollup cannot drift (ADR-0047 §5); the two non-terminal
 /// ones get the phase vocabulary the panel already renders.
-fn status_wire(status: &IssueStatus) -> &'static str {
+pub(crate) fn status_wire(status: IssueStatus) -> &'static str {
     status.status_wire().unwrap_or(match status {
         IssueStatus::Executing => "executing",
         IssueStatus::Planning
@@ -430,7 +430,7 @@ mod tests {
             .next()
             .expect("split always yields a first part");
         for status in all_statuses() {
-            let wire = status_wire(&status);
+            let wire = status_wire(status);
             // Each table on its own: a whole-file `contains` stays green when
             // one table loses the key.
             for table in ["GLYPH", "LABEL"] {

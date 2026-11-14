@@ -13,7 +13,7 @@ const TELEGRAM_LIMIT: usize = 4096;
 const FULL_LIST_MAX: usize = 30;
 
 /// The status emoji for an issue (ADR-0007 D3 icon table).
-fn status_emoji(status: &IssueStatus) -> &'static str {
+fn status_emoji(status: IssueStatus) -> &'static str {
     match status {
         IssueStatus::Planning => "🧠",
         IssueStatus::Executing => "⚙️",
@@ -33,7 +33,7 @@ fn status_emoji(status: &IssueStatus) -> &'static str {
 /// a clock only misleads. A dependency skip appends ` (blocked by #N)` when the
 /// gating blocker(s) are known, so the operator sees which issue held it.
 fn issue_line(entry: &IssueEntry) -> String {
-    let emoji = status_emoji(&entry.status);
+    let emoji = status_emoji(entry.status);
     let blocked_by = if entry.status == IssueStatus::Skipped
         && entry.kind == Some(SkipKind::BlockedBy)
         && !entry.blocked_by.is_empty()
