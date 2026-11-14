@@ -22,6 +22,8 @@
   --surface: #342d27;
   --surface-hi: #423a31;
   --log-bg: #2a2521;
+  /* The ground of a console window, behind the terminal. */
+  --window-bg: #0c0a08;
   --border: #4c4239;
   --border-focus: #7a6d5f;
   --text: #d4ccc0;
@@ -34,6 +36,8 @@
   --console-text: #e8d9a8;
   --console-bg: #2b2410;
   --console-border: #5a4a1e;
+  /* Dark ink on a gold fill, fixed so a lighter ground never lowers it. */
+  --ink-on-gold: #1a1613;
   --live: #7fae7f;
   /* cool accent for planning / sleep states in the Runs trail */
   --info: #6f9fc0;

@@ -802,7 +802,7 @@
   background: var(--console-text);
   /* Fixed dark ink ON the gold highlight — deliberately not a ramp token, so
      lightening the ground never drops this pair's contrast. */
-  color: #1a1613;
+  color: var(--ink-on-gold);
 }
 
 /* the in-page find bar for markdown */

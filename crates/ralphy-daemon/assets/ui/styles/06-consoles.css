@@ -11,7 +11,7 @@
   position: absolute;
   display: flex;
   flex-direction: column;
-  background: #0c0a08;
+  background: var(--window-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -966,7 +966,7 @@
   padding: var(--space-5) var(--space-6);
   margin: 0;
   color: var(--console-text);
-  background: #0c0a08;
+  background: var(--window-bg);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
   line-height: 1.4;

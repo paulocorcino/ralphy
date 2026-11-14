@@ -130,7 +130,7 @@
   border-bottom: 1px solid color-mix(in srgb, var(--note-tone) 25%, transparent);
   /* Darkened against the GROUND rather than tinted over it: a solid card has
      the tone everywhere, and a head mixed from the tone would vanish into it. */
-  background: color-mix(in srgb, #000 14%, var(--note-ground));
+  background: color-mix(in srgb, black 14%, var(--note-ground));
   /* The POINTER, not `move`, and not `text` over the title (operator, asked
      2026-09-22): a card is dragged by its head whatever the cursor says, and
      a caret shown over a label that is not being edited promises an edit that
@@ -168,7 +168,7 @@
 .note-title-edit {
   flex: 1 1 auto;
   min-width: 0;
-  background: color-mix(in srgb, #000 22%, var(--note-ground));
+  background: color-mix(in srgb, black 22%, var(--note-ground));
   border: 1px solid var(--border-focus);
   border-radius: var(--radius);
   padding: 0 var(--space-2);
@@ -236,7 +236,7 @@
 .note-close:hover,
 .note-putback:hover {
   opacity: 1;
-  background: color-mix(in srgb, #000 18%, var(--note-ground));
+  background: color-mix(in srgb, black 18%, var(--note-ground));
 }
 /* A note with no `##` offers no index: `hidden` is an ATTRIBUTE and the author
    `display: inline-flex` above beats the UA rule, exactly as `.note-menu-card`
@@ -318,7 +318,7 @@
   transition: background 0.12s ease, opacity 0.12s ease;
 }
 .note-more:hover {
-  background: color-mix(in srgb, #000 18%, var(--note-ground));
+  background: color-mix(in srgb, black 18%, var(--note-ground));
 }
 .note-foot {
   flex: 0 0 auto;

@@ -775,6 +775,8 @@
 }
 .totp-qr {
   flex-shrink: 0;
+  /* stylelint-disable-next-line color-no-hex -- a QR code needs a white
+     ground to scan */
   background: #fff;
   padding: 6px;
   border-radius: var(--radius-md);

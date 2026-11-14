@@ -50,23 +50,24 @@ measured.
 | Menu row       | Step 5 done: one rule, `.menu-item`                                                                | 1 rule         |
 | Text field     | Step 5 done: one rule, `.text-field`, on `--log-bg`                                                | 1 rule         |
 | Segmented      | Step 5 done: one rule, with a small size `.seg-sm`                                                 | 1 rule         |
-| Icons          | Bootstrap Icons (100 uses) and Lucide (55 uses)                                                    | 1 library      |
+| Icons          | Step 8: new icons are Lucide (D1); Bootstrap Icons move when their panel changes                   | 1 library      |
 
 ## 4. Drift: the code and ADR-0035
 
-| Finding                                                                                             | Where                                                                                       |
-| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| ADR-0035 lists `--danger-border` and `--console-bg-hi`; the CSS has neither                         | `01-base.css`                                                                               |
-| `--live`, `--info`, `--font-ui` and the note tones are not in ADR-0035                              | ADR-0035 §1                                                                                 |
-| Fixed in step 6: amber is the token `--warn`                                                        |                                                                                             |
-| Fixed in step 6: the release dot uses `--live`                                                      |                                                                                             |
-| `#dea584` is a color with no token                                                                  | `02-rail-sidebar.css:653`                                                                   |
-| `var(--danger, #e5484d)`: a fallback that never applies, 8 times                                    | `03-runs.css`, `04-canvas.css`, `10-kanban.css`                                             |
-| `var(--surface-2, …)` and `var(--mono, …)` read tokens that do not exist; the fallback always wins  | `04-canvas.css:418`, `11-appended.css:149`, `:172`                                          |
-| 5 declarations spell the monospace stack instead of `var(--font-mono)`, one of them a shorter stack | `01-base.css:134`, `06-consoles.css:970`, `07-viewers.css:166`, `:795`, `08-modals.css:610` |
-| The toast is the only chrome element in `--font-ui`                                                 | `13-notes.css:1196`                                                                         |
-| The command block sizes in `px`; the chrome sizes in `rem`                                          | `12-spend.css:980`                                                                          |
-| Fixed in step 5: the kbd hint in a menu head had no box; one `.kbd` rule now                        | `05-workspace.css:644`                                                                      |
+| Finding                                                                                                    | Where                                                                                       |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| ADR-0035 lists `--danger-border` and `--console-bg-hi`; the CSS has neither                                | `01-base.css`                                                                               |
+| `--live`, `--info`, `--font-ui` and the note tones are not in ADR-0035                                     | ADR-0035 §1                                                                                 |
+| Fixed in step 6: amber is the token `--warn`                                                               |                                                                                             |
+| Fixed in step 6: the release dot uses `--live`                                                             |                                                                                             |
+| `#dea584` is a color with no token                                                                         | `02-rail-sidebar.css:653`                                                                   |
+| `var(--danger, #e5484d)`: a fallback that never applies, 8 times                                           | `03-runs.css`, `04-canvas.css`, `10-kanban.css`                                             |
+| ADR-0035 says the console window ground is `#000000`; the code uses `#0c0a08`, now the token `--window-bg` | `06-consoles.css`                                                                           |
+| `var(--surface-2, …)` and `var(--mono, …)` read tokens that do not exist; the fallback always wins         | `04-canvas.css:418`, `11-appended.css:149`, `:172`                                          |
+| 5 declarations spell the monospace stack instead of `var(--font-mono)`, one of them a shorter stack        | `01-base.css:134`, `06-consoles.css:970`, `07-viewers.css:166`, `:795`, `08-modals.css:610` |
+| The toast is the only chrome element in `--font-ui`                                                        | `13-notes.css:1196`                                                                         |
+| The command block sizes in `px`; the chrome sizes in `rem`                                                 | `12-spend.css:980`                                                                          |
+| Fixed in step 5: the kbd hint in a menu head had no box; one `.kbd` rule now                               | `05-workspace.css:644`                                                                      |
 
 ## 5. Accessibility and modes, measured in a browser
 
@@ -217,14 +218,16 @@ Each step is one change, with a browser check of the panels it touches.
 6. **Chip and badge** with tones, and `--warn` (D2, ADR-0035 amendment).
 7. **Type and spacing scales** (D5). Done: type in one change (every size
    within 1px of a step), spacing by exact match only.
-8. **Icons** (D1), as panels are touched for other work.
+8. **Icons** (D1), as panels are touched for other work. Done as a rule:
+   the icon page and ADR-0035 say a new icon is Lucide.
 
 ## 10. Keeping it
 
 - [DESIGN-SYSTEM.md](../DESIGN-SYSTEM.md) holds the rule: no new
   component, color, spacing value or shortcut without an entry.
-- After step 1, stylelint (already in the gate) can refuse a hex color
-  outside `01-base.css` (`color-no-hex` with an override for that file).
+- Done in step 8: stylelint refuses a hex color outside `01-base.css`
+  (`color-no-hex`, off for that file). Two sites carry an exception
+  comment with the reason.
   After steps 4 and 7, it can refuse a font size or spacing that is not a
   token (`declaration-strict-value`, a plugin to add). A count that may
   only go down, like the other ratchets, lets the old sites stay until

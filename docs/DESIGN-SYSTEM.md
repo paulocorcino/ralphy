@@ -13,6 +13,11 @@ No new component, color, spacing value or keyboard shortcut goes into the
 workbench without an entry here. Add the entry in the same change as the
 code. A new color or accent is also an amendment to ADR-0035.
 
+The gate checks part of it: stylelint refuses a hex color in any
+stylesheet but `01-base.css` (`color-no-hex`). Two values carry an
+exception comment with their reason: the white ground of the TOTP QR code
+and the Rust file icon.
+
 ## Tokens
 
 Every token is a CSS custom property on `:root` in `styles/01-base.css`.
@@ -21,18 +26,19 @@ Use the token, never its hex value. Monaco cannot read CSS variables, so
 
 ### Neutrals
 
-| Token            | Value     | Use                                       |
-| ---------------- | --------- | ----------------------------------------- |
-| `--bg`           | `#24201c` | Page ground                               |
-| `--chrome`       | `#2b2620` | Rail, sidebar, modal body                 |
-| `--surface`      | `#342d27` | Buttons, modal head and foot, menus       |
-| `--surface-hi`   | `#423a31` | Hover: one step up from `--surface`       |
-| `--log-bg`       | `#2a2521` | Command log, text fields, segmented track |
-| `--border`       | `#4c4239` | Default hairline                          |
-| `--border-focus` | `#7a6d5f` | Focused window and focused field border   |
-| `--text`         | `#d4ccc0` | Body text                                 |
-| `--text-strong`  | `#e9e1d4` | Headings and `strong`                     |
-| `--text-muted`   | `#a49c91` | Paths, status, labels, help text          |
+| Token            | Value     | Use                                        |
+| ---------------- | --------- | ------------------------------------------ |
+| `--bg`           | `#24201c` | Page ground                                |
+| `--chrome`       | `#2b2620` | Rail, sidebar, modal body                  |
+| `--surface`      | `#342d27` | Buttons, modal head and foot, menus        |
+| `--surface-hi`   | `#423a31` | Hover: one step up from `--surface`        |
+| `--log-bg`       | `#2a2521` | Command log, text fields, segmented track  |
+| `--window-bg`    | `#0c0a08` | Console window ground, behind the terminal |
+| `--border`       | `#4c4239` | Default hairline                           |
+| `--border-focus` | `#7a6d5f` | Focused window and focused field border    |
+| `--text`         | `#d4ccc0` | Body text                                  |
+| `--text-strong`  | `#e9e1d4` | Headings and `strong`                      |
+| `--text-muted`   | `#a49c91` | Paths, status, labels, help text           |
 
 ### Accents
 
@@ -41,6 +47,7 @@ Use the token, never its hex value. Monaco cannot read CSS variables, so
 | `--console-text`   | `#e8d9a8` | Gold: the free console, the primary action, the focus ring |
 | `--console-bg`     | `#2b2410` | Gold ground                                                |
 | `--console-border` | `#5a4a1e` | Gold border                                                |
+| `--ink-on-gold`    | `#1a1613` | Dark ink on a gold fill (the current search hit)           |
 | `--danger`         | `#ce8174` | Offline, errors, destructive actions                       |
 | `--live`           | `#7fae7f` | A live daemon or console, a passed check                   |
 | `--info`           | `#6f9fc0` | Planning and sleep states in the Runs trail                |
@@ -250,6 +257,6 @@ What is not consistent today, the decisions to make, the proposed tokens
 and shared classes, and the order of the work:
 [audit](./design-system/audit.md). Nothing in it is applied yet.
 
-One color is outside the palette on purpose: `#dea584`, the Rust file icon
-in the file tree. File type icons use their brand colors, as the devicon
-icons do.
+Two colors are outside the palette on purpose: `#dea584`, the Rust file
+icon in the file tree (file type icons keep their brand colors, as the
+devicon icons do), and `#fff`, the ground a QR code needs to scan.

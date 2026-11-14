@@ -626,6 +626,8 @@
   color: var(--text);
 }
 .wb-host.wunderbaum .wb-icon.rs-glyph {
+  /* stylelint-disable-next-line color-no-hex -- the Rust brand color; file
+     type icons keep their brand colors */
   color: #dea584;
 }
 .wb-host.wunderbaum .wb-row.wb-active {

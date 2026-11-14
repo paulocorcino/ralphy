@@ -42,8 +42,9 @@ Measured sizes: 11.5 to 14.4px.
 | Bootstrap Icons | `<i class="bi bi-…">` | 100           | The first page        |
 | Lucide          | `<svg x-icon="'…'">`  | 55            | 2026-09-27 (`x-icon`) |
 
-No ADR says which library a new icon uses. The [audit](./audit.md) asks
-for that decision.
+**A new icon is Lucide** (ADR-0035, amendment of 2026-11-14). A Bootstrap
+icon moves to Lucide when its panel changes for other work, not in one
+change.
 
 ## States
 
