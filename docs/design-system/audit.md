@@ -122,6 +122,13 @@ No page error in any mode. No horizontal scroll in any mode.
 9. **No arrow keys** in menus or in tab lists. Only Tab moved. Fixed
    after the plan (`wb-arrow-keys.ts`), checked in Chromium.
 
+The detached pages were tried after the plan. The detached fence window
+throws on `main` too while it builds its consoles (`windowShown` in
+`wb-console.ts` reads the Alpine store, which that page does not have), so
+it could not be measured; this is a defect outside the design system. The
+detached file page stayed empty in the scratch setup, on `main` too, so it
+was not measured either.
+
 ## 6. Decisions
 
 All eight were decided on 2026-11-14: D1 to D6 and D8 as recommended
