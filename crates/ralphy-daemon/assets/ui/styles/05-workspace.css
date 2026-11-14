@@ -80,7 +80,7 @@
   place-items: center;
   width: 16px;
   height: 16px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   cursor: pointer;
 }
@@ -212,7 +212,7 @@
   place-items: center;
   width: 18px;
   height: 18px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--chrome);
   color: var(--text-muted);
@@ -270,12 +270,12 @@
   min-width: 200px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 0.25rem;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--shadow-float);
   /* above the floating consoles (z-index ~60+), which extend up into this
      dropdown's drop zone once tiled. */
-  z-index: 1000;
+  z-index: var(--z-dropdown);
 }
 .dropdown-head {
   color: var(--text-muted);
@@ -650,7 +650,7 @@
   color: var(--text-muted);
   background: var(--log-bg);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius);
   padding: 0.02rem 0.34rem;
   white-space: nowrap;
 }
@@ -676,7 +676,7 @@
   z-index: 1;
   pointer-events: none;
   border: 1px dashed var(--border-focus);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, 0.022);
 }
 /* Shrink-wrapped, NOT the fence's full width: the head is the only part of a
@@ -729,7 +729,7 @@
   width: 11rem;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius);
   padding: 0 0.25rem;
   color: var(--text-muted);
   font: inherit;
@@ -757,7 +757,7 @@
   flex: 0 0 auto;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   line-height: 1;
   padding: 0 0.3rem;
@@ -871,7 +871,7 @@
   flex: 0 0 auto;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   line-height: 1;
   padding: 0 0.3rem;
@@ -890,7 +890,7 @@
   flex: 0 0 auto;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   line-height: 1;
   padding: 0 0.3rem;
@@ -908,7 +908,7 @@
   flex: 0 0 auto;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   line-height: 1;
   padding: 0 0.3rem;
@@ -925,7 +925,7 @@
   flex: 0 0 auto;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   line-height: 1;
   padding: 0 0.3rem;
@@ -987,7 +987,7 @@
   width: 2.4rem;
   height: 2.4rem;
   border: 1px dashed var(--border-focus);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--bg);
   color: var(--text-muted);
   font-size: 1.2rem;

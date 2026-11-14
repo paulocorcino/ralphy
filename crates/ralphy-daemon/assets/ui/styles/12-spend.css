@@ -208,7 +208,7 @@
 .cov-track {
   display: flex;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
   background: var(--bg);
 }
@@ -333,7 +333,7 @@
 }
 .meter-track {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg);
   overflow: hidden;
 }
@@ -341,7 +341,7 @@
   display: block;
   height: 100%;
   background: var(--border-focus);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 .meter-value {
   font-family: var(--font-mono);
@@ -397,14 +397,14 @@
 }
 .cause-track {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg);
   overflow: hidden;
 }
 .cause-fill {
   display: block;
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   /* The neutral default is `no_price`: a model missing from the table is
      maintenance, and an accent here would cry wolf. */
   background: var(--border-focus);
@@ -664,7 +664,7 @@
 .delivery-track,
 .model-track {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg);
   overflow: hidden;
 }
@@ -672,7 +672,7 @@
 .model-fill {
   display: block;
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--border-focus);
 }
 /* A model nothing could be priced for is a GAP, not a cheap engine — the same
@@ -793,7 +793,7 @@
   gap: 0.4rem;
   padding: 0.15rem 0.5rem;
   border: 1px solid color-mix(in srgb, var(--console-text) 45%, var(--border));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--console-text) 10%, var(--surface));
   color: var(--console-text);
   font-size: 0.72rem;
@@ -882,7 +882,7 @@
   display: inline-block;
   margin-left: 0.4rem;
   padding: 0 0.3rem;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--console-text) 16%, transparent);
   color: var(--console-text);
   font-size: 0.66rem;
@@ -982,7 +982,7 @@
   align-items: center;
   gap: 6px;
   padding: 2px 2px 2px 10px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   background: var(--bg);
   border: 1px solid var(--border);
   font-size: 12px;

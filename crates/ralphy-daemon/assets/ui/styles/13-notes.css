@@ -24,7 +24,7 @@
      picks the text over it, because the palette is desaturated by design and
      a ~10 % tint of it is not a colour anyone would name. */
   border-top: 3px solid var(--note-tone);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   --note-ground: color-mix(in srgb, var(--note-tone) 10%, var(--surface));
   --note-ink: var(--text);
   /* THE HAND AND THE SIZE (asked 2026-09-22), on the same seam as the ground
@@ -170,7 +170,7 @@
   min-width: 0;
   background: color-mix(in srgb, #000 22%, var(--note-ground));
   border: 1px solid var(--border-focus);
-  border-radius: 4px;
+  border-radius: var(--radius);
   padding: 0 0.2rem;
   color: var(--note-ink);
   font-family: var(--font-ui);
@@ -216,7 +216,7 @@
   opacity: 0.66;
   background: transparent;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius);
   cursor: pointer;
   transition: background 0.12s ease, opacity 0.12s ease;
 }
@@ -313,7 +313,7 @@
   color: var(--note-ink);
   background: transparent;
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 0.12s ease, opacity 0.12s ease;
 }
@@ -425,7 +425,7 @@
   cursor: se-resize;
   border-right: 2px solid color-mix(in srgb, var(--note-tone) 60%, transparent);
   border-bottom: 2px solid color-mix(in srgb, var(--note-tone) 60%, transparent);
-  border-bottom-right-radius: 6px;
+  border-bottom-right-radius: var(--radius-md);
 }
 
 /* The footer's three parts: the path (or the directory field, while the note
@@ -435,7 +435,7 @@
   min-width: 0;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius);
   padding: 0 0.2rem;
   color: inherit;
   font: inherit;
@@ -570,7 +570,7 @@
   height: 18px;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 .note-swatch.is-on {
@@ -678,7 +678,7 @@
   min-width: 0;
   background: transparent;
   border: 1px solid var(--border-focus);
-  border-radius: 4px;
+  border-radius: var(--radius);
   padding: 0 0.2rem;
   color: var(--text);
   font: inherit;
@@ -915,7 +915,7 @@
 --------------------------------------------------------------------------- */
 .note-card .milkdown .milkdown-toolbar {
   border: 1px solid var(--border-focus);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 .note-card .milkdown .milkdown-toolbar .toolbar-item {
   width: 22px;
@@ -951,7 +951,7 @@
 }
 .note-card .milkdown .milkdown-slash-menu {
   border: 1px solid var(--border-focus);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   /* The card clips its overflow, so a menu wider than the card is a menu with
      half its rows unreachable — the palette's rule, one surface over. */
   max-width: calc(100% - 0.8rem);
@@ -1195,7 +1195,7 @@
 --------------------------------------------------------------------------- */
 .wb-toast {
   position: fixed;
-  z-index: 3000;
+  z-index: var(--z-toast);
   left: 50%;
   bottom: 2.2rem;
   transform: translateX(-50%);
@@ -1205,12 +1205,12 @@
   max-width: min(36rem, 90vw);
   padding: 0.45rem 0.6rem;
   border: 1px solid var(--border-focus);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--surface-hi);
   color: var(--text);
   font-family: var(--font-ui);
   font-size: 0.85rem;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-toast);
 }
 .wb-toast-text {
   min-width: 0;
@@ -1222,7 +1222,7 @@
   flex: 0 0 auto;
   background: transparent;
   border: 1px solid var(--border-focus);
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text-strong);
   font: inherit;
   padding: 0.1rem 0.5rem;
@@ -1372,7 +1372,7 @@
   padding: 0.45rem 0.6rem;
   border: 1px dashed var(--border);
   border-top: 3px solid var(--note-tone);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--note-tone) 6%, transparent);
   color: var(--text-muted);
   font-family: var(--font-ui);

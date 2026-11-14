@@ -61,7 +61,7 @@
      number would buy nothing against it.
      Non-interactive, so a pill can never eat a click or a selection drag meant
      for the terminal underneath it. */
-  z-index: 130;
+  z-index: var(--z-frame);
   pointer-events: none;
 }
 .pill {
@@ -79,13 +79,13 @@
 .ctxmenu {
   display: none;
   position: fixed;
-  z-index: 200;
+  z-index: var(--z-ctxmenu);
   min-width: 190px;
   padding: 0.25rem;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float);
 }
 .ctx-item {
   all: unset;
@@ -186,7 +186,7 @@
    inside `.monaco-scrollable-element`, so it takes the palette directly. */
 .monaco-scrollable-element > .scrollbar > .slider {
   background: var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 .monaco-scrollable-element > .scrollbar > .slider:hover,
 .monaco-scrollable-element > .scrollbar > .slider.active {
@@ -222,7 +222,7 @@
    what this text exists to contradict. */
 .files-error {
   padding: 0.5rem var(--side-gutter);
-  color: var(--danger, #e5484d);
+  color: var(--danger);
   font-size: 0.78rem;
 }
 /* The branch refusal rides the same gutter, and adds the bound the change
@@ -262,7 +262,7 @@
   background: var(--surface);
   color: var(--text-muted);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0 0.4rem;
   font-size: 0.68rem;
   line-height: 1.4;
@@ -291,7 +291,7 @@
   place-items: center;
   width: 24px;
   height: 24px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   cursor: pointer;
   font-size: 0.85rem;
@@ -382,7 +382,7 @@
   background: var(--surface);
   color: var(--text-muted);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0 0.4rem;
   font-size: 0.68rem;
   line-height: 1.4;
@@ -403,7 +403,7 @@
   height: 18px;
   padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -415,7 +415,7 @@
   opacity: 1;
 }
 .project-remove:hover {
-  background: var(--surface-2, var(--surface));
+  background: var(--surface);
   color: var(--danger);
 }
 .project-remove i,
@@ -500,7 +500,7 @@
   place-items: center;
   min-width: 24px;
   min-height: 24px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   cursor: pointer;
   font-size: 0.9rem;
@@ -683,7 +683,7 @@
   place-items: center;
   width: 16px;
   height: 16px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--danger);
 }
@@ -837,7 +837,7 @@
   place-items: center;
   width: 24px;
   height: 24px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   cursor: pointer;
 }

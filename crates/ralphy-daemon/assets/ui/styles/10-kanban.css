@@ -126,7 +126,7 @@
   gap: 0.3rem;
   padding: 0.15rem 0.5rem;
   border: 1px solid color-mix(in srgb, var(--info) 35%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--info) 12%, var(--log-bg));
   color: var(--text);
   font-size: 0.7rem;
@@ -201,7 +201,7 @@
 .kanban-error {
   padding: 2rem;
   text-align: center;
-  color: var(--danger, #e5484d);
+  color: var(--danger);
   display: flex;
   gap: 0.5rem;
   align-items: center;
@@ -212,9 +212,9 @@
 .kd-error {
   margin: 0 0 0.75rem 0;
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--danger, #e5484d);
-  border-radius: 6px;
-  color: var(--danger, #e5484d);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-md);
+  color: var(--danger);
   display: flex;
   gap: 0.5rem;
   align-items: center;
@@ -238,7 +238,7 @@
   min-height: 0;
   background: var(--chrome);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 .kanban-col-head {
   display: flex;
@@ -263,7 +263,7 @@
   text-align: center;
   font-size: 0.7rem;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: var(--text-muted);
 }
 .kanban-col-head .spacer {
@@ -286,7 +286,7 @@
   color: var(--text-muted);
   border: 1px dashed var(--border);
   padding: 0.05rem 0.35rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 /* accent each column's top edge so the four read apart at a glance */
 .kanban-col.col-agent {
@@ -368,7 +368,7 @@
   text-transform: uppercase;
   letter-spacing: 0.03em;
   padding: 0.03rem 0.35rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   color: var(--text-muted);
 }
@@ -397,7 +397,7 @@
   padding: 0.2rem 0.4rem;
   background: color-mix(in srgb, var(--live) 14%, var(--log-bg));
   border: 1px solid color-mix(in srgb, var(--live) 35%, transparent);
-  border-radius: 4px;
+  border-radius: var(--radius);
   font-size: 0.7rem;
   color: var(--text);
   cursor: pointer; /* it navigates to the run (#301) */
@@ -417,7 +417,7 @@
   padding: 0.2rem 0.4rem;
   background: color-mix(in srgb, var(--info) 12%, var(--log-bg));
   border: 1px solid color-mix(in srgb, var(--info) 32%, transparent);
-  border-radius: 4px;
+  border-radius: var(--radius);
   font-size: 0.7rem;
   color: var(--text);
   cursor: pointer;
@@ -450,7 +450,7 @@
   font-size: 0.64rem;
   line-height: 1.5;
   padding: 0.02rem 0.4rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-family: var(--font-ui);
   white-space: nowrap;
 }
@@ -492,7 +492,7 @@
   text-transform: uppercase;
   letter-spacing: 0.03em;
   padding: 0.15rem 0.5rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   color: var(--text-muted);
 }
@@ -714,7 +714,7 @@
   color: var(--text-muted);
   padding: 0.1rem 0.4rem;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 .kd-blocker.open {
   color: var(--danger);
@@ -732,7 +732,7 @@
 .kd-label {
   font-size: 0.68rem;
   padding: 0.06rem 0.5rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-family: var(--font-ui);
 }
 .kd-nolabel {
@@ -748,7 +748,7 @@
   color: var(--text-muted);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.1rem 0.5rem;
   cursor: pointer;
 }
@@ -778,7 +778,7 @@
   overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 0.25rem;
 }
 .kd-label-opt {
@@ -795,7 +795,7 @@
 .kd-label-swatch {
   width: 11px;
   height: 11px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   flex: none;
 }
 /* Rendered issue body + comments — the SAME prose system as the file viewer

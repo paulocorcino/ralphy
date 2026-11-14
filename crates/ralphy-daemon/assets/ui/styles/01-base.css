@@ -67,6 +67,30 @@
      content of either row: the 21.75px branch chip and the 22px buttons. */
   --row-h: 33px;
   --runs-w: 400px;
+  /* Radii (one name per value; `--radius` is the 4px default). */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-pill: 999px;
+  /* The stacking order of the page, low to high. The consoles take 0 to 120
+     (`Z_CEIL`, wb-console.ts); every layer above them is named here. */
+  --z-frame: 130;
+  --z-panel: 150;
+  --z-rail-menu: 160;
+  --z-ctxmenu: 200;
+  --z-modal: 500;
+  --z-zoom: 510;
+  --z-modal-ask: 520;
+  --z-login: 900;
+  --z-dropdown: 1000;
+  --z-toast: 3000;
+  /* Three depths: a floating menu or window, a modal, a toast. */
+  --shadow-float: 0 10px 30px rgba(0, 0, 0, 0.55);
+  --shadow-modal: 0 24px 70px rgba(0, 0, 0, 0.6);
+  --shadow-toast: 0 4px 18px rgba(0, 0, 0, 0.4);
+  /* The one focus ring (ADR-0035, amendment of 2026-11-14). */
+  --focus-ring: var(--console-text);
   /* The note card's six tones (ADR-0064 §3). Desaturated against the warm
      ground on purpose: a card is a surface the operator READS, so the tone is
      an edge band and a wash, never a highlighter. The names are the closed set
@@ -102,7 +126,7 @@ input[type="checkbox"]:not(.switch input) {
   margin: 0;
   background: var(--log-bg);
   border: 1px solid var(--border-focus);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 input[type="checkbox"]:not(.switch input):checked {
@@ -131,7 +155,7 @@ body {
 }
 body {
   margin: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   background: var(--bg);
   color: var(--text);
   font-size: 13px;
@@ -186,7 +210,7 @@ body.side-collapsed {
     left: var(--rail-w);
     width: min(var(--side-w), calc(100vw - var(--rail-w)));
     /* the Runs panel's level: over the floating consoles, under the modals */
-    z-index: 150;
+    z-index: var(--z-panel);
     box-shadow: 10px 0 30px rgba(0, 0, 0, 0.35);
   }
   body.side-collapsed .side {

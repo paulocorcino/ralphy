@@ -131,7 +131,7 @@
   text-transform: uppercase;
   color: var(--text-muted);
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   padding: 0 0.3rem;
 }
 .vbtn.save.dirty {
@@ -163,7 +163,7 @@
   padding: 0.5rem 0.7rem;
   background: var(--log-bg);
   color: var(--text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.82rem;
 }
 
@@ -224,9 +224,9 @@
   overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 0.25rem;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--shadow-float);
   z-index: 20;
 }
 .enc-item {
@@ -307,7 +307,7 @@
   color: var(--text-muted);
   font-size: 0.76rem;
   padding: 0.15rem 0.4rem;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -532,7 +532,7 @@
   font-size: 0.875em;
   background: color-mix(in srgb, var(--console-border) 22%, transparent);
   color: var(--console-text);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   padding: 0.12em 0.38em;
 }
 .md-body pre,
@@ -713,7 +713,7 @@
   margin-left: 0.4em;
   padding: 0 0.35em;
   border: 1px solid var(--border-focus);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-size: 0.85em;
 }
 /* A `hidden` card, group or row stays hidden: the rules above set `display`,
@@ -737,7 +737,7 @@
   padding: 0.1em 0.6em;
   background: transparent;
   border: 1px solid var(--border-focus);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   font: inherit;
   font-size: 0.8em;
@@ -792,7 +792,7 @@
 }
 .md-body .mermaid-error {
   color: var(--danger);
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8rem;
 }
 .md-body mark.find-hit {
@@ -891,7 +891,7 @@
 .zoom-overlay {
   position: fixed;
   inset: 0;
-  z-index: 510;
+  z-index: var(--z-zoom);
   background: rgba(8, 6, 5, 0.94);
 }
 .zoom-overlay:focus {

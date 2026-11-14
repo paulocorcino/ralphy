@@ -29,7 +29,7 @@
    (200) and the modals (500). Closed, it keeps 40: on a phone the Runs panel
    is as wide as the screen and covers the rail. */
 .rail:has(> .menu-open) {
-  z-index: 160;
+  z-index: var(--z-rail-menu);
 }
 /* `>` is load-bearing: the account menu hangs INSIDE the rail now, and an
    unscoped `.rail button` turned each of its items into a 32px icon box. These
@@ -75,7 +75,7 @@
   height: 16px;
   padding: 0 4px;
   box-sizing: border-box;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: #d29922;
   color: var(--bg);
   font-size: 0.64rem;
@@ -671,7 +671,7 @@
   color: var(--text);
   background: var(--log-bg);
   border: 1px solid var(--border-focus);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 /* A content-search hit count on the row (ADR-0036 amendment 2026-09-15). The
@@ -694,7 +694,7 @@
   background: var(--surface);
   color: var(--text-muted);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0 0.35rem;
   font-size: 0.65rem;
   line-height: 1.4;

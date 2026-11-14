@@ -139,11 +139,53 @@ and fence pages were not measured.
 | `--runs-w`      | `400px`   | Runs panel width                               |
 | `--kb-inset`    | `0px`     | Height of the on-screen keyboard (set by code) |
 
-Radii that are literal values, not tokens: `6px` (menus, session windows),
-`8px` (cards), `10px` (modals), `999px` (segmented control).
+### Radius
 
-Shadows: `0 10px 30px rgba(0,0,0,0.55)` on menus and floating windows,
-`0 24px 70px rgba(0,0,0,0.6)` on modals. A flat element has no shadow.
+| Token           | Value   | Use                                  |
+| --------------- | ------- | ------------------------------------ |
+| `--radius-sm`   | `3px`   | Checkbox, inline code, small buttons |
+| `--radius`      | `4px`   | Buttons, fields, menu rows           |
+| `--radius-md`   | `6px`   | Menus, session windows, toast        |
+| `--radius-lg`   | `8px`   | Cards                                |
+| `--radius-xl`   | `10px`  | Modals                               |
+| `--radius-pill` | `999px` | Chips, badges, segmented control     |
+
+A circle uses `50%`. A few radii are still literal (1px, 2px, 5px, 7px,
+12px); the [audit](./design-system/audit.md) maps them to the scale.
+
+### Depth
+
+| Token            | Value                          | Use                     |
+| ---------------- | ------------------------------ | ----------------------- |
+| `--shadow-float` | `0 10px 30px rgba(0,0,0,0.55)` | Menus, floating windows |
+| `--shadow-modal` | `0 24px 70px rgba(0,0,0,0.6)`  | Modals                  |
+| `--shadow-toast` | `0 4px 18px rgba(0,0,0,0.4)`   | Toast                   |
+
+A flat element has no shadow.
+
+### Stacking order
+
+The stacking order, low to high. The consoles use 0 to 120 (`Z_CEIL` in
+`wb-console.ts`). A new layer above them gets a token here.
+
+| Token           | Value  | Use                                           |
+| --------------- | ------ | --------------------------------------------- |
+| `--z-frame`     | `130`  | Frame chrome over the consoles                |
+| `--z-panel`     | `150`  | Runs panel; the sidebar on a phone            |
+| `--z-rail-menu` | `160`  | The rail while one of its menus is open       |
+| `--z-ctxmenu`   | `200`  | Context menu                                  |
+| `--z-modal`     | `500`  | Modal scrim                                   |
+| `--z-zoom`      | `510`  | Image zoom overlay                            |
+| `--z-modal-ask` | `520`  | Confirm and prompt, above the modal that asks |
+| `--z-login`     | `900`  | Login gate                                    |
+| `--z-dropdown`  | `1000` | Dropdown menu, build notice                   |
+| `--z-toast`     | `3000` | Toast                                         |
+
+### Focus
+
+`--focus-ring` is `--console-text`. A control that removes the browser
+outline shows focus with `outline: 1px solid var(--focus-ring)` and
+`outline-offset: 2px`.
 
 ## Components
 

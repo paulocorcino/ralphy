@@ -40,8 +40,8 @@ measured.
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
 | Font size      | 52 distinct values. Top: 0.8rem (42), 0.72rem (41), 0.78rem (32), 0.7rem (25), 0.82rem (23), 0.74rem (18), 0.76rem (14), 0.75rem (14) | 6 steps        |
 | Spacing        | 78 distinct values in 826 padding, margin and gap declarations                                                                        | 8 steps        |
-| Radius         | 13 values: `--radius`, 999px, 4px (the token value written by hand, 27), 6px, 3px, 50%, 8px, 2px, 1px, 5px, 12px, 10px, 7px           | 6 names        |
-| z-index        | 21 values from 0 to 3000, no names                                                                                                    | Named layers   |
+| Radius         | Step 1 done: 6 tokens. Still literal: 2px, 1px, 5px, 12px, 7px                                                                        | 6 names        |
+| z-index        | Step 1 done: every layer from 130 up is a token                                                                                       | Named layers   |
 | Shadow         | 28 distinct `box-shadow` values                                                                                                       | 3 levels       |
 | Empty state    | 12 classes, 5 sizes, 3 centered and 1 italic                                                                                          | 1 class        |
 | Error line     | 18 classes, 5 sizes, 1 with a box                                                                                                     | 1 class        |

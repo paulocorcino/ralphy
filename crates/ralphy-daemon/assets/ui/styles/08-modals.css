@@ -102,7 +102,7 @@
 .modal-scrim {
   position: fixed;
   inset: 0;
-  z-index: 500;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 3vh 2vw;
@@ -133,7 +133,7 @@
    pasted into index.html. */
 .modal-scrim:has(> .confirm-modal),
 .modal-scrim:has(> .prompt-modal) {
-  z-index: 520;
+  z-index: var(--z-modal-ask);
 }
 .modal {
   display: flex;
@@ -142,8 +142,8 @@
   max-height: 92vh;
   background: var(--chrome);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-modal);
   overflow: hidden;
 }
 .modal-head {
@@ -173,7 +173,7 @@
   place-items: center;
   width: 24px;
   height: 24px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   cursor: pointer;
 }
@@ -197,7 +197,7 @@
 .foot-note code {
   background: var(--log-bg);
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   padding: 0 0.25em;
 }
 
@@ -233,7 +233,7 @@
 .plan-verdict-chip {
   padding: 0 0.4rem;
   border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: var(--danger);
   font-size: 0.68rem;
 }
@@ -379,7 +379,7 @@
   color: var(--console-text);
   background: var(--console-bg);
   border: 1px solid var(--console-border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.05rem 0.5rem;
   text-decoration: none;
 }
@@ -524,7 +524,7 @@
   font-size: 0.66rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.1rem 0.5rem;
   border: 1px solid var(--border);
   color: var(--text-muted);
@@ -543,7 +543,7 @@
   line-height: 1.6;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   padding: 0.7rem 0.9rem;
 }
 .settings-noproject .bi {
@@ -553,7 +553,7 @@
 .settings-noproject code {
   background: var(--log-bg);
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   padding: 0 0.25em;
 }
 .settings-blurb {
@@ -607,7 +607,7 @@
   height: 18px;
 }
 .set-input.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   width: 100%;
   min-width: 0;
 }
@@ -634,7 +634,7 @@
 }
 .sec-card {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   padding: 0.8rem 0.9rem;
 }
@@ -659,7 +659,7 @@
   font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.05rem 0.5rem;
   border: 1px solid var(--border);
   color: var(--text-muted);
@@ -760,13 +760,13 @@
   margin-top: 0.4rem;
   background: var(--log-bg);
   border: 1px solid var(--console-border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 .totp-qr {
   flex-shrink: 0;
   background: #fff;
   padding: 6px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   line-height: 0;
 }
 .totp-qr img {
@@ -812,7 +812,7 @@
   inset: 0;
   background: var(--log-bg);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   transition: background 0.15s ease;
 }
 .switch-track::before {
@@ -847,7 +847,7 @@ body.locked .runs {
 .login-gate {
   position: fixed;
   inset: 0;
-  z-index: 900;
+  z-index: var(--z-login);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -879,7 +879,7 @@ body.locked .runs {
   width: 26px;
   height: 26px;
   flex-shrink: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--surface-hi);
   border: 1px solid var(--border);
   font-size: 15px;
@@ -910,7 +910,7 @@ body.locked .runs {
   color: var(--text);
   background: var(--log-bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   padding: 0.55rem 0.65rem;
 }
 .login-input:focus {
@@ -944,7 +944,7 @@ body.locked .runs {
   color: var(--console-text);
   background: var(--console-bg);
   border: 1px solid var(--console-border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   padding: 0.6rem;
   cursor: pointer;
 }
