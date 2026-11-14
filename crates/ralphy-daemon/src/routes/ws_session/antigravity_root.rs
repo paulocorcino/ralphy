@@ -56,10 +56,12 @@ async fn exists(path: PathBuf) -> bool {
 fn prepared(ran: Collected) -> Result<(), String> {
     match ran {
         Collected::Done(Some(0), _) => Ok(()),
-        Collected::Done(code, out) => Err(cli_reason(&out).unwrap_or_else(|| match code {
-            Some(code) => format!("preparing its root failed (exit {code})"),
-            None => "preparing its root was stopped".to_owned(),
-        })),
+        Collected::Done(code, out) => {
+            Err(cli_reason(&out.merged()).unwrap_or_else(|| match code {
+                Some(code) => format!("preparing its root failed (exit {code})"),
+                None => "preparing its root was stopped".to_owned(),
+            }))
+        }
         Collected::Failed(e) => {
             let error = format!("{e:#}");
             tracing::warn!(%error, "could not run `ralphy antigravity prepare-root`");
@@ -85,6 +87,7 @@ fn headed(why: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dispatch::CollectedOutput;
 
     /// The daemon cannot import the adapter, so it names the hooks file itself.
     #[test]
@@ -99,9 +102,13 @@ mod tests {
     #[test]
     fn a_reason_is_the_last_line_under_the_head_and_cut() {
         let out = b"a log line\r\nError: the program path has a space\r\n\r\n";
-        let why = prepared(Collected::Done(Some(1), out.to_vec())).unwrap_err();
+        let out = CollectedOutput {
+            stdout: out.to_vec(),
+            stderr: Vec::new(),
+        };
+        let why = prepared(Collected::Done(Some(1), out)).unwrap_err();
         assert_eq!(headed(&why), "antigravity: the program path has a space");
-        let silent = prepared(Collected::Done(Some(2), Vec::new())).unwrap_err();
+        let silent = prepared(Collected::Done(Some(2), CollectedOutput::default())).unwrap_err();
         assert_eq!(silent, "preparing its root failed (exit 2)");
         assert_eq!(headed(&"x".repeat(1000)).chars().count(), REASON_MAX);
     }

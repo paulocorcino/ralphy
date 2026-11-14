@@ -48,6 +48,15 @@ pub(crate) fn not_answered(collected: &dispatch::Collected) -> Option<serde_json
     Some(serde_json::json!({ "status": "error", "message": message }))
 }
 
+/// The error reply of a collected command that exited non-zero: its own text,
+/// stdout then stderr.
+pub(crate) fn failed_reply(output: &dispatch::CollectedOutput) -> serde_json::Value {
+    serde_json::json!({
+        "status": "error",
+        "message": String::from_utf8_lossy(&output.merged()).trim(),
+    })
+}
+
 /// Spawn-and-COLLECT a config CLI invocation (`config get|set|unset`) for a
 /// Query/Mutate verb off the tokio runtime (ADR-0036 §2): unlike the streaming
 /// Spawn path, a config verb yields ONE collected reply. It waits for one of the
@@ -59,7 +68,7 @@ pub(crate) async fn collect_config(
     daemon_id: Option<String>,
 ) -> dispatch::Collected {
     dispatch::collect_within(
-        std::sync::Arc::new(dispatch::ProcessSpawner),
+        std::sync::Arc::new(dispatch::TwoPipeSpawner),
         dispatch::ralphy_exe(),
         argv,
         cwd,

@@ -20,6 +20,8 @@
 //! `RALPHY_TEST_GRANDCHILD_MS` first starts a copy of itself that inherits
 //! stdout and stderr and sleeps that long: a grandchild that holds the output
 //! pipe after this child exits.
+//! `RALPHY_TEST_FLOOD_BYTES` makes it write that many `o` bytes to stdout and
+//! `e` bytes to stderr, interleaved, and exit 0 with nothing else printed.
 //!
 //! Called as `antigravity prepare-root`, it stands in for that subcommand and
 //! decides by files in its working directory, not by the environment (one
@@ -63,6 +65,12 @@ fn main() {
             .env("RALPHY_TEST_SLEEP_MS", ms)
             .spawn()
             .expect("starting the grandchild");
+    }
+    if let Some(bytes) = std::env::var("RALPHY_TEST_FLOOD_BYTES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+    {
+        flood(bytes);
     }
     if let Ok(dump_path) = std::env::var("RALPHY_TEST_ENV_DUMP") {
         write_env_dump(&dump_path);
@@ -192,6 +200,26 @@ fn write_env_dump(dump_path: &str) {
         ),
     )
     .expect("writing the env dump");
+}
+
+/// Write `bytes` bytes of `o` to stdout and of `e` to stderr, in interleaved
+/// 4 KiB chunks, then exit 0. Never returns.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a test helper child reports to its test by its exit code"
+)]
+fn flood(bytes: usize) {
+    use std::io::Write;
+    let (mut out, mut err) = (std::io::stdout().lock(), std::io::stderr().lock());
+    let mut left = bytes;
+    while left > 0 {
+        let n = left.min(4096);
+        out.write_all(&vec![b'o'; n]).expect("writing stdout");
+        out.flush().expect("flushing stdout");
+        err.write_all(&vec![b'e'; n]).expect("writing stderr");
+        left -= n;
+    }
+    std::process::exit(0);
 }
 
 /// The `claude --version` stand-in described in the module docs. Never returns.
