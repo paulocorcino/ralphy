@@ -298,6 +298,3 @@ ADR-0041 accepted; host clean.
 - Every artifact in this trail is **English** ([[canonical-language-english]]).
 - Screenshots are for browser-driven verification only, never terminal/CLI output
   ([[evidence-discipline]]).
-</content>
-
-</invoke>
