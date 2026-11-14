@@ -30,7 +30,7 @@ Measured in Chromium on 2026-11-14. State badge: padding 0.8px 8px, 17px high, 1
 
 ## Modes
 
-On a phone the scope chip in Settings wraps onto three lines (44px high).
+Same in every mode. The scope chip in Settings stays on one line on a phone (18px high).
 
 ## The classes that exist
 

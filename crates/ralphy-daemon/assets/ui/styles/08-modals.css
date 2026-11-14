@@ -619,6 +619,30 @@
   max-width: 60ch;
 }
 
+/* On a phone (the 560px of `PHONE_QUERY`, wb-viewport.ts) two columns cut the
+   fields at the right edge: the section list goes above the section, with
+   its own scroll, and a field may drop under its label. */
+@media (max-width: 560px) {
+  .settings-body {
+    flex-direction: column;
+  }
+  .settings-nav {
+    width: auto;
+    max-height: 35vh;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .settings-content {
+    padding: 0.8rem 0.9rem 1.2rem;
+  }
+  .set-main {
+    flex-wrap: wrap;
+  }
+  .set-input {
+    min-width: min(220px, 100%);
+  }
+}
+
 /* --- security modal ------------------------------------------------------- */
 .security-body {
   flex: 1;

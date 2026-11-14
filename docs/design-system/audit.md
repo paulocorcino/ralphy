@@ -70,7 +70,8 @@ measured.
 
 ## 5. Accessibility and modes, measured in a browser
 
-Items 1 to 5 are fixed by step 2 of the plan (2026-11-14). Measured after
+Items 1 to 5 are fixed by step 2 of the plan, and item 8 by step 3
+(2026-11-14). Measured after
 the fix: Tab stays inside each of the five modals measured, every control
 that gets focus shows it, the canvas tab is in the Tab order, and the
 danger button text is 4.52:1.

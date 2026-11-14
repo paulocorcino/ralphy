@@ -52,7 +52,7 @@ Measured in Chromium on 2026-11-14. Head: padding 11.2px 14.4px, gap 8px, 47px h
 
 ## Modes
 
-On a phone (390px) the Settings modal keeps its two columns: the Bind address field is cut at the right edge, and the scope chip wraps onto three lines.
+Below 560px the Settings modal is one column: the section list on top, at most 35% of the screen high with its own scroll, then the section. A field may drop under its label. Measured at 390px: no field is cut, and the content is 344px wide.
 
 ## Parts
 
