@@ -26,6 +26,8 @@
   --window-bg: #0c0a08;
   --border: #4c4239;
   --border-focus: #7a6d5f;
+  /* The edge of a text field: 3:1 against the field and the modal (WCAG 1.4.11). */
+  --border-field: #867565;
   --text: #d4ccc0;
   /* Headings and `strong`: a step ABOVE the body, but deliberately short of
      white. The near-white this replaced glared against the warm ground —

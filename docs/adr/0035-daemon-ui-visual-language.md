@@ -236,6 +236,10 @@ this ADR in these places.
   its panel changes for other work, not in one change.
 - **Text field: one ground, `--log-bg`.** The same as the checkbox, the
   switch track and the segmented track.
+- **Text field: an edge at 3:1, `--border-field` (`#867565`).** `--border`
+  gave 1.4 to 1.65:1 against the field and the modal, under the 3:1 that
+  WCAG 1.4.11 asks for the edge of a control. A focused field keeps this
+  edge and shows the focus ring.
 - **Sizes on touch screens stay as they are.** A control does not grow on
   a phone or a tablet; larger controls would distort the page. A size may
   go down, or be made the same as its siblings. The touch key strip of a

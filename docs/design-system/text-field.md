@@ -59,15 +59,15 @@ Measured in Chromium on 2026-11-14. Padding 5.6px 8px, 28px high, for every name
 
 ## States
 
-| State     | What the code does                                                              |
-| --------- | ------------------------------------------------------------------------------- |
-| Default   | `--border` hairline, radius `--radius`                                          |
-| Focus     | The focus ring (1px `--focus-ring`, offset 1px) and the border `--border-focus` |
-| Disabled  | `opacity: 0.6`, cursor `not-allowed`                                            |
-| Read-only | `.host-input[readonly]`: text in `--text-muted`                                 |
-| Empty     | A `placeholder` attribute, for example "Current password"                       |
-| Error     | No style on the field. A `.side-error` line shows the message                   |
-| Loading   | Not used on the field                                                           |
+| State     | What the code does                                                        |
+| --------- | ------------------------------------------------------------------------- |
+| Default   | `--border-field` edge (3:1 on the field and the modal), radius `--radius` |
+| Focus     | The focus ring: 1px `--focus-ring`, offset 1px; the edge stays            |
+| Disabled  | `opacity: 0.6`, cursor `not-allowed`                                      |
+| Read-only | `.host-input[readonly]`: text in `--text-muted`                           |
+| Empty     | A `placeholder` attribute, for example "Current password"                 |
+| Error     | No style on the field. A `.side-error` line shows the message             |
+| Loading   | Not used on the field                                                     |
 
 ## Files
 

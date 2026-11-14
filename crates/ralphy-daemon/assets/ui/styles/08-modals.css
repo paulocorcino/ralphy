@@ -575,7 +575,7 @@
   font-size: var(--fs-md);
   color: var(--text);
   background: var(--log-bg);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-field);
   border-radius: var(--radius);
   padding: 0.35rem var(--space-5);
 }
@@ -587,7 +587,6 @@
 .set-input:focus {
   outline: 1px solid var(--focus-ring);
   outline-offset: 1px;
-  border-color: var(--border-focus);
 }
 /* A key the daemon refuses to write is shown, not edited. Dimmed rather than
    hidden: the operator still has to be able to read what the gate is. */

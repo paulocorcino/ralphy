@@ -104,7 +104,8 @@ No page error in any mode. No horizontal scroll in any mode.
    a hovered row). Every other token pair passes: `--text` 7.0 to 10.2,
    `--text-muted` 5.0 to 6.0 on the other grounds. Disabled text is dimmed
    on purpose and WCAG does not count it.
-6. **Field edges are faint.** `--border` against the ground around it is
+6. **Field edges were faint.** Fixed after the plan: the token `--border-field`
+   (`#867565`) gives 3.43:1 on the field and 3.06:1 on the modal. `--border` against the ground around it is
    1.38:1 on `--surface` and 1.65:1 on `--bg`. WCAG 1.4.11 asks 3:1 for the
    edge of a control. The field ground differs from the modal ground too,
    which helps, but only a little.

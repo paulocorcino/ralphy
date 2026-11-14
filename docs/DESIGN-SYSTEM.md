@@ -26,19 +26,20 @@ Use the token, never its hex value. Monaco cannot read CSS variables, so
 
 ### Neutrals
 
-| Token            | Value     | Use                                        |
-| ---------------- | --------- | ------------------------------------------ |
-| `--bg`           | `#24201c` | Page ground                                |
-| `--chrome`       | `#2b2620` | Rail, sidebar, modal body                  |
-| `--surface`      | `#342d27` | Buttons, modal head and foot, menus        |
-| `--surface-hi`   | `#423a31` | Hover: one step up from `--surface`        |
-| `--log-bg`       | `#2a2521` | Command log, text fields, segmented track  |
-| `--window-bg`    | `#0c0a08` | Console window ground, behind the terminal |
-| `--border`       | `#4c4239` | Default hairline                           |
-| `--border-focus` | `#7a6d5f` | Focused window and focused field border    |
-| `--text`         | `#d4ccc0` | Body text                                  |
-| `--text-strong`  | `#e9e1d4` | Headings and `strong`                      |
-| `--text-muted`   | `#a49c91` | Paths, status, labels, help text           |
+| Token            | Value     | Use                                                  |
+| ---------------- | --------- | ---------------------------------------------------- |
+| `--bg`           | `#24201c` | Page ground                                          |
+| `--chrome`       | `#2b2620` | Rail, sidebar, modal body                            |
+| `--surface`      | `#342d27` | Buttons, modal head and foot, menus                  |
+| `--surface-hi`   | `#423a31` | Hover: one step up from `--surface`                  |
+| `--log-bg`       | `#2a2521` | Command log, text fields, segmented track            |
+| `--window-bg`    | `#0c0a08` | Console window ground, behind the terminal           |
+| `--border`       | `#4c4239` | Default hairline                                     |
+| `--border-focus` | `#7a6d5f` | Focused window and focused field border              |
+| `--border-field` | `#867565` | Edge of a text field: 3:1 on the field and the modal |
+| `--text`         | `#d4ccc0` | Body text                                            |
+| `--text-strong`  | `#e9e1d4` | Headings and `strong`                                |
+| `--text-muted`   | `#a49c91` | Paths, status, labels, help text                     |
 
 ### Accents
 
