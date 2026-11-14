@@ -8,6 +8,7 @@
    (and a missing reply) as a failure, so a `spawn` stream's `output`/`exited`
    frames are never misread as errors.
 
+   A reply with a `failure` is read first: its cause and remedy, whatever the code.
    `message` returns the daemon's `message`/`reason` unchanged: a compare site
    reads the code from it. `failed` and `cause` turn the same reply into text
    for the screen (ADR-0065 §6, #432):
@@ -25,8 +26,23 @@
 export type Read = { value: unknown; goodAt: number; error: string; current: boolean };
 /** What one read attempt answered. */
 export type Outcome = { ok: boolean; value?: unknown; reason?: string; at: number };
+/** A failure as the daemon sends it: its text is cut into cause and remedy. */
+export type Failure = {
+  domain: string;
+  code: string;
+  details?: Record<string, unknown>;
+  text: { cause: string; remedy?: string };
+};
 /** A verb's reply, a `spawn` frame, or nothing: what a failure is read from. */
-type Reply = { status?: string; message?: string | undefined; reason?: string } | null | undefined;
+type Reply =
+  | { status?: string; message?: string | undefined; reason?: string; failure?: Failure }
+  | null
+  | undefined;
+
+// The reason of a read that got no answer; the workbench makes it, the daemon never sends it.
+const transport = "transport";
+// A keyed map, so the copy lint reads it as a cause and not as a sentence.
+const OWN: Record<string, string> = { transport: "the daemon did not answer" };
 
 const CAUSE: Record<string, string> = {
   "not found": "it does not exist",
@@ -40,7 +56,6 @@ const CAUSE: Record<string, string> = {
   "unknown encoding": "the workbench does not know that encoding",
   unencodable: "some characters do not exist in that encoding",
   unavailable: "the project is not available",
-  transport: "the daemon did not answer",
   "unknown verb": "the daemon does not know that command",
   "unknown repo": "the project is not in the list",
   "unknown checkout": "the worktree does not exist",
@@ -54,6 +69,12 @@ const CAUSE: Record<string, string> = {
   "mutation write failed": "the daemon could not run Ralphy",
   "a run is not federated yet": "a run on a peer is not available yet",
 };
+
+// The cause of a reason code, or undefined when the code is not one.
+function causeOf(code: string): string | undefined {
+  const table = code === transport ? OWN : CAUSE;
+  return Object.hasOwn(table, code) ? table[code] : undefined;
+}
 
 function isError(reply: Reply) {
   return !reply || reply.status === "error";
@@ -98,10 +119,18 @@ function oneLine(text: string) {
 // that is already a sentence comes back as { sentence }.
 type Parts = { sentence: string } | { cause: string; rest: string[] };
 
+function failureParts(fail: Failure | undefined): Parts | null {
+  if (fail === undefined || fail.text.cause === "") return null;
+  const remedy = bare(fail.text.remedy ?? "");
+  return { cause: bare(fail.text.cause), rest: remedy ? [remedy] : [] };
+}
+
 function parts(reply: Reply): Parts | null {
+  const fromFailure = failureParts(reply?.failure);
+  if (fromFailure) return fromFailure;
   const raw = replyWords(reply).trim();
   if (!raw) return null;
-  const known = Object.hasOwn(CAUSE, raw) ? CAUSE[raw] : undefined;
+  const known = causeOf(raw);
   if (known !== undefined) return { cause: known, rest: [] };
   if (isSentence(raw) && !raw.startsWith("Error: ")) return { sentence: raw };
   const text = oneLine(raw).replace(/^(cannot|refusing to) [^:]+: /u, "");
@@ -168,7 +197,7 @@ function clock(ms: number) {
 // The line a panel shows for a read that is not current; "" when it is.
 function notCurrent(read: Read | null | undefined, fmt: (ms: number) => string) {
   if (!read || read.current) return "";
-  const error = Object.hasOwn(CAUSE, read.error) ? CAUSE[read.error] : read.error;
+  const error = causeOf(read.error) ?? read.error;
   if (read.goodAt) return `Read at ${fmt(read.goodAt)}. Not current: ${error}`;
   return `Could not read: ${error}`;
 }
@@ -184,4 +213,5 @@ export const WBFail = {
   notCurrent,
   clock,
   CAUSE,
+  transport,
 };

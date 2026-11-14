@@ -50,7 +50,7 @@ export function fetchContent(store: OpenTabs, file: FileToRead): Promise<TabBody
     window.Alpine.store("modals").flash(
       WBFail.failed({ reason }, "Could not open the file: the daemon gave no reason."),
     );
-    if (reason === "not found" || reason === "transport") {
+    if (reason === "not found" || reason === WBFail.transport) {
       store.closeTab(fileTabId(project, path, checkout));
       return null;
     }
@@ -68,7 +68,7 @@ export function fetchContent(store: OpenTabs, file: FileToRead): Promise<TabBody
       checkout,
     )
       .then((url) => (url == null ? refusal : { content: url }))
-      .catch(() => refuse("transport"));
+      .catch(() => refuse(WBFail.transport));
   }
   return WBDaemon.observe("file.read", WBDaemon.withCheckout({ repo: project, path }, checkout))
     .then((reply) => {
@@ -77,7 +77,7 @@ export function fetchContent(store: OpenTabs, file: FileToRead): Promise<TabBody
       }
       return refuse(WBFail.message(reply, "refused"));
     })
-    .catch(() => refuse("transport"));
+    .catch(() => refuse(WBFail.transport));
 }
 
 // A markdown link to another repo file: same viewer choice and binary

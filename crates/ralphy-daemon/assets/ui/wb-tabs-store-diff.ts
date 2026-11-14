@@ -94,7 +94,7 @@ export function openDiff(store: DiffTabs, messages: Messages, project: string, e
         store.syncViewer();
         return null;
       })
-      .catch(() => refuse("transport"));
+      .catch(() => refuse(WBFail.transport));
   });
 }
 

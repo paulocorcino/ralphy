@@ -52,7 +52,8 @@ fn every_error_literal_the_ui_compares_is_produced_by_rust() {
         );
         assert!(
             js.contains(&format!("refuse(\"{lit}\")"))
-                || js.contains(&format!("reason: \"{lit}\"")),
+                || js.contains(&format!("reason: \"{lit}\""))
+                || js.contains(&format!("const {lit} = \"{lit}\"")),
             "{lit:?} is in UI_OWNED but no UI code produces it ({why})"
         );
     }

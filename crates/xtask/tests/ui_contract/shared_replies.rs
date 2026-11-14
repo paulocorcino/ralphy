@@ -15,7 +15,7 @@ use super::*;
 /// its file, and the three setup routes come with theirs: 79.
 /// Counting rules are in [`message_types`]. A new type starts with a shared
 /// reply; a new reply file lowers this number.
-const UNSHARED_BASELINE: usize = 79;
+const UNSHARED_BASELINE: usize = 78;
 
 #[test]
 fn message_types_without_a_shared_reply_match_the_baseline() {
