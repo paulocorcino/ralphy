@@ -353,9 +353,6 @@
   background: var(--surface);
   color: var(--text-muted);
   border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  padding: 0 0.4rem;
-  font-size: 0.68rem;
   line-height: 1.4;
   flex: 0 0 auto;
 }

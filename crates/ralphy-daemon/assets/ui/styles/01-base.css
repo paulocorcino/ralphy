@@ -37,6 +37,8 @@
   --live: #7fae7f;
   /* cool accent for planning / sleep states in the Runs trail */
   --info: #6f9fc0;
+  /* Amber: "needs attention" (ADR-0035, amendment of 2026-11-14). */
+  --warn: #d29922;
   /* the chrome is monospace (terminal feel), but rendered prose (plan.md in the
      Runs panel) reads better in a UI sans — code/pre stay mono. */
   --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -68,6 +70,7 @@
   --row-h: 33px;
   --runs-w: 400px;
   /* Two steps of the type scale (docs/DESIGN-SYSTEM.md). */
+  --fs-2xs: 0.66rem;
   --fs-xs: 0.72rem;
   --fs-sm: 0.78rem;
   /* Radii (one name per value; `--radius` is the 4px default). */
@@ -371,4 +374,63 @@ body.side-collapsed {
   color: var(--text-muted);
   font-size: var(--fs-sm);
   line-height: 1.5;
+}
+
+/* --- chip and badge (docs/design-system/chip-badge.md) --------------------
+   A chip names a thing and may be clicked; a badge gives a count or a state.
+   One shape each. `:root` lifts the shape over a button's `all: unset`; the
+   older classes join the lists and keep their own colors. */
+:root
+  :is(
+    .chip,
+    .branch-chip,
+    .checkout-chip,
+    .ledger-chip,
+    .kanban-plan-chip
+  ) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-xs);
+}
+:root
+  :is(
+    .badge,
+    .scope-chip,
+    .sec-badge,
+    .chg-badge,
+    .plan-verdict-chip
+  ) {
+  padding: 0.05rem 0.45rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-2xs);
+}
+.chip,
+.badge {
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--log-bg);
+}
+.tone-gold {
+  color: var(--console-text);
+  border-color: var(--console-border);
+}
+.tone-live {
+  color: var(--live);
+  border-color: color-mix(in srgb, var(--live) 45%, var(--border));
+}
+.tone-warn {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+}
+.tone-danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+.tone-info {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--info) 35%, var(--border));
+  background: color-mix(in srgb, var(--info) 12%, var(--log-bg));
 }

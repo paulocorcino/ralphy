@@ -44,6 +44,7 @@ Use the token, never its hex value. Monaco cannot read CSS variables, so
 | `--danger`         | `#ce8174` | Offline, errors, destructive actions                       |
 | `--live`           | `#7fae7f` | A live daemon or console, a passed check                   |
 | `--info`           | `#6f9fc0` | Planning and sleep states in the Runs trail                |
+| `--warn`           | `#d29922` | Amber: needs attention (attention counter, urgent release) |
 
 ### Note tones
 
@@ -53,13 +54,16 @@ Six tones for note cards, and two inks for a solid card: `--note-ochre`,
 
 ### Type
 
-| Token               | Value                             | Use                 |
-| ------------------- | --------------------------------- | ------------------- |
-| `--font-mono`       | `ui-monospace, SFMono-Regular, …` | All chrome          |
-| `--font-ui`         | `ui-sans-serif, system-ui, …`     | Rendered prose only |
-| `--reading-size`    | `14px`                            | Prose body size     |
-| `--reading-measure` | `100ch`                           | Prose line length   |
-| `--reading-leading` | `1.7`                             | Prose line height   |
+| Token               | Value                             | Use                                     |
+| ------------------- | --------------------------------- | --------------------------------------- |
+| `--font-mono`       | `ui-monospace, SFMono-Regular, …` | All chrome                              |
+| `--font-ui`         | `ui-sans-serif, system-ui, …`     | Rendered prose only                     |
+| `--reading-size`    | `14px`                            | Prose body size                         |
+| `--reading-measure` | `100ch`                           | Prose line length                       |
+| `--reading-leading` | `1.7`                             | Prose line height                       |
+| `--fs-2xs`          | `0.66rem`                         | Badge, kbd hint (10.56px)               |
+| `--fs-xs`           | `0.72rem`                         | Chip, small segmented control (11.52px) |
+| `--fs-sm`           | `0.78rem`                         | Empty, error and help text (12.48px)    |
 
 The body is 13px, but `rem` is relative to the root, which is 16px. So
 `0.8rem` is 12.8px, a little smaller than the body. The chrome sizes are
@@ -225,3 +229,7 @@ All shortcuts and the keys of each component: [Keyboard](./design-system/keyboar
 What is not consistent today, the decisions to make, the proposed tokens
 and shared classes, and the order of the work:
 [audit](./design-system/audit.md). Nothing in it is applied yet.
+
+One color is outside the palette on purpose: `#dea584`, the Rust file icon
+in the file tree. File type icons use their brand colors, as the devicon
+icons do.

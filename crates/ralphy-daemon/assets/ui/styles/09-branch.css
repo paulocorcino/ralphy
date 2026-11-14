@@ -21,16 +21,10 @@
    one now. */
 .branch-chip {
   all: unset;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
   flex: 0 10000 auto;
   min-width: 4.5rem;
-  padding: 0.08rem 0.4rem;
-  border-radius: var(--radius-pill);
   border: 1px solid transparent;
   color: var(--text-muted);
-  font-size: 0.72rem;
   cursor: pointer;
 }
 .branch-chip:not(.collapsed):hover {
@@ -77,21 +71,15 @@
    chip, the branch chip's shape, present once the repo has a worktree. Its menu is the console switcher's (06-consoles.css). The Changes
    head carries the same chip (#407), so the rule is on the class, not the bar. */
 .checkout-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
   margin-left: 0;
   min-width: 0;
   flex: 0 1 auto;
-  padding: 0.1rem 0.4rem;
   font: inherit;
-  font-size: 0.72rem;
   text-transform: none;
   letter-spacing: normal;
   color: var(--text);
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
   cursor: pointer;
 }
 .checkout-chip:hover {

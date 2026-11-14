@@ -121,15 +121,9 @@
    `--danger` when the plan is asking for a human instead (`Feasible: no`, a
    bundle, or an issue already closed). */
 .kanban-plan-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.15rem 0.5rem;
   border: 1px solid color-mix(in srgb, var(--info) 35%, transparent);
-  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--info) 12%, var(--log-bg));
   color: var(--text);
-  font-size: 0.7rem;
   cursor: pointer;
 }
 .kanban-plan-chip [data-lucide] {

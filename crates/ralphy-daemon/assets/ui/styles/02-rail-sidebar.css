@@ -76,7 +76,7 @@
   padding: 0 4px;
   box-sizing: border-box;
   border-radius: var(--radius-lg);
-  background: #d29922;
+  background: var(--warn);
   color: var(--bg);
   font-size: 0.64rem;
   font-weight: 700;

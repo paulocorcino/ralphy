@@ -231,11 +231,8 @@
   color: var(--danger);
 }
 .plan-verdict-chip {
-  padding: 0 0.4rem;
   border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
-  border-radius: var(--radius-pill);
   color: var(--danger);
-  font-size: 0.68rem;
 }
 .plan-verdict-steps {
   color: var(--text-muted);
@@ -517,11 +514,8 @@
   color: var(--text-strong);
 }
 .scope-chip {
-  font-size: 0.66rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-radius: var(--radius-pill);
-  padding: 0.1rem 0.5rem;
   border: 1px solid var(--border);
   color: var(--text-muted);
   background: var(--log-bg);
@@ -683,11 +677,8 @@
 }
 .sec-badge {
   margin-left: auto;
-  font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-radius: var(--radius-pill);
-  padding: 0.05rem 0.5rem;
   border: 1px solid var(--border);
   color: var(--text-muted);
   background: var(--log-bg);

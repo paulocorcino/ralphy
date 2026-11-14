@@ -32,25 +32,19 @@ Measured in Chromium on 2026-11-14. State badge: padding 0.8px 8px, 17px high, 1
 
 Same in every mode. The scope chip in Settings stays on one line on a phone (18px high).
 
-## The classes that exist
+## The shared rules
 
-All are `999px` round except `.attention-badge` (`8px`).
+| Shape    | Padding     | Size                 | Older classes in the list                                             |
+| -------- | ----------- | -------------------- | --------------------------------------------------------------------- |
+| `.chip`  | 1.6px 7.2px | `--fs-xs` (11.52px)  | `.branch-chip`, `.checkout-chip`, `.ledger-chip`, `.kanban-plan-chip` |
+| `.badge` | 0.8px 7.2px | `--fs-2xs` (10.56px) | `.scope-chip`, `.sec-badge`, `.chg-badge`, `.plan-verdict-chip`       |
 
-| Class                | Text                            | Size      | Ground and border                 |
-| -------------------- | ------------------------------- | --------- | --------------------------------- |
-| `.branch-chip`       | `--text-muted`                  | `0.72rem` | None, border on hover             |
-| `.checkout-chip`     | `--text`                        | `0.72rem` | None, `--border`                  |
-| `.scope-chip`        | `--text-muted`, `.project` gold | `0.66rem` | `--log-bg`, `--border`, uppercase |
-| `.ledger-chip`       | `--console-text`                | `0.72rem` | Gold mix, with a clear button     |
-| `.kanban-plan-chip`  | `--text`                        | `0.7rem`  | `--info` mix; `.warn` variant     |
-| `.plan-verdict-chip` | `--danger`                      | `0.68rem` | `--danger` mix border             |
-| `.sec-badge`         | `--text-muted`, `.on` `--live`  | `0.68rem` | `--log-bg`, `--border`, uppercase |
-| `.chg-badge`         | `--text-muted`                  | `0.68rem` | `--surface`, `--border`           |
-| `.attention-badge`   | `--bg`                          | `0.64rem` | `#d29922`, a color with no token  |
-| `.viewer-disk-badge` | `--console-text`                | inherited | None                              |
+The older classes keep their own colors and states. New markup writes
+`class="chip tone-gold"` or `class="badge tone-live"`.
 
-Five sizes and four grounds for one shape. The [audit](./audit.md) proposes
-one `.chip` with tones.
+The attention counter on the rail (`.attention-badge`) is not a badge:
+it is a 16px count bubble on an icon, with a fixed height. It uses
+`--warn`.
 
 ## States
 

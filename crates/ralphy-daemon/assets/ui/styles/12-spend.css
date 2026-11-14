@@ -788,15 +788,9 @@
   font-size: 0.74rem;
 }
 .ledger-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.15rem 0.5rem;
   border: 1px solid color-mix(in srgb, var(--console-text) 45%, var(--border));
-  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--console-text) 10%, var(--surface));
   color: var(--console-text);
-  font-size: 0.72rem;
 }
 .ledger-chip-clear {
   border: 0;
@@ -912,8 +906,8 @@
   background: var(--text-muted);
 }
 .rel-dot.quiet { background: var(--text-muted); }
-.rel-dot.notable { background: #3fb950; }
-.rel-dot.urgent { background: #d29922; }
+.rel-dot.notable { background: var(--live); }
+.rel-dot.urgent { background: var(--warn); }
 .dropdown-item.rel-item { font-weight: 600; }
 
 .rel-modal { max-width: 560px; }
@@ -961,7 +955,7 @@
   gap: 6px;
   margin: 0 0 4px;
   font-size: 12px;
-  color: #d29922;
+  color: var(--warn);
 }
 .rel-cmd-row { display: flex; align-items: center; gap: 8px; }
 .rel-hint { margin: 0; color: var(--text-muted); font-size: 11px; }
