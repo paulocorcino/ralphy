@@ -585,7 +585,8 @@
 .text-field:focus,
 .host-input:focus,
 .set-input:focus {
-  outline: none;
+  outline: 1px solid var(--focus-ring);
+  outline-offset: 1px;
   border-color: var(--border-focus);
 }
 /* A key the daemon refuses to write is shown, not edited. Dimmed rather than
