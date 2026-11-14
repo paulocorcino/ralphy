@@ -302,7 +302,7 @@ export function wbBoard() {
     // A run state as the Runs panel words it (`sleep` → "usage limit — sleeping").
     runStateWord(state: string | undefined) {
       if (state === undefined || state === "") return "";
-      return WBRun.LABEL[state] ?? state;
+      return WBRun.stateLabel(state);
     },
 
     // Thin delegations to the faithful helpers (used in the template).

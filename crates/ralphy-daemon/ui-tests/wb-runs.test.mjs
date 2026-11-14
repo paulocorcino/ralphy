@@ -3,6 +3,7 @@
 // assets/ui on purpose: lib.rs embeds all of assets/ui via include_dir!.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { WBRun } from "../assets/ui/wb-runs.ts";
 
 // The module keeps no state, so one import serves every test.
@@ -424,4 +425,19 @@ test("exitNote renders a missing code as unknown, never as `exit null`", () => {
   for (const code of [null, undefined]) {
     assert.equal(wb.exitNote("push", code, ""), "Could not push (exit unknown)");
   }
+});
+
+// The issue statuses of the run catalog, read from the file itself.
+const catalogStatuses = () =>
+  JSON.parse(readFileSync(new URL("../../../assets/wording/run.json", import.meta.url), "utf8"))
+    .values["issue-status"];
+
+test("catalog wording: each issue status takes its icon and text, an unknown name stays raw", () => {
+  for (const [key, w] of Object.entries(catalogStatuses())) {
+    assert.equal(load().stateGlyph(key), w.icon, key);
+    assert.equal(load().stateLabel(key), w.text, key);
+  }
+  assert.equal(load().stateLabel("sleep"), "usage limit — sleeping");
+  assert.equal(load().stateLabel("toString"), "toString");
+  assert.equal(load().stateGlyph("no_such_status"), "no_such_status");
 });

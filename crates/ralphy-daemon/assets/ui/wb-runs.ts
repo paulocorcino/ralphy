@@ -19,10 +19,10 @@
      - plan steps are `- [ ]`/`- [x]` checkboxes (open/checked).
      - "sleep" = a usage-limit reset wait (run.sleep_started/ended; target_epoch
        is the wake anchor), a run-level phase that overlays the active issue.
-   Glyphs are the union of the Telegram sink + terminal presenter tables.
+   Issue-status glyphs and labels come from the run catalog (wb-wording.ts).
 --------------------------------------------------------------------------- */
 
-import "./wb-wording.ts";
+import { issueStatus, statusWording } from "./wb-wording.ts";
 import {
   FEASIBLE_HEAD,
   FEASIBLE_YES,
@@ -159,40 +159,31 @@ function planFields(
   };
 }
 
+// Workbench-only states over the catalog's: a sleeping active issue, an issue not started.
+const OVERLAY_GLYPH: Record<string, string> = { sleep: "🌙", pending: "○" };
+const OVERLAY_LABEL: Record<string, string> = {
+  sleep: "usage limit — sleeping",
+  pending: "pending",
+};
+
+function overlay(table: Record<string, string>, name: string): string | undefined {
+  return Object.hasOwn(table, name) ? table[name] : undefined;
+}
+
+function catalogWording(name: string) {
+  const key = issueStatus(name);
+  return key === null ? undefined : statusWording(key);
+}
+
 export const WBRun = {
-  // per-status glyph, matching notifier.rs status_emoji + render.rs scroll glyphs.
-  // `sleep`/`pending` are panel-only overlays (a sleeping active issue, and a
-  // not-yet-started issue).
-  GLYPH: {
-    planning: "🧠",
-    executing: "⚙️",
-    // a plan-only pass superseded by the next `issue started` (a dry run):
-    // terminal, and it reaches the panel via status_wire (state.rs).
-    planned: "📝",
-    done: "✅",
-    skipped: "⏭️",
-    blocked: "⛔",
-    infeasible: "🤷",
-    needs_split: "🧩",
-    non_green: "❌",
-    hitl: "🙋",
-    sleep: "🌙",
-    pending: "○",
-  } as Record<string, string>,
-  LABEL: {
-    planning: "planning",
-    executing: "executing",
-    planned: "planned only",
-    done: "done",
-    skipped: "skipped",
-    blocked: "blocked",
-    infeasible: "infeasible",
-    needs_split: "needs split",
-    non_green: "non-green",
-    hitl: "waiting on human",
-    sleep: "usage limit — sleeping",
-    pending: "pending",
-  } as Record<string, string>,
+  // An issue status takes its icon and text from the run catalog; an unknown
+  // name shows as it is.
+  stateGlyph(name: string) {
+    return catalogWording(name)?.icon ?? overlay(OVERLAY_GLYPH, name) ?? name;
+  },
+  stateLabel(name: string) {
+    return catalogWording(name)?.text ?? overlay(OVERLAY_LABEL, name) ?? name;
+  },
   // per-step vocabulary (#330). The document ships `plan.steps[].status` as a
   // string in the ADR-0019 `plan.step` vocabulary; an unknown one falls back to
   // `open` rather than vanishing. Pinned from Rust by
@@ -251,7 +242,7 @@ export const WBRun = {
     return "pending";
   },
   glyph(run: Run, iss: Issue) {
-    return this.GLYPH[this.issueState(run, iss)] ?? "○";
+    return this.stateGlyph(this.issueState(run, iss));
   },
 
   runPhaseLabel(run: Run) {
