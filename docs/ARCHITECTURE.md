@@ -109,6 +109,10 @@ module. The markup of a component is planned to move into a part
 (`wb-foo.part.html`) that `build.rs` puts into the page; the daemon still
 serves one complete page
 ([ADR-0080](./adr/0080-the-workbench-pages-are-built-from-parts.md),
+proposed). The page shortcuts are planned to be one list of commands in one
+module, which the palette, the help screen and the key hints read; a
+terminal gives the page only a chord whose command can run now
+([ADR-0087](./adr/0087-the-workbench-keyboard-is-one-command-list.md),
 proposed).
 
 ## 4. Components and crates

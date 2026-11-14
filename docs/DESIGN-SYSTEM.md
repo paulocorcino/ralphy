@@ -255,7 +255,41 @@ Read from the code on 2026-11-14, at commit `55928b55`. The files are in
 of the binding. A new shortcut gets a row here in the same change as its
 code. How each component shows its keys: [Keyboard](./design-system/keyboard.md).
 
-### The rules the shortcuts follow
+### The keyboard model
+
+Decided on 2026-11-14 in [ADR-0087](./adr/0087-the-workbench-keyboard-is-one-command-list.md),
+not built yet. The tables below describe the code of today.
+
+- **No prefix key.** A page shortcut is one chord: Alt+Shift (⌥⇧ on a Mac)
+  and one more key. Only `/`, `?` and Ctrl+Shift+F (Cmd+Shift+F) differ;
+  `/` and `?` work only with the focus outside a text field, an editor and
+  a terminal.
+- **One list of commands.** Each page shortcut is a command in one module:
+  id, label, keys, "can it run now", action. One document listener runs it.
+  The palette, the help screen and every key hint read the same list.
+- **The terminal keeps its keys.** In a terminal every key goes to the
+  child program, except a chord whose command can run now.
+- **No key only to leave a terminal.** A command that opens or focuses
+  something moves the focus. What it opens gives the focus back to the
+  terminal when it closes.
+- **Command palette:** Alt+Shift+P, also from a terminal. It lists the
+  commands that can run now, with their keys; `/` stays the search.
+- **Help screen:** `?`, or Alt+Shift+/ from anywhere, or a row of the
+  palette. It shows the list, the keys inside components, and the line
+  "In a terminal, every other key goes to the program."
+- **Keys the list refuses:** a key without Alt+Shift (except the three
+  above); a chord with Ctrl or Cmd (Ctrl belongs to the program, Cmd to the
+  browser and the system); Escape, Tab, F1 to F12 alone; the keys a browser
+  keeps (Ctrl or Cmd with W, T, N or Q; Ctrl+Shift+N, P, T, C, I or J;
+  Cmd+Option+I; F11; F12; Alt+F4). Ctrl+Insert stays the copy key of a
+  terminal on Windows and Linux; on a Mac it is Cmd+C.
+- **Keys inside a component** stay in the component, and a component that
+  takes Escape or Enter stops the event.
+- **Fixed keys.** A person cannot change them.
+- **Shown for the system:** "⌥⇧3" on a Mac, "Alt+Shift+3" elsewhere. On a
+  Mac the fence keys need Fn; the palette reaches a fence by its name.
+
+### The rules the shortcuts follow today
 
 - A page shortcut uses **Alt+Shift** with no Ctrl and no Meta. Keys are
   matched on `e.code`, so the keyboard layout does not change them.
