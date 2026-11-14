@@ -242,6 +242,4 @@
 .branch-empty {
   padding: 0.6rem;
   text-align: center;
-  color: var(--text-muted);
-  font-size: 0.78rem;
 }

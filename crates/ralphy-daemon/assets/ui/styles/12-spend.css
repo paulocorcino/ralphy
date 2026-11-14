@@ -975,7 +975,7 @@
 .rel-confirm-body { display: flex; flex-direction: column; }
 .rel-code { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .rel-code .set-input { width: 90px; }
-.rel-error { color: var(--danger); white-space: pre-wrap; }
+.rel-error { white-space: pre-wrap; }
 .rel-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .rel-cmd {
   display: inline-flex;

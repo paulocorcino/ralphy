@@ -317,8 +317,6 @@
 .prompt-error {
   margin: 0;
   padding: 0.45rem 0.95rem 0;
-  color: var(--danger);
-  font-size: 0.78rem;
 }
 .prompt-modal .modal-foot {
   justify-content: flex-end;
@@ -336,8 +334,6 @@
 }
 .about-error {
   margin: 0 0 0.8rem;
-  color: var(--danger);
-  font-size: 0.78rem;
 }
 /* hero: the mark beside the name + version */
 .about-hero {
@@ -613,9 +609,6 @@
 }
 .set-help {
   margin: 0.4rem 0 0;
-  color: var(--text-muted);
-  font-size: 0.76rem;
-  line-height: 1.5;
   max-width: 60ch;
 }
 
@@ -698,9 +691,6 @@
 }
 .sec-note {
   margin: 0 0 0.6rem;
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  line-height: 1.55;
 }
 .sec-actions {
   display: flex;
@@ -716,9 +706,7 @@
 .desk-history > .sec-actions {
   margin-bottom: 0.6rem;
 }
-.desk-history-error {
-  color: var(--danger);
-}
+
 .desk-history-actions {
   display: flex;
   gap: 0.5rem;
@@ -738,9 +726,7 @@
 .devices > .sec-actions {
   margin-bottom: 0.6rem;
 }
-.devices-error {
-  color: var(--danger);
-}
+
 .device-this {
   font-size: 0.8em;
   color: var(--info);

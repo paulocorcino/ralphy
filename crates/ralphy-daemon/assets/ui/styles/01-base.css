@@ -67,6 +67,9 @@
      content of either row: the 21.75px branch chip and the 22px buttons. */
   --row-h: 33px;
   --runs-w: 400px;
+  /* Two steps of the type scale (docs/DESIGN-SYSTEM.md). */
+  --fs-xs: 0.72rem;
+  --fs-sm: 0.78rem;
   /* Radii (one name per value; `--radius` is the 4px default). */
   --radius-sm: 3px;
   --radius-md: 6px;
@@ -307,8 +310,6 @@ body.side-collapsed {
 }
 /* repos-load failure (#202): a small honest warning row in the sidebar. */
 .side-error {
-  color: var(--danger);
-  font-size: 0.78rem;
   padding: 0.4rem 0.75rem;
   border-bottom: 1px solid var(--border);
 }
@@ -327,4 +328,46 @@ body.side-collapsed {
   background: var(--surface-hi);
   font-size: 15px;
   line-height: 1;
+}
+
+/* --- status text (docs/design-system/status-text.md) ----------------------
+   One rule per kind. New markup uses the shared class; the older classes
+   join the list and keep only their own padding and alignment. */
+.empty-note,
+.attention-empty,
+.runs-empty,
+.side-empty,
+.outline-empty,
+.branch-empty,
+.kanban-empty,
+.kanban-col-empty,
+.move-empty {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.error-line,
+.side-error,
+.runs-error,
+.files-error,
+.chg-error,
+.prompt-error,
+.about-error,
+.desk-history-error,
+.devices-error,
+.kanban-error,
+.kd-error,
+.runs-verb-error,
+.move-error,
+.upload-error,
+.rel-error {
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+.help-text,
+.run-help,
+.set-help,
+.sec-note {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
 }

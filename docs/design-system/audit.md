@@ -43,9 +43,9 @@ measured.
 | Radius         | Step 1 done: 6 tokens. Still literal: 2px, 1px, 5px, 12px, 7px                                                                        | 6 names        |
 | z-index        | Step 1 done: every layer from 130 up is a token                                                                                       | Named layers   |
 | Shadow         | 28 distinct `box-shadow` values                                                                                                       | 3 levels       |
-| Empty state    | 12 classes, 5 sizes, 3 centered and 1 italic                                                                                          | 1 class        |
-| Error line     | 18 classes, 5 sizes, 1 with a box                                                                                                     | 1 class        |
-| Help line      | 4 classes, 2 sizes                                                                                                                    | 1 class        |
+| Empty state    | Step 4 done: one rule, `.empty-note`                                                                                                  | 1 class        |
+| Error line     | Step 4 done: one rule, `.error-line`                                                                                                  | 1 class        |
+| Help line      | Step 4 done: one rule, `.help-text`                                                                                                   | 1 class        |
 | Chip and badge | 10 classes, 5 sizes, 4 grounds                                                                                                        | 1 class, tones |
 | Menu row       | `.dropdown-item` (six names) and `.ctx-item`: one shape, two sizes (0.82 and 0.8rem), two disabled opacities (0.4 and 0.45)           | 1 rule         |
 | Text field     | `.set-input` on `--log-bg` and `.host-input` on `--bg`                                                                                | 1 class        |

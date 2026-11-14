@@ -91,8 +91,6 @@
   align-items: flex-start;
   gap: 0.4rem;
   padding: 0.4rem 0.6rem;
-  color: var(--danger);
-  font-size: 0.72rem;
   border-bottom: 1px solid var(--border);
 }
 /* Bounded for the same reason the feed is: the text is whatever the CLI last
@@ -183,14 +181,10 @@
 .move-empty {
   margin: 0;
   padding: 0.4rem 0.55rem 0.2rem;
-  color: var(--text-muted);
-  font-size: 0.78rem;
 }
 .move-error {
   margin: 0;
   padding: 0.45rem 0.95rem 0;
-  color: var(--danger);
-  font-size: 0.78rem;
 }
 /* #364 move picker end */
 
@@ -308,8 +302,6 @@
 }
 .upload-error {
   margin: 0.15rem 0 0;
-  color: var(--danger);
-  font-size: 0.74rem;
 }
 /* The row a drag of files from the computer is over: Wunderbaum sets these
    classes, and its own stylesheet does not draw them. */

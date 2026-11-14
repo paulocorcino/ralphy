@@ -1,8 +1,10 @@
 # Status text: empty, error and help
 
 Three kinds of small text that tell the operator about the state of a
-place. There is no shared class today: 12 classes draw an empty state, 18
-an error line, and 4 a help line.
+place. Each kind has one shared class: `.empty-note`, `.error-line` and
+`.help-text`, in `styles/01-base.css`. New markup uses the shared class.
+The older classes join the shared rule through its selector list and keep
+only their own padding and alignment.
 
 Layer: element (atom). Made of: text, sometimes an inline `code`.
 
@@ -44,31 +46,30 @@ Wraps on a phone; nothing else changes.
 
 Contrast, measured: an empty state or help line passes (5.5:1 on `--chrome`). An error line is 5.01:1 on `--chrome` and 4.52:1 on `--surface` since `--danger` became `#ce8174` (audit, D6).
 
-## What the classes share, and where they differ
+## The shared rules
 
-| Kind  | Shared                          | Sizes in use                                                    |
-| ----- | ------------------------------- | --------------------------------------------------------------- |
-| Empty | `--text-muted`                  | `0.72`, `0.74`, `0.78`, `0.8rem`, `0.8em`; 3 centered, 1 italic |
-| Error | `--danger`                      | `0.72`, `0.74`, `0.78`, `0.8rem`, `0.78em`; 1 with a border box |
-| Help  | `--text-muted`, line height 1.5 | `0.74`, `0.76rem`                                               |
+| Class         | Color          | Size                | Line height |
+| ------------- | -------------- | ------------------- | ----------- |
+| `.empty-note` | `--text-muted` | `--fs-sm` (12.48px) | inherited   |
+| `.error-line` | `--danger`     | `--fs-sm` (12.48px) | inherited   |
+| `.help-text`  | `--text-muted` | `--fs-sm` (12.48px) | 1.5         |
 
-`.side-error` is used in 6 parts, outside the sidebar too. It is the
-closest thing to a shared error line today. The [audit](./audit.md)
-proposes one class for each kind.
+Use a domain class next to the shared one when code queries it, for
+example `class="error-line move-error"`. Two texts stay outside on
+purpose: the Spend ledger's notes (`.ledger-blank`, `.ledger-empty`,
+`.ledger-note`, one rule of their own) and the empty or failed diagram in
+a note (`.note-mermaid-*`, sized in `em` inside the note text).
 
-## Classes
+## Classes in the shared lists
 
-- Empty: `.attention-empty`, `.runs-empty`, `.projects-empty`,
-  `.side-empty`, `.column-empty`, `.outline-empty`, `.branch-empty`,
-  `.kanban-empty`, `.kanban-col-empty`, `.move-empty`, `.ledger-empty`,
-  `.note-mermaid-empty`
+- Empty: `.attention-empty`, `.runs-empty`, `.side-empty`,
+  `.outline-empty`, `.branch-empty`, `.kanban-empty`, `.kanban-col-empty`,
+  `.move-empty`
 - Error: `.side-error`, `.runs-error`, `.files-error`, `.chg-error`,
   `.prompt-error`, `.about-error`, `.desk-history-error`, `.devices-error`,
   `.kanban-error`, `.kd-error`, `.runs-verb-error`, `.move-error`,
-  `.upload-error`, `.rel-error`, `.note-mermaid-error`, `.host-remove-error`,
-  `.branch-error`, `.mermaid-error`
-- Help: `.run-help`, `.set-help`, `.sec-note`, `.foot-note` (see
-  [Modal](./modal.md))
+  `.upload-error`, `.rel-error`
+- Help: `.run-help`, `.set-help`, `.sec-note`
 
 ## Keyboard
 

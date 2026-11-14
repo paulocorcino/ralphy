@@ -222,8 +222,6 @@
    what this text exists to contradict. */
 .files-error {
   padding: 0.5rem var(--side-gutter);
-  color: var(--danger);
-  font-size: 0.78rem;
 }
 /* The branch refusal rides the same gutter, and adds the bound the change
    panel's note also carries: this text is the CLI's own prose, so it is the one
@@ -346,8 +344,6 @@
 }
 .side-empty {
   padding: 0.8rem var(--side-gutter);
-  color: var(--text-muted);
-  font-size: 0.78rem;
 }
 /* The compose box never scrolls out of reach: `flex: 0 0 auto` against the
    list's `1 1 auto` keeps it pinned to the sidebar's bottom edge. */
@@ -665,8 +661,6 @@
   align-items: flex-start;
   gap: 0.4rem;
   padding: 0.4rem 0.5rem;
-  color: var(--danger);
-  font-size: 0.72rem;
   border-top: 1px solid var(--border);
 }
 .chg-error span {

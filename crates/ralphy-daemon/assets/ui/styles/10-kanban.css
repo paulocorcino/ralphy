@@ -164,7 +164,6 @@
 }
 .kanban-empty {
   padding: 2rem;
-  color: var(--text-muted);
   text-align: center;
 }
 /* The board's and the drawer's in-flight states, and the one ring both spin. */
@@ -201,7 +200,6 @@
 .kanban-error {
   padding: 2rem;
   text-align: center;
-  color: var(--danger);
   display: flex;
   gap: 0.5rem;
   align-items: center;
@@ -214,11 +212,9 @@
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--danger);
   border-radius: var(--radius-md);
-  color: var(--danger);
   display: flex;
   gap: 0.5rem;
   align-items: center;
-  font-size: 0.8rem;
 }
 
 /* the four columns */
@@ -311,10 +307,8 @@
   gap: 0.5rem;
 }
 .kanban-col-empty {
-  color: var(--text-muted);
   text-align: center;
   padding: 0.8rem 0;
-  font-size: 0.8rem;
 }
 
 /* a card */
