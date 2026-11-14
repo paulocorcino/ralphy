@@ -34,7 +34,7 @@ Measured in Chromium on 2026-11-14. Checkbox 16 Ã— 16px, radius 3px. Switch 38 Ã
 
 ## Modes
 
-Same size in every mode: the checkbox is under the 24px minimum.
+16px in every mode. The same size on touch, on purpose (audit, D7).
 
 ## States
 

@@ -106,7 +106,8 @@ No page error in any mode. No horizontal scroll in any mode.
    2.2: `.tab-close` 16 × 16, `.project-remove` 18 × 18, the checkbox
    16 × 16, `.branch-chip` 19px high, and the console title bar buttons
    (full screen, maximize, restart, lock, close) 22 × 22. Sizes and spacing
-   do not change between desktop, tablet and phone.
+   do not change between desktop, tablet and phone. This is kept on
+   purpose: see D7.
 8. **The Settings modal does not fit a phone.** At 390px it keeps two
    columns: the Bind address field is cut at the right edge, and the scope
    chip wraps onto three lines.
@@ -114,16 +115,16 @@ No page error in any mode. No horizontal scroll in any mode.
 
 ## 6. Decisions only a person can make
 
-| #   | Question                                       | Recommendation                                                                                                                                                     |
-| --- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| D1  | Which icon library do new icons use?           | Lucide. It is the newer path (`x-icon`, 2026-09-27), it draws SVG that takes the text color and stroke. Move the 100 Bootstrap uses over time, not in one change   |
-| D2  | Is amber a third accent, `--warn`?             | Yes. It already does a job, "needs attention", that neither gold nor terracotta does. It needs an ADR-0035 amendment                                               |
-| D3  | One text field ground: `--log-bg` or `--bg`?   | `--log-bg`. It is the ground of `.set-input`, the checkbox, the switch track and the segmented track                                                               |
-| D4  | One focus ring for all controls?               | Yes: `1px solid var(--console-text)`, offset 2px. The checkbox already uses it                                                                                     |
-| D5  | Merge font sizes that differ by less than 1px? | Yes, with a screenshot of each panel before and after                                                                                                              |
-| D6  | How does danger text reach 4.5:1?              | Lighten `--danger` to `#ce8174`: same hue, 4.52 on `--surface`, 5.01 on `--chrome`. One token, every danger text follows. It needs an ADR-0035 amendment           |
-| D7  | Do controls grow on a touch screen?            | Yes, under `(pointer: coarse)` only: a 44px hit area, from padding or a larger invisible box. The desktop look does not change. Start with the controls under 24px |
-| D8  | Settings on a phone: one column?               | Yes: below 560px, the section list above the section, as the sidebar does                                                                                          |
+| #   | Question                                       | Recommendation                                                                                                                                                                                                                       |
+| --- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| D1  | Which icon library do new icons use?           | Lucide. It is the newer path (`x-icon`, 2026-09-27), it draws SVG that takes the text color and stroke. Move the 100 Bootstrap uses over time, not in one change                                                                     |
+| D2  | Is amber a third accent, `--warn`?             | Yes. It already does a job, "needs attention", that neither gold nor terracotta does. It needs an ADR-0035 amendment                                                                                                                 |
+| D3  | One text field ground: `--log-bg` or `--bg`?   | `--log-bg`. It is the ground of `.set-input`, the checkbox, the switch track and the segmented track                                                                                                                                 |
+| D4  | One focus ring for all controls?               | Yes: `1px solid var(--console-text)`, offset 2px. The checkbox already uses it                                                                                                                                                       |
+| D5  | Merge font sizes that differ by less than 1px? | Yes, with a screenshot of each panel before and after                                                                                                                                                                                |
+| D6  | How does danger text reach 4.5:1?              | Lighten `--danger` to `#ce8174`: same hue, 4.52 on `--surface`, 5.01 on `--chrome`. One token, every danger text follows. It needs an ADR-0035 amendment                                                                             |
+| D7  | Do controls grow on a touch screen?            | **Decided 2026-11-14: no.** The current sizes stay on phone and tablet; larger controls would distort the page. A size may go down, or be made the same as its siblings. The touch key strip stays the one element sized for fingers |
+| D8  | Settings on a phone: one column?               | Yes: below 560px, the section list above the section, as the sidebar does                                                                                                                                                            |
 
 ## 7. Proposed tokens
 
@@ -192,8 +193,9 @@ Each step is one change, with a browser check of the panels it touches.
    removes the outline (D4). A disabled style for the switch. Make `.tab`
    reachable with the keyboard. Danger text at 4.5:1 (D6). These change
    what a keyboard user sees, so they come early.
-3. **Touch and phone.** A 44px hit area under `(pointer: coarse)` (D7),
-   and Settings in one column on a phone (D8).
+3. **Phone.** Settings in one column on a phone (D8). Control sizes stay
+   as they are (D7); the size of a control changes only to match its
+   siblings, for example the five title bar buttons and `.tab-close`.
 4. **Status text.** `.empty-note`, `.error-line`, `.help-text`. Small and
    low risk; many places.
 5. **Controls.** `.menu-item`, `.text-field` (D3), one segmented rule, one

@@ -39,7 +39,7 @@ Measured in Chromium on 2026-11-14. Track: padding 2px, radius 999px. Segment: p
 
 ## Modes
 
-About 22px high, from the CSS: under the 44px touch size.
+About 22px high, from the CSS. The same size on touch, on purpose (audit, D7).
 
 ## Variants
 

@@ -32,7 +32,7 @@ Measured in Chromium on 2026-11-14. In a modal: padding 4.8px 11.2px, gap 5.6px,
 
 ## Modes
 
-24 to 27px high in every mode, also on a phone: under the 44px touch size.
+24 to 27px high in every mode. The same size on touch, on purpose (audit, D7).
 
 Contrast, measured: the default and gold buttons pass 4.5:1 (8.5 and 10.9). The danger button's text is 3.63:1, under 4.5:1; see the audit, D6.
 

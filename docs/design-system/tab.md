@@ -39,7 +39,7 @@ Measured in Chromium on 2026-11-14. Padding 0 8px 0 11.2px, gap 6.4px, 39px high
 
 ## Modes
 
-The close button is 16 × 16px in every mode: under the 24px minimum of WCAG 2.2 and the 44px touch size.
+The close button is 16 × 16px in every mode. The same size on touch, on purpose (audit, D7).
 
 ## Variants and states
 
