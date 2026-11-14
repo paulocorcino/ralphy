@@ -43,7 +43,7 @@ jobs:
 
       - name: Open a diffable PR when the seed changed
         # No-op safe: with no diff the action creates/updates no PR.
-        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        uses: peter-evans/create-pull-request@15733dbdfeedb4f7fdb73d13c6f5ac83b710fab8 # v8.1.2
         with:
           add-paths: assets/pricing/models-dev-seed.json
           # The seed lives under assets/, which the changelog gate treats as
