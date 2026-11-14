@@ -20,6 +20,7 @@ use anyhow::{bail, Result};
 
 use crate::changes::{changes, ChangeStatus};
 use crate::git::{git, raw, raw_env};
+use crate::wording::WorkingTreeFailure;
 
 /// What a [`stage`] did — or why it refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,6 +138,16 @@ impl CommitOutcome {
             }
             CommitOutcome::EmptyMessage => "cannot commit: the message is empty".to_owned(),
         })
+    }
+
+    /// The catalog failure of a refusal, `None` when the commit was recorded.
+    pub fn failure(&self) -> Option<ralphy_wording::Failure> {
+        let code = match self {
+            CommitOutcome::Committed { .. } => return None,
+            CommitOutcome::NothingStaged => WorkingTreeFailure::NothingStaged,
+            CommitOutcome::EmptyMessage => WorkingTreeFailure::EmptyCommitMessage,
+        };
+        Some(code.failure())
     }
 }
 

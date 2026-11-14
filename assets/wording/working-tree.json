@@ -1,0 +1,17 @@
+{
+  "domain": "working-tree",
+  "values": {},
+  "failures": {
+    "nothing-staged": {
+      "cause": "nothing is staged",
+      "remedy": "Stage a file first.",
+      "note": "A commit was asked for while the index holds no change. Shown after a failed commit in the changes panel and by the changes commit command."
+    },
+    "empty-commit-message": {
+      "cause": "the commit message is empty",
+      "remedy": "Write a message, then commit again.",
+      "note": "A commit was asked for with a message that is empty or only spaces. Shown after a failed commit in the changes panel and by the changes commit command."
+    }
+  },
+  "retired": []
+}

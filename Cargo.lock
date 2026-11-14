@@ -2263,6 +2263,7 @@ dependencies = [
  "os_info",
  "ralphy-git-read",
  "ralphy-proc-util",
+ "ralphy-wording",
  "regex",
  "serde",
  "serde_json",
