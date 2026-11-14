@@ -43,7 +43,7 @@
 .branch-chip-ref {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--space-3);
   min-width: 0;
 }
 .branch-chip [data-lucide] {
@@ -86,7 +86,7 @@
   background: var(--surface-hi);
 }
 .checkout-chip .bi {
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 .checkout-chip-name {
@@ -108,10 +108,10 @@
   width: min(460px, 96vw);
 }
 .branch-body {
-  padding: 0.8rem 0.9rem;
+  padding: var(--space-7) 0.9rem;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: var(--space-6);
   overflow: hidden;
 }
 /* filter/create field — mirrors the sidebar search */
@@ -130,12 +130,12 @@
 .branch-search input {
   width: 100%;
   font: inherit;
-  font-size: 0.82rem;
+  font-size: var(--fs-md);
   color: var(--text);
   background: var(--log-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.4rem 0.55rem 0.4rem 1.6rem;
+  padding: var(--space-4) 0.55rem var(--space-4) 1.6rem;
 }
 .branch-search input::placeholder {
   color: var(--text-muted);
@@ -147,14 +147,14 @@
 .branch-dirty-note {
   margin: 0;
   display: flex;
-  gap: 0.4rem;
+  gap: var(--space-4);
   align-items: flex-start;
   color: var(--console-text);
-  font-size: 0.74rem;
+  font-size: var(--fs-xs);
   line-height: 1.5;
 }
 .branch-dirty-note .bi {
-  margin-top: 0.1rem;
+  margin-top: var(--space-1);
 }
 .branch-list {
   list-style: none;
@@ -169,8 +169,8 @@
 .branch-item {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.45rem 0.6rem;
+  gap: var(--space-5);
+  padding: 0.45rem var(--space-6);
   cursor: pointer;
   border-bottom: 1px solid var(--border);
 }
@@ -199,7 +199,7 @@
 .branch-tag {
   margin-left: auto;
   flex-shrink: 0;
-  font-size: 0.68rem;
+  font-size: var(--fs-2xs);
   color: var(--text-muted);
 }
 .branch-item.current .branch-tag {
@@ -228,6 +228,6 @@
   color: var(--text);
 }
 .branch-empty {
-  padding: 0.6rem;
+  padding: var(--space-6);
   text-align: center;
 }

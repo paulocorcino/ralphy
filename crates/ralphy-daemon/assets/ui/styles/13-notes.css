@@ -118,8 +118,8 @@
 .note-head {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.3rem 0.45rem;
+  gap: var(--space-3);
+  padding: var(--space-3) 0.45rem;
   /* Above the eight resize bands, which are positioned siblings — the fence
      head's lesson, where the NW band ate the grab handle. */
   position: relative;
@@ -171,7 +171,7 @@
   background: color-mix(in srgb, #000 22%, var(--note-ground));
   border: 1px solid var(--border-focus);
   border-radius: var(--radius);
-  padding: 0 0.2rem;
+  padding: 0 var(--space-2);
   color: var(--note-ink);
   font-family: var(--font-ui);
   font-size: 0.9em;
@@ -189,8 +189,8 @@
   right: 10px;
   display: flex;
   align-items: center;
-  gap: 0.1rem;
-  padding: 0.3rem 0.1rem;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-1);
 }
 /* The console titlebar's controls, to the pixel (`.session-actions button` in
    06-consoles.css): square, borderless, quiet at rest, a neutral tint on
@@ -210,7 +210,7 @@
   width: 22px;
   height: 22px;
   padding: 0;
-  font-size: 0.82rem;
+  font-size: var(--fs-md);
   line-height: 1;
   color: var(--note-ink);
   opacity: 0.66;
@@ -267,7 +267,7 @@
      moment the editor had content. Confined here, the chrome always wins. */
   position: relative;
   z-index: 0;
-  padding: 0.5rem 0.6rem;
+  padding: var(--space-5) var(--space-6);
   font-family: var(--note-font);
   font-size: var(--note-size);
   line-height: var(--reading-leading);
@@ -324,8 +324,8 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.15rem 0.45rem 0.3rem;
+  gap: var(--space-4);
+  padding: 0.15rem 0.45rem var(--space-3);
   color: var(--note-ink);
   opacity: 0.6;
   font-family: var(--font-mono);
@@ -338,7 +338,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   /* The SE grip sits in this corner. */
-  padding-right: 0.8rem;
+  padding-right: var(--space-7);
 }
 /* Locked — by its own record or by the fence holding it. The RESIZE BANDS go
    inert so a stray press cannot start a gesture the JS guard would have to
@@ -436,7 +436,7 @@
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius);
-  padding: 0 0.2rem;
+  padding: 0 var(--space-2);
   color: inherit;
   font: inherit;
 }
@@ -454,7 +454,7 @@
   display: flex;
   flex-direction: column;
   min-width: 9rem;
-  padding: 0.2rem;
+  padding: var(--space-2);
   border: 1px solid var(--border-focus);
   border-radius: var(--radius);
   background: var(--surface-hi);
@@ -479,11 +479,11 @@
 }
 .note-menu-item {
   all: unset;
-  padding: 0.3rem 0.45rem;
+  padding: var(--space-3) 0.45rem;
   border-radius: var(--radius);
   color: var(--text);
   font-family: var(--font-ui);
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 /* `all: unset` IS an author `display` declaration — it resets the property to
@@ -556,14 +556,14 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.2rem;
+  gap: var(--space-2);
 }
 .note-swatch-label {
   width: 2.4rem;
   flex: 0 0 auto;
   color: var(--text-muted);
   font-family: var(--font-ui);
-  font-size: 0.68rem;
+  font-size: var(--fs-2xs);
 }
 .note-swatch {
   width: 18px;
@@ -650,10 +650,10 @@
   width: auto;
   min-width: 26px;
   height: 20px;
-  padding: 0 0.3rem;
+  padding: 0 var(--space-3);
   color: var(--text);
   background: var(--surface);
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   line-height: 1;
 }
 .note-swatch-font[data-name="sans"] {
@@ -679,7 +679,7 @@
   background: transparent;
   border: 1px solid var(--border-focus);
   border-radius: var(--radius);
-  padding: 0 0.2rem;
+  padding: 0 var(--space-2);
   color: var(--text);
   font: inherit;
 }
@@ -893,7 +893,7 @@
   width: 1.2rem;
 }
 .note-card .milkdown .milkdown-list-item-block li {
-  gap: 0.4rem;
+  gap: var(--space-4);
 }
 
 /* ---------------------------------------------------------------------------
@@ -965,7 +965,7 @@
 }
 .note-card .milkdown .milkdown-slash-menu .tab-group ul li {
   padding: 3px 6px;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   line-height: 15px;
 }
 .note-card .milkdown .milkdown-slash-menu .menu-groups {
@@ -976,7 +976,7 @@
 }
 .note-card .milkdown .milkdown-slash-menu .menu-groups .menu-group h6 {
   padding: 5px 6px;
-  font-size: 0.66rem;
+  font-size: var(--fs-2xs);
   line-height: 14px;
 }
 .note-card .milkdown .milkdown-slash-menu .menu-groups .menu-group li {
@@ -991,7 +991,7 @@
   fill: var(--text-muted);
 }
 .note-card .milkdown .milkdown-slash-menu .menu-groups .menu-group li > span {
-  font-size: 0.76rem;
+  font-size: var(--fs-sm);
   line-height: 16px;
 }
 /* A LINK IS THE CARD'S INK, UNDERLINED — never a colour of its own.
@@ -1054,8 +1054,8 @@
    solid card a border fixed at the theme's own grey disappears. */
 .note-mermaid {
   position: relative;
-  margin: 0.4rem 0;
-  padding: 0.3rem;
+  margin: var(--space-4) 0;
+  padding: var(--space-3);
   border: 1px dashed color-mix(in srgb, var(--note-ink) 28%, transparent);
   border-radius: var(--radius);
   background: transparent;
@@ -1089,8 +1089,8 @@
   inset: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  padding: 0.3rem;
+  gap: var(--space-3);
+  padding: var(--space-3);
   border: 1px solid var(--border-focus);
   border-radius: var(--radius);
   background: var(--surface);
@@ -1103,7 +1103,7 @@
   background: var(--log-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.3rem;
+  padding: var(--space-3);
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 0.78em;
@@ -1169,7 +1169,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: var(--fs-2xs);
 }
 .note-top {
   flex: 0 0 auto;
@@ -1201,15 +1201,15 @@
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--space-6);
   max-width: min(36rem, 90vw);
-  padding: 0.45rem 0.6rem;
+  padding: 0.45rem var(--space-6);
   border: 1px solid var(--border-focus);
   border-radius: var(--radius-md);
   background: var(--surface-hi);
   color: var(--text);
   font-family: var(--font-ui);
-  font-size: 0.85rem;
+  font-size: var(--fs-lg);
   box-shadow: var(--shadow-toast);
 }
 .wb-toast-text {
@@ -1225,7 +1225,7 @@
   border-radius: var(--radius);
   color: var(--text-strong);
   font: inherit;
-  padding: 0.1rem 0.5rem;
+  padding: var(--space-1) var(--space-5);
   cursor: pointer;
 }
 .wb-toast-action:hover {
@@ -1238,7 +1238,7 @@
   color: var(--text-muted);
   font: inherit;
   line-height: 1;
-  padding: 0 0.2rem;
+  padding: 0 var(--space-2);
   cursor: pointer;
 }
 .wb-toast-close:hover {
@@ -1257,11 +1257,11 @@
 .note-help-table {
   width: 100%;
   border-collapse: collapse;
-  margin: 0.2rem 0 0.4rem;
+  margin: var(--space-2) 0 var(--space-4);
 }
 .note-help-table td {
-  padding: 0.18rem 0.5rem;
-  font-size: 0.8rem;
+  padding: 0.18rem var(--space-5);
+  font-size: var(--fs-md);
   vertical-align: baseline;
 }
 .note-help-table td:first-child {
@@ -1269,20 +1269,20 @@
   white-space: nowrap;
 }
 .note-help-table code {
-  padding: 0.05rem 0.3rem;
+  padding: 0.05rem var(--space-3);
   border-radius: var(--radius);
   background: var(--surface-hi);
   color: var(--console-text);
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
 }
 .note-help-table tr:nth-child(2n) {
   background: color-mix(in srgb, var(--surface-hi) 45%, transparent);
 }
 .note-help-note {
-  margin: 0.2rem 0.5rem 0.2rem;
+  margin: var(--space-2) var(--space-5) var(--space-2);
   color: var(--text-muted);
-  font-size: 0.74rem;
+  font-size: var(--fs-xs);
 }
 
 /* ---- the veil (ADR-0064 §8 as amended) ----------------------------------- */
@@ -1301,7 +1301,7 @@
   flex: 1 1 auto;
   min-height: 100%;
   margin: 0;
-  padding: 0.6rem 0.2rem;
+  padding: var(--space-6) var(--space-2);
   color: color-mix(in srgb, var(--note-ink) 45%, transparent);
   font-size: 2.4em;
   user-select: none;
@@ -1369,14 +1369,14 @@
   --note-tone: var(--note-sand);
   display: flex;
   align-items: flex-start;
-  padding: 0.45rem 0.6rem;
+  padding: 0.45rem var(--space-6);
   border: 1px dashed var(--border);
   border-top: 3px solid var(--note-tone);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--note-tone) 6%, transparent);
   color: var(--text-muted);
   font-family: var(--font-ui);
-  font-size: 0.8rem;
+  font-size: var(--fs-md);
   cursor: pointer;
   overflow: hidden;
   /* `Z_BASE` (60): under every window, which `stackWin` raises from 61, and

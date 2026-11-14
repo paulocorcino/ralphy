@@ -36,21 +36,21 @@ measured.
 
 ## 3. Fragmentation: one shape, many rules
 
-| Area           | Measured                                                                                                                              | Should be      |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| Font size      | 52 distinct values. Top: 0.8rem (42), 0.72rem (41), 0.78rem (32), 0.7rem (25), 0.82rem (23), 0.74rem (18), 0.76rem (14), 0.75rem (14) | 6 steps        |
-| Spacing        | 78 distinct values in 826 padding, margin and gap declarations                                                                        | 8 steps        |
-| Radius         | Step 1 done: 6 tokens. Still literal: 2px, 1px, 5px, 12px, 7px                                                                        | 6 names        |
-| z-index        | Step 1 done: every layer from 130 up is a token                                                                                       | Named layers   |
-| Shadow         | 28 distinct `box-shadow` values                                                                                                       | 3 levels       |
-| Empty state    | Step 4 done: one rule, `.empty-note`                                                                                                  | 1 class        |
-| Error line     | Step 4 done: one rule, `.error-line`                                                                                                  | 1 class        |
-| Help line      | Step 4 done: one rule, `.help-text`                                                                                                   | 1 class        |
-| Chip and badge | Step 6 done: `.chip` and `.badge`, five tones                                                                                         | 1 class, tones |
-| Menu row       | Step 5 done: one rule, `.menu-item`                                                                                                   | 1 rule         |
-| Text field     | Step 5 done: one rule, `.text-field`, on `--log-bg`                                                                                   | 1 rule         |
-| Segmented      | Step 5 done: one rule, with a small size `.seg-sm`                                                                                    | 1 rule         |
-| Icons          | Bootstrap Icons (100 uses) and Lucide (55 uses)                                                                                       | 1 library      |
+| Area           | Measured                                                                                           | Should be      |
+| -------------- | -------------------------------------------------------------------------------------------------- | -------------- |
+| Font size      | Step 7 done: six tokens; 7 `rem` values stay outside (1rem and larger, 1.05rem)                    | 6 steps        |
+| Spacing        | Step 7: nine tokens; 434 exact uses converted, 276 between two steps move when their panel changes | 9 steps        |
+| Radius         | Step 1 done: 6 tokens. Still literal: 2px, 1px, 5px, 12px, 7px                                     | 6 names        |
+| z-index        | Step 1 done: every layer from 130 up is a token                                                    | Named layers   |
+| Shadow         | 28 distinct `box-shadow` values                                                                    | 3 levels       |
+| Empty state    | Step 4 done: one rule, `.empty-note`                                                               | 1 class        |
+| Error line     | Step 4 done: one rule, `.error-line`                                                               | 1 class        |
+| Help line      | Step 4 done: one rule, `.help-text`                                                                | 1 class        |
+| Chip and badge | Step 6 done: `.chip` and `.badge`, five tones                                                      | 1 class, tones |
+| Menu row       | Step 5 done: one rule, `.menu-item`                                                                | 1 rule         |
+| Text field     | Step 5 done: one rule, `.text-field`, on `--log-bg`                                                | 1 rule         |
+| Segmented      | Step 5 done: one rule, with a small size `.seg-sm`                                                 | 1 rule         |
+| Icons          | Bootstrap Icons (100 uses) and Lucide (55 uses)                                                    | 1 library      |
 
 ## 4. Drift: the code and ADR-0035
 
@@ -156,9 +156,13 @@ The largest moves are 1.05 → 1.15rem (1.6px, 2 places) and 0.85 → 0.9rem
 (0.8px, 11 places). Every other move is 0.48px or less. Sizes in `em`
 inside rendered prose follow the reading tokens and do not change.
 
-**Spacing:** `--sp-1` 0.15rem, `--sp-2` 0.25rem, `--sp-3` 0.35rem, `--sp-4`
-0.5rem, `--sp-5` 0.6rem, `--sp-6` 0.8rem, `--sp-7` 1rem, `--sp-8` 1.5rem.
-Each value today moves to the nearest step.
+**Spacing (corrected 2026-11-14, before step 7):** the scale first proposed
+here (0.15, 0.25, 0.35 … rem) fell between the values the chrome uses most:
+0.2, 0.3, 0.4 and 0.55rem were each exactly between two steps, so most
+declarations had no nearest step. The scale that step 7 adopted is the set
+of values already most used: `--space-1` to `--space-9` = 0.1, 0.2, 0.3,
+0.4, 0.5, 0.6, 0.8, 1 and 1.5rem. Only exact matches were converted, with
+no visible change; the rest moves when its panel changes.
 
 **Radius:** `--radius-sm` 3px, `--radius` 4px, `--radius-md` 6px,
 `--radius-lg` 8px, `--radius-xl` 10px, `--radius-pill` 999px. 50% stays
@@ -211,7 +215,8 @@ Each step is one change, with a browser check of the panels it touches.
 5. **Controls.** `.menu-item`, `.text-field` (D3), one segmented rule, one
    kbd hint rule.
 6. **Chip and badge** with tones, and `--warn` (D2, ADR-0035 amendment).
-7. **Type and spacing scales** (D5), one CSS file per change.
+7. **Type and spacing scales** (D5). Done: type in one change (every size
+   within 1px of a step), spacing by exact match only.
 8. **Icons** (D1), as panels are touched for other work.
 
 ## 10. Keeping it

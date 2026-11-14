@@ -69,10 +69,25 @@
      content of either row: the 21.75px branch chip and the 22px buttons. */
   --row-h: 33px;
   --runs-w: 400px;
-  /* Two steps of the type scale (docs/DESIGN-SYSTEM.md). */
+  /* The type scale of the chrome (docs/DESIGN-SYSTEM.md). `rem` is the 16px
+     root, not the 13px body. */
   --fs-2xs: 0.66rem;
   --fs-xs: 0.72rem;
   --fs-sm: 0.78rem;
+  --fs-md: 0.8rem;
+  --fs-lg: 0.9rem;
+  --fs-xl: 1.15rem;
+  /* The spacing scale: the values the chrome already used most. A value
+     between two steps moves to the scale when its panel changes. */
+  --space-1: 0.1rem;
+  --space-2: 0.2rem;
+  --space-3: 0.3rem;
+  --space-4: 0.4rem;
+  --space-5: 0.5rem;
+  --space-6: 0.6rem;
+  --space-7: 0.8rem;
+  --space-8: 1rem;
+  --space-9: 1.5rem;
   /* Radii (one name per value; `--radius` is the 4px default). */
   --radius-sm: 3px;
   --radius-md: 6px;
@@ -291,13 +306,13 @@ body.side-collapsed {
 .stat {
   color: var(--text-muted);
   display: inline-flex;
-  gap: 0.3rem;
+  gap: var(--space-3);
   align-items: center;
 }
 /* daemon uptime: a live-green dot signals the daemon is alive. `stale` (over 6s
    without a heartbeat) still greys it — the menu is where you go to ask. */
 .uptime {
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
 }
 .uptime [data-lucide] {
   color: var(--live);
@@ -314,7 +329,7 @@ body.side-collapsed {
 }
 /* repos-load failure (#202): a small honest warning row in the sidebar. */
 .side-error {
-  padding: 0.4rem 0.75rem;
+  padding: var(--space-4) 0.75rem;
   border-bottom: 1px solid var(--border);
 }
 /* The daemon's chosen avatar, in the rail's account button. It holds an EMOJI
@@ -390,8 +405,8 @@ body.side-collapsed {
   ) {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.1rem 0.45rem;
+  gap: var(--space-3);
+  padding: var(--space-1) 0.45rem;
   border-radius: var(--radius-pill);
   font-size: var(--fs-xs);
 }

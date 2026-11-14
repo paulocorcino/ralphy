@@ -15,12 +15,12 @@
 }
 .btn {
   font: inherit;
-  font-size: 0.8rem;
+  font-size: var(--fs-md);
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.3rem 0.7rem;
+  padding: var(--space-3) 0.7rem;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -51,7 +51,7 @@
      readers of that extent, and a diagnostic that costs one word is worth
      keeping wired. */
   display: none;
-  gap: 0.5rem;
+  gap: var(--space-5);
   color: var(--text-muted);
   /* Above the floating consoles — their focus counter is capped at Z_CEIL 120
      (wb-console.js) — so a full-bleed console cannot bury the pills. That is the
@@ -67,9 +67,9 @@
 .pill {
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.25rem 0.6rem;
+  padding: 0.25rem var(--space-6);
   background: var(--log-bg);
-  font-size: 0.75rem;
+  font-size: var(--fs-sm);
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -89,7 +89,7 @@
 }
 .ctx-item .bi {
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: var(--fs-lg);
 }
 .ctx-item.danger {
   color: var(--danger);
@@ -99,7 +99,7 @@
 }
 .ctx-sep {
   height: 1px;
-  margin: 0.25rem 0.3rem;
+  margin: 0.25rem var(--space-3);
   background: var(--border);
 }
 
@@ -196,7 +196,7 @@
    would have been — the operator is looking there, and an empty tree is exactly
    what this text exists to contradict. */
 .files-error {
-  padding: 0.5rem var(--side-gutter);
+  padding: var(--space-5) var(--side-gutter);
 }
 /* The branch refusal rides the same gutter, and adds the bound the change
    panel's note also carries: this text is the CLI's own prose, so it is the one
@@ -213,7 +213,7 @@
 .files-stale {
   padding: 0.35rem var(--side-gutter);
   color: var(--text-muted);
-  font-size: 0.74rem;
+  font-size: var(--fs-xs);
 }
 /* The open project's peer is down: the rows are the last read, so they dim. */
 .wb-host.peer-down {
@@ -223,7 +223,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-4);
 }
 .files-peer-down .session-detail {
   flex-basis: 100%;
@@ -236,8 +236,8 @@
   color: var(--text-muted);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
-  padding: 0 0.4rem;
-  font-size: 0.68rem;
+  padding: 0 var(--space-4);
+  font-size: var(--fs-2xs);
   line-height: 1.4;
 }
 /* A clean tree is a non-event: the zero badge recedes rather than announcing
@@ -267,7 +267,7 @@
   border-radius: var(--radius);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: var(--fs-lg);
 }
 .head-act:hover {
   background: var(--surface-hi);
@@ -318,13 +318,13 @@
   color: var(--text-muted);
 }
 .side-empty {
-  padding: 0.8rem var(--side-gutter);
+  padding: var(--space-7) var(--side-gutter);
 }
 /* The compose box never scrolls out of reach: `flex: 0 0 auto` against the
    list's `1 1 auto` keeps it pinned to the sidebar's bottom edge. */
 .chg-compose {
   flex: 0 0 auto;
-  padding: 0.5rem var(--side-gutter);
+  padding: var(--space-5) var(--side-gutter);
   border-top: 1px solid var(--border);
 }
 .chg-msg {
@@ -332,7 +332,7 @@
   box-sizing: border-box;
   resize: none;
   font: inherit;
-  font-size: 0.8rem;
+  font-size: var(--fs-md);
   color: var(--text);
   background: var(--log-bg);
   border: 1px solid var(--border);
@@ -394,7 +394,7 @@
 .changes-list {
   list-style: none;
   margin: 0;
-  padding: 0.2rem 0;
+  padding: var(--space-2) 0;
   /* `overflow-y: auto` is THE layout invariant of the rail view — MEASURED:
      drop it and a 60-row list grows this flex item to 1077px, pushing
      `.chg-compose` to bottom 1254 against a sidebar ending at 900. It also
@@ -409,9 +409,9 @@
 .chg-row {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.1rem 0.8rem;
-  font-size: 0.78rem;
+  gap: var(--space-4);
+  padding: var(--space-1) var(--space-7);
+  font-size: var(--fs-sm);
   min-width: 0;
   /* Backstop only. The clipping that bounds a frozen `.chg-name` (see below)
      belongs to `.chg-face`, NOT here: the row's last children are the action
@@ -430,7 +430,7 @@
 .chg-face {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-4);
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -444,8 +444,8 @@
   padding: 0;
 }
 .chg-group-head {
-  padding: 0.15rem 0.8rem;
-  font-size: 0.68rem;
+  padding: 0.15rem var(--space-7);
+  font-size: var(--fs-2xs);
   color: var(--text-muted);
 }
 /* #318 write controls */
@@ -471,13 +471,13 @@
   border-radius: var(--radius);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: var(--fs-lg);
   line-height: 1;
 }
 .chg-group-head {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-4);
 }
 .chg-act:hover {
   background: var(--surface-hi);
@@ -501,11 +501,11 @@
 .chg-commit {
   width: 100%;
   box-sizing: border-box;
-  margin-top: 0.4rem;
+  margin-top: var(--space-4);
   min-height: 26px;
-  padding: 0.2rem 0.55rem;
+  padding: var(--space-2) 0.55rem;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--fs-sm);
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border);
@@ -549,7 +549,7 @@
 .chg-group-note {
   flex: 0 999 auto;
   min-width: 0;
-  font-size: 0.62rem;
+  font-size: var(--fs-2xs);
   color: var(--text-muted);
   opacity: 0.8;
   overflow: hidden;
@@ -565,7 +565,7 @@
   .chg-discard {
     min-width: 18px;
     min-height: 18px;
-    font-size: 0.7rem;
+    font-size: var(--fs-xs);
     opacity: 0.6;
   }
 }
@@ -576,9 +576,9 @@
 .sync-row {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.2rem 0.8rem;
-  font-size: 0.72rem;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-7);
+  font-size: var(--fs-xs);
   min-width: 0;
   overflow: hidden;
 }
@@ -606,7 +606,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-muted);
-  font-size: 0.68rem;
+  font-size: var(--fs-2xs);
 }
 /* The remote bar. Same `flex: 0 0 auto` pin as `.chg-compose`, so the list
    scrolls behind it and the remote acts never scroll out of reach; it sits
@@ -619,7 +619,7 @@
   display: flex;
   align-items: stretch;
   gap: 0.35rem;
-  padding: 0.4rem 0.5rem;
+  padding: var(--space-4) var(--space-5);
   border-top: 1px solid var(--border);
 }
 /* The panel's refusal note. Pinned with the same `flex: 0 0 auto` as the two
@@ -631,8 +631,8 @@
   flex: 0 0 auto;
   display: flex;
   align-items: flex-start;
-  gap: 0.4rem;
-  padding: 0.4rem 0.5rem;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
   border-top: 1px solid var(--border);
 }
 .chg-error span {
@@ -659,11 +659,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.3rem;
+  gap: var(--space-3);
   min-height: 26px;
-  padding: 0.2rem 0.4rem;
+  padding: var(--space-2) var(--space-4);
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
   background: var(--surface);
   border: 1px solid var(--border);
@@ -767,7 +767,7 @@
    is not squeezed to nothing while a directory still shows. */
 .chg-dir {
   flex: 0 999 auto;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
 }
 .chg-from {
   flex: 0 4 auto;
@@ -830,7 +830,7 @@
    distinct from the reachability dot. */
 .project-head .remote {
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: var(--fs-lg);
   width: 1em;
   text-align: center;
 }

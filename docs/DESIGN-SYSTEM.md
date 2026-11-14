@@ -65,33 +65,53 @@ Six tones for note cards, and two inks for a solid card: `--note-ochre`,
 | `--fs-xs`           | `0.72rem`                         | Chip, small segmented control (11.52px) |
 | `--fs-sm`           | `0.78rem`                         | Empty, error and help text (12.48px)    |
 
-The body is 13px, but `rem` is relative to the root, which is 16px. So
-`0.8rem` is 12.8px, a little smaller than the body. The chrome sizes are
-`rem` values, not tokens. Common sizes, measured in Chromium:
+The body is 13px, but `rem` is relative to the root, which is 16px. The
+chrome uses six steps; every `font-size` in `rem` within 1px of a step
+uses its token (decision D5; a value exactly between two steps went up).
 
-| Value     | Pixels  | Used for                                  |
-| --------- | ------- | ----------------------------------------- |
-| `0.66rem` | 10.56px | Kbd hint, scope chip                      |
-| `0.68rem` | 10.88px | State badge, change count                 |
-| `0.72rem` | 11.52px | Menu head, branch chip, foot note         |
-| `0.76rem` | 12.16px | Help line under a setting                 |
-| `0.78rem` | 12.48px | Segments, empty state, error line         |
-| `0.8rem`  | 12.8px  | Button, tab, context menu row, host field |
-| `0.82rem` | 13.12px | Menu row, settings field                  |
-| `13px`    | 13px    | Body, modal title                         |
-| `0.85rem` | 13.6px  | Settings label, toast                     |
-| `0.9rem`  | 14.4px  | Card title                                |
+| Token      | Value     | Pixels  | Used for                                   |
+| ---------- | --------- | ------- | ------------------------------------------ |
+| `--fs-2xs` | `0.66rem` | 10.56px | Badge, kbd hint, menu group label          |
+| `--fs-xs`  | `0.72rem` | 11.52px | Chip, menu head, foot note, small segments |
+| `--fs-sm`  | `0.78rem` | 12.48px | Empty, error and help text, segments       |
+| `--fs-md`  | `0.8rem`  | 12.8px  | Button, tab, menu row, text field          |
+| `--fs-lg`  | `0.9rem`  | 14.4px  | Settings label, card title, toast          |
+| `--fs-xl`  | `1.15rem` | 18.4px  | Large titles                               |
+
+The body (13px) and the modal title inherit their size. A few sizes stay
+outside the scale on purpose: `1rem` and larger display sizes, `1.05rem`
+(1.6px from a step, more than D5 allows), and sizes in `em` inside
+rendered prose, which follow the reading tokens.
 
 ## Spacing
 
-Spacing values are `rem` literals, not tokens. Measured in Chromium:
+The spacing scale is the set of values the chrome already used most.
+
+| Token       | Value    | Pixels |
+| ----------- | -------- | ------ |
+| `--space-1` | `0.1rem` | 1.6px  |
+| `--space-2` | `0.2rem` | 3.2px  |
+| `--space-3` | `0.3rem` | 4.8px  |
+| `--space-4` | `0.4rem` | 6.4px  |
+| `--space-5` | `0.5rem` | 8px    |
+| `--space-6` | `0.6rem` | 9.6px  |
+| `--space-7` | `0.8rem` | 12.8px |
+| `--space-8` | `1rem`   | 16px   |
+| `--space-9` | `1.5rem` | 24px   |
+
+New spacing uses a token. 434 declarations use the scale; 276 still hold a
+value between two steps (most often 0.35, 0.55, 0.25, 0.45 and 0.7rem).
+Such a value moves to the nearest step when its panel changes for other
+work. The measures below are the same either way.
+
+Measured in Chromium:
 
 | Place                 | Padding (top, sides)      | Gap    | Height |
 | --------------------- | ------------------------- | ------ | ------ |
 | Button in a modal     | 4.8px, 11.2px             | 5.6px  | 27px   |
 | Button in a toolbar   | 0, 8.8px                  | 5.6px  | 24px   |
 | Text field (settings) | 5.6px, 8px                | -      | 28px   |
-| Text field (host)     | 4.8px, 7.2px              | -      | 27px   |
+| Text field (host)     | 5.6px, 8px                | -      | 28px   |
 | Menu row              | 5.6px, 8.8px              | 8px    | 27px   |
 | Context menu row      | 5.6px, 8.8px              | 8px    | 28px   |
 | Menu, context menu    | 4px                       | -      | -      |
@@ -99,8 +119,8 @@ Spacing values are `rem` literals, not tokens. Measured in Chromium:
 | Modal foot            | 9.6px, 14.4px             | 12.8px | 47px   |
 | Settings row          | 11.2px, 0                 | -      | -      |
 | Card                  | 12.8px, 14.4px            | -      | -      |
-| State badge           | 0.8px, 8px                | -      | 17px   |
-| Toast                 | 7.2px, 9.6px              | 9.6px  | 40px   |
+| State badge           | 0.8px, 7.2px              | -      | 17px   |
+| Toast                 | 7.2px, 9.6px              | 9.6px  | 42px   |
 | Tab                   | 0, 8px right, 11.2px left | 6.4px  | 39px   |
 
 The rhythm: a control is 24 to 28px high. Inside a row, the gap between an

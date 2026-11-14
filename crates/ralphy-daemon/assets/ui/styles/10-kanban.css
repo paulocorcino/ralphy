@@ -28,7 +28,7 @@
 .kanban-head {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--space-6);
   padding: 0 0.7rem;
   height: 42px;
   flex: none;
@@ -38,13 +38,13 @@
 .kanban-title {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-4);
   font-weight: 600;
   letter-spacing: 0.02em;
 }
 .kanban-scope {
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
 }
 .kanban-head .spacer {
   flex: 1;
@@ -63,9 +63,9 @@
 }
 .kanban-search input {
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   width: 240px;
-  padding: 0.32rem 0.5rem 0.32rem 1.7rem;
+  padding: 0.32rem var(--space-5) 0.32rem 1.7rem;
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border);
@@ -78,12 +78,12 @@
 .kanban-select,
 .kanban-sort {
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--fs-sm);
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.28rem 0.4rem;
+  padding: 0.28rem var(--space-4);
 }
 .kanban-select:focus,
 .kanban-sort:focus {
@@ -164,14 +164,14 @@
 .kanban-loading,
 .kd-loading {
   display: flex;
-  gap: 0.6rem;
+  gap: var(--space-6);
   align-items: center;
   justify-content: center;
   padding: 2rem;
   color: var(--text-muted);
 }
 .kd-loading {
-  padding: 1rem 0;
+  padding: var(--space-8) 0;
   justify-content: flex-start;
 }
 .kanban-spinner {
@@ -195,7 +195,7 @@
   padding: 2rem;
   text-align: center;
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-5);
   align-items: center;
   justify-content: center;
 }
@@ -203,11 +203,11 @@
 /* the issue drawer's detail-fetch failure banner (#302) */
 .kd-error {
   margin: 0 0 0.75rem 0;
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-5) 0.75rem;
   border: 1px solid var(--danger);
   border-radius: var(--radius-md);
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-5);
   align-items: center;
 }
 
@@ -233,8 +233,8 @@
 .kanban-col-head {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.5rem 0.6rem;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
   border-bottom: 1px solid var(--border);
   color: var(--text-muted);
 }
@@ -245,13 +245,13 @@
 .kanban-col-title {
   font-weight: 600;
   color: var(--text);
-  font-size: 0.82rem;
+  font-size: var(--fs-md);
 }
 .kanban-col-count {
   min-width: 18px;
   padding: 0 0.35rem;
   text-align: center;
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   color: var(--text-muted);
@@ -272,7 +272,7 @@
   flex-shrink: 0;
 }
 .kanban-col-note {
-  font-size: 0.66rem;
+  font-size: var(--fs-2xs);
   color: var(--text-muted);
   border: 1px dashed var(--border);
   padding: 0.05rem 0.35rem;
@@ -295,14 +295,14 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0.5rem;
+  padding: var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-5);
 }
 .kanban-col-empty {
   text-align: center;
-  padding: 0.8rem 0;
+  padding: var(--space-7) 0;
 }
 
 /* a card */
@@ -338,7 +338,7 @@
 }
 .kc-num {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 .kc-blocked {
@@ -346,13 +346,13 @@
   display: inline-flex;
 }
 .kc-blocked .bi {
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
 }
 .kc-top .spacer {
   flex: 1;
 }
 .kc-close {
-  font-size: 0.64rem;
+  font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: 0.03em;
   padding: 0.03rem 0.35rem;
@@ -369,24 +369,24 @@
 }
 .kc-assignee {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
 }
 .kc-title {
   font-family: var(--font-ui);
-  font-size: 0.8rem;
+  font-size: var(--fs-md);
   line-height: 1.35;
   color: var(--text);
 }
 .kc-run {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--space-3);
   margin-top: 0.35rem;
-  padding: 0.2rem 0.4rem;
+  padding: var(--space-2) var(--space-4);
   background: color-mix(in srgb, var(--live) 14%, var(--log-bg));
   border: 1px solid color-mix(in srgb, var(--live) 35%, transparent);
   border-radius: var(--radius);
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   color: var(--text);
   cursor: pointer; /* it navigates to the run (#301) */
 }
@@ -400,13 +400,13 @@
 .kc-plan {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--space-3);
   margin-top: 0.35rem;
-  padding: 0.2rem 0.4rem;
+  padding: var(--space-2) var(--space-4);
   background: color-mix(in srgb, var(--info) 12%, var(--log-bg));
   border: 1px solid color-mix(in srgb, var(--info) 32%, transparent);
   border-radius: var(--radius);
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   color: var(--text);
   cursor: pointer;
 }
@@ -432,12 +432,12 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
-  margin-top: 0.4rem;
+  margin-top: var(--space-4);
 }
 .kc-label {
-  font-size: 0.64rem;
+  font-size: var(--fs-2xs);
   line-height: 1.5;
-  padding: 0.02rem 0.4rem;
+  padding: 0.02rem var(--space-4);
   border-radius: var(--radius-pill);
   font-family: var(--font-ui);
   white-space: nowrap;
@@ -464,22 +464,22 @@
 .kd-inner {
   height: 100%;
   overflow-y: auto;
-  padding: 0.8rem 0.9rem 1.2rem;
+  padding: var(--space-7) 0.9rem 1.2rem;
 }
 .kd-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
+  gap: var(--space-5);
+  margin-bottom: var(--space-5);
 }
 .kd-state {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  font-size: 0.72rem;
+  gap: var(--space-3);
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  padding: 0.15rem 0.5rem;
+  padding: 0.15rem var(--space-5);
   border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   color: var(--text-muted);
@@ -501,11 +501,11 @@
 .kd-gh {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  font-size: 0.74rem;
+  gap: var(--space-3);
+  font-size: var(--fs-xs);
   color: var(--info);
   text-decoration: none;
-  padding: 0.2rem 0.4rem;
+  padding: var(--space-2) var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
@@ -536,8 +536,8 @@
    never the ones pushed past the edge. */
 @container kanban (max-width: 560px) {
   .kanban-head {
-    gap: 0.4rem;
-    padding: 0 0.5rem;
+    gap: var(--space-4);
+    padding: 0 var(--space-5);
   }
   .kanban-scope,
   .kanban-head .spacer {
@@ -611,7 +611,7 @@
     border-left: 0;
   }
   .kd-inner {
-    padding: 0.6rem 0.7rem 1.2rem;
+    padding: var(--space-6) 0.7rem 1.2rem;
   }
   .kd-head {
     flex-wrap: wrap;
@@ -632,7 +632,7 @@
   }
 }
 .kd-title {
-  margin: 0.2rem 0 0.6rem;
+  margin: var(--space-2) 0 var(--space-6);
   font-family: var(--font-ui);
   font-size: 1.02rem;
   line-height: 1.35;
@@ -642,28 +642,28 @@
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-weight: 400;
-  margin-right: 0.4rem;
+  margin-right: var(--space-4);
 }
 .kd-run {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  margin-bottom: 0.6rem;
-  padding: 0.35rem 0.5rem;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+  padding: 0.35rem var(--space-5);
   background: color-mix(in srgb, var(--live) 14%, var(--log-bg));
   border: 1px solid color-mix(in srgb, var(--live) 35%, transparent);
   border-radius: 5px;
-  font-size: 0.76rem;
+  font-size: var(--fs-sm);
 }
 .kd-run-face {
-  font-size: 0.95rem;
+  font-size: var(--fs-lg);
 }
 .kd-meta {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.3rem 0.8rem;
-  margin-bottom: 0.6rem;
-  padding-bottom: 0.6rem;
+  gap: var(--space-3) var(--space-7);
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-6);
   border-bottom: 1px solid var(--border);
 }
 .kd-meta-row {
@@ -672,35 +672,35 @@
   gap: 0.05rem;
 }
 .kd-k {
-  font-size: 0.66rem;
+  font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-muted);
 }
 .kd-v {
-  font-size: 0.8rem;
+  font-size: var(--fs-md);
   color: var(--text);
 }
 .kd-row {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  margin-bottom: 0.6rem;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
 }
 .kd-blockers {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem;
+  gap: var(--space-3);
 }
 .kd-blocker {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
   font-family: var(--font-mono);
-  font-size: 0.74rem;
+  font-size: var(--fs-xs);
   text-decoration: none;
   color: var(--text-muted);
-  padding: 0.1rem 0.4rem;
+  padding: var(--space-1) var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
 }
@@ -715,29 +715,29 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--space-3);
 }
 .kd-label {
-  font-size: 0.68rem;
-  padding: 0.06rem 0.5rem;
+  font-size: var(--fs-2xs);
+  padding: 0.06rem var(--space-5);
   border-radius: var(--radius-pill);
   font-family: var(--font-ui);
 }
 .kd-nolabel {
   color: var(--text-muted);
-  font-size: 0.76rem;
+  font-size: var(--fs-sm);
 }
 .kd-label-edit {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
-  padding: 0.1rem 0.5rem;
+  padding: var(--space-1) var(--space-5);
   cursor: pointer;
 }
 .kd-label-edit:hover {
@@ -799,42 +799,42 @@
   margin: 1.6em 0 0.5em;
 }
 .kd-comments {
-  margin-top: 0.8rem;
+  margin-top: var(--space-7);
   border-top: 1px solid var(--border);
-  padding-top: 0.6rem;
+  padding-top: var(--space-6);
 }
 .kd-comments-head {
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-muted);
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-5);
 }
 .kd-comment {
   border: 1px solid var(--border);
   border-radius: 5px;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-5);
   overflow: hidden;
 }
 .kd-comment-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.3rem 0.5rem;
+  gap: var(--space-5);
+  padding: var(--space-3) var(--space-5);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  font-size: 0.76rem;
+  font-size: var(--fs-sm);
 }
 .kd-comment-at {
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
 }
 .kd-comment-body {
-  padding: 0.2rem 0.6rem 0.4rem;
+  padding: var(--space-2) var(--space-6) var(--space-4);
 }
 .kd-foot {
-  margin-top: 0.8rem;
-  font-size: 0.7rem;
+  margin-top: var(--space-7);
+  font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 .kd-foot code {
