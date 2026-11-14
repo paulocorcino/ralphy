@@ -347,25 +347,25 @@ diagram editor keys were tried the same way and work.
    all: neither the page nor the child program gets it. A child program
    that binds these chords (Meta+Shift+arrows, Meta+Shift+digit) never gets
    them. Code: `wb-console-press.ts:31`, `wb-consoles-tab-menus.ts:309`,
-   `wb-consoles-tab.ts:448`.
+   `wb-consoles-tab.ts:448`. Issue #953.
 2. **Alt+Shift+F1 to F12 do not work from a terminal.** They are not in
    `pageTakesChord`, so xterm sends them to the child program (`ESC [1;4P`
    and the like) and stops the event. The fence listener also refuses them
    while a terminal has the focus. The digits, R and the arrows work from a
    terminal; the fence keys do not. There is no conflict with the child
    program, but the rule is not the same for all page shortcuts. Code:
-   `wb-consoles-tab-menus.ts:329`.
+   `wb-consoles-tab-menus.ts:329`. Issue #954.
 3. **Escape during a window drag goes to the child program.** The drag
    listens for Escape on the document, in the bubble phase. When a terminal
    has the focus, xterm sends Escape to the child program and stops the
    event, so the drag does not end and the child program gets an Escape.
-   Code: `wb-stage-window-gestures.ts:196`.
+   Code: `wb-stage-window-gestures.ts:196`. Issue #955.
 4. **Escape that closes the checkout menu is not stopped.** The listener is
    on the document, in the capture phase, and does not stop the event. When
    a terminal still has the focus, the same Escape closes the menu and goes
    to the child program. The encoding menu has the same shape
    (`wb-viewer-encoding.ts:129`), but it opens in a file viewer, away from a
-   terminal. Code: `wb-console-checkout.ts:258`.
+   terminal. Code: `wb-console-checkout.ts:258`. Issue #955.
 5. **Alt+Shift on Windows.** With two or more keyboard layouts installed,
    Windows can use Left Alt+Shift to change the input language. Every page
    shortcut starts with Alt+Shift. Not measured with the workbench.
@@ -391,7 +391,7 @@ Checked, and no conflict found:
 
 - Most dropdown menus do not close on Escape. Only the checkout menu, the
   encoding menu, the Columns menu filter and the command field of the
-  Consoles menu do.
+  Consoles menu do. Issue #956.
 
 ## Measuring a change
 
