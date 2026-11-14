@@ -113,7 +113,11 @@ No page error in any mode. No horizontal scroll in any mode.
    chip wraps onto three lines.
 9. **No arrow keys** in menus or in segmented tablists. Only Tab moves.
 
-## 6. Decisions only a person can make
+## 6. Decisions
+
+All eight were decided on 2026-11-14: D1 to D6 and D8 as recommended
+below, D7 as written. The palette, focus, icon and field decisions are
+recorded in ADR-0035 (amendment of 2026-11-14).
 
 | #   | Question                                       | Recommendation                                                                                                                                                                                                                       |
 | --- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
