@@ -21,6 +21,7 @@ import type { ConsoleWin } from "./wb-types.d.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBProject } from "./wb-project.ts";
 import { sendWindow } from "./wb-events.ts";
+import { bindCommand } from "./wb-commands.ts";
 import {
   columnLead,
   headGap,
@@ -439,25 +440,18 @@ export function wbColumns() {
       // while two or more consoles are open, from inside a column's terminal too;
       // otherwise ←/→ walk the fences in reading order (`fenceCycle`) — ADR-0051 §5.
       // With nothing to walk the key is left UNSWALLOWED.
-      const ARROW_STEPS = {
+      const ARROW_STEPS: Readonly<Record<string, readonly ["x" | "y", number] | undefined>> = {
         ArrowRight: ["x", 1],
         ArrowLeft: ["x", -1],
         ArrowDown: ["y", 1],
         ArrowUp: ["y", -1],
-      } as const;
-      document.addEventListener("keydown", (e) => {
-        if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
-        const steps: Readonly<Record<string, readonly ["x" | "y", number] | undefined>> =
-          ARROW_STEPS;
-        const move = steps[e.code];
-        if (!move) return;
-        if (
-          this.$store.modals.consoleShortcutsBlocked(WBColumns.flat(this.arrowGrid()).length >= 2)
-        ) {
-          return;
-        }
-        if (!this.arrowStep(move[0], move[1])) return;
-        e.preventDefault();
+      };
+      bindCommand("stage.walk", {
+        can: (code) => ARROW_STEPS[code] !== undefined,
+        run: (code) => {
+          const move = ARROW_STEPS[code];
+          return move !== undefined && this.arrowStep(move[0], move[1]);
+        },
       });
     },
   });

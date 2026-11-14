@@ -166,7 +166,8 @@ fn the_fence_menu_follows_the_cap() {
     // Alt+Shift held, F10/F11/F12 all reach the document — their reserved
     // neighbours (Shift+F10, F11, F12) each want their own exact combo.
     assert!(
-        app.contains(r"if (!/^F(?:[1-9]|1[0-2])$/u.test(e.code)) return;"),
+        include_str!("../../assets/ui/wb-commands.ts")
+            .contains(r#"export const FENCE_KEYS = range("F", 1, 12);"#),
         "the fence accelerators must run F1..F12, matching the cap"
     );
     assert!(

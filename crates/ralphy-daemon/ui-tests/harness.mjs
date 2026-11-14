@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { shell } from "../assets/ui/app.ts";
 import { wire } from "../assets/ui/wb-wire.ts";
+import { wireCommands } from "../assets/ui/wb-commands.ts";
 import { hostsDialog } from "../assets/ui/wb-hosts-dialog.ts";
 import { settingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 import { devices } from "../assets/ui/wb-devices.ts";
@@ -250,6 +251,8 @@ export function loadShell(opts = {}) {
   const detached = wire(window, document, { messages });
   const given = { projects: opts.projects, ...opts.stores };
   for (const [name, store] of Object.entries(STORES)) stores[name] = given[name] || store({ messages, detached });
+  // The page shortcuts' one listener, as `main.ts` adds it.
+  wireCommands(document, (fromTerminal) => stores.modals.consoleShortcutsBlocked(fromTerminal));
   const state = shell();
   state.$store = stores;
   return { state, window, document };

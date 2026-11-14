@@ -17,6 +17,7 @@ import type { MenuRow } from "./wb-agents.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBProject } from "./wb-project.ts";
 import { sendWindow } from "./wb-events.ts";
+import { bindCommand } from "./wb-commands.ts";
 import { showConsoleWindow } from "./wb-console-place.ts";
 
 /** A row of the Note menu (`WBNotes.list`). */
@@ -302,36 +303,31 @@ export function wbConsoleMenus() {
       });
 
       // Alt+Shift+<digit> → the menu row carrying that digit, through the SAME row
-      // action as a click. Matched on `e.code` so layout does not matter. R is no
-      // row: it opens the menu on the console row's command field, so the digits
-      // stay a sequence of rows. They work from inside a terminal too: its xterm
-      // hands them over (wb-console-terminal.ts).
-      document.addEventListener("keydown", (e) => {
-        if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
-        if (!/^(?:Digit\d|KeyR)$/u.test(e.code)) return;
-        if (this.$store.modals.consoleShortcutsBlocked(true)) return;
-        if (e.code === "KeyR") {
-          e.preventDefault();
+      // action as a click. R is no row: it opens the menu on the console row's
+      // command field, so the digits stay a sequence of rows. A row that is
+      // missing or disabled leaves the key to whoever else wants it.
+      const rowOf = (code: string) =>
+        this.consoleItems().find((it) => code === "Digit" + it.digit && !it.disabled);
+      bindCommand("consoles.row", {
+        can: (code) => rowOf(code) !== undefined,
+        run: (code) => {
+          const row = rowOf(code);
+          if (row) this.openConsoleItem(row);
+        },
+      });
+      bindCommand("consoles.run", {
+        can: () => true,
+        run: () => {
           this.openConsoleRunMenu();
-          return;
-        }
-        const row = this.consoleItems().find((it) => e.code === "Digit" + it.digit);
-        // No row, or a disabled one: inert, and the key is not swallowed.
-        if (!row || row.disabled) return;
-        e.preventDefault();
-        this.openConsoleItem(row);
+        },
       });
 
       // Alt+Shift+F<n> → the n-th fence, F1..F12 (the fence cap). None of the
       // reserved neighbours is hit — Alt+F4, Shift+F10, F11, F12 each want their
       // exact combo (MEASURED: with Alt+Shift held, F10–F12 reach the document).
-      // With no fence at that ordinal the key is left UNSWALLOWED.
-      document.addEventListener("keydown", (e) => {
-        if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
-        if (!/^F(?:[1-9]|1[0-2])$/u.test(e.code)) return;
-        if (this.$store.modals.consoleShortcutsBlocked()) return;
-        if (!this.jumpFenceAt(Number(e.code.slice(1)))) return;
-        e.preventDefault();
+      bindCommand("fence.go", {
+        can: () => true,
+        run: (code) => this.jumpFenceAt(Number(code.slice(1))),
       });
     },
   });

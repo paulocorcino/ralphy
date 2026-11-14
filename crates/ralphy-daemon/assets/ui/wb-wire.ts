@@ -8,6 +8,7 @@ import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import { WBSplit } from "./wb-split.ts";
 import { isFilePopupMessage } from "./wb-detached.ts";
 import type { FilePopupMessage } from "./wb-detached.ts";
+import { bindCommand } from "./wb-commands.ts";
 import { createEmitter, forwardAction, sendWindow } from "./wb-events.ts";
 import type { SavePayload, WireDeps } from "./wb-shell-types.d.ts";
 
@@ -444,23 +445,22 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
 
   // `/` → the search on screen: FILES while a project is open, projects
   // otherwise.
-  document.addEventListener("keydown", (e) => {
-    if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
-    const c = window.getShell();
-    if (!c || window.Alpine.store("modals").consoleShortcutsBlocked()) return;
-    e.preventDefault();
-    if ((window.Alpine.store("projects").openSlug ?? "") === "") c.focusProjectSearch();
-    else sendWindow(window, "workbench:file-search-open");
+  bindCommand("search.open", {
+    can: () => window.getShell() !== null,
+    run: () => {
+      const c = window.getShell();
+      if ((window.Alpine.store("projects").openSlug ?? "") === "") c?.focusProjectSearch();
+      else sendWindow(window, "workbench:file-search-open");
+    },
   });
 
-  // Ctrl/Cmd+Shift+F → the FILES search. NOT `consoleShortcutsBlocked`: the
-  // editor is exactly where "find in files" is reached for.
-  document.addEventListener("keydown", (e) => {
-    if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey) return;
-    if (e.key !== "F" && e.key !== "f") return;
-    if (!filesSearchOffered() || dialogOverFiles()) return;
-    e.preventDefault();
-    sendWindow(window, "workbench:file-search-open");
+  // Ctrl/Cmd+Shift+F → the FILES search, from the editor too: the editor is
+  // exactly where "find in files" is reached for.
+  bindCommand("files.search", {
+    can: () => filesSearchOffered() && !dialogOverFiles(),
+    run: () => {
+      sendWindow(window, "workbench:file-search-open");
+    },
   });
 
   // The FILES search needs the shell, a login and an open project.

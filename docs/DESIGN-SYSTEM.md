@@ -257,8 +257,12 @@ code. How each component shows its keys: [Keyboard](./design-system/keyboard.md)
 
 ### The keyboard model
 
-Decided on 2026-11-14 in [ADR-0087](./adr/0087-the-workbench-keyboard-is-one-command-list.md),
-not built yet. The tables below describe the code of today.
+Decided on 2026-11-14 in [ADR-0087](./adr/0087-the-workbench-keyboard-is-one-command-list.md).
+Built so far: the list (`COMMANDS` in `wb-commands.ts`) and its one
+listener. Each page shortcut is a command of the list; a component binds
+its action with `bindCommand`, and the Code column below names that line.
+The rest of this list is not built yet; the tables below describe the code
+of today.
 
 - **No prefix key.** A page shortcut is one chord: Alt+Shift (⌥⇧ on a Mac)
   and one more key. Only `/`, `?` and Ctrl+Shift+F (Cmd+Shift+F) differ;
@@ -311,12 +315,12 @@ not built yet. The tables below describe the code of today.
 
 | Action                                                                                 | Keys                                   | Component                   | Code                                                   |
 | -------------------------------------------------------------------------------------- | -------------------------------------- | --------------------------- | ------------------------------------------------------ |
-| Open the search: files when a project is open, projects otherwise                      | `/`                                    | Page                        | `wb-wire.ts:447`                                       |
-| Open the files search, also from the code editor and from a terminal                   | Ctrl+Shift+F (Cmd+Shift+F on macOS)    | Page                        | `wb-wire.ts:458`                                       |
-| Run the row with that digit in the Consoles menu                                       | Alt+Shift+0 to 9                       | Consoles menu               | `wb-consoles-tab-menus.ts:309`                         |
-| Open the Consoles menu on its command field                                            | Alt+Shift+R                            | Consoles menu               | `wb-consoles-tab-menus.ts:309`                         |
-| Go to fence 1 to 12                                                                    | Alt+Shift+F1 to F12                    | Fences menu                 | `wb-consoles-tab-menus.ts:329`                         |
-| Walk the columns (Left, Right) and the rows of a column (Up, Down), or else the fences | Alt+Shift+arrows                       | Stage                       | `wb-consoles-tab.ts:448`                               |
+| Open the search: files when a project is open, projects otherwise                      | `/`                                    | Page                        | `wb-wire.ts:448`                                       |
+| Open the files search, also from the code editor and from a terminal                   | Ctrl+Shift+F (Cmd+Shift+F on macOS)    | Page                        | `wb-wire.ts:459`                                       |
+| Run the row with that digit in the Consoles menu                                       | Alt+Shift+0 to 9                       | Consoles menu               | `wb-consoles-tab-menus.ts:311`                         |
+| Open the Consoles menu on its command field                                            | Alt+Shift+R                            | Consoles menu               | `wb-consoles-tab-menus.ts:318`                         |
+| Go to fence 1 to 12                                                                    | Alt+Shift+F1 to F12                    | Fences menu                 | `wb-consoles-tab-menus.ts:328`                         |
+| Walk the columns (Left, Right) and the rows of a column (Up, Down), or else the fences | Alt+Shift+arrows                       | Stage                       | `wb-consoles-tab.ts:449`                               |
 | Copy the selection of a terminal                                                       | Ctrl+Insert                            | Terminal                    | `wb-console-press.ts:53`                               |
 | End the drag of a window where it is                                                   | Escape                                 | Session window              | `wb-stage-window-gestures.ts:196`                      |
 | Scroll the stage sideways                                                              | Shift+wheel                            | Stage                       | `wb-stage-view.ts:428`                                 |

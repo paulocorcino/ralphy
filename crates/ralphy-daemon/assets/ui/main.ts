@@ -46,6 +46,7 @@ import { createStack, createGestures } from "./wb-stage-stack.ts";
 import { shell } from "./app.ts";
 import { wire } from "./wb-wire.ts";
 import { wireArrowKeys } from "./wb-arrow-keys.ts";
+import { wireCommands } from "./wb-commands.ts";
 import { iconDirective } from "./wb-icon.ts";
 import { projectsStore } from "./wb-projects-store.ts";
 import { connectionStore } from "./wb-connection-store.ts";
@@ -93,6 +94,10 @@ window.WBNotes = createNotes(window, document, {
 // them a file it detaches.
 const detached = wire(window, document, { messages });
 wireArrowKeys(document);
+// The page shortcuts: one listener for the list of commands.
+wireCommands(document, (fromTerminal) =>
+  Alpine.store("modals").consoleShortcutsBlocked(fromTerminal),
+);
 Alpine.directive("icon", iconDirective);
 // The modal stack, the confirm, the prompt and the flash line, first: the
 // door and every store and component after it flash and ask through it. It
