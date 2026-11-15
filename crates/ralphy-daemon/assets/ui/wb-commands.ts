@@ -317,3 +317,9 @@ export function commandKeysText(cmd: Command, mac: boolean) {
   }
   return parts.join(" or ");
 }
+
+/** The keys of the command `id`, as a person reads them; "" for an unknown id. */
+export function commandKeys(id: string, mac = IS_MAC) {
+  const cmd = COMMANDS.find((c) => c.id === id);
+  return cmd ? commandKeysText(cmd, mac) : "";
+}

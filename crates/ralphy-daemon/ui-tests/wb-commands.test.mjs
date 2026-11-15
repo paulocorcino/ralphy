@@ -2,7 +2,7 @@
 // the list refuses, and when a key is taken. No browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { COMMANDS, bindCommand, dispatchKey, listProblems } from "../assets/ui/wb-commands.ts";
+import { COMMANDS, bindCommand, commandKeys, dispatchKey, listProblems } from "../assets/ui/wb-commands.ts";
 
 const cmd = (id, keys) => ({ id, group: "Page", label: id, keys, scope: "page" });
 
@@ -116,4 +116,10 @@ test("a key with another modifier is no chord", () => {
     assert.equal(dispatchKey(chord("KeyR", mods), "page", free), false, JSON.stringify(mods));
   }
   assert.equal(runs, 0);
+});
+
+test("a command's keys are written for the system, where the page shows them", () => {
+  assert.equal(commandKeys("files.search", false), "Ctrl+Shift+F");
+  assert.equal(commandKeys("files.search", true), "⌘⇧F");
+  assert.equal(commandKeys("no.such", false), "");
 });

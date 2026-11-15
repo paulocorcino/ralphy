@@ -43,7 +43,7 @@
                  what is open is the confusion that sent an operator typing a
                  file name into it (2026-09-10). -->
             <button class="head-act" :class="{ on: fileSearch.open }" @click.stop="toggleFileSearch()"
-                    title="Search files (Ctrl+Shift+F)">
+                    :title="searchFilesTitle">
               <i class="bi bi-search"></i>
             </button>
           </div>
