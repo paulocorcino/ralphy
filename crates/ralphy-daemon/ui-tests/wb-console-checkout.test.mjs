@@ -203,3 +203,31 @@ test("a branch list the daemon cannot give leaves a free text field for the base
     assert.equal(prompt.base.value, "", "a detached HEAD is no base to offer");
   }
 });
+
+// A terminal that still has the focus would send the Escape to its child.
+test("Escape closes the checkout menu and goes no further", () => {
+  const { document } = makeDocument();
+  const keydowns = new Set();
+  document.addEventListener = (type, fn) => type === "keydown" && keydowns.add(fn);
+  document.removeEventListener = (type, fn) => type === "keydown" && keydowns.delete(fn);
+  const store = checkoutsStore({ messages: { flash() {} } });
+  const switcher = createCheckoutSwitcher({
+    window: { Alpine: { store: () => store }, addEventListener() {} },
+    document,
+    OPTS: {},
+    wins: new Set(),
+    lastSessions: () => [],
+    agentStateTitle: (state) => state,
+    askConfirm: () => Promise.resolve(true),
+    setWin() {},
+    renderTitle() {},
+  });
+  const anchor = document.createElement("button");
+  switcher.checkoutMenu({ anchor, host: document.createElement("div"), rows: [], onPick() {} });
+  assert.equal(keydowns.size, 1, "the open menu listens for Escape");
+  const escape = { key: "Escape", stopped: false };
+  escape.stopPropagation = () => (escape.stopped = true);
+  for (const fn of [...keydowns]) fn(escape);
+  assert.equal(escape.stopped, true, "the Escape goes no further");
+  assert.equal(keydowns.size, 0, "the menu closed");
+});

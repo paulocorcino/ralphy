@@ -151,6 +151,30 @@ test("a titlebar drag is a gesture from the press to the release, and only a mov
   assert.deepEqual(Object.keys(writes[0].fields), ["rect"]);
 });
 
+// A focused terminal hears a bubbling Escape first and sends it to its
+// child, so the drag listens in the capture phase and stops the key.
+test("Escape ends a drag, in the capture phase, and no one else hears it", () => {
+  const { deps, document } = fakeDeps();
+  const phases = [];
+  const add = document.addEventListener;
+  document.addEventListener = (type, fn, capture) => {
+    if (type === "keydown") phases.push(capture === true);
+    add(type, fn);
+  };
+  const { makeDraggable } = createChrome(deps);
+  const win = fakeElement();
+  const handle = fakeElement();
+  makeDraggable(win, handle);
+  handle.listeners.pointerdown[0](press(100, 100));
+  document.fire("pointermove", { pointerId: 1, buttons: 1, clientX: 160, clientY: 140 });
+  const escape = { key: "Escape", stopped: false };
+  escape.stopPropagation = () => (escape.stopped = true);
+  document.fire("keydown", escape);
+  assert.equal(deps.gestures.active(win), false, "the drag ended");
+  assert.deepEqual(phases, [true], "the Escape listener is a capture one");
+  assert.equal(escape.stopped, true, "the Escape goes no further");
+});
+
 test("a resize band is a gesture too, and a tap on it writes nothing", () => {
   const { deps, writes, document } = fakeDeps();
   const { startResize } = createChrome(deps);

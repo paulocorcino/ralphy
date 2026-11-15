@@ -322,7 +322,7 @@ this list is not built yet; the tables below describe the code of today.
 | Go to fence 1 to 12                                                                    | Alt+Shift+F1 to F12                    | Fences menu                 | `wb-consoles-tab-menus.ts:328`                         |
 | Walk the columns (Left, Right) and the rows of a column (Up, Down), or else the fences | Alt+Shift+arrows                       | Stage                       | `wb-consoles-tab.ts:449`                               |
 | Copy the selection of a terminal                                                       | Ctrl+Insert                            | Terminal                    | `wb-console-press.ts:53`                               |
-| End the drag of a window where it is                                                   | Escape                                 | Session window              | `wb-stage-window-gestures.ts:196`                      |
+| End the drag of a window where it is                                                   | Escape                                 | Session window              | `wb-stage-window-gestures.ts:199`                      |
 | Scroll the stage sideways                                                              | Shift+wheel                            | Stage                       | `wb-stage-view.ts:428`                                 |
 | Close the top modal                                                                    | Escape                                 | Modal                       | `wb-modals-store.ts:177`                               |
 | Keep the focus inside the top modal                                                    | Tab, Shift+Tab                         | Modal                       | `wb-modals-store.ts:185`                               |
@@ -343,7 +343,7 @@ this list is not built yet; the tables below describe the code of today.
 | Move between the enabled rows, wrapping at the ends; go to the first or last row       | Up, Down; Home, End                    | Dropdown menu, context menu | `wb-arrow-keys.ts:69`                                  |
 | Move between the tabs; go to the first or last tab                                     | Left, Right; Home, End                 | Tab list                    | `wb-arrow-keys.ts:69`                                  |
 | Open the tab that has the focus                                                        | Enter, Space                           | Canvas tab                  | `index.html:276`                                       |
-| Close the menu                                                                         | Escape                                 | Checkout menu               | `wb-console-checkout.ts:258`                           |
+| Close the menu                                                                         | Escape                                 | Checkout menu               | `wb-console-checkout.ts:261`                           |
 | Close the menu                                                                         | Escape                                 | Encoding menu               | `wb-viewer-encoding.ts:129`                            |
 | Swap in the first console of the list; close the menu                                  | Enter; Escape                          | Columns menu filter         | `wb-consoles-tab-columns.part.html:39`                 |
 | Run the command; close the field                                                       | Enter; Escape                          | Consoles menu command field | `wb-consoles-tab-menus.part.html:60`                   |
@@ -384,17 +384,13 @@ diagram editor keys were tried the same way and work.
 2. **Fixed: Alt+Shift+F1 to F12 did not work from a terminal.** The fence
    command now passes a terminal, as the digits, R and the arrows do. Code:
    `wb-commands.ts` (`fence.go`). Issue #954.
-3. **Escape during a window drag goes to the child program.** The drag
-   listens for Escape on the document, in the bubble phase. When a terminal
-   has the focus, xterm sends Escape to the child program and stops the
-   event, so the drag does not end and the child program gets an Escape.
-   Code: `wb-stage-window-gestures.ts:196`. Issue #955.
-4. **Escape that closes the checkout menu is not stopped.** The listener is
-   on the document, in the capture phase, and does not stop the event. When
-   a terminal still has the focus, the same Escape closes the menu and goes
-   to the child program. The encoding menu has the same shape
-   (`wb-viewer-encoding.ts:129`), but it opens in a file viewer, away from a
-   terminal. Code: `wb-console-checkout.ts:258`. Issue #955.
+3. **Fixed: Escape during a window drag went to the child program.** The
+   drag now listens in the capture phase and stops the Escape. Code:
+   `wb-stage-window-gestures.ts:199`. Issue #955.
+4. **Fixed: the Escape that closed the checkout menu was not stopped.** It is
+   stopped now. The encoding menu (`wb-viewer-encoding.ts:129`) keeps the old
+   shape; it opens in a file viewer, away from a terminal. Code:
+   `wb-console-checkout.ts:261`. Issue #955.
 5. **Alt+Shift on Windows.** With two or more keyboard layouts installed,
    Windows can use Left Alt+Shift to change the input language. Every page
    shortcut starts with Alt+Shift. Not measured with the workbench.
