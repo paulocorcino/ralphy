@@ -60,6 +60,7 @@ function withKeptPlan(run: Run, prevRuns: Run[]) {
 // `deps` is the shape every store takes; the runs tell the operator nothing
 // themselves yet (the panel words a failed read from `runsError`).
 export function runsStore(_deps: RunsStoreDeps) {
+  let runsSub: Subscription | null = null; // the live run-snapshot socket of the open project
   return {
     // Monotonic hydration token: overlapping `runs.list` replies can land OUT
     // OF ORDER; only the newest hydration commits.
@@ -72,8 +73,6 @@ export function runsStore(_deps: RunsStoreDeps) {
     runsError: "",
     currentRunId: null as string | null,
     runsRead: {} as Record<string, Read>,
-    // The live run-snapshot subscription for the open project, if any.
-    _runsSub: null as Subscription | null,
 
     // Alpine calls this once, when `main.ts` registers the store.
     init() {
@@ -173,15 +172,15 @@ export function runsStore(_deps: RunsStoreDeps) {
       if (slug === null || slug === "") return;
       // What a push means for the page (a hidden tab, the board) is the
       // page's: `app.ts` hears it.
-      this._runsSub = window.WBDaemon.subscribeRuns(slug, () => {
+      runsSub = window.WBDaemon.subscribeRuns(slug, () => {
         sendWindow(window, "workbench:runs-dirty");
       });
     },
     destroyRunsSub() {
       try {
-        this._runsSub?.close();
+        runsSub?.close();
       } catch {}
-      this._runsSub = null;
+      runsSub = null;
     },
     // On `workbench:project-changed`. After the paint, the runs socket (#300)
     // follows the tree's open/close path, and the selection falls back to the

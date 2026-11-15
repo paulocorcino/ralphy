@@ -135,9 +135,18 @@ test("the runs follow the open project: the socket, the selection and a read", (
   projects.setOpen(null);
   window.dispatchEvent(new CustomEvent("workbench:project-changed", { detail: { slug: null, previous: "o/b" } }));
   assert.deepEqual(subs.map((s) => [s.repo, s.closed]), [["o/b", true]]);
-  assert.equal(store._runsSub, null);
   assert.equal(store.currentRunId, null);
   assert.equal(reads, 1);
+});
+
+test("the runs subscription stays out of the reactive data", () => {
+  const { store, subs } = page();
+  store.mountRunsSub();
+  assert.equal(subs.length, 1);
+  assert.equal(Object.values(store).includes(subs[0]), false);
+  store.destroyRunsSub();
+  store.destroyRunsSub();
+  assert.equal(subs[0].closed, true);
 });
 
 test("a push on the runs socket is told on the window as workbench:runs-dirty", () => {
