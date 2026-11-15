@@ -45,7 +45,7 @@ fn walk(html: &str) -> (Vec<usize>, Vec<Attr>) {
     let mut attrs = Vec::new();
     let mut line = 1;
     let mut i = 0;
-    while i < cs.len() {
+    while let Some(&c) = cs.get(i) {
         if starts(&cs, i, "<!") {
             if starts(&cs, i, "<!--") && !is_marker_line(&cs, i) {
                 found.push(line);
@@ -53,7 +53,7 @@ fn walk(html: &str) -> (Vec<usize>, Vec<Attr>) {
             i = skip_declaration(&cs, i, &mut line);
         } else if starts(&cs, i, "</") {
             i = skip_past(&cs, i, ">", &mut line);
-        } else if cs[i] == '<' && cs.get(i + 1).is_some_and(char::is_ascii_alphabetic) {
+        } else if c == '<' && cs.get(i + 1).is_some_and(char::is_ascii_alphabetic) {
             let (tag, tag_attrs, _, end) = read_tag(&cs, i + 1, &mut line);
             attrs.extend(tag_attrs);
             i = if tag == "script" || tag == "style" {
@@ -63,7 +63,7 @@ fn walk(html: &str) -> (Vec<usize>, Vec<Attr>) {
                 end
             };
         } else {
-            if cs[i] == '\n' {
+            if c == '\n' {
                 line += 1;
             }
             i += 1;
@@ -77,13 +77,11 @@ fn is_marker_line(cs: &[char], i: usize) -> bool {
     let Some(close) = (i..cs.len()).find(|&k| starts(cs, k, "-->")) else {
         return false;
     };
-    let inner: String = cs[i + 4..close].iter().collect();
-    let line_start = cs[..i]
-        .iter()
-        .rposition(|&c| c == '\n')
-        .map_or(0, |p| p + 1);
-    let before_blank = cs[line_start..i].iter().all(|c| c.is_whitespace());
-    let after = cs[close + 3..].iter().take_while(|&&c| c != '\n');
+    let inner: String = cs.get(i + 4..close).unwrap_or_default().iter().collect();
+    let head = cs.get(..i).unwrap_or_default();
+    let line_start = head.iter().rposition(|&c| c == '\n').map_or(0, |p| p + 1);
+    let before_blank = head.iter().skip(line_start).all(|c| c.is_whitespace());
+    let after = cs.iter().skip(close + 3).take_while(|&&c| c != '\n');
     let after_blank = after.into_iter().all(|c| c.is_whitespace());
     !inner.contains('\n') && inner.trim().starts_with("part:") && before_blank && after_blank
 }

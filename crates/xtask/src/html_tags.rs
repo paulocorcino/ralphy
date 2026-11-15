@@ -24,11 +24,11 @@ pub(crate) fn starts(cs: &[char], i: usize, needle: &str) -> bool {
 /// input when it is absent.
 pub(crate) fn skip_past(cs: &[char], from: usize, needle: &str, line: &mut usize) -> usize {
     let mut i = from;
-    while i < cs.len() {
+    while let Some(&c) = cs.get(i) {
         if starts(cs, i, needle) {
             return i + needle.chars().count();
         }
-        if cs[i] == '\n' {
+        if c == '\n' {
             *line += 1;
         }
         i += 1;
@@ -46,15 +46,15 @@ pub(crate) fn read_tag(
     let (name, mut i) = tag_name(cs, i);
     let mut attrs = Vec::new();
     let mut self_closing = false;
-    while i < cs.len() {
-        if cs[i].is_whitespace() {
-            if cs[i] == '\n' {
+    while let Some(&c) = cs.get(i) {
+        if c.is_whitespace() {
+            if c == '\n' {
                 *line += 1;
             }
             i += 1;
             continue;
         }
-        if cs[i] == '>' {
+        if c == '>' {
             i += 1;
             break;
         }
@@ -90,20 +90,21 @@ fn read_attr(cs: &[char], i: usize, line: &mut usize) -> (Option<Attr>, usize) {
 /// The tag name at `i`, made of ASCII letters, digits and `-`, in lowercase,
 /// and the index after it.
 fn tag_name(cs: &[char], i: usize) -> (String, usize) {
-    let end = (i..cs.len())
-        .find(|&k| !(cs[k].is_ascii_alphanumeric() || cs[k] == '-'))
-        .unwrap_or(cs.len());
-    let name = cs[i..end].iter().map(char::to_ascii_lowercase).collect();
+    let end = end_where(cs, i, |_, c| !(c.is_ascii_alphanumeric() || c == '-'));
+    let name = span(cs, i, end)
+        .iter()
+        .map(char::to_ascii_lowercase)
+        .collect();
     (name, end)
 }
 
 /// The attribute name at `i` as written, and the index after it. It ends at
 /// white space, `=`, `>` or `/>`.
 fn attr_name(cs: &[char], i: usize) -> (String, usize) {
-    let end = (i..cs.len())
-        .find(|&k| cs[k].is_whitespace() || matches!(cs[k], '=' | '>') || starts(cs, k, "/>"))
-        .unwrap_or(cs.len());
-    (cs[i..end].iter().collect(), end)
+    let end = end_where(cs, i, |k, c| {
+        c.is_whitespace() || matches!(c, '=' | '>') || starts(cs, k, "/>")
+    });
+    (span(cs, i, end).iter().collect(), end)
 }
 
 /// The value after an attribute name, which starts at `i` with `=`, and the
@@ -124,21 +125,29 @@ fn attr_value(cs: &[char], i: usize, line: &mut usize) -> (Option<String>, usize
 /// lines, and the index one past that quote. With no closing quote, the
 /// value runs to the end of input.
 fn quoted_value(cs: &[char], i: usize, line: &mut usize) -> (String, usize) {
-    let quote = cs[i];
-    let close = (i + 1..cs.len())
-        .find(|&k| cs[k] == quote)
-        .unwrap_or(cs.len());
-    let value: String = cs[i + 1..close].iter().collect();
+    let quote = cs.get(i).copied().unwrap_or('"');
+    let close = end_where(cs, i + 1, |_, c| c == quote);
+    let value: String = span(cs, i + 1, close).iter().collect();
     *line += value.matches('\n').count();
     (value, close + 1)
 }
 
 /// An unquoted value at `i`: it ends at white space or `>`.
 fn bare_value(cs: &[char], i: usize) -> (String, usize) {
-    let end = (i..cs.len())
-        .find(|&k| cs[k].is_whitespace() || cs[k] == '>')
-        .unwrap_or(cs.len());
-    (cs[i..end].iter().collect(), end)
+    let end = end_where(cs, i, |_, c| c.is_whitespace() || c == '>');
+    (span(cs, i, end).iter().collect(), end)
+}
+
+/// The first index at or after `from` whose character, given with its index,
+/// satisfies `stop`; the end of input when none does.
+fn end_where(cs: &[char], from: usize, stop: impl Fn(usize, char) -> bool) -> usize {
+    (from..cs.len())
+        .find(|&k| cs.get(k).is_some_and(|&c| stop(k, c)))
+        .unwrap_or(cs.len())
+}
+
+fn span(cs: &[char], from: usize, to: usize) -> &[char] {
+    cs.get(from..to).unwrap_or_default()
 }
 
 #[cfg(test)]

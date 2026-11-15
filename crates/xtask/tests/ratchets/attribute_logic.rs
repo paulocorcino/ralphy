@@ -136,12 +136,17 @@ fn has_comma_operator(toks: &[Token]) -> bool {
 /// A statement that calls a member of `$event`, followed by another statement.
 fn has_statement_after_event_call(toks: &[Token]) -> bool {
     let at = depths(toks);
-    let ends: Vec<usize> = (0..toks.len())
-        .filter(|&k| at[k] == 0 && toks[k].is(";"))
+    let ends: Vec<usize> = toks
+        .iter()
+        .zip(&at)
+        .enumerate()
+        .filter(|(_, (t, &d))| d == 0 && t.is(";"))
+        .map(|(k, _)| k)
         .collect();
     let mut from = 0;
     for end in ends {
-        if calls_event(&toks[from..end]) && toks[end + 1..].iter().any(|t| !t.is(";")) {
+        let call = toks.get(from..end).unwrap_or_default();
+        if calls_event(call) && toks.iter().skip(end + 1).any(|t| !t.is(";")) {
             return true;
         }
         from = end + 1;
