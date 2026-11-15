@@ -46,6 +46,12 @@ fn answer(media_type: &'static str, status: StatusCode, body: Vec<u8>, policy: &
         HeaderValue::from_static("nosniff"),
     );
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    // A document with an opaque origin loads a font and a module only with
+    // this header (ADR-0089, amendment of 2026-11-15). The token stays the key.
+    h.insert(
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_static("*"),
+    );
     h.insert(
         header::REFERRER_POLICY,
         HeaderValue::from_static("no-referrer"),

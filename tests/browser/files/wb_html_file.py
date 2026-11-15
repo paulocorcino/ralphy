@@ -23,8 +23,9 @@ Scenario 8  an image from the web is not asked for while remote images are
             loaded again
 Scenario 9  `app.html` shows no effect of its scripts until Run scripts is
             pressed; then its inline script, its script file, its style
-            sheet, the image its CSS names and the image a script adds all
-            work, from a frame with `sandbox="allow-scripts"` (ADR-0089)
+            sheet, the image and the font its CSS names, its module script
+            and the image a script adds all work, from a frame with
+            `sandbox="allow-scripts"` (ADR-0089)
 Scenario 10 Stop scripts and Reload each draw the file with no script again,
             and the token of the route is dead after Stop
 Scenario 11 the script of `attack.html` reaches no data endpoint: its
@@ -129,13 +130,42 @@ APP = """<!doctype html>
 </head><body>
 <p id="inline">waiting</p>
 <p id="external">waiting</p>
+<p id="module">waiting</p>
 <div id="box" class="box"></div>
 <div id="slot"></div>
 <script>document.getElementById('inline').textContent = 'ran';</script>
 <script src="app/extra.js"></script>
+<script type="module" src="app/mod.mjs"></script>
 </body></html>
 """
-APP_CSS = '.box { height: 40px; background-image: url("bg.png"); }\n'
+APP_CSS = (
+    '@font-face { font-family: "probe"; src: url("probe.woff2") format("woff2"); }\n'
+    '.box { height: 40px; background-image: url("bg.png"); font-family: "probe"; }\n'
+)
+APP_MODULE = "document.getElementById('module').textContent = 'ran';\n"
+# What the page shows with no script, and after Run scripts.
+APP_STATIC = (
+    ("inline", "waiting"),
+    ("external", "waiting"),
+    ("module", "waiting"),
+    ("font", None),
+    ("height", "0px"),
+    ("background", False),
+    ("late", None),
+)
+APP_LIVE = (
+    ("inline", "ran"),
+    ("external", "ran"),
+    ("module", "ran"),
+    ("font", "loaded"),
+    ("height", "40px"),
+    ("background", True),
+    ("late", 3),
+)
+# A real font file: the icons font the workbench ships.
+FONT = os.path.join(
+    REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "vendor", "bootstrap-icons", "fonts", "bootstrap-icons.woff2"
+)
 APP_JS = """document.getElementById('external').textContent = 'ran';
 var late = document.createElement('img');
 late.id = 'late';
@@ -211,6 +241,8 @@ def make_fixture_repo():
     (docs / "app" / "style.css").write_text(APP_CSS, encoding="utf-8", newline="\n")
     (docs / "app" / "extra.js").write_text(APP_JS, encoding="utf-8", newline="\n")
     (docs / "app" / "bg.png").write_bytes(PIC)
+    (docs / "app" / "mod.mjs").write_text(APP_MODULE, encoding="utf-8", newline="\n")
+    (docs / "app" / "probe.woff2").write_bytes(Path(FONT).read_bytes())
     for args in (
         ["git", "init"],
         ["git", "config", "user.email", "wbhtml@example.com"],
@@ -441,12 +473,16 @@ def scripted_frame(page, sel):
 def app_facts(frame):
     frame.wait_for_function("() => [...document.images].every(i => i.complete)", timeout=10000)
     return frame.evaluate(
-        """() => {
+        """async () => {
           const box = getComputedStyle(document.getElementById('box'));
           const late = document.getElementById('late');
+          await document.fonts.load('16px probe').catch(() => null);
+          const font = [...document.fonts].find(f => f.family.includes('probe'));
           return {
             inline: document.getElementById('inline').textContent,
             external: document.getElementById('external').textContent,
+            module: document.getElementById('module').textContent,
+            font: font ? font.status : null,
             height: box.height,
             background: box.backgroundImage.includes('/app/bg.png'),
             late: late ? late.naturalWidth : null,
@@ -466,9 +502,8 @@ def scenario_scripts(page, slug, engine):
     live = app_facts(frame)
     after = frame_state(page, sel)
     check(
-        f"{engine}: the scripts, the style sheet and their images work only after Run scripts",
-        static == {"inline": "waiting", "external": "waiting", "height": "0px", "background": False, "late": None}
-        and live == {"inline": "ran", "external": "ran", "height": "40px", "background": True, "late": PIC_WIDTH}
+        f"{engine}: the scripts, the module, the style sheet, its font and the images work only after Run scripts",
+        static == dict(APP_STATIC) and live == dict(APP_LIVE)
         and before == ["", "", "Run scripts"]
         and after[0] == "allow-scripts"
         and after[1].startswith("/preview/")

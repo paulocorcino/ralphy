@@ -73,7 +73,12 @@ fn only_the_closed_list_of_file_kinds_is_read() {
     write("docs/notes.txt", b"text");
     write("docs/key.pem", b"key");
     write("docs/README", b"no extension");
-    let cap = usize::try_from(tree::MAX_READ_BYTES).expect("2 MiB fits usize");
+    write("docs/f.woff", b"wOFF");
+    write("docs/f.woff2", b"wOF2");
+    write("docs/f.ttf", b"\x00\x01\x00\x00");
+    write("docs/f.otf", b"OTTO");
+    write("docs/f.eot", b"eot");
+    let cap = usize::try_from(MAX_PREVIEW_BYTES).expect("16 MiB fits usize");
     write("docs/at-cap.js", &vec![b'1'; cap]);
     write("docs/over-cap.js", &vec![b'1'; cap + 1]);
     assert_eq!(
@@ -86,7 +91,7 @@ fn only_the_closed_list_of_file_kinds_is_read() {
         .expect("the outside file is written");
 
     // [path, the media type and the bytes, or None when refused]
-    let rows: [(&str, Served<'_>); 14] = [
+    let rows: [(&str, Served<'_>); 19] = [
         ("docs/page.html", Some(("text/html", b"<p>page</p>"))),
         ("docs/OLD.HTM", Some(("text/html", b"<p>old</p>"))),
         ("docs/a.css", Some(("text/css; charset=utf-8", b"p{}"))),
@@ -94,6 +99,11 @@ fn only_the_closed_list_of_file_kinds_is_read() {
         ("docs/m.mjs", Some(("text/javascript; charset=utf-8", b"2"))),
         ("docs/d.json", Some(("application/json", b"{}"))),
         ("docs/pic.png", Some(("image/png", PNG))),
+        ("docs/f.woff", Some(("font/woff", b"wOFF"))),
+        ("docs/f.woff2", Some(("font/woff2", b"wOF2"))),
+        ("docs/f.ttf", Some(("font/ttf", b"\x00\x01\x00\x00"))),
+        ("docs/f.otf", Some(("font/otf", b"OTTO"))),
+        ("docs/f.eot", None),
         ("docs/fake.png", None),
         (".env", None),
         ("docs/notes.txt", None),
@@ -118,6 +128,7 @@ fn the_policy_names_only_the_route_and_takes_web_images_when_allowed() {
          script-src 'unsafe-inline' 'unsafe-eval' http://127.0.0.1:7257/preview/abc/; \
          style-src 'unsafe-inline' http://127.0.0.1:7257/preview/abc/; \
          img-src data: http://127.0.0.1:7257/preview/abc/; \
+         font-src http://127.0.0.1:7257/preview/abc/; \
          connect-src 'none'; form-action 'none'; base-uri 'none'; \
          frame-ancestors 'self'"
     );
@@ -127,6 +138,7 @@ fn the_policy_names_only_the_route_and_takes_web_images_when_allowed() {
          script-src 'unsafe-inline' 'unsafe-eval' http://127.0.0.1:7257/preview/abc/; \
          style-src 'unsafe-inline' http://127.0.0.1:7257/preview/abc/; \
          img-src data: http://127.0.0.1:7257/preview/abc/ https:; \
+         font-src http://127.0.0.1:7257/preview/abc/; \
          connect-src 'none'; form-action 'none'; base-uri 'none'; \
          frame-ancestors 'self'"
     );

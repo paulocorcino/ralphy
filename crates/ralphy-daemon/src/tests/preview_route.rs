@@ -42,6 +42,7 @@ async fn a_preview_file_is_served_to_its_token_with_its_own_policy() {
         );
         assert_eq!(h.get(header::X_FRAME_OPTIONS), None);
         assert_eq!(h[header::CACHE_CONTROL], "no-store");
+        assert_eq!(h[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
         assert_eq!(h[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
         assert_eq!(h[header::REFERRER_POLICY], "no-referrer");
         assert_eq!(body_string(resp).await, "<p>page</p>");

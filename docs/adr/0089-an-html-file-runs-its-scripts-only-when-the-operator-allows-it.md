@@ -85,9 +85,8 @@ reach the route of a peer.
 The route serves a closed list of file kinds: HTML, CSS, JavaScript, JSON
 and the image kinds of ADR-0049 §3. Every other file is not found. The path
 is confined to the checkout as `file.read` confines it, and each kind keeps
-the size cap it has today. A font is not served yet: a document with an
-opaque origin loads a font and a module only with a CORS header, which the
-route does not send.
+the size cap it has today. The amendment of 2026-11-15 adds fonts, a CORS
+header and a cap of the route.
 
 **D4. Every answer of the route carries this policy.** `<prefix>` is the
 address of the route with its token.
@@ -174,8 +173,7 @@ Firefox 150 and WebKit 26.4. These are open:
 - the route when the page is reached over `https` through ngrok and through
   dev tunnels: whether `<prefix>` of D4 names the address the browser uses;
 - Safari on an iPhone: whether it sends `Sec-Fetch-Dest` on the navigation
-  of a frame (D7). A browser that does not send it is not refused;
-- `import()` of a module and a font, with a CORS header on the route.
+  of a frame (D7). A browser that does not send it is not refused.
 
 ## Compliance
 
@@ -205,3 +203,44 @@ Firefox 150 and WebKit 26.4. These are open:
 - D7: checked by `a_frame_that_navigates_to_a_data_endpoint_is_refused`, and
   in the three engines by the browser check (a script reaches no data
   endpoint).
+
+## Amendment 2026-11-15 — D3, D4: fonts, a CORS header, and a cap of the route
+
+Changes D3 and D4. A mock of the workbench (`mocks/workbench-shell/`) showed
+what the first build could not load: its icon fonts, and a vendored library
+of 3.5 MB.
+
+- **The route serves fonts.** The closed list of D3 gains `woff`, `woff2`,
+  `ttf` and `otf`, and the policy of D4 gains `font-src <prefix>`.
+- **Every answer of the route says `Access-Control-Allow-Origin: *`.** A
+  document with an opaque origin loads a font and a module only with a CORS
+  header. The token stays the only key: the header gives nothing to a page
+  that does not hold the address with its token.
+- **A text or font file of the route has its own cap, 16 MiB**
+  (`MAX_PREVIEW_BYTES`, ADR-0072 D11). The cap of `file.read`, 2 MiB, is the
+  size an editor opens; a vendored library is one larger file. The file is
+  the body of its own answer and never rides inside a command, so the
+  transport cap of D11 does not apply. An image keeps the cap of ADR-0049.
+
+**What the header costs.** With it, a script the operator allowed can read
+the text of the style sheets, the JSON files, the modules and the images of
+the checkout, not only use them. It still has no way to send them: D4 keeps
+`connect-src 'none'`, and no script or image comes from the web (D5). A
+later decision that lets a document load from the web opens that way, and
+must weigh this.
+
+**Measured**, in Playwright Chromium 148, Firefox 150 and WebKit 26.4, on
+loopback:
+
+- without the header, the icon font fails in Chromium and Firefox; with it,
+  the font loads in the three;
+- with the header, `<script type="module">` runs in the three
+  (`tests/browser/files/wb_html_file.py`);
+- with the header, `import()` called from a classic script runs in Firefox
+  and WebKit and still fails in Chromium, which gives a classic script
+  loaded with no `crossorigin` attribute no base address. This is accepted.
+
+**Compliance.** `only_the_closed_list_of_file_kinds_is_read` (the fonts and
+the cap), `the_policy_names_only_the_route_and_takes_web_images_when_allowed`
+(`font-src`), `a_preview_file_is_served_to_its_token_with_its_own_policy`
+(the header), and the browser check in the three engines.
