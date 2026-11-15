@@ -18,11 +18,13 @@
    `attention.dirty` push.
 
    A request the daemon marks `dismissable` (an issue a finished run left for
-   the operator, a console that finished a turn it was marked for) has a
+   the operator, a console that finished a turn it was marked for, a silent
+   console) has a
    "Dismiss" button: `POST /api/attention/dismiss` hides it on every device,
    and the daemon of a peer's request stores it. A console's `console-done`
    request also ends when the operator opens that console: the focus moving
-   into its window, or a click on its row, dismisses it.
+   into its window, or a click on its row, dismisses it. A click on the row
+   of a `console-silent` request dismisses it too.
 
    With the notification switch on (`WBNotify`, wb-notify.ts), a request id
    this page did not know before shows one browser notification while the
@@ -426,7 +428,8 @@ export function wbAttention() {
     // own tab when it has one, else the Consoles tab, panned to it.
     goTo(request: AttentionRequest) {
       this.open = false;
-      if (request.kind === "console-done") void this.finish(request);
+      const seen = request.kind === "console-done" || request.kind === "console-silent";
+      if (seen) void this.finish(request);
       const id = sessionOf(request, this.$store.projects.liveSessions)?.record;
       if (id !== undefined && id !== "") this.reveal(id);
     },

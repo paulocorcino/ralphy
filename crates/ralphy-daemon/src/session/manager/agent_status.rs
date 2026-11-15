@@ -164,6 +164,7 @@ impl AgentStatus {
             return false;
         };
         let start_failure = start_failure.filter(|_| vendor.runs_the_ralphy_program());
+        let clock = self.first_input.filter(|_| vendor.silent_by_the_clock());
         let polled = vendor.fold_lines(fold, lines, now);
         if polled.activity {
             self.first_line.get_or_insert(now);
@@ -176,7 +177,7 @@ impl AgentStatus {
                 obs.seen = now;
             }
         }
-        self.update_silence(now, start_failure);
+        self.update_silence(now, clock, start_failure);
         let shown_now = self.shown_at(now);
         let changed = self.shown != shown_now;
         self.shown = shown_now;
@@ -203,12 +204,18 @@ impl AgentStatus {
     }
 
     /// Apply the silence rule at `now` (docs/adr/0059 A2) and log one line
-    /// the first time this console becomes silent. Only a console with hooks
+    /// the first time this console becomes silent. `clock` is the first input
+    /// when the vendor's silence clock applies. Only a console with hooks
     /// calls this.
-    fn update_silence(&mut self, now: SystemTime, start_failure: Option<&str>) {
+    fn update_silence(
+        &mut self,
+        now: SystemTime,
+        clock: Option<SystemTime>,
+        start_failure: Option<&str>,
+    ) {
         let reason = crate::agent_state::silence(
             crate::agent_state::StateSource::Hooks,
-            self.first_input,
+            clock,
             self.first_line,
             start_failure,
             now,

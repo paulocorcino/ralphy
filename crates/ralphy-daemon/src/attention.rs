@@ -41,19 +41,20 @@ pub(crate) enum Kind {
 }
 
 impl Kind {
-    /// Whether the operator may dismiss a request of this kind. A live
-    /// source cannot be dismissed: an agent that still waits stays listed
-    /// (docs/adr/0085 D12).
+    /// Whether the operator may dismiss a request of this kind. An agent
+    /// that still waits stays listed; a silent console is a warning the
+    /// operator has seen, and its dot stays (docs/adr/0085 D12).
     pub(crate) fn dismissable(self) -> bool {
         match self {
-            Kind::ConsoleWaiting | Kind::ConsoleSilent | Kind::RunWaiting => false,
-            Kind::ConsoleDone | Kind::RunFinished => true,
+            Kind::ConsoleWaiting | Kind::RunWaiting => false,
+            Kind::ConsoleSilent | Kind::ConsoleDone | Kind::RunFinished => true,
         }
     }
 }
 
 /// One request on the wire of `GET /api/attention`. `id` is
-/// `console:<session id>` for a console, `done:<session id>:<n>` for the
+/// `console:<session id>` for a waiting console, `silent:<session id>` for a
+/// silent one, `done:<session id>:<n>` for the
 /// n-th finished turn a console was marked for, `run:<runid>` for a run and
 /// `issue:<run stamp>:<issue>` for a finished run's issue; a peer's request reaches the page
 /// with `id`, `console` and `repo` prefixed `<daemon_id>/`.
@@ -181,15 +182,16 @@ pub(crate) fn list(
 /// console's whole life.
 fn console_request(info: &SessionInfo) -> Option<AttentionRequest> {
     let state = info.agent_state.as_ref()?;
-    let (kind, detail) = match state.source {
-        Some(Unreported::Silent) => (Kind::ConsoleSilent, state.reason.clone()),
+    // Two ids: a dismissed silence must not hide a later `waiting`.
+    let (kind, head, detail) = match state.source {
+        Some(Unreported::Silent) => (Kind::ConsoleSilent, "silent", state.reason.clone()),
         None if state.state.as_deref() == Some("waiting") => {
-            (Kind::ConsoleWaiting, state.detail.clone())
+            (Kind::ConsoleWaiting, "console", state.detail.clone())
         }
         Some(Unreported::NoSource) | None => return None,
     };
     Some(AttentionRequest {
-        id: format!("console:{}", info.id),
+        id: format!("{head}:{}", info.id),
         kind,
         vendor: info.agent.clone(),
         console: Some(info.id.to_string()),

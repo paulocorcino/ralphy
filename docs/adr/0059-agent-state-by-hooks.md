@@ -434,3 +434,24 @@ that costs quota, and A2 observes the real session for free. A run is not
 covered here: an unattended session waits for its first hook event before
 it sends the prompt, and is refused without it (ADR-0072, amendment of
 2026-10-28).
+
+## Amendment (2026-11-15): the silence clock does not apply to Antigravity
+
+A2's clock assumes that a vendor sends a hook line before the operator's
+first prompt. `agy` does not: its first event, `SessionStart`, comes with
+the first prompt (ADR-0086 D9). Measured on 2026-11-15, on Windows: an
+Antigravity console became silent 30 seconds after the operator's first key
+on the folder trust question, with its hooks loaded and no prompt sent.
+
+**A5. The clock applies only to a vendor that sends a line before the first
+prompt.** `HookVendor::silent_by_the_clock` decides it with an exhaustive
+match, and it is `false` for Antigravity. An Antigravity console is silent
+only when the start check of A3 failed.
+
+Accepted cost: an Antigravity console whose status hook fails shows no
+warning and no state. Its guard is in the same hooks file and fails closed
+(ADR-0086 D9), so a hook program that cannot start denies every tool, and
+the operator sees that in the console.
+
+Rejected: starting the clock at the first Enter. The answer to the trust
+question is an Enter too.

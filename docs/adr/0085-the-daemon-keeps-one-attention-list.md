@@ -385,3 +385,20 @@ they reach the operator through the main.
 Compliance: B1 and B2 by `routes/api_telegram/bot_tests.rs` and
 `ui-tests/wb-telegram-setup.test.mjs`; B4 by `the_saved_config_is_owner_only`
 and `disable_removes_both_configs`, which move to `telegram_state`.
+
+## Amendment (2026-11-15): a silent console's request can be dismissed
+
+D12 said that a silent console cannot be dismissed. A silent console is not
+an agent that waits: it is a warning that Ralphy cannot see the agent, and
+it lasts for the console's whole life when the hooks never work. The
+operator (Paulo, 2026-11-15) asked that a click on its row show the console
+and end the request.
+
+- A silent console's request is dismissable. Its id is
+  `silent:<session id>`, not `console:<session id>`, so its dismissal does
+  not hide a later `waiting` of the same console.
+- A click on its row shows the console and dismisses it, as for a "tell me
+  when it is done" request. The row also has "Dismiss".
+- The warning dot on the console stays: only the request ends.
+- D11's row for a silent console gains "or the operator dismisses it". A
+  `waiting` still cannot be dismissed.
