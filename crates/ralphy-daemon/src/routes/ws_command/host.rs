@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use super::{collect_config, not_answered, store_dir, stream, CommandCtx, Wire};
+use super::{collect_config, failed_reply, not_answered, store_dir, stream, CommandCtx, Wire};
 use crate::dispatch::{self, Verb};
 use crate::protocol::Command;
 
@@ -126,12 +126,12 @@ async fn collect_reply(
         _ => None,
     };
     match collect_config(argv, store_dir.to_path_buf(), daemon_id.map(str::to_owned)).await {
-        dispatch::Collected::Done(Some(0), bytes) => {
+        dispatch::Collected::Done(Some(0), output) => {
             let Some(field) = field else {
                 return serde_json::json!({ "status": "ok" });
             };
-            let text = String::from_utf8_lossy(&bytes);
-            // `collect` merges stderr into stdout; the JSON is the last line.
+            let text = String::from_utf8_lossy(&output.stdout);
+            // The JSON is the last line of stdout.
             let last = text
                 .lines()
                 .rev()
@@ -146,14 +146,11 @@ async fn collect_reply(
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, verb = ?verb, "a host query printed no JSON");
-                    serde_json::json!({ "status": "error", "message": text.trim() })
+                    failed_reply(&output)
                 }
             }
         }
-        dispatch::Collected::Done(_, bytes) => serde_json::json!({
-            "status": "error",
-            "message": String::from_utf8_lossy(&bytes).trim(),
-        }),
+        dispatch::Collected::Done(_, output) => failed_reply(&output),
         dispatch::Collected::Failed(e) => {
             tracing::warn!(error = %format!("{e:#}"), verb = ?verb, "a host command failed to run");
             serde_json::json!({ "status": "error", "message": "host command failed to run" })

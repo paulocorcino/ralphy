@@ -7,8 +7,8 @@ use console::Style;
 use tracing::Level;
 
 use super::meter::fmt_meter;
-use super::{fmt_clock, fmt_duration, pick, LineExtra, RenderOpts};
-use crate::runstate::{RunEvent, SkipKind};
+use super::{fmt_clock, fmt_duration, pick, pick_value, LineExtra, RenderOpts};
+use crate::runstate::{IssueStatus, RunEvent, SkipKind};
 use crate::ui::{fit, FinishOutcome, Phase};
 
 /// Map the `?outcome` Debug string off `non-green — stopping run` to a
@@ -91,10 +91,11 @@ pub(crate) fn render_active_line(
     opts: RenderOpts,
     width: usize,
 ) -> String {
-    let icon = match phase {
-        Phase::Planning => pick("🧠", "[plan]", opts.emoji),
-        Phase::Executing => pick("⚙️", "[exec]", opts.emoji),
+    let status = match phase {
+        Phase::Planning => IssueStatus::Planning,
+        Phase::Executing => IssueStatus::Executing,
     };
+    let icon = pick_value(status.wording(), opts.emoji);
     let seg = model_effort_seg(model, effort);
     // A `0` budget means the per-issue cap is disabled (unbounded, explicit opt-out):
     // show only the elapsed clock, never a misleading `/ 0:00` ceiling.
@@ -206,7 +207,7 @@ pub(crate) fn render_line(
             label,
             blockers,
         } => (
-            pick("⏭️", "[skip]", opts.emoji),
+            pick_value(IssueStatus::Skipped.wording(), opts.emoji),
             Style::new().dim(),
             format!(
                 "#{number} {}{dur}",
@@ -217,12 +218,12 @@ pub(crate) fn render_line(
         // person — and names which issue (`at #30`) — unlike an ordinary
         // dependency skip the queue clears on its own (ADR-0014).
         RunEvent::HumanBlocked { number, on } => (
-            pick("🙋", "[hitl]", opts.emoji),
+            pick_value(IssueStatus::Hitl.wording(), opts.emoji),
             Style::new().yellow(),
             format!("#{number} {}{dur}", human_blocked_label(on)),
         ),
         RunEvent::NeedsSplit { number } => (
-            pick("🧩", "[split]", opts.emoji),
+            pick_value(IssueStatus::NeedsSplit.wording(), opts.emoji),
             Style::new().yellow(),
             format!("#{number} bundle — needs split (run /to-issues, close the bundle)"),
         ),

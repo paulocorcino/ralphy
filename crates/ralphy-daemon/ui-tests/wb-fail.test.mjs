@@ -203,3 +203,28 @@ test("notCurrent shows the words for a code it was given", () => {
   const read = { current: false, goodAt: 0, error: "unknown checkout" };
   assert.equal(F.notCurrent(read, () => ""), "Could not read: the worktree does not exist");
 });
+
+const failure = (cause, remedy) => ({
+  status: "error",
+  message: "ignored",
+  failure: { domain: "d", code: "never-heard-of", details: {}, text: { cause, remedy } },
+});
+
+test("unknown failure code still shows its cause and remedy", () => {
+  const F = load();
+  const reply = failure("the thing broke", "Try again.");
+  assert.equal(F.failed(reply, "Could not do it: x."), "Could not do it: the thing broke. Try again.");
+  assert.equal(F.why(reply, "x"), "the thing broke");
+});
+
+test("a failure with no remedy shows `Could not <act>: <cause>.`", () => {
+  const F = load();
+  assert.equal(F.failed(failure("the thing broke"), "Could not do it: x."), "Could not do it: the thing broke.");
+});
+
+test("transport is not a key of CAUSE and reads `the daemon did not answer`", () => {
+  const F = load();
+  assert.ok(!Object.hasOwn(F.CAUSE, "transport"));
+  assert.equal(F.transport, "transport");
+  assert.equal(F.failed({ reason: F.transport }, "Could not open: x."), "Could not open: the daemon did not answer.");
+});

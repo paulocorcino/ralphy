@@ -40,6 +40,10 @@ pub(crate) struct Cli {
     #[arg(short = 'v', long = "version", action = clap::ArgAction::Version)]
     version: (),
 
+    /// How Ralphy reports an error: text for a person, or one JSON line on stderr.
+    #[arg(long, global = true, value_enum, default_value_t)]
+    pub(crate) failure_format: crate::failure_exit::FailureFormat,
+
     #[command(subcommand)]
     pub(crate) command: Command,
 }

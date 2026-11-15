@@ -17,7 +17,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
@@ -147,8 +147,23 @@ async fn the_marker_requires_the_token_on_loopback_and_the_fleet_still_reaches_t
     )
     .unwrap();
     let local_app = app(LOCAL_ID, local_registry, AuthState::localhost());
-    let (status, fleet) = get(local_app, "/api/fleet", None).await;
-    assert_eq!(status, StatusCode::OK, "got: {fleet}");
+    // Asked again until the peer's repo is listed: under the load of the
+    // whole suite the first read can come before the peer answers (#950).
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let fleet = loop {
+        let (status, fleet) = get(local_app.clone(), "/api/fleet", None).await;
+        assert_eq!(status, StatusCode::OK, "got: {fleet}");
+        let listed = fleet["repos"]
+            .as_array()
+            .expect("the fleet lists repos")
+            .iter()
+            .filter(|r| r["slug"] == "owner/theirs" && r["local"] == false)
+            .count();
+        if listed == 1 || Instant::now() > deadline {
+            break fleet;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    };
     assert_eq!(fleet["peers"][0]["state"], "reachable", "got: {fleet}");
     let theirs: Vec<&serde_json::Value> = fleet["repos"]
         .as_array()

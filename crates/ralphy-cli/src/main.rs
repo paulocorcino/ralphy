@@ -29,6 +29,7 @@ mod daemon;
 mod delivery;
 mod doctor;
 mod events;
+mod failure_exit;
 mod guard;
 mod hook;
 mod host;
@@ -52,6 +53,7 @@ mod ui;
 mod uninstall;
 mod update;
 mod usage;
+mod wording;
 
 #[cfg(test)]
 #[path = "../../ralphy-daemon/tests/support/golden.rs"]
@@ -66,15 +68,19 @@ pub(crate) use cli::CliAgent;
 /// The `expect` message of a `write!` to a `String`.
 pub(crate) const WRITE_TO_STRING: &str = "a write to a String does not fail";
 
-fn main() -> Result<ExitCode> {
+fn main() -> ExitCode {
     if let Some(code) = askpass_exit_code() {
-        return Ok(code);
+        return code;
     }
     let cli = Cli::from_arg_matches(&cli::command().get_matches()).unwrap_or_else(|e| e.exit());
-    if starts_an_agent_outside_run(&cli.command) {
+    run_command(cli.command).unwrap_or_else(|e| failure_exit::failure_exit(&e, cli.failure_format))
+}
+
+fn run_command(command: Command) -> Result<ExitCode> {
+    if starts_an_agent_outside_run(&command) {
         run::strip_secret_tokens_from_env();
     }
-    let outcome = match cli.command {
+    let outcome = match command {
         Command::Run(args) => run::run_cmd(&args),
         Command::Consolidate(args) => consolidate_cmd(args),
         Command::Models(args) => models::run(&args),

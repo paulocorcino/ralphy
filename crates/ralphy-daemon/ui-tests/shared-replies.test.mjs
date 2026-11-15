@@ -170,3 +170,12 @@ test("file.upload: the reply to the last part marks the file done at the daemon'
     [["done", done.path]],
   );
 });
+
+test("changes.commit--nothing-staged: the failure is read before the message", () => {
+  const reply = fixture("changes.commit--nothing-staged");
+  reply.message = "something else";
+  assert.equal(
+    WBFail.failed(reply, "Could not commit: x."),
+    "Could not commit: nothing is staged. Stage a file first.",
+  );
+});

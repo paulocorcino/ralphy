@@ -59,6 +59,7 @@ ralphy-run-snapshot.workspace = true
 # The Telegram bot (ADR-0085 D14): the leaf crate with the blocking client and
 # the reading of the config, which the daemon sends the console messages with.
 ralphy-telegram.workspace = true
+ralphy-wording.workspace = true
 # The home folder the operating system names, which a test cannot move with
 # `USERPROFILE`: it decides which store is the operator's own.
 directories.workspace = true

@@ -168,9 +168,11 @@ fn changes_commit_with_nothing_staged_exits_non_zero_with_prose() {
 
     assert!(!out.status.success(), "an empty index must refuse");
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("cannot commit: nothing is staged"),
-        "the refusal reads as prose: {stderr}"
+    assert_eq!(
+        stderr.trim(),
+        "error: nothing is staged
+Stage a file first.",
+        "the catalog failure is the whole chain, with no context above it"
     );
     assert!(
         !stderr.contains("nothing added to commit"),

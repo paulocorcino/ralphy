@@ -13,7 +13,7 @@
 use std::cell::Cell;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use ralphy_adapter_support::{
@@ -91,6 +91,7 @@ pub struct AntigravityAgent {
     waiver: bool,
     program: Option<PathBuf>,
     root: Option<PathBuf>,
+    proof_window: Duration,
 }
 
 /// The two phases, each with its own model and effort.
@@ -120,6 +121,7 @@ impl AntigravityAgent {
             waiver: false,
             program: None,
             root: None,
+            proof_window: status::PROOF_WINDOW,
         }
     }
 
@@ -179,6 +181,12 @@ impl AntigravityAgent {
         self
     }
 
+    /// Test seam: wait `window` for the session's proof instead of 30 s.
+    pub fn with_proof_window(mut self, window: Duration) -> Self {
+        self.proof_window = window;
+        self
+    }
+
     fn launch(&self) -> Result<Launch> {
         let root = match &self.root {
             Some(root) => root.clone(),
@@ -209,6 +217,7 @@ impl AntigravityAgent {
             model,
             effort,
             waiver: self.waiver,
+            proof_window: self.proof_window,
             timeout: self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON),
             idle_minutes: self.budget.idle_minutes,
         }

@@ -12,6 +12,7 @@ thiserror.workspace = true
 chrono.workspace = true
 ralphy-git-read.workspace = true
 ralphy-proc-util.workspace = true
+ralphy-wording.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 regex.workspace = true

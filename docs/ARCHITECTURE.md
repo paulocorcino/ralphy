@@ -138,7 +138,7 @@ The component names are CONTEXT.md terms.
 | Composition root (names every vendor, wires everything) | `ralphy-cli` |
 | Workbench UI | `crates/ralphy-daemon/assets/ui/` |
 | Process and PTY helpers | `ralphy-proc-util`, `ralphy-pty` |
-| Wording catalog, Text domain, Failure (planned, [ADR-0078](./adr/0078-one-wording-catalog-for-every-surface.md)) | the format in `ralphy-wording`; the text in `assets/wording/<text-domain>.json`; the enum of each text domain in the crate that owns its facts |
+| Wording catalog, Text domain ([ADR-0078](./adr/0078-one-wording-catalog-for-every-surface.md)); Failure (planned) | the format in `ralphy-wording` (real, and read by `ralphy-cli` and, as a JSON module, by the workbench); the text in `assets/wording/<text-domain>.json`; the enum of each text domain in the crate that owns its facts |
 
 ## 5. Allowed edges
 
@@ -151,7 +151,7 @@ The component names are CONTEXT.md terms.
 | `ralphy-pricing` and `ralphy-release` are leaf crates | ADR-0034, ADR-0056 | the same test |
 | `ralphy-git-read` is a leaf crate | ADR-0069 | the same test |
 | `ralphy-telegram` is a leaf crate | ADR-0085 D14 | the same test |
-| `ralphy-wording` is a leaf crate, and the daemon still does not import `ralphy-core` to read a wording | ADR-0078 | None yet (planned: the same test) |
+| `ralphy-wording` is a leaf crate, and the daemon still does not import `ralphy-core` to read a wording | ADR-0078 | the same test, and `wording_depends_only_on_serde` (`crates/xtask/tests/crate_dependencies.rs`) |
 | The daemon links no vendor crate and does not import `ralphy-core` | ADR-0032 §10 | `daemon_manifest_has_no_vendor_dependency` (`crates/ralphy-daemon/src/roster.rs`); the core half has none yet |
 | No `tokio` or `reqwest` in the CLI; the async stack stays in the daemon | ADR-0032 | `cli_manifest_pins_ureq_excludes_reqwest_tokio` (`crates/ralphy-cli/src/pricing.rs`) |
 | The daemon may observe the working tree as bytes; anything that interprets or changes a repo is a `ralphy` invocation, except read-only git facts through `ralphy-git-read` (ADR-0069) | ADR-0036 §3 | None yet |
@@ -268,6 +268,13 @@ any code, including code that does not exist yet. A behaviour test is not one.
 | A new ADR has a closed-set status and kind and, if structural, a Compliance section | `new_adrs_have_a_closed_status_and_kind` (`crates/xtask/tests/adr_map.rs`), from ADR-0068 on |
 | This file stays true | `the_architecture_map_cites_real_adrs_and_every_structural_one` (`crates/xtask/tests/adr_map.rs`): every ADR cited here exists, and every structural ADR from ADR-0068 on is cited |
 | The browser and the daemon agree on each reply | shared replies in `crates/ralphy-daemon/ui-tests/fixtures/`, written by the Rust tests (`tests/support/golden.rs`) and read by `ui-tests/shared-replies.test.mjs`; `message_types_without_a_shared_reply_match_the_baseline` (`crates/xtask/tests/ui_contract/`), a ratchet on message types without one (ADR-0070) |
+| A run status or outcome has one wording, in `assets/wording/run.json`: no surface writes its icon or fallback by hand | `value_wordings_have_one_source` (`crates/xtask/tests/ratchets/`), a ratchet on those literals in the terminal, Telegram and workbench sources, with its counted sites listed and a target of 0 statuses (ADR-0078) |
+| The catalog and the code agree on each run value, both ways | `issue_status_matches_the_catalog` and `run_outcome_matches_the_catalog` (`crates/ralphy-cli/src/wording/tests.rs`): every value has an entry and every entry has a value |
+| The catalog and the code agree on each failure, both ways | `working_tree_failures_match_the_catalog` (`crates/ralphy-core/src/wording.rs`) and `daemon_failures_match_the_catalog` (`crates/ralphy-daemon/src/wording.rs`): every failure code has an entry and every entry has a code |
+| The workbench `CAUSE` table only shrinks as failures move into the catalog | `failure_cause_rows_match_the_baseline` (`crates/xtask/tests/ratchets/`), a ratchet on its rows in `wb-fail.ts` (#685) |
+| A collected verb that answers with CLI text only moves to a failure reply | `failure_cli_text_verbs_match_the_baseline` (`crates/xtask/tests/ratchets/`), a ratchet on the Query and Mutate verbs of `effect_class` that are not in `MOVED_VERBS` (#685) |
+| A daemon reply carries a failure, not free error text | `failure_free_text_matches_the_baseline` (`crates/xtask/tests/ratchets/`), a ratchet on the sites of `ralphy-daemon` that write free text; its doc lists each pattern (#685) |
+| A catalog text follows the written voice | `cargo run -p xtask -- ui-copy --check`, which reads the catalog values as `wording:value` (ADR-0065, ADR-0078) |
 | Every error text the UI compares is one the Rust code produces | `every_error_literal_the_ui_compares_is_produced_by_rust` (`crates/xtask/tests/ui_contract/`, ADR-0070) |
 | A limit repeated in the UI equals its Rust constant | `every_mirrored_limit_equals_its_rust_constant` (`crates/xtask/tests/ui_contract/`, ADR-0070) |
 

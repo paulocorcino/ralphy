@@ -9,6 +9,7 @@ fn session<'a>(dir: &'a Path, log_path: &'a Path) -> Session<'a> {
         model: None,
         effort: None,
         waiver: false,
+        proof_window: status::PROOF_WINDOW,
         timeout: Duration::from_secs(60),
         idle_minutes: 0,
     }

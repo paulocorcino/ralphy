@@ -32,6 +32,14 @@
 //! its tool fails. The ignore list ratchet keeps the size of each list that
 //! hides files from a linter. The core dependency test keeps every vendor crate
 //! out of the manifest of `ralphy-core`.
+//!
+//! The value wordings ratchet counts the string literals in the terminal,
+//! Telegram and workbench sources that equal a status or outcome icon or
+//! fallback of `assets/wording/run.json`. Tests are not read (#684).
+//!
+//! The failure ratchets (#685) count what has not moved into the failure
+//! catalog yet: the `CAUSE` rows of the workbench, the collected verbs that
+//! still answer with CLI text, and the daemon replies with free error text.
 #![expect(
     clippy::tests_outside_test_module,
     reason = "an integration test crate is the test module"
@@ -57,6 +65,9 @@ mod gate_steps;
 mod ast_grep_ignores;
 mod complexity_exceptions;
 mod core_dependencies;
+mod failure_cause_rows;
+mod failure_cli_text_verbs;
+mod failure_free_text;
 mod gate_exits;
 mod gate_mirrors_ci;
 mod gate_paths;
@@ -70,6 +81,7 @@ mod skipped_tests;
 mod tool_pins;
 mod ts_scan;
 mod type_escapes;
+mod value_wordings;
 mod workbench_coupling;
 mod workflows_locked;
 use ts_scan::{chained_casts, double_casts, websocket_sites};

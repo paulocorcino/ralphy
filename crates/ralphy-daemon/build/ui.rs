@@ -6,7 +6,8 @@
 //! engine Node uses to run `.ts`), so every line and column of the served file
 //! is the line and column of the source: an error in the browser points at the
 //! `.ts` line. A relative import path then changes from `.ts` to `.js`, which is
-//! the same length, so the columns still hold.
+//! the same length, so the columns still hold. Only a wording catalog import
+//! changes length (`ui_import.rs`), on its own line.
 //!
 //! A top-level `.html` file is not copied: the pages are written with their
 //! parts put in (`parts.rs`, ADR-0080), and a part is never written.
@@ -19,11 +20,11 @@ use anyhow::{bail, Context, Result};
 use swc_common::errors::Handler;
 use swc_common::sync::Lrc;
 use swc_common::{FileName, Globals, SourceMap, GLOBALS};
-use swc_ecma_ast::{EsVersion, ModuleDecl, ModuleItem, Str};
+use swc_ecma_ast::{EsVersion, Expr, Lit, ModuleDecl, ModuleItem, ObjectLit, Prop, PropName, Str};
 use swc_ecma_parser::{parse_file_as_module, EsSyntax, Syntax};
 use swc_ts_fast_strip::{operate, Mode, Options};
 
-use crate::parts;
+use crate::{parts, ui_import};
 
 /// Source files that type-check the tree and are not served.
 fn is_type_only(name: &str) -> bool {
@@ -122,9 +123,9 @@ fn strip(name: &str, code: String) -> Result<String> {
     rewrite_imports(name, stripped)
 }
 
-/// Change each relative import path from `.ts` to `.js`. A relative path must
-/// name a `.ts` file (ADR-0075 D2), because Node runs the tests on the `.ts`
-/// source and the browser loads the `.js` output.
+/// Write each relative import path as the served tree names it, by the rule
+/// of `ui_import.rs`. Node runs the tests on the `.ts` source, and the browser
+/// loads the `.js` output (ADR-0075 D2).
 fn rewrite_imports(name: &str, code: String) -> Result<String> {
     let cm = Lrc::new(SourceMap::default());
     let fm = cm.new_source_file(Lrc::new(FileName::Custom(name.to_owned())), code.clone());
@@ -141,34 +142,55 @@ fn rewrite_imports(name: &str, code: String) -> Result<String> {
         bail!("parse the stripped module: {:?}", e.kind());
     }
     let base = fm.start_pos.0;
-    let mut out = code.into_bytes();
-    let sources = module.body.iter().filter_map(|item| match item {
-        ModuleItem::ModuleDecl(ModuleDecl::Import(d)) => Some(&*d.src),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportAll(d)) => Some(&*d.src),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(d)) => d.src.as_deref(),
-        ModuleItem::ModuleDecl(_) | ModuleItem::Stmt(_) => None,
-    });
-    for src in sources {
+    let mut sources: Vec<(&Str, bool)> = module.body.iter().filter_map(import_source).collect();
+    // From the last import up, so a rewrite that changes a length moves no
+    // span still to come.
+    sources.sort_by_key(|(src, _)| std::cmp::Reverse(src.span.lo));
+    let mut out = code;
+    for (src, json) in sources {
         let (lo, hi) = span_of(src, base);
         // The literal with its quotes: `"./wb-hosts.ts"`.
-        let literal = std::str::from_utf8(&out[lo..hi]).context("an import path is not UTF-8")?;
+        let literal = out
+            .get(lo..hi)
+            .context("an import path is not on a UTF-8 boundary")?;
         let path = literal
             .strip_prefix(['"', '\''])
             .and_then(|l| l.strip_suffix(['"', '\'']))
             .context("an import path is not a quoted literal")?;
-        if !(path.starts_with("./") || path.starts_with("../")) {
-            continue;
+        if let Some(served) = ui_import::served_import(path, json).map_err(anyhow::Error::msg)? {
+            out.replace_range(lo + 1..hi - 1, &served);
         }
-        // A vendored file is served as it is, so its path stays (ADR-0075 D5).
-        if path.starts_with("./vendor/") && has_extension(path, "js") {
-            continue;
-        }
-        if !has_extension(path, "ts") {
-            bail!("the import {literal} must name a .ts file or a .js file under ./vendor/");
-        }
-        out[hi - 3..hi - 1].copy_from_slice(b"js");
     }
-    String::from_utf8(out).context("the rewritten module is not UTF-8")
+    Ok(out)
+}
+
+/// The path of an import or re-export, and whether it carries
+/// `with { type: "json" }`.
+fn import_source(item: &ModuleItem) -> Option<(&Str, bool)> {
+    let (src, with) = match item {
+        ModuleItem::ModuleDecl(ModuleDecl::Import(d)) => (&*d.src, d.with.as_deref()),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportAll(d)) => (&*d.src, d.with.as_deref()),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(d)) => {
+            (d.src.as_deref()?, d.with.as_deref())
+        }
+        ModuleItem::ModuleDecl(_) | ModuleItem::Stmt(_) => return None,
+    };
+    Some((src, with.is_some_and(is_json_type)))
+}
+
+/// Whether the import attributes say `type: "json"`.
+fn is_json_type(with: &ObjectLit) -> bool {
+    with.props.iter().any(|prop| {
+        let Some(Prop::KeyValue(kv)) = prop.as_prop().map(|p| &**p) else {
+            return false;
+        };
+        let key_is_type = match &kv.key {
+            PropName::Ident(i) => i.sym == *"type",
+            PropName::Str(s) => s.value == *"type",
+            PropName::Num(_) | PropName::Computed(_) | PropName::BigInt(_) => false,
+        };
+        key_is_type && matches!(&*kv.value, Expr::Lit(Lit::Str(s)) if s.value == *"json")
+    })
 }
 
 fn span_of(src: &Str, base: u32) -> (usize, usize) {

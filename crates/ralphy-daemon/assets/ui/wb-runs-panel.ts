@@ -135,7 +135,7 @@ export function wbRuns() {
     nodeTitle(run: Run | null, iss: RunIssue | null) {
       if (!run || !iss) return "";
       const st = WBRun.issueState(run, iss);
-      let t = `#${iss.number} — ${iss.title} · ${WBRun.LABEL[st] ?? st}`;
+      let t = `#${iss.number} — ${iss.title} · ${WBRun.stateLabel(st)}`;
       // Per-issue: tier routing gives two issues of one run different models.
       const seg = WBRun.modelEffort(iss.model, iss.effort);
       if (seg) t += ` · ${seg}`;

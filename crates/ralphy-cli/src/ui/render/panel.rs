@@ -3,7 +3,8 @@
 use console::Style;
 
 use super::meter::fmt_meter;
-use super::{pick, Meter, RenderOpts};
+use super::{pick, pick_value, Meter, RenderOpts};
+use crate::runstate::IssueStatus;
 use crate::ui::UsageLite;
 
 /// UI-local mirror of `BranchMode` — the panel renderer never depends on a core type.
@@ -117,12 +118,17 @@ fn paint(raw: String, style: &Style, color: bool) -> String {
 }
 
 fn counts_line(data: &PanelData, opts: RenderOpts) -> String {
-    let done_icon = pick("✅", "[ok]", opts.emoji);
-    let blocked_icon = pick("⛔", "[blocked]", opts.emoji);
-    let skipped_icon = pick("⏭️", "[skip]", opts.emoji);
-    let done_part = format!("{done_icon} {} done", data.done);
-    let blocked_part = format!("{blocked_icon} {} blocked", data.blocked);
-    let skipped_part = format!("{skipped_icon} {} skipped", data.skipped);
+    let part = |status: IssueStatus, count: u64| {
+        let wording = status.wording();
+        format!(
+            "{} {count} {}",
+            pick_value(wording, opts.emoji),
+            wording.text
+        )
+    };
+    let done_part = part(IssueStatus::Done, data.done);
+    let blocked_part = part(IssueStatus::Blocked, data.blocked);
+    let skipped_part = part(IssueStatus::Skipped, data.skipped);
     if opts.color {
         format!(
             "{} · {} · {}",
@@ -141,8 +147,9 @@ fn hitl_line(data: &PanelData, opts: RenderOpts) -> Option<String> {
     if data.hitl == 0 {
         return None;
     }
-    let hitl_icon = pick("🙋", "[hitl]", opts.emoji);
-    let hitl_raw = format!("{hitl_icon} {} waiting on human", data.hitl);
+    let wording = IssueStatus::Hitl.wording();
+    let hitl_icon = pick_value(wording, opts.emoji);
+    let hitl_raw = format!("{hitl_icon} {} {}", data.hitl, wording.text);
     Some(paint(hitl_raw, &Style::new().yellow(), opts.color))
 }
 

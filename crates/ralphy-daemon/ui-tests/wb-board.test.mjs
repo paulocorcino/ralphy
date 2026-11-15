@@ -5,6 +5,7 @@
 // it does not list in `uses`, or assigns a shell() field (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
 
 // The part that holds the board's markup.
@@ -315,4 +316,16 @@ test("moving a board card is locked while the board is not current", async () =>
   await state.loadBoard();
   assert.equal(state.labelsLocked(), true);
   assert.match(state.labelLockReason(), /board shown is not current/u);
+});
+
+// The issue statuses of the run catalog, read from the file itself.
+const catalogStatuses = () =>
+  JSON.parse(readFileSync(new URL("../../../assets/wording/run.json", import.meta.url), "utf8"))
+    .values["issue-status"];
+
+test("catalog wording: the board words a run state with the catalog text", () => {
+  const { scope: state } = loadComponent("wbBoard");
+  for (const [key, w] of Object.entries(catalogStatuses())) {
+    assert.equal(state.runStateWord(key), w.text, key);
+  }
 });

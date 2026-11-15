@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use super::{collect_config, not_answered, spawn_cwd, OneshotRepo};
+use super::{collect_config, failed_reply, failure, not_answered, spawn_cwd, OneshotRepo};
 use crate::{dispatch, protocol, session};
 
 type Argv = Result<Vec<String>, dispatch::ArgvError>;
@@ -91,8 +91,8 @@ pub(super) async fn query(
 
 fn query_reply(collected: dispatch::Collected, field: &str) -> serde_json::Value {
     match collected {
-        dispatch::Collected::Done(Some(0), bytes) => {
-            let text = String::from_utf8_lossy(&bytes);
+        dispatch::Collected::Done(Some(0), output) => {
+            let text = String::from_utf8_lossy(&output.stdout);
             let parsed: serde_json::Value = serde_json::from_str(text.trim())
                 .unwrap_or_else(|_| serde_json::Value::String(text.trim().to_owned()));
             let mut obj = serde_json::Map::new();
@@ -100,10 +100,7 @@ fn query_reply(collected: dispatch::Collected, field: &str) -> serde_json::Value
             obj.insert(field.to_owned(), parsed);
             serde_json::Value::Object(obj)
         }
-        dispatch::Collected::Done(_, bytes) => serde_json::json!({
-            "status": "error",
-            "message": String::from_utf8_lossy(&bytes).trim(),
-        }),
+        dispatch::Collected::Done(_, output) => failed_reply(&output),
         dispatch::Collected::Failed(e) => {
             tracing::warn!(error = %format!("{e:#}"), "a query command failed to run");
             serde_json::json!({ "status": "error", "message": "query read failed" })
@@ -134,6 +131,11 @@ pub(super) async fn mutate(
             tracing::warn!(error = %e, "refused a mutation with invalid params");
             return serde_json::json!({ "status": "error", "message": "invalid mutation options" });
         }
+    };
+    let argv = if failure::is_moved(verb) {
+        failure::json_argv(argv)
+    } else {
+        argv
     };
     match run(verb, cmd, repo_path, argv, daemon_id).await {
         Ok(collected) => mutate_reply(verb, collected),
@@ -174,8 +176,8 @@ fn mutate_reply(verb: dispatch::Verb, collected: dispatch::Collected) -> serde_j
         // stdout after the add succeeded, and those are the picker's notice.
         // Relayed under `message` when there is any; the `{status:"ok"}` shape
         // otherwise.
-        dispatch::Collected::Done(Some(0), bytes) => {
-            let msg = String::from_utf8_lossy(&bytes);
+        dispatch::Collected::Done(Some(0), output) => {
+            let msg = String::from_utf8_lossy(&output.merged()).into_owned();
             let msg = msg.trim();
             if msg.is_empty() || !matches!(verb, dispatch::Verb::WorktreeAdd) {
                 serde_json::json!({ "status": "ok" })
@@ -183,8 +185,11 @@ fn mutate_reply(verb: dispatch::Verb, collected: dispatch::Collected) -> serde_j
                 serde_json::json!({ "status": "ok", "message": msg })
             }
         }
-        dispatch::Collected::Done(_, bytes) => {
-            let msg = String::from_utf8_lossy(&bytes);
+        dispatch::Collected::Done(_, output) if failure::is_moved(verb) => {
+            failure::failed_reply(&output)
+        }
+        dispatch::Collected::Done(_, output) => {
+            let msg = String::from_utf8_lossy(&output.merged()).into_owned();
             let msg = msg.trim();
             let msg = if msg.is_empty() { "refused" } else { msg };
             serde_json::json!({ "status": "error", "message": msg })

@@ -15,6 +15,7 @@ members = [
     "crates/ralphy-proc-util",
     "crates/ralphy-git-read",
     "crates/ralphy-run-snapshot",
+    "crates/ralphy-wording",
     "crates/ralphy-daemon",
     "crates/ralphy-usage-scan",
     "crates/ralphy-pricing",
@@ -122,6 +123,7 @@ ralphy-adapter-support = { path = "crates/ralphy-adapter-support" }
 ralphy-proc-util = { path = "crates/ralphy-proc-util" }
 ralphy-git-read = { path = "crates/ralphy-git-read" }
 ralphy-run-snapshot = { path = "crates/ralphy-run-snapshot" }
+ralphy-wording = { path = "crates/ralphy-wording" }
 ralphy-daemon = { path = "crates/ralphy-daemon" }
 ralphy-usage-scan = { path = "crates/ralphy-usage-scan" }
 ralphy-pricing = { path = "crates/ralphy-pricing" }

@@ -1,5 +1,61 @@
 use super::*;
 use crate::runstate::{RunEvent, UsageLite};
+use ralphy_wording::ValueSet;
+
+fn entry_with(number: u64, status: IssueStatus) -> IssueEntry {
+    IssueEntry {
+        number,
+        title: "t".into(),
+        status,
+        kind: None,
+        blocked_by: Vec::new(),
+        model: None,
+        effort: None,
+        budget_min: None,
+        plan_usage: None,
+        exec_usage: None,
+        invocations: None,
+        idle_reaped: false,
+    }
+}
+
+fn icon_of(status: IssueStatus) -> String {
+    status.wording().icon.clone().unwrap_or_default()
+}
+
+#[test]
+fn card_line_icon_is_the_catalog_icon() {
+    for status in IssueStatus::all() {
+        let line = issue_line(&entry_with(7, *status));
+        let icon = icon_of(*status);
+        assert!(
+            line.starts_with(&format!("{icon} #7")),
+            "{status:?}: {line}"
+        );
+    }
+}
+
+#[test]
+fn counters_line_uses_the_catalog_icons() {
+    let mut state = RunState::new("repo", 9);
+    for (number, status) in (1u64..).zip(IssueStatus::all()) {
+        state.issues.push(entry_with(number, *status));
+    }
+    let line = counters_line(&state);
+    for status in [
+        IssueStatus::Done,
+        IssueStatus::Skipped,
+        IssueStatus::Blocked,
+        IssueStatus::Infeasible,
+        IssueStatus::NonGreen,
+        IssueStatus::NeedsSplit,
+        IssueStatus::Planned,
+        IssueStatus::Hitl,
+    ] {
+        let want = format!("{} 1", icon_of(status));
+        assert!(line.contains(&want), "{status:?} missing in: {line}");
+    }
+}
 
 #[test]
 fn render_card_small_queue_one_line_per_issue() {
@@ -69,7 +125,9 @@ fn render_card_and_footer_surface_needs_split() {
     assert!(card.contains("· 🧩 1"), "counter: {card}");
     state.finished = true;
     let footer = render_final_push(&state);
-    assert!(footer.contains("🧩 1 awaiting split"), "footer: {footer}");
+    let w = IssueStatus::NeedsSplit.wording();
+    let want = format!("{} 1 {}", icon_of(IssueStatus::NeedsSplit), w.text);
+    assert!(footer.contains(&want), "footer: {footer}");
     // Without a bundle, neither the counter nor the footer mention it.
     let clean = RunState::new("repo · 1 issues", 1);
     assert!(!render_card(&clean, 0).contains("🧩"));

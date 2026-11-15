@@ -66,21 +66,25 @@ impl FinishOutcome {
         }
     }
 
-    /// `(emoji, ascii fallback, semantic colour)` — the ADR-0006 D4 icon table.
+    /// `(emoji, ascii fallback, semantic colour)`: icon and fallback from the catalog.
     pub(crate) fn glyph(self) -> (&'static str, &'static str, Style) {
-        match self {
-            FinishOutcome::Done => ("✅", "[ok]", Style::new().green()),
-            FinishOutcome::Blocked => ("⛔", "[blocked]", Style::new().red()),
-            FinishOutcome::Timeout => ("⏱️", "[timeout]", Style::new().yellow()),
-            FinishOutcome::Stuck => ("🪨", "[stuck]", Style::new().red()),
-            FinishOutcome::Limit => ("🌙", "[limit]", Style::new().yellow()),
-        }
+        let wording = self.wording();
+        let style = match self {
+            FinishOutcome::Done => Style::new().green(),
+            FinishOutcome::Blocked | FinishOutcome::Stuck => Style::new().red(),
+            FinishOutcome::Timeout | FinishOutcome::Limit => Style::new().yellow(),
+        };
+        (
+            render::value_icon(wording),
+            render::value_fallback(wording),
+            style,
+        )
     }
 }
 
 /// The phase icon for the live active line, derived from the folded status. `None`
 /// for every terminal status — the issue is finished, so there is no active line.
-pub(crate) fn active_phase(status: &IssueStatus) -> Option<Phase> {
+pub(crate) fn active_phase(status: IssueStatus) -> Option<Phase> {
     match status {
         IssueStatus::Planning => Some(Phase::Planning),
         IssueStatus::Executing => Some(Phase::Executing),
