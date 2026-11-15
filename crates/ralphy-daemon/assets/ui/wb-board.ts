@@ -45,18 +45,17 @@ export function wbBoard() {
 
     // --- the repo's ready plan, on the board -------------------------------
     _boardPending: false,
+    // The loading note shows until the first fold lands: the empty state would claim "no issues".
     boardRefreshing: false,
-    // The daemon awaits the board CLI with no timeout of its own; a wedged `gh`
-    // must not disable the board for the page's life. Generous: a real fold
-    // makes several calls.
+    // The daemon awaits the board CLI with no timeout; a wedged `gh` must not disable the
+    // board for the page's life. Generous: a real fold makes several calls.
     BOARD_FOLD_TIMEOUT_MS: 90000,
     kanbanFilter: "", // search box (title / #num / body / label)
     kanbanLabel: "__all", // label filter: __all | __none | <label>
     kanbanSort: "num-desc", // Backlog sort (Ready columns keep graph order)
-    // A FINALIZED `.ralphy/plan.md` is executed by the next run (the trailer is
-    // the resume signal, `WBRun.planTrailerIssue`), so the board shows it and
-    // can throw it away. `planByProject[slug] = { md, summary }`, replaced on
-    // every board load via the same confined `file.read`. Daemon-only (#300).
+    // A FINALIZED `.ralphy/plan.md` runs next (trailer = resume signal, `WBRun.planTrailerIssue`),
+    // so the board shows it and can throw it away. `planByProject[slug] = { md, summary }`,
+    // replaced on every board load via the same confined `file.read`. Daemon-only (#300).
     planByProject: emptyRecord<ReadyPlan | null>(),
     planModal: { open: false, issue: null as number | null },
 
@@ -111,6 +110,7 @@ export function wbBoard() {
       const pill = WBRun.planPillLabel(held.summary, this.planIssueIsOpen());
       return `#${held.summary.issue} · ${pill}`;
     },
+    // The pills stop the click: the parent card opens the drawer, a pill goes to the run or plan.
     openPlanModal() {
       const held = this.openPlan();
       if (!held) return;
@@ -334,9 +334,9 @@ export function wbBoard() {
     },
 
     // --- detail drawer ----------------------------------------------------
-    // The open drawer's detail-fetch failure (#302). One string: exactly one
-    // drawer is open at a time.
+    // The open drawer's detail-fetch failure (#302): one string, one drawer open at a time.
     issueError: null as string | null,
+    // The loading note shows until the body arrives: an empty text would claim there is no body.
     issueLoading: false,
     // Selection is by number, so a label move (which can change the card's
     // column) keeps the drawer pointed at the same issue.

@@ -115,6 +115,7 @@ export function wbConsoleMenus() {
       this.consoleRunText = "";
     },
     // A blank line is not a launch: the field stays open for the typing.
+    // The run field sits outside the loop, so exactly one element owns the `consoleRun` ref.
     runConsoleCommand() {
       const command = WBAgents.runCommand(this.consoleRunText);
       if (command === null) return;

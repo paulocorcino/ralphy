@@ -284,6 +284,8 @@ function readyState(project: string, doc: SpendDoc, issues: TitledIssue[] | null
     // is not something the operator can act on.
     floorNote: floorNote(doc, unpriced),
     ...tokenFields(tokens),
+    // The coverage bar shows only when some volume is unpriced, because a full bar at 100% would
+    // say nothing.
     coverage: coverageOf(unpriced),
     unpriced: unpricedOf(unpriced),
   };

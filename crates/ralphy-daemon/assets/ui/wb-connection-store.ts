@@ -80,6 +80,8 @@ export function connectionStore(deps: ConnectionStoreDeps) {
     // event that makes the daemon stale — ticks STOPPING — never re-renders a
     // binding. Writing the same boolean is inert under Alpine, so the steady
     // state costs one comparison a second.
+    // The uptime line binds this flag, which a clock derives; an inline `Date.now()` never re-
+    // renders when the ticks stop.
     presenceStale: false,
     _clockTick: null as Timer,
     LIVE_SETTLE_MS: 250,

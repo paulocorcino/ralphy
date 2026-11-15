@@ -57,6 +57,7 @@ export function wbChanges() {
     // slot for the whole bar: the three acts share the upstream, so a second
     // click while one is out would race it against the first — and a push's
     // round trip is long enough that a silent button reads as a dead one.
+    // While one remote act is out the whole bar locks, because the three acts share one upstream.
     syncBusy: null as "fetch" | "pull" | "push" | null,
     // Same token for the Changes count (#310's nudge overlaps the open's read)
     // and for the sync row.
@@ -298,6 +299,8 @@ export function wbChanges() {
       return WBChanges.commitTarget(this.syncByProject[this.$store.projects.openKey()]);
     },
     // `withOriginal` only on the UNSTAGE direction — see `wb-changes.ts`.
+    // A group act expands in the browser to the paths the daemon already sent, so no pattern is
+    // composed.
     groupPaths(list: ChangeEntry[], withOriginal: boolean) {
       return WBChanges.groupPaths(list, withOriginal);
     },
@@ -368,6 +371,8 @@ export function wbChanges() {
 
     // Discard ONE row's changes (#319) — the only irreversible act here, so the
     // only one confirmed (`discardConfirm`). A cancel makes NO daemon call.
+    // Discard is offered on unstaged rows only, never on a conflicted row, because the restore
+    // command refuses an unmerged path.
     async discardRow(slug: string, entry: ChangeEntry) {
       if (!slug || !entry.path || this.$store.connection.writeLocked()) return;
       const c = WBChanges.discardConfirm(entry);

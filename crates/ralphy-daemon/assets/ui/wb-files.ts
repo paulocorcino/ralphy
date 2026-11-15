@@ -351,6 +351,8 @@ export function wbFiles() {
     // request so a slow reply never paints over a newer one; `expandedBefore`
     // is the expansion snapshot `clearFileSearch` folds the tree back to
     // (`null` = nothing expanded yet).
+    // The search field is `type="text"`, not `search`, because the browser draws its own clear
+    // button in its own colors.
     fileSearch: {
       open: false,
       mode: "name",

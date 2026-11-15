@@ -42,6 +42,8 @@ export function wbColumns() {
     // than two remain, so a lone survivor is an ordinary maximize again.
     columns: [] as Grid,
     columnMenu: false,
+    // The footer pills have a border but no text before Alpine binds, so `x-cloak` keeps two empty
+    // boxes from flashing at load.
     consoleCount: 0,
     // The stage extent, for the footer pill (#338).
     stageW: 0,
@@ -54,6 +56,8 @@ export function wbColumns() {
     columnFrom: null as string | null,
     // The list was opened on a phone: a row switches the maximized console
     // instead of opening a column (#599).
+    // The column row `:key` holds this mode, because a row kept under one key across a mode change
+    // showed the old list's values (Alpine 3.14.1, Chromium).
     columnSwitch: false,
     columnMenuAt: { top: 0, right: 0, maxWidth: 400, maxHeight: 400 },
     // INVARIANT: the columns never write `max` themselves. Each `applyColumns` call

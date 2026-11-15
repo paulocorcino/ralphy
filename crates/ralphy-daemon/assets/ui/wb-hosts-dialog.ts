@@ -96,6 +96,7 @@ export function hostsDialog() {
       this.removeHost.open = false;
     },
     // The hosts paired over SSH. A WSL daemon is paired by its setup instead.
+    // With no host there are no tabs: the form is then the whole dialog.
     sshHosts(): FleetPeer[] {
       return this.$store.projects.fleetPeers.filter((p) => p.tunnel);
     },

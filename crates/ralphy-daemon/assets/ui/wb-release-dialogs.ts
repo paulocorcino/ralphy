@@ -51,6 +51,7 @@ export function releaseDialogs() {
     },
     // `ralphy update` in a terminal restarts only this daemon, so only its own
     // consoles close.
+    // Hidden while the update question is open, because that question lists the consoles itself.
     get releaseConsoleWarning(): string {
       const n = this.$store.projects.localSessions().length;
       if (!n) return "";

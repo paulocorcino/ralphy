@@ -204,6 +204,8 @@ export function ledger({
   if (!isText(project)) {
     return {
       ...base,
+      // The header stays outside the state branches, so an empty tab never looks like a tab that
+      // failed to load.
       kind: EMPTY,
       message: "No project open",
       hint: "Open a project in the sidebar to read its ledger.",

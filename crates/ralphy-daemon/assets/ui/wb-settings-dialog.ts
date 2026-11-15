@@ -119,6 +119,8 @@ export function settingsDialog() {
     // `config.set`/`config.unset`.
     SETTINGS: WB_SETTINGS,
     TRISTATE: WB_TRISTATE,
+    // A password field exists only while this is true: in a closed modal the browser's password
+    // manager still pairs it with the next text field.
     settingsOpen: false,
     // The daemon (machine-wide) group first; per-project sections follow.
     settingsSection: "daemon",

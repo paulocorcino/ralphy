@@ -246,6 +246,8 @@ export function modalsStore(_deps: ModalsStoreDeps) {
       });
     },
     // Close the dialog and settle its promise with the choice.
+    // Enter confirms unless a button has focus, and is default-prevented: closing hands focus back
+    // to the opener, and its keypress would click that button again.
     confirmRespond(ok: boolean) {
       this.confirmModal.open = false;
       const resolve = confirmResolve;

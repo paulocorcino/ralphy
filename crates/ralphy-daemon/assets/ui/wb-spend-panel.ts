@@ -140,6 +140,8 @@ export function wbSpend() {
     // `Overview | Ledger` inside the ONE Spend tab: two readings of the same
     // project. The Ledger is the raw per-phase grid with the daemon's unpriced
     // verdict per row (`/api/usage?project=`).
+    // The period control shows on the Overview only: the period scopes the summary, and a ledger
+    // grid shows all time.
     spendPane: "overview",
     // Set by the click-through from the Overview's unpriced figure.
     spendLedgerUnpricedOnly: false,

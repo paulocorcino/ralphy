@@ -177,6 +177,8 @@ export function shell() {
     // Drop a project from the daemon's registry (#363); the disk is NOT
     // touched. The confirm is awaited BEFORE any `WBDaemon` call: cancel must
     // open no socket.
+    // The click must not reach `.project-head`, which would open the project and mount the tree of
+    // the row being removed.
     async removeProject(p: Project) {
       const ref = this.$store.projects.repoRef(p);
       const ok = await this.$store.modals.askConfirm({

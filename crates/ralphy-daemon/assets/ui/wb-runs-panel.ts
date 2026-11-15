@@ -192,6 +192,8 @@ export function wbRuns() {
     // daemon never signals a dispatched child (ADR-0032 §5/§6). No wait: the
     // reply says the request was written; the run leaves the panel via
     // `runs.dirty` when it exits.
+    // The run button becomes stop while a run is live; the stop face is not gated by the lock,
+    // because the lock is held exactly when stop applies.
     async stopRun(runid: string | null | undefined) {
       // No runid: the run left the panel between the render and the click.
       if (runid == null || runid === "" || this.runStopping !== null) return;
@@ -306,6 +308,8 @@ export function wbRuns() {
     runOpen: false,
     // A CLI refusal, held until the next verb click (#331). Distinct from the
     // 2.6 s `runsActionMsg` flash.
+    // A refusal from the command line stays on screen until the next verb click and does not flash
+    // away.
     verbError: "",
     // Phase 1 raw merged output of the last daemon-spawned run (wb-daemon.ts).
     rawFeed: "",
