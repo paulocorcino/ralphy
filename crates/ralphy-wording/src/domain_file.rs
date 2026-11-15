@@ -25,6 +25,23 @@ pub struct DomainFile {
     pub domain: TextDomain,
     /// Set name, then value key, then the wording.
     pub values: BTreeMap<String, BTreeMap<String, ValueWording>>,
+    /// Failure code, then its wording.
+    #[serde(default)]
+    pub failures: BTreeMap<String, FailureWording>,
+    /// Codes that no longer exist and may not come back.
+    #[serde(default)]
+    pub retired: Vec<String>,
+}
+
+/// The wording of one failure code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FailureWording {
+    pub cause: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remedy: Option<String>,
+    /// Context for the writer: JSON has no comments.
+    pub note: String,
 }
 
 impl DomainFile {

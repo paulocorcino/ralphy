@@ -177,6 +177,27 @@ fn ran_in(text: &str, repo: &Path) -> bool {
         })
 }
 
+/// What the child echoed for `verb`: the reply message, or for the commit,
+/// whose reply is a failure and not the child's text, the child's echo file.
+async fn child_echo(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> String {
+    let echo_dir = tempfile::tempdir().expect("a temporary folder");
+    let echo_file = (verb == "changes.commit").then(|| echo_dir.path().join("echo.log"));
+    if let Some(file) = &echo_file {
+        std::env::set_var("RALPHY_TEST_ECHO_FILE", file);
+    }
+    let reply = ask(port, id, verb, payload).await;
+    std::env::remove_var("RALPHY_TEST_ECHO_FILE");
+    match &echo_file {
+        Some(file) => std::fs::read_to_string(file).expect("the child wrote its echo"),
+        None => reply
+            .get("message")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| format!("{verb} did not relay child output: {reply}"))
+            .expect("this test needs the output"),
+    }
+}
+
 /// Every reply to command `id` on a spawn channel, until the channel ends.
 async fn ask_until_the_end(
     port: u16,

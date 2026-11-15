@@ -50,8 +50,9 @@ pub use host::{host_argv, host_password};
 pub use registry::project_add_argv;
 #[cfg(test)]
 pub(crate) use spawn::MAX_COLLECT_CHILDREN;
-pub use spawn::{collect, dispatch, ralphy_exe, Child, ProcessSpawner, Spawner, REPLY_DEADLINE};
+pub use spawn::{collect, collect_apart, dispatch, ralphy_exe, Child, CollectedOutput};
 pub(crate) use spawn::{collect_within, Collected, COLLECT_SLOTS};
+pub use spawn::{ProcessSpawner, Spawner, TwoPipeSpawner, REPLY_DEADLINE};
 
 /// The effect class of a verb (ADR-0036 §2): `Native` runs in-daemon,
 /// `Observe`/`Query` read state, `Spawn` launches a detached `ralphy` child,

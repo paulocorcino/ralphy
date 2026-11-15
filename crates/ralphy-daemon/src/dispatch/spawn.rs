@@ -33,8 +33,8 @@ const IDLE_AFTER_EXIT: Duration = Duration::from_millis(200);
 /// What [`collect_within`] got before its deadline.
 #[derive(Debug)]
 pub(crate) enum Collected {
-    /// The child exited: its code and its merged output.
-    Done(Option<i32>, Vec<u8>),
+    /// The child exited: its code and its output.
+    Done(Option<i32>, CollectedOutput),
     /// The spawn, the wait, or the blocking task failed.
     Failed(anyhow::Error),
     /// The deadline passed first. The child still runs and still holds its slot.
@@ -78,7 +78,7 @@ pub(crate) async fn collect_within(
         let joined = tokio::task::spawn_blocking(move || {
             let _permit = permit;
             let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-            collect(
+            collect_apart(
                 spawner.as_ref(),
                 &program,
                 &argv_refs,
@@ -88,7 +88,7 @@ pub(crate) async fn collect_within(
         })
         .await;
         match joined {
-            Ok(Ok((code, bytes))) => Collected::Done(code, bytes),
+            Ok(Ok((code, output))) => Collected::Done(code, output),
             Ok(Err(e)) => Collected::Failed(e),
             Err(e) => Collected::Failed(anyhow::Error::new(e).context("joining the collect task")),
         }
@@ -98,14 +98,29 @@ pub(crate) async fn collect_within(
         .unwrap_or(Collected::StillRunning)
 }
 
-/// Spawn a Query/Mutate child and COLLECT its output, returning its exit
-/// code and stdout+stderr bytes verbatim (distinct from the streaming Spawn path:
-/// a Query/Mutate answer is a single collected reply, not a live stream). Blocking;
-/// callers on the runtime use `collect_within`. The output is drained on its own
-/// thread, which reads to EOF even after this returns (the module OUTPUT
-/// STREAMING note): a grandchild that holds the pipe delays only that thread, and
-/// this returns once the child exited and the pipe was idle for
-/// `IDLE_AFTER_EXIT`.
+/// What a collected child wrote: stdout and stderr in two buffers. A child of a
+/// spawner with one merged pipe has all its output in `stdout`.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct CollectedOutput {
+    /// The bytes the child wrote to its standard output.
+    pub stdout: Vec<u8>,
+    /// The bytes the child wrote to its standard error.
+    pub stderr: Vec<u8>,
+}
+
+impl CollectedOutput {
+    /// Stdout, then stderr on a line of its own: the text an error reply relays.
+    pub fn merged(&self) -> Vec<u8> {
+        let mut bytes = self.stdout.clone();
+        if !bytes.is_empty() && !self.stderr.is_empty() && !bytes.ends_with(b"\n") {
+            bytes.push(b'\n');
+        }
+        bytes.extend_from_slice(&self.stderr);
+        bytes
+    }
+}
+
+/// [`collect_apart`], with the two outputs as one buffer: stdout, then stderr.
 pub fn collect(
     spawner: &dyn Spawner,
     program: &OsStr,
@@ -113,34 +128,82 @@ pub fn collect(
     cwd: &Path,
     daemon_id: Option<&str>,
 ) -> Result<(Option<i32>, Vec<u8>)> {
+    collect_apart(spawner, program, argv, cwd, daemon_id).map(|(code, out)| (code, out.merged()))
+}
+
+/// Which output pipe of a collected child a chunk came from.
+#[derive(Debug, Clone, Copy)]
+enum Pipe {
+    Stdout,
+    Stderr,
+}
+
+/// Spawn a Query/Mutate child and COLLECT its output, returning its exit
+/// code and its stdout and stderr bytes verbatim (distinct from the streaming Spawn path:
+/// a Query/Mutate answer is a single collected reply, not a live stream). Blocking;
+/// callers on the runtime use `collect_within`. Each output pipe is drained on its
+/// own thread, so a full pipe never blocks the read of the other; a drain reads
+/// to EOF even after this returns (the module OUTPUT STREAMING note): a grandchild
+/// that holds a pipe delays only that thread, and this returns once the child
+/// exited and the pipes were idle for `IDLE_AFTER_EXIT`.
+pub fn collect_apart(
+    spawner: &dyn Spawner,
+    program: &OsStr,
+    argv: &[&str],
+    cwd: &Path,
+    daemon_id: Option<&str>,
+) -> Result<(Option<i32>, CollectedOutput)> {
     let mut child = spawner.spawn(program, argv, cwd, daemon_id)?;
-    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
-    if let Some(reader) = child.take_output() {
-        std::thread::Builder::new()
-            .name("collect-drain".into())
-            .spawn(move || drain_to_eof(reader, &tx))
-            .context("starting the output drain")?;
-    } else {
-        drop(tx);
-    }
+    let (tx, rx) = std::sync::mpsc::channel::<(Pipe, Vec<u8>)>();
+    start_drain(child.take_output(), Pipe::Stdout, &tx)?;
+    start_drain(child.take_stderr(), Pipe::Stderr, &tx)?;
+    drop(tx);
     let code = child.wait()?;
-    let mut bytes = Vec::new();
-    while let Ok(chunk) = rx.recv_timeout(IDLE_AFTER_EXIT) {
-        bytes.extend_from_slice(&chunk);
+    let mut output = CollectedOutput::default();
+    while let Ok((pipe, chunk)) = rx.recv_timeout(IDLE_AFTER_EXIT) {
+        match pipe {
+            Pipe::Stdout => output.stdout.extend_from_slice(&chunk),
+            Pipe::Stderr => output.stderr.extend_from_slice(&chunk),
+        }
     }
-    Ok((code, bytes))
+    Ok((code, output))
+}
+
+/// Drain `reader`, when there is one, on its own thread into `tx`.
+fn start_drain(
+    reader: Option<Box<dyn Read + Send>>,
+    pipe: Pipe,
+    tx: &std::sync::mpsc::Sender<(Pipe, Vec<u8>)>,
+) -> Result<()> {
+    let Some(reader) = reader else {
+        return Ok(());
+    };
+    let tx = tx.clone();
+    std::thread::Builder::new()
+        .name("collect-drain".into())
+        .spawn(move || drain_to_eof(reader, pipe, &tx))
+        .context("starting the output drain")?;
+    Ok(())
 }
 
 /// Read `reader` to EOF, sending each chunk while someone receives and
 /// discarding it after.
-fn drain_to_eof(mut reader: Box<dyn Read + Send>, tx: &std::sync::mpsc::Sender<Vec<u8>>) {
+fn drain_to_eof(
+    mut reader: Box<dyn Read + Send>,
+    pipe: Pipe,
+    tx: &std::sync::mpsc::Sender<(Pipe, Vec<u8>)>,
+) {
     let mut buf = [0u8; 8192];
     let mut open = true;
     loop {
         match reader.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => {
-                if open && tx.send(buf[..n].to_vec()).is_err() {
+                if open
+                    && tx
+                        .send((pipe, buf.get(..n).unwrap_or_default().to_vec()))
+                        .is_err()
+                {
                     open = false;
                 }
             }
@@ -166,6 +229,11 @@ pub trait Child: Send {
     /// must drain it to EOF (see the module OUTPUT STREAMING note). `wait` no
     /// longer owns the reader, so the drain and the wait can proceed concurrently.
     fn take_output(&mut self) -> Option<Box<dyn Read + Send>>;
+    /// Take the child's stderr reader, ONCE, when stderr has a pipe of its own;
+    /// `None` when stderr is merged into [`Child::take_output`].
+    fn take_stderr(&mut self) -> Option<Box<dyn Read + Send>> {
+        None
+    }
 }
 
 /// Spawns a blessed child. The seam that keeps [`dispatch`] testable: production
@@ -230,7 +298,51 @@ impl Spawner for ProcessSpawner {
         cwd: &Path,
         daemon_id: Option<&str>,
     ) -> Result<Box<dyn Child>> {
-        Self::start(program, args, cwd, daemon_id, None)
+        Self::start(program, args, cwd, daemon_id, Io::merged(None))
+    }
+}
+
+/// [`ProcessSpawner`] in its collected mode: stdout and stderr in two pipes, so
+/// [`collect_apart`] keeps them apart. The streamed path keeps one merged pipe.
+#[derive(Debug)]
+pub struct TwoPipeSpawner;
+
+impl Spawner for TwoPipeSpawner {
+    fn spawn(
+        &self,
+        program: &OsStr,
+        args: &[&str],
+        cwd: &Path,
+        daemon_id: Option<&str>,
+    ) -> Result<Box<dyn Child>> {
+        let io = Io {
+            input: None,
+            pipes: Pipes::Apart,
+        };
+        ProcessSpawner::start(program, args, cwd, daemon_id, io)
+    }
+}
+
+/// Whether a child's stderr shares the stdout pipe or has its own.
+#[derive(Debug, Clone, Copy)]
+enum Pipes {
+    Merged,
+    Apart,
+}
+
+/// The standard streams of a started child: its input, and how its output is piped.
+#[derive(Debug, Clone, Copy)]
+struct Io<'a> {
+    input: Option<&'a [u8]>,
+    pipes: Pipes,
+}
+
+impl<'a> Io<'a> {
+    fn merged(input: Option<&'a [u8]>) -> Self {
+        Self {
+            input,
+            pipes: Pipes::Merged,
+        }
     }
 }
 
@@ -245,7 +357,7 @@ impl ProcessSpawner {
         daemon_id: Option<&str>,
         input: &[u8],
     ) -> Result<Box<dyn Child>> {
-        Self::start(program, args, cwd, daemon_id, Some(input))
+        Self::start(program, args, cwd, daemon_id, Io::merged(Some(input)))
     }
 
     fn start(
@@ -253,10 +365,11 @@ impl ProcessSpawner {
         args: &[&str],
         cwd: &Path,
         daemon_id: Option<&str>,
-        input: Option<&[u8]>,
+        io: Io<'_>,
     ) -> Result<Box<dyn Child>> {
         use std::io::Write;
         use std::process::{Command, Stdio};
+        let Io { input, pipes } = io;
         let mut cmd = Command::new(program);
         // Merge stdout+stderr into ONE pipe so the handler streams a single
         // ordered log (issue #180). The child ignores SIGPIPE, so a daemon crash
@@ -264,7 +377,13 @@ impl ProcessSpawner {
         // kill — but a LIVE daemon must drain the reader to EOF or the pipe fills
         // and stalls the child (the detached drain task of `stream_child` does).
         let (reader, writer) = std::io::pipe()?;
-        let writer2 = writer.try_clone()?;
+        let (stderr_writer, stderr) = match pipes {
+            Pipes::Merged => (writer.try_clone()?, None),
+            Pipes::Apart => {
+                let (stderr, stderr_writer) = std::io::pipe()?;
+                (stderr_writer, Some(stderr))
+            }
+        };
         cmd.args(args)
             .current_dir(cwd)
             // Null stdin (no console) unless there is input; piped
@@ -275,7 +394,7 @@ impl ProcessSpawner {
                 Stdio::null()
             })
             .stdout(Stdio::from(writer))
-            .stderr(Stdio::from(writer2));
+            .stderr(Stdio::from(stderr_writer));
         // Cross-process wire contract read by ralphy-cli `emitter::DAEMON_ID_ENV`:
         // identity, NOT a credential. Set per-child here (the dispatch path) rather
         // than process-globally, so console/session children — which never get this
@@ -311,6 +430,7 @@ impl ProcessSpawner {
         Ok(Box::new(ProcessChild {
             child,
             output: Some(reader),
+            stderr,
         }))
     }
 }
@@ -321,6 +441,7 @@ impl ProcessSpawner {
 struct ProcessChild {
     child: std::process::Child,
     output: Option<std::io::PipeReader>,
+    stderr: Option<std::io::PipeReader>,
 }
 
 impl Child for ProcessChild {
@@ -334,6 +455,12 @@ impl Child for ProcessChild {
 
     fn take_output(&mut self) -> Option<Box<dyn Read + Send>> {
         self.output
+            .take()
+            .map(|r| -> Box<dyn Read + Send> { Box::new(r) })
+    }
+
+    fn take_stderr(&mut self) -> Option<Box<dyn Read + Send>> {
+        self.stderr
             .take()
             .map(|r| -> Box<dyn Read + Send> { Box::new(r) })
     }

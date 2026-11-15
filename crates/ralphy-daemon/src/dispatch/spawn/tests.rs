@@ -273,7 +273,7 @@ async fn a_command_over_the_limit_waits_for_a_slot_within_the_deadline() {
     assert!(freed.is_ok(), "A's slot must come back when A exits");
     let got = call_within(b(), Arc::clone(&slots)).await;
     assert!(
-        matches!(got, Collected::Done(Some(0), ref out) if out == b"b"),
+        matches!(got, Collected::Done(Some(0), ref out) if out.stdout == b"b"),
         "got {got:?}"
     );
 }

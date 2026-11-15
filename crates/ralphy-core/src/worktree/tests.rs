@@ -234,10 +234,9 @@ fn commit_with_nothing_staged_is_refused_and_creates_no_commit() {
 
     let refused = commit(&dir, "a real message").unwrap();
     assert_eq!(refused, CommitOutcome::NothingStaged);
-    assert_eq!(
-        refused.reason().as_deref(),
-        Some("cannot commit: nothing is staged — stage a file first")
-    );
+    let failure = refused.failure().expect("a refusal carries a failure");
+    assert_eq!(failure.domain.as_str(), "working-tree");
+    assert_eq!(failure.code, "nothing-staged");
     assert_eq!(commit_count(&dir), before, "no commit was created");
 
     remove_scratch(&dir);
@@ -252,10 +251,9 @@ fn commit_with_an_empty_message_is_refused() {
 
     let refused = commit(&dir, "   ").unwrap();
     assert_eq!(refused, CommitOutcome::EmptyMessage);
-    assert_eq!(
-        refused.reason().as_deref(),
-        Some("cannot commit: the message is empty")
-    );
+    let failure = refused.failure().expect("a refusal carries a failure");
+    assert_eq!(failure.domain.as_str(), "working-tree");
+    assert_eq!(failure.code, "empty-commit-message");
     assert_eq!(commit_count(&dir), before, "no commit was created");
     assert_eq!(
         staged_paths(&dir),
@@ -279,6 +277,7 @@ fn commit_writes_the_staged_index() {
     };
     assert!(!sha.is_empty(), "the sha is reported back");
     assert_eq!(done.reason(), None, "a success carries no refusal prose");
+    assert_eq!(done.failure(), None, "a success carries no failure");
     assert_eq!(commit_count(&dir).parse::<usize>().unwrap(), before + 1);
     assert_eq!(changes(&dir).unwrap(), vec![], "the tree is clean again");
     assert_eq!(

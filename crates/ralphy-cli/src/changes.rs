@@ -149,14 +149,12 @@ fn changes_unstage(args: &ChangesPathArgs) -> anyhow::Result<()> {
 /// `ralphy changes commit --message=<msg>`.
 fn changes_commit(args: &ChangesCommitArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "changes commit")?;
-    match ralphy_core::worktree::commit(&repo_root, &args.message)? {
-        CommitOutcome::Committed { sha } => outln!("Committed {sha}."),
-        refused @ (CommitOutcome::NothingStaged | CommitOutcome::EmptyMessage) => {
-            anyhow::bail!(
-                "{}",
-                refused.reason().unwrap_or_else(|| format!("{refused:?}"))
-            )
-        }
+    let outcome = ralphy_core::worktree::commit(&repo_root, &args.message)?;
+    if let Some(failure) = outcome.failure() {
+        return Err(anyhow::Error::new(failure));
+    }
+    if let CommitOutcome::Committed { sha } = outcome {
+        outln!("Committed {sha}.");
     }
     Ok(())
 }

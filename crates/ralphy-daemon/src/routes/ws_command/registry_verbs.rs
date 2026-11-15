@@ -92,9 +92,9 @@ async fn project_add_reply(
         .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
     match collect_config(argv, cwd, daemon_id.map(str::to_owned)).await {
         dispatch::Collected::Done(Some(0), _) => added_reply(registry_path, path).await,
-        dispatch::Collected::Done(_, bytes) => serde_json::json!({
+        dispatch::Collected::Done(_, output) => serde_json::json!({
             "status": "error",
-            "message": cli_message(&bytes),
+            "message": cli_message(&output.merged()),
         }),
         dispatch::Collected::Failed(e) => {
             tracing::warn!(error = %format!("{e:#}"), "project.add failed to run");

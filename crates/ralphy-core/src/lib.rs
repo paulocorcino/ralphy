@@ -120,6 +120,7 @@ pub mod stop;
 pub mod sync;
 pub mod triage_draft;
 pub mod verify;
+pub mod wording;
 pub mod worktree;
 
 pub use acceptance::{Verdict, VerdictKind};
