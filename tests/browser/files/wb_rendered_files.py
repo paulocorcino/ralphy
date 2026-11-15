@@ -334,11 +334,11 @@ def open_from_tree(page, folder, title):
     """Open a file the way a double-click does. The folder stays expanded, so
     the daemon's change nudge for it reaches the open tab."""
     page.wait_for_function(
-        f"(f) => !!{FILES}._tree && !!{FILES}.rawTree().findFirst(n => n.title === f)", arg=folder, timeout=20000
+        f"(f) => !!{FILES}.tree() && !!{FILES}.tree().findFirst(n => n.title === f)", arg=folder, timeout=20000
     )
-    page.evaluate(f"async (f) => {{ await {FILES}.rawTree().findFirst(n => n.title === f).setExpanded(true); }}", folder)
-    page.wait_for_function(f"(t) => !!{FILES}.rawTree().findFirst(n => n.title === t)", arg=title, timeout=20000)
-    page.evaluate(f"(t) => {FILES}.openFile({FILES}.rawTree().findFirst(n => n.title === t))", arg=title)
+    page.evaluate(f"async (f) => {{ await {FILES}.tree().findFirst(n => n.title === f).setExpanded(true); }}", folder)
+    page.wait_for_function(f"(t) => !!{FILES}.tree().findFirst(n => n.title === t)", arg=title, timeout=20000)
+    page.evaluate(f"(t) => {FILES}.openFile({FILES}.tree().findFirst(n => n.title === t))", arg=title)
 
 
 def pane(path):

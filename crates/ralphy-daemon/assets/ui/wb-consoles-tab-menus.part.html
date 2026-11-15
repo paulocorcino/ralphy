@@ -4,8 +4,8 @@
               <i class="bi bi-terminal"></i> <span class="btn-label">Consoles</span> <svg x-icon="'chevron-down'"></svg>
             </button>
             <div class="dropdown console-menu" x-show="agentMenu" @click.outside="agentMenu = false; closeConsoleRun()" x-cloak>
-              <div class="dropdown-head" :title="$store.projects.openSlug ? $store.projects.projectTitle($store.projects.openSlug) : ''">
-                <span x-text="$store.projects.openSlug ? consoleMenuRepoName() : 'Home (no project open)'"></span>
+              <div class="dropdown-head" :title="consoleMenuTitle()">
+                <span x-text="consoleMenuHead()"></span>
                 <kbd class="kbd" x-text="consoleShortcutHint()"></kbd>
               </div>
               <p class="side-error" x-show="$store.projects.sessionsError()" x-text="$store.projects.sessionsError()"></p>
@@ -16,7 +16,7 @@
                           :disabled="it.disabled"
                           :title="it.title"
                           @click="openConsoleItem(it)">
-                    <i class="bi" :class="it.plain ? 'bi-terminal-fill' : 'bi-terminal'"></i>
+                    <i class="bi" :class="consoleIcon(it)"></i>
                     <span x-text="it.label"></span>
                     <span class="row-live" x-show="it.live > 0" x-text="it.live + ' live'"></span>
                     <kbd class="kbd" x-text="it.digit"></kbd>
@@ -47,7 +47,7 @@
               <i class="bi bi-crosshair"></i> Go to
             </button>
             <div class="dropdown window-menu" x-show="windowMenu" @click.outside="windowMenu = false" x-cloak>
-              <div class="dropdown-head" x-text="windowList.length ? 'Consoles on the stage' : 'No consoles yet'"></div>
+              <div class="dropdown-head" x-text="windowMenuHead()"></div>
               <template x-for="w in windowList" :key="w.id">
                 <button class="window-item" @click="revealWindow(w.id)">
                   <i class="bi bi-terminal"></i>
@@ -70,7 +70,7 @@
                 <span class="row-name">New fence</span>
               </button>
               <div class="dropdown-head">
-                <span x-text="fenceItems.length ? 'Fences on the stage' : 'No fences yet'"></span>
+                <span x-text="fenceMenuHead()"></span>
                 <kbd class="kbd" x-show="fenceItems.length" x-text="fenceShortcutHint()"></kbd>
               </div>
               <template x-for="(f, i) in fenceItems" :key="f.id">
@@ -94,7 +94,7 @@
                 <span class="row-name">New note</span>
               </button>
               <div class="dropdown-head">
-                <span x-text="noteItems.length ? 'Notes on the stage' : 'No notes yet'"></span>
+                <span x-text="noteMenuHead()"></span>
               </div>
               <template x-for="n in noteItems" :key="n.id">
                 <div class="note-row">
@@ -103,8 +103,8 @@
                     <span class="row-name" x-text="n.title"></span>
                     <span class="note-fence" x-text="n.fence" x-show="n.fence"></span>
                     <span class="note-top" :class="{ on: n.onTop, off: n.away }"
-                          :title="n.away ? 'This note is in a detached window' : (n.onTop ? 'Put back' : 'Keep on top')"
-                          @click.stop="toggleOnTop(n)"><i class="bi" :class="n.onTop ? 'bi-pin-fill' : 'bi-pin-angle'"></i></span>
+                          :title="noteTopTitle(n)"
+                          @click.stop="toggleOnTop(n)"><i class="bi" :class="noteTopIcon(n)"></i></span>
                   </button>
                 </div>
               </template>

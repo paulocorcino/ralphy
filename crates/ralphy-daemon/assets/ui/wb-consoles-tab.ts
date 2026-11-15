@@ -248,6 +248,22 @@ export function wbColumns() {
         this.columnRepoLabel(ref),
       );
     },
+    consoleCountLabel() {
+      return this.consoleCount + (this.consoleCount === 1 ? " console" : " consoles");
+    },
+    columnMenuStyle() {
+      const at = this.columnMenuAt;
+      return (
+        `top: ${at.top}px; right: ${at.right}px; ` +
+        `max-width: ${at.maxWidth}px; max-height: ${at.maxHeight}px`
+      );
+    },
+    columnGroupKey(g: ColumnGroup) {
+      return g.fence ? g.fence.id : "-loose";
+    },
+    columnRowKey(r: ColumnRow) {
+      return (this.columnSwitch ? "switch " : "") + r.id;
+    },
     columnRowLabel(r: ColumnRow) {
       return WBColumns.rowLabel(r, window.WBConsoleName.consoleLabel);
     },

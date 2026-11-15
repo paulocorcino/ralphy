@@ -4,7 +4,7 @@
         role="alertdialog"
         aria-modal="true"
         :aria-label="$store.modals.confirmModal.title"
-        @keydown.enter.window="$store.modals.confirmModal.open && !$event.target.closest?.('button') && ($event.preventDefault(), $store.modals.confirmRespond(true))"
+        @keydown.enter.window="$store.modals.confirmEnter($event)"
       >
         <div class="modal-head">
           <i class="bi bi-exclamation-triangle" x-show="$store.modals.confirmModal.danger" style="color: var(--danger)"></i>
@@ -18,7 +18,7 @@
           <button class="btn" @click="$store.modals.confirmRespond(false)" x-text="$store.modals.confirmModal.cancelLabel"></button>
           <button
             class="btn"
-            :class="$store.modals.confirmModal.danger ? 'danger' : 'accent'"
+            :class="$store.modals.confirmButtonClass()"
             @click="$store.modals.confirmRespond(true)"
             x-text="$store.modals.confirmModal.confirmLabel"
           ></button>

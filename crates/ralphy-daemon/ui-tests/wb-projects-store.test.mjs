@@ -490,3 +490,16 @@ test("a wake that fails says the daemon's own reason, or that the peer did not a
   const silent = await wake([{ status: 200, body: { nudged: true, ready: false } }]);
   assert.deepEqual(silent.flashed, ["Could not wake the peer: the peer did not answer."]);
 });
+
+test("the no-project notice shows only when the list is empty, loaded and not failed", () => {
+  const store = projectsStore();
+  assert.equal(store.noProjectNotice(), true);
+  store.reposLoading = true;
+  assert.equal(store.noProjectNotice(), false);
+  store.reposLoading = false;
+  store.reposError = "the daemon answered 401";
+  assert.equal(store.noProjectNotice(), false);
+  store.reposError = "";
+  store.setProjects([{ slug: "owner/repo", branch: "main" }]);
+  assert.equal(store.noProjectNotice(), false);
+});

@@ -196,7 +196,7 @@ def main():
 
             # --- scenario b: inside an ignored folder ---------------------------
             page.evaluate(
-                f"async () => {{ const t = {FILES}.rawTree();"
+                f"async () => {{ const t = {FILES}.tree();"
                 "  await t.findFirst(n => n.title === 'dist').setExpanded(true);"
                 "  await t.findFirst(n => n.title === 'src').setExpanded(true); }"
             )

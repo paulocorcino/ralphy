@@ -23,7 +23,7 @@
               <i class="bi bi-folder"></i><span x-text="e.name"></span>
             </button>
           </template>
-          <p class="move-empty" x-show="!movePick.busy && !movePick.error && movePick.entries.length === 0">
+          <p class="move-empty" x-show="moveFolderIsEmpty()">
             No folders here
           </p>
         </div>

@@ -6,9 +6,9 @@
               class="checkout-chip"
               x-show="$store.projects.openProject() && $store.checkouts.hasWorktrees($store.projects.openProject())"
               @click.stop="checkoutChipClick($store.projects.openProject(), $event.currentTarget)"
-              :title="$store.projects.openProject() ? $store.checkouts.checkoutTitle($store.projects.openProject()) : ''"
+              :title="checkoutChipTitle()"
             >
-              <i class="bi" :class="$store.checkouts.checkoutOf($store.projects.openSlug) ? 'bi-folder2' : 'bi-house-door'"></i>
+              <i class="bi" :class="checkoutChipIcon()"></i>
               <span class="checkout-chip-name" x-text="$store.checkouts.checkoutOf($store.projects.openSlug) || 'primary'"></span>
               <i class="bi bi-chevron-down"></i>
             </button>
@@ -52,7 +52,7 @@
           <div class="files-error" x-show="treeError" x-text="treeError"></div>
           <div
             class="files-stale"
-            x-show="!treeError && treeStale && !openPeerDown()"
+            x-show="treeStaleShown()"
             x-text="treeStale"
           ></div>
           <template x-if="openPeerDown()">
@@ -83,7 +83,7 @@
                   <span class="upload-name" x-text="u.path || u.name" :title="$store.projects.projectLabel(u.repo)"></span>
                   <span class="upload-state" x-text="$store.uploads.stateText(u)"></span>
                   <button type="button" class="btn" x-show="u.state === 'failed'" @click="$store.uploads.retry(u.key)">Try again</button>
-                  <button type="button" class="btn" x-show="u.state === 'sending' || u.state === 'waiting' || u.state === 'failed'" @click="$store.uploads.cancel(u.key)">Cancel</button>
+                  <button type="button" class="btn" x-show="uploadCancellable(u)" @click="$store.uploads.cancel(u.key)">Cancel</button>
                 </div>
                 <progress max="100" x-show="u.state === 'sending'" :value="$store.uploads.percent(u)"></progress>
                 <p class="upload-error" x-show="u.error" x-text="u.error"></p>

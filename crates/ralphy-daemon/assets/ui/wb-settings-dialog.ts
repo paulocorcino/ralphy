@@ -19,6 +19,7 @@ import { WBDeskHistory } from "./wb-desk-history.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBNotify, notifyTestText } from "./wb-notify.ts";
 import { WB_SETTINGS, WB_TRISTATE } from "./wb-settings.ts";
+import type { Item, Section } from "./wb-settings.ts";
 
 // The keys this BROWSER owns. Derived from the schema rather than listed, so a
 // new client-scoped item cannot be added and then routed to `config.set` by an
@@ -129,6 +130,36 @@ export function settingsDialog() {
     // Keys held in this browser profile's view store (`scope: "client"`).
     CLIENT_KEYS: wbClientKeys(),
 
+    // A project is open when the store names one; an empty slug names none.
+    projectOpen() {
+      return (this.$store.projects.openSlug ?? "") !== "";
+    },
+    projectIcon() {
+      return this.projectOpen() ? "bi-folder2-open" : "bi-folder2";
+    },
+    projectScopeLabel() {
+      const slug = this.$store.projects.openSlug ?? "";
+      if (slug === "") return "Project · none open";
+      return "Project · " + this.$store.projects.projectLabel(slug);
+    },
+    projectSectionHint() {
+      return this.projectOpen() ? "" : "Open a project to edit its settings";
+    },
+    scopeLabel(sec: Section) {
+      if (sec.scope === "client") return "This browser only";
+      if (sec.scope === "daemon") return "Daemon · all projects";
+      return this.projectScopeLabel();
+    },
+    tristateLabel(option: string) {
+      return option === "unset" ? "Default (not set)" : option;
+    },
+    readonlyHint(it: Item) {
+      return it.readonly === true ? "Read-only. See the note below." : "";
+    },
+    // A section's own component exists only while the dialog shows that section.
+    sectionShown(id: string, name: string) {
+      return id === name && this.settingsOpen && this.settingsSection === name;
+    },
     openSettings() {
       this.settingsOpen = true;
       this.settingsError = "";

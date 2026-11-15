@@ -198,7 +198,7 @@ def open_menu_on(page, rel):
     a virtual-scrolled row would be testing hit geometry instead."""
     return page.evaluate(
         "(rel) => { const c = " + FILES + ";"
-        "  const n = c._tree.findFirst(x => c.relPath(x) === rel);"
+        "  const n = c.tree().findFirst(x => c.relPath(x) === rel);"
         "  if (!n) return false; n.setActive(); c.showMenu(120, 120, n); return true; }",
         arg=rel,
     )
@@ -308,11 +308,11 @@ def main():
                   const seen = [];
                   c.revealRel = async (rel, opts) => { seen.push({ rel, opts: opts || {} }); return orig(rel, opts); };
                   try {
-                    const n = c._tree.findFirst(x => c.relPath(x) === 'a.txt');
+                    const n = c.tree().findFirst(x => c.relPath(x) === 'a.txt');
                     n.setActive();
                     // A level that already shows the listing is left alone, so
                     // one row goes first: the reconcile then rebuilds the level.
-                    c.rawTree().findFirst(x => c.relPath(x) === 'deep').remove();
+                    c.tree().findFirst(x => c.relPath(x) === 'deep').remove();
                     await c.onTreeDirty('');
                     return seen;
                   } finally { c.revealRel = orig; }
@@ -328,7 +328,7 @@ def main():
             # --- scenario a: right-clicking a tab must not close it ------------
             page.evaluate(
                 "(rel) => { const c = " + FILES + ";"
-                "  const n = c._tree.findFirst(x => c.relPath(x) === rel); c.openFile(n); }",
+                "  const n = c.tree().findFirst(x => c.relPath(x) === rel); c.openFile(n); }",
                 arg="a.txt",
             )
             page.wait_for_function(
@@ -381,7 +381,7 @@ def main():
             # …and so does the × button, which this issue did not touch.
             page.evaluate(
                 "(rel) => { const c = " + FILES + ";"
-                "  const n = c._tree.findFirst(x => c.relPath(x) === rel); c.openFile(n); }",
+                "  const n = c.tree().findFirst(x => c.relPath(x) === rel); c.openFile(n); }",
                 arg="a.txt",
             )
             page.wait_for_function(
@@ -463,13 +463,13 @@ def main():
             # --- scenario c: create a folder under a COLLAPSED parent ----------
             collapsed = page.evaluate(
                 "() => { const c = " + FILES + ";"
-                "  const n = c._tree.findFirst(x => c.relPath(x) === 'deep');"
+                "  const n = c.tree().findFirst(x => c.relPath(x) === 'deep');"
                 "  return !!n && !n.expanded; }"
             )
             check("the fixture's `deep/` really is collapsed before the create", collapsed)
             page.evaluate(
                 "(rel) => { const c = " + FILES + ";"
-                "  const n = c._tree.findFirst(x => c.relPath(x) === rel); c.emitCreate(n, 'folder'); }",
+                "  const n = c.tree().findFirst(x => c.relPath(x) === rel); c.emitCreate(n, 'folder'); }",
                 arg="deep",
             )
             asked = answer_prompt(page, "revealme")
@@ -552,13 +552,13 @@ def main():
             # for the same directory lands after the write, and the selection
             # converges once that pass settles. The end state is the criterion.
             page.wait_for_function(
-                f"() => {FILES}.relPath({FILES}._tree.getActiveNode()) === 'a copy.txt'",
+                f"() => {FILES}.relPath({FILES}.tree().getActiveNode()) === 'a copy.txt'",
                 timeout=10000,
             )
             check(
                 "…and the copy is the selected node once the watcher pass settles",
-                page.evaluate(f"() => {FILES}.relPath({FILES}._tree.getActiveNode())") == "a copy.txt",
-                "active={}".format(page.evaluate(f"() => {FILES}.relPath({FILES}._tree.getActiveNode())")),
+                page.evaluate(f"() => {FILES}.relPath({FILES}.tree().getActiveNode())") == "a copy.txt",
+                "active={}".format(page.evaluate(f"() => {FILES}.relPath({FILES}.tree().getActiveNode())")),
             )
             # The painted row catches up to the model; waiting for the class IS the
             # assertion (a timeout reds the suite), so it gets no `check()` of its

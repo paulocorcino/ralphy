@@ -13,7 +13,7 @@
             <button class="seg-btn" role="tab" :class="{ on: hostTab() === 'hosts' }" :aria-selected="hostTab() === 'hosts'"
                     @click="addHostTab('hosts')" x-text="'Your hosts (' + sshHosts().length + ')'"></button>
             <button class="seg-btn" role="tab" :class="{ on: hostTab() === 'add' }" :aria-selected="hostTab() === 'add'"
-                    @click="addHostTab('add')" x-text="addHost.editing ? 'Edit ' + addHost.editing.name : 'Add a host'"></button>
+                    @click="addHostTab('add')" x-text="hostFormTabLabel()"></button>
           </div>
 
           <ul class="host-list" x-show="hostTab() === 'hosts'">
@@ -28,7 +28,7 @@
                   </span>
                   <span class="host-row-name" x-text="h.name"></span>
                   <span class="host-row-dest" x-text="h.destination || ''"></span>
-                  <span class="peer-state" :class="[h.state, $store.projects.peerFault(hostRowGroup(h)) ? 'fault' : '']"
+                  <span class="peer-state" :class="hostRowClass(h)"
                         role="img" :aria-label="peerStateWord(h.state)" :title="hostRowTitle(h)">
                     <span class="glyph" x-show="$store.projects.peerIcon(hostRowGroup(h)) === 'plugged'"><svg aria-hidden="true"><use href="#plugged"></use></svg></span>
                     <span class="glyph" x-show="$store.projects.peerIcon(hostRowGroup(h)) === 'unplug'"><svg x-icon="'unplug'"></svg></span>
@@ -45,7 +45,7 @@
                   <template x-for="(line, i) in removeHost.lines" :key="i">
                     <p class="run-help" x-text="line"></p>
                   </template>
-                  <p class="side-error host-remove-error" x-show="removeHost.failure" x-text="removeHost.failure ? removeHost.failure.message : ''"></p>
+                  <p class="side-error host-remove-error" x-show="removeHost.failure" x-text="removeHostMessage()"></p>
                   <span class="host-foot">
                     <button class="btn" @click="closeRemoveHost()" :disabled="removeHost.busy">Cancel</button>
                     <button class="btn danger" @click="confirmRemoveHost()" :disabled="removeHost.busy">Remove</button>
@@ -91,23 +91,23 @@
                 <input type="text" id="host-password" class="host-input" :class="{ 'host-secret': !hostSecretShown }"
                        :type="hostSecretType()" :value="addHost.password" :disabled="!hostPasswordAllowed()"
                        @input="addHostType('password', $event.target.value)"
-                       :placeholder="hostPasswordAllowed() ? '' : 'Needs https'"
-                       :title="hostPasswordAllowed() ? 'Used once, never saved' : 'Only over https or on this computer'"
+                       :placeholder="hostPasswordPlaceholder()"
+                       :title="hostPasswordTitle()"
                        autocomplete="off" spellcheck="false" autocapitalize="off" data-lpignore="true" data-1p-ignore />
                 <button type="button" class="host-alias host-eye" :disabled="!hostPasswordAllowed()"
                         @click="hostSecretShown = !hostSecretShown" @keydown.enter.stop
-                        :title="hostSecretShown ? 'Hide password' : 'Show password'"
-                        :aria-label="hostSecretShown ? 'Hide password' : 'Show password'"
-                        :aria-pressed="hostSecretShown ? 'true' : 'false'">
-                  <i class="bi" :class="hostSecretShown ? 'bi-eye-slash' : 'bi-eye'" aria-hidden="true"></i>
+                        :title="hostSecretLabel()"
+                        :aria-label="hostSecretLabel()"
+                        :aria-pressed="hostSecretPressed()">
+                  <i class="bi" :class="hostSecretIcon()" aria-hidden="true"></i>
                 </button>
               </div>
               <input type="text" id="host-key-file" class="host-input" x-show="addHost.signIn === 'key'" :value="addHost.keyFile"
                      @input="addHostType('keyFile', $event.target.value)" placeholder="Full path of the private key"
                      autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore />
               <span></span>
-              <button type="button" class="host-link" @click="addHostType('signIn', addHost.signIn === 'key' ? 'config' : 'key')"
-                      x-text="addHost.signIn === 'key' ? 'Use a password' : 'Use a key file'"></button>
+              <button type="button" class="host-link" @click="addHostType('signIn', hostOtherSignIn())"
+                      x-text="hostSignInSwitchText()"></button>
             </div>
             <label class="run-check">
               <input type="checkbox" :checked="addHost.autoInstall"
@@ -128,9 +128,9 @@
             <div class="host-next" x-show="hostView().blocker">
               <p class="host-next-text">
                 <i class="bi bi-exclamation-circle"></i>
-                <span x-text="hostView().blocker ? hostView().blocker.title : ''"></span>
+                <span x-text="hostBlockerTitle()"></span>
               </p>
-              <p class="run-help" x-show="hostView().blocker && hostView().blocker.detail" x-text="hostView().blocker ? hostView().blocker.detail : ''"></p>
+              <p class="run-help" x-show="hostBlockerDetail()" x-text="hostBlockerDetail()"></p>
               <template x-if="hostNeedsInstall()">
                 <div class="host-next-act">
                   <p class="run-help" x-text="hostInstallText()"></p>
@@ -145,12 +145,12 @@
                          @keydown.enter="addHostCheckAgain()" autocomplete="off" spellcheck="false" />
                 </div>
               </template>
-              <template x-if="!hostNeedsInstall() && !hostNeedsName() && hostView().blocker && hostView().blocker.command">
+              <template x-if="hostCommandBlocks()">
                 <div class="host-next-act">
                   <p class="run-help">Run this command, then select “Check again”:</p>
                   <span class="rel-cmd">
-                    <code x-text="hostView().blocker.command"></code>
-                    <button class="modal-x" @click="copyHostCommand(hostView().blocker.command)" title="Copy the command" aria-label="Copy the command"><i class="bi bi-copy"></i></button>
+                    <code x-text="hostBlockerCommand()"></code>
+                    <button class="modal-x" @click="copyHostCommand(hostBlockerCommand())" title="Copy the command" aria-label="Copy the command"><i class="bi bi-copy"></i></button>
                   </span>
                 </div>
               </template>
@@ -199,9 +199,9 @@
             </template>
           </div>
 
-          <p class="side-error" x-show="addHost.failure" x-text="addHost.failure ? addHost.failure.message : ''"></p>
+          <p class="side-error" x-show="addHost.failure" x-text="hostFailureMessage()"></p>
           <span class="rel-cmd" x-show="addHost.failure && addHost.failure.keyLine">
-            <code x-text="addHost.failure ? addHost.failure.keyLine : ''"></code>
+            <code x-text="hostFailureKeyLine()"></code>
             <button class="modal-x" @click="copyHostCommand(addHost.failure.keyLine, 'Copied the key line.')" title="Copy the key line" aria-label="Copy the key line"><i class="bi bi-copy"></i></button>
           </span>
 
@@ -253,7 +253,7 @@
               <button class="btn" @click="addHostBack()" :disabled="addHost.busy">Back</button>
               <button class="btn" :class="{ accent: hostPrimary() === 'check' }" @click="addHostCheckAgain()" :disabled="addHost.busy">Check again</button>
               <button class="btn accent" x-show="hostPrimary() === 'connect'" @click="addHostConnect()" :disabled="!hostReady()"
-                      x-text="addHost.editing ? 'Save' : 'Add host'"></button>
+                      x-text="hostSubmitLabel()"></button>
             </span>
           </template>
           <template x-if="hostTab() === 'add' && addHost.step === 'done'">

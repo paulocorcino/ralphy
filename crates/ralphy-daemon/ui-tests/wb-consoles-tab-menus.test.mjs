@@ -99,3 +99,21 @@ test("keeping a card on top from another tab opens the Consoles tab first", () =
   ticks.forEach((fn) => fn());
   assert.deepEqual(calls, ["activate:consoles", "keepOnTop:a"]);
 });
+
+test("the consoles menu names the open project, or Home when none is open", () => {
+  const { scope: state } = loadComponent("wbConsoleMenus");
+  assert.equal(state.consoleMenuHead(), "Home (no project open)");
+  assert.equal(state.consoleMenuTitle(), "");
+  state.$store.projects.setOpen("o/r");
+  assert.equal(state.consoleMenuHead(), "r");
+  assert.equal(state.consoleMenuTitle(), state.$store.projects.projectTitle("o/r"));
+});
+
+test("a note's keep-on-top control says what a click does, and a popup card says why not", () => {
+  const { scope: state } = loadComponent("wbConsoleMenus");
+  assert.equal(state.noteTopTitle({ onTop: false, away: false }), "Keep on top");
+  assert.equal(state.noteTopTitle({ onTop: true, away: false }), "Put back");
+  assert.equal(state.noteTopTitle({ onTop: true, away: true }), "This note is in a detached window");
+  assert.equal(state.noteTopIcon({ onTop: true }), "bi-pin-fill");
+  assert.equal(state.noteTopIcon({ onTop: false }), "bi-pin-angle");
+});

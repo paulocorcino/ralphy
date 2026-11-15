@@ -12,7 +12,7 @@
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
 import { WBAddProject } from "./wb-add-project.ts";
-import type { Step } from "./wb-add-project.ts";
+import type { Row, Step } from "./wb-add-project.ts";
 import { WBFail } from "./wb-fail.ts";
 
 export function addProjectDialog() {
@@ -50,6 +50,14 @@ export function addProjectDialog() {
     },
     addProjectEntries() {
       return WBAddProject.entries(this.addProject);
+    },
+    addProjectRowIsRepository(row: Row) {
+      const hasError = row.error !== undefined && row.error !== "";
+      return !hasError && !row.added && row.repo;
+    },
+    addProjectMoreText() {
+      const listing = this.addProject.listing;
+      return listing ? listing.more + " more. Type to filter." : "";
     },
     addProjectPrimary() {
       return WBAddProject.primary(this.addProject);

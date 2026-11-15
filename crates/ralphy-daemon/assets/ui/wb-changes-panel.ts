@@ -23,6 +23,16 @@
 import { component, emptyRecord } from "./wb-alpine.ts";
 import { WBChanges } from "./wb-changes.ts";
 import { syncFetch, syncPull, syncPush } from "./wb-changes-sync.ts";
+import {
+  busyTitle,
+  canCommit,
+  commitTitle,
+  fetchTitle,
+  pullLocked,
+  pullTitle,
+  pushTitle,
+  rowActTitle,
+} from "./wb-changes-shown.ts";
 import { WBFail } from "./wb-fail.ts";
 import type { ProjectsStore } from "./wb-projects-store.ts";
 import type { ChangeEntry, Read, Subscription, Sync, Timer } from "./wb-shell-types.d.ts";
@@ -261,19 +271,10 @@ export function wbChanges() {
     // --- the rows and the commit box -----------------------------------------
     // `all` is the group head's button, which acts on every row of the group.
     rowActTitle(verb: string, all = false) {
-      const locked = this.$store.connection.writeLockReason();
-      if (locked) return locked;
-      if (verb === "stage") return all ? "Stage all changes" : "Stage changes";
-      if (verb === "discard") return "Discard changes";
-      return all ? "Unstage all changes" : "Unstage changes";
+      return rowActTitle(this, verb, all);
     },
-    // Push's title (#320) states the run-lock reason, as `rowActTitle` does.
     pushTitle() {
-      return (
-        this.syncBusyTitle("push") ||
-        this.$store.connection.writeLockReason() ||
-        this.pushAct().title
-      );
+      return pushTitle(this);
     },
     pushAct() {
       return WBChanges.pushAct(this.syncByProject[this.$store.projects.openKey()]);
@@ -281,16 +282,29 @@ export function wbChanges() {
     pullBlocked() {
       return WBChanges.pullBlocked(this.syncByProject[this.$store.projects.openKey()]);
     },
-    // The remote bar's title while an act is out: the busy act names itself,
-    // the other two name what they are waiting on.
     syncBusyTitle(verb: string) {
-      if (!this.syncBusy) return "";
-      if (this.syncBusy !== verb) return `Waiting for the ${this.syncBusy} to finish`;
-      return (
-        ({ fetch: "Fetching…", pull: "Pulling…", push: "Pushing…" } as Record<string, string>)[
-          verb
-        ] ?? ""
-      );
+      return busyTitle(this, verb);
+    },
+    fetchTitle() {
+      return fetchTitle(this);
+    },
+    pullTitle() {
+      return pullTitle(this);
+    },
+    pullLocked() {
+      return pullLocked(this);
+    },
+    checkoutChipTitle() {
+      const p = this.$store.projects.openProject();
+      return p ? this.$store.checkouts.checkoutTitle(p) : "";
+    },
+    checkoutChipIcon() {
+      const open = this.$store.checkouts.checkoutOf(this.$store.projects.openSlug) !== null;
+      return open ? "bi-folder2" : "bi-house-door";
+    },
+    changesCountText() {
+      const slug = this.$store.projects.openSlug ?? "";
+      return slug === "" ? "" : (this.$store.checkouts.changesCount[slug] ?? "—");
     },
     groupNote(group: string) {
       return WBChanges.groupDiscardNote(group);
@@ -305,21 +319,10 @@ export function wbChanges() {
       return WBChanges.groupPaths(list, withOriginal);
     },
     commitTitle() {
-      const locked = this.$store.connection.writeLockReason();
-      if (locked) return locked;
-      if ((this.changesStaged[this.$store.projects.openKey()] ?? []).length === 0) {
-        return "Stage a change first";
-      }
-      if (!this.commitMsg.trim()) return "Write a commit message first";
-      return this.commitTarget().label;
+      return commitTitle(this);
     },
     canCommit() {
-      return (
-        !this.$store.connection.writeLocked() &&
-        this.commitMsgSlug === this.$store.projects.openSlug &&
-        this.commitMsg.trim() !== "" &&
-        (this.changesStaged[this.$store.projects.openKey()] ?? []).length > 0
-      );
+      return canCommit(this);
     },
 
     // Stage / unstage / commit, each in `syncFetch`'s shape, re-reading the

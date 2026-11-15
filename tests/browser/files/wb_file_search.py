@@ -260,7 +260,7 @@ def main():
 
             # --- scenario d: opening a content hit lands on the term ----------
             page.evaluate(
-                f"() => {{ const n = window.Alpine.raw({FILES}._tree).findFirst(x => x.title === 'main.rs'); {FILES}.openFile(n); }}"
+                f"() => {{ const n = {FILES}.tree().findFirst(x => x.title === 'main.rs'); {FILES}.openFile(n); }}"
             )
             page.wait_for_function(
                 "() => !!document.querySelector('.code-viewer .monaco-editor')", timeout=20000
@@ -288,7 +288,7 @@ def main():
 
             # --- scenario f: slow typing, then erasing, on a scrolling tree --
             page.evaluate(f"async () => await {FILES}.closeFileSearch()")
-            page.wait_for_function(f"() => !({FILES}._tree.isFilterActive())", timeout=5000)
+            page.wait_for_function(f"() => !({FILES}.tree().isFilterActive())", timeout=5000)
             page.evaluate(f"() => {FILES}.openFileSearch()")
             page.evaluate(f"async () => await {FILES}.setFileSearchMode('name')")
             page.click(".files-pane .files-search input")
@@ -297,7 +297,7 @@ def main():
                 time.sleep(1.2)  # past the debounce: every letter from the 2nd is a search
             time.sleep(3)
             painted = page.evaluate(
-                f"() => {{ const t = window.Alpine.raw({FILES}._tree);"
+                f"() => {{ const t = {FILES}.tree();"
                 "  return { rows: t.nodeListElement.childNodes.length, total: t.treeRowCount,"
                 "    fit: Math.floor(t.element.clientHeight / t.options.rowHeightPx) }; }"
             )

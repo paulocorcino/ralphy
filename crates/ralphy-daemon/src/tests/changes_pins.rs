@@ -344,10 +344,7 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
     // surfaces reverted to the raw ref.
     let html = INDEX_HTML;
     for pin in [
-        concat!(
-            r#"<span class="kanban-scope" x-text="$store.projects.openSlug ? "#,
-            r#"$store.projects.projectLabel("#
-        ),
+        r#"<span class="kanban-scope" x-text="scopeLabel()""#,
         concat!(
             r#"<span class="spend-project" x-text="$store.projects.projectLabel("#,
             r#"$store.projects.openSlug)""#

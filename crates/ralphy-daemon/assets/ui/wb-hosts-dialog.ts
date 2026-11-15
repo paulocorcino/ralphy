@@ -121,7 +121,19 @@ export function hostsDialog() {
     },
     // A host row's state glyph and its tooltip, as in the group header.
     hostRowGroup(h: FleetPeer) {
-      return { name: h.name, state: h.state, diagnosis: h.diagnosis, local: false };
+      return {
+        key: h.daemon_id,
+        rows: [],
+        environment: h.environment,
+        os: h.os,
+        daemon: h.daemon_id,
+        name: h.name,
+        state: h.state,
+        diagnosis: h.diagnosis,
+        nudgeable: h.nudgeable,
+        tunnel: h.tunnel,
+        local: false,
+      };
     },
     // The row already prints the name, so the tooltip holds only the state.
     // A fault keeps the daemon's diagnosis: it says what to do.
@@ -151,6 +163,62 @@ export function hostsDialog() {
     },
     hostView() {
       return WBHosts.view(this.addHost);
+    },
+    hostFormTabLabel() {
+      return this.addHost.editing ? "Edit " + this.addHost.editing.name : "Add a host";
+    },
+    hostSubmitLabel() {
+      return this.addHost.editing ? "Save" : "Add host";
+    },
+    hostRowClass(h: FleetPeer) {
+      const fault = this.$store.projects.peerFault(this.hostRowGroup(h));
+      return [h.state, fault ? "fault" : ""];
+    },
+    removeHostMessage() {
+      return this.removeHost.failure?.message ?? "";
+    },
+    hostFailureMessage() {
+      return this.addHost.failure?.message ?? "";
+    },
+    hostFailureKeyLine() {
+      return this.addHost.failure?.keyLine ?? "";
+    },
+    hostPasswordPlaceholder() {
+      return this.hostPasswordAllowed() ? "" : "Needs https";
+    },
+    hostPasswordTitle() {
+      return this.hostPasswordAllowed()
+        ? "Used once, never saved"
+        : "Only over https or on this computer";
+    },
+    hostSecretLabel() {
+      return this.hostSecretShown ? "Hide password" : "Show password";
+    },
+    hostSecretPressed() {
+      return this.hostSecretShown ? "true" : "false";
+    },
+    hostSecretIcon() {
+      return this.hostSecretShown ? "bi-eye-slash" : "bi-eye";
+    },
+    hostOtherSignIn() {
+      return this.addHost.signIn === "key" ? "config" : "key";
+    },
+    hostSignInSwitchText() {
+      return this.addHost.signIn === "key" ? "Use a password" : "Use a key file";
+    },
+    hostBlockerTitle() {
+      return this.hostView().blocker?.title ?? "";
+    },
+    hostBlockerDetail() {
+      return this.hostView().blocker?.detail ?? "";
+    },
+    hostBlockerCommand() {
+      return this.hostView().blocker?.command ?? "";
+    },
+    // The blocker is a command to run, with nothing to install or name first.
+    hostCommandBlocks() {
+      if (this.hostNeedsInstall() || this.hostNeedsName()) return false;
+      return this.hostBlockerCommand() !== "";
     },
     hostPrimary() {
       return WBHosts.primary(this.addHost);

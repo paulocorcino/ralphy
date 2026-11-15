@@ -164,6 +164,59 @@ export function shell() {
       if (this.$store.projects.updating[g.daemon] === true) return `Updating Ralphy on ${host}…`;
       return `${g.diagnosis} Click to install this computer's Ralphy on ${host}.`;
     },
+    // The state glyph of a fleet group's header: `fault` when the peer is down, `waking` while
+    // the wake or the update runs.
+    wakeClass(g: Group) {
+      const fault = this.$store.projects.peerFault(g) ? "fault" : "";
+      return [g.state, fault, this.$store.projects.waking[g.daemon] === true ? "waking" : ""];
+    },
+    updateClass(g: Group) {
+      return [g.state, "fault", this.$store.projects.updating[g.daemon] === true ? "waking" : ""];
+    },
+    peerClass(g: Group) {
+      return [g.state, this.$store.projects.peerFault(g) ? "fault" : ""];
+    },
+    wakeLabel(g: Group) {
+      if (this.$store.projects.waking[g.daemon] === true) return "waking";
+      return this.peerStateWord(g.state);
+    },
+    updateLabel(g: Group) {
+      return this.$store.projects.updating[g.daemon] === true ? "Updating Ralphy" : "Update Ralphy";
+    },
+    // The plain state glyph shows only where no wake or update button does.
+    peerIconShown(g: Group) {
+      const projects = this.$store.projects;
+      return !projects.peerWakeable(g) && !projects.peerUpdatable(g) && projects.peerIcon(g) !== "";
+    },
+    // A middle click closes a tab that can be closed.
+    closeTabOnMiddleClick(t: { id: string; closable: boolean }, ev: MouseEvent) {
+      if (ev.button === 1 && t.closable) this.$store.tabs.closeTab(t.id);
+    },
+    projectHeadTitle(p: Project, g: Group) {
+      return this.$store.projects.peerAvailable(g) ? this.rowTitle(p) : this.unavailableTitle(g);
+    },
+    remoteIcon(p: Project) {
+      return p.remote === "github" ? "bi bi-github" : "bi bi-hdd";
+    },
+    remoteTitle(p: Project) {
+      return p.remote === "github" ? "On GitHub" : "Local only";
+    },
+    // Only the open row's branch chip can be reached with the keyboard.
+    chipTabindex(p: Project) {
+      return this.$store.projects.rowOpen(p) ? 0 : -1;
+    },
+    // A closed row's chip says its change count; the open row's says the branch.
+    chipTitle(p: Project) {
+      if (this.$store.projects.rowOpen(p)) return this.$store.checkouts.branchChipTitle(p);
+      return this.projectBadge(this.$store.projects.repoRef(p)).title;
+    },
+    chipDotShown(p: Project) {
+      const { checkouts, projects } = this.$store;
+      const counted = this.projectBadge(projects.repoRef(p)).show;
+      return (
+        projects.rowOpen(p) && !counted && checkouts.chipDirty(p) && checkouts.canSwitchBranch(p)
+      );
+    },
     // A row on a host that cannot answer: why it does not open.
     unavailableTitle(g: Group) {
       const host = WBFleet.peerName(g);

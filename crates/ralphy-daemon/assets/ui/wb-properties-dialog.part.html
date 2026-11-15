@@ -21,7 +21,7 @@
         </dl>
         <p class="props-status" role="status" x-text="propsStatus()"></p>
         <div class="modal-foot">
-          <button class="btn" @click="propsCopy()" x-text="props.copied ? 'Copied' : 'Copy'"></button>
+          <button class="btn" @click="propsCopy()" x-text="propsCopyLabel()"></button>
           <button class="btn accent" @click="propsClose()">Close</button>
         </div>
       </div>

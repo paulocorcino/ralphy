@@ -47,6 +47,18 @@ test("the What's new panel warns that the update closes the open consoles", () =
   assert.match(state.releaseConsoleWarning, /^3 consoles are open\. The update closes them/u);
 });
 
+test("the copy button names its state, and the About version links to the releases", () => {
+  const { state } = dialogs();
+  assert.equal(state.releaseCmdLabel(), "Copy the command");
+  assert.equal(state.releaseCmdIcon(), "bi-copy");
+  state.releaseCmdCopied = true;
+  assert.equal(state.releaseCmdLabel(), "Copied");
+  assert.equal(state.releaseCmdIcon(), "bi-check2");
+  assert.equal(state.aboutReleasesUrl(), "https://github.com/paulocorcino/ralphy/releases");
+  state.about.repository = "";
+  assert.equal(state.aboutReleasesUrl(), null);
+});
+
 test("opening What's new counts the consoles again", () => {
   const { state, shell } = dialogs();
   let polled = 0;

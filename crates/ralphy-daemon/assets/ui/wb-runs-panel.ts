@@ -144,6 +144,39 @@ export function wbRuns() {
       }
       return t;
     },
+    // The empty note: an open project with no runs and no failed read.
+    runsEmptyShown() {
+      const open = (this.$store.projects.openSlug ?? "") !== "";
+      const runs = this.$store.runs;
+      return open && runs.projectRuns().length === 0 && runs.runsError === "";
+    },
+    stopTitle() {
+      return (this.runStopping ?? "") === "" ? "Stop this run" : "Stop already requested";
+    },
+    rawFeedTitle() {
+      return this.rawFeedOpen ? "Collapse the output feed" : "Expand the output feed";
+    },
+    rawFeedIcon() {
+      return this.rawFeedOpen ? "bi-chevron-up" : "bi-chevron-down";
+    },
+    // The identity of a run in the picker, with its clock when it has one.
+    runMenuIdentity(run: Run) {
+      const clock = this.runClock(run);
+      return this.runIdentity(run) + (clock === "" ? "" : ` · ${clock}`);
+    },
+    trailNodeClass(iss: RunIssue) {
+      const state = WBRun.issueState(this.$store.runs.currentRun(), iss);
+      return `st-${state}${this.trailFocus === iss.number ? " focus" : ""}`;
+    },
+    executeAgentLabel() {
+      return this.runCfg.split ? "Execute agent" : "Agent";
+    },
+    branchHelp() {
+      if (this.runCfg.branchMode === "new") {
+        return "Creates an afk/run-… branch from the base and commits there.";
+      }
+      return `Commits on the current branch (${this.$store.projects.openProjectBranch()}).`;
+    },
     // Run → board (#301): a trail node opens that issue's detail. The Runs
     // panel closes first (`z-index: 150`, sharing the drawer's right edge).
     // `toggleKanban()` resets `kanbanSel`, so it runs BEFORE the issue opens

@@ -18,6 +18,19 @@
 import { component, emptyRecord } from "./wb-alpine.ts";
 import { WBChanges } from "./wb-changes.ts";
 import { loadIssueDetail } from "./wb-board-detail.ts";
+import {
+  assigneeText,
+  commentCountText,
+  discardPlan,
+  emptyNoteShown,
+  issueStateClass,
+  issueStateIcon,
+  issueStateText,
+  labelStyle,
+  refreshNoteShown,
+  scopeLabel,
+  toggleIssueLabel,
+} from "./wb-board-shown.ts";
 import { boardFold, readFold, rowToIssue } from "./wb-board-read.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBProject } from "./wb-project.ts";
@@ -148,30 +161,7 @@ export function wbBoard() {
     // `plan.discard` carries no path (the daemon fixes the target). Gated
     // while a run holds the repo: a run owns the plan it is executing.
     async discardPlan() {
-      const held = this.openPlan();
-      if (!held || this.$store.connection.writeLocked()) return;
-      const ok = await this.$store.modals.askConfirm({
-        title: "Discard this plan?",
-        message: `Deletes the plan for #${held.summary.issue}. The next run plans it again.`,
-        confirmLabel: "Discard",
-        danger: true,
-      });
-      if (!ok) return;
-      const slug = this.$store.projects.openSlug;
-      try {
-        const reply = await window.WBDaemon.write("plan.discard", { repo: slug });
-        if (WBFail.isError(reply)) {
-          this.$store.modals.flash(WBFail.failed(reply, "Could not discard the plan."));
-          return;
-        }
-        this.$store.modals.flash(`Plan for #${held.summary.issue} discarded.`);
-        this.closePlanModal();
-      } catch {
-        this.$store.modals.flash("Could not discard the plan: the daemon is not connected.");
-      } finally {
-        // Re-read on EVERY path: the panel shows what is on disk now.
-        await this.loadPlan(slug);
-      }
+      await discardPlan(this);
     },
 
     // The open project's issues (#198). Empty until `loadBoard()` populates it.
@@ -333,6 +323,46 @@ export function wbBoard() {
       return window.WBKanban.fmtDate(iso);
     },
 
+    // --- what the markup shows --------------------------------------------
+    scopeLabel() {
+      return scopeLabel(this);
+    },
+    refreshNoteShown() {
+      return refreshNoteShown(this);
+    },
+    emptyNoteShown() {
+      return emptyNoteShown(this);
+    },
+    labelStyle(l: string) {
+      return labelStyle(this, l);
+    },
+    labelSwatchStyle(l: string) {
+      return `background:${this.labelColor(l)}`;
+    },
+    issueStateClass() {
+      return issueStateClass(this);
+    },
+    issueStateIcon() {
+      return issueStateIcon(this);
+    },
+    issueStateText() {
+      return issueStateText(this);
+    },
+    assigneeText() {
+      return assigneeText(this);
+    },
+    commentCountText() {
+      return commentCountText(this);
+    },
+    blockerIcon(open: boolean) {
+      return open ? "bi-lock-fill" : "bi-unlock";
+    },
+    planVerdictIcon() {
+      return this.planVerdict()?.infeasible === true
+        ? "bi-exclamation-triangle"
+        : "bi-check-circle";
+    },
+
     // --- detail drawer ----------------------------------------------------
     // The open drawer's detail-fetch failure (#302): one string, one drawer open at a time.
     issueError: null as string | null,
@@ -408,44 +438,7 @@ export function wbBoard() {
       return iss !== null && iss.labels.includes(label);
     },
     toggleLabel(iss: BoardIssue | null, label: string) {
-      if (!iss) return;
-      // Defence in depth: a `:disabled` button is still reachable by keyboard
-      // in some browsers.
-      if (this.labelsLocked()) return;
-      const has = this.hasLabel(iss, label);
-      const op = has ? "remove" : "add";
-      const prev = [...iss.labels];
-      const slug = this.$store.projects.openSlug;
-      if (slug === null || slug === "") return;
-      this.$store.board.issueLabelsSet(
-        slug,
-        iss.number,
-        has ? prev.filter((l) => l !== label) : [...prev, label],
-      );
-      window.WB.emit("issue-label-change", { project: slug, number: iss.number, label, op });
-      // The run-lock-aware `label.set` Mutate (#199): refusal → revert + flash.
-      void (async () => {
-        try {
-          const reply = await window.WBDaemon.observe("label.set", {
-            repo: slug,
-            number: iss.number,
-            label,
-            op,
-          });
-          if (WBFail.isError(reply)) {
-            this.$store.board.issueLabelsSet(slug, iss.number, prev);
-            this.$store.modals.flash(
-              WBFail.failed(reply, "Could not change the labels: the daemon gave no reason."),
-            );
-            return; // a refused write changed nothing to re-read
-          }
-          // Re-fold so the column reflects the server, not the optimistic
-          // edit (#301).
-          this.maybeRefreshBoard("label");
-        } catch {
-          // No daemon reachable — leave the optimistic edit in place.
-        }
-      })();
+      toggleIssueLabel(this, iss, label);
     },
 
     // The board's label editor, under the SAME lock: `label set` is a

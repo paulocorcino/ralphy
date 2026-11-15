@@ -199,6 +199,26 @@ test("the console text size is saved to the view store, held to the key bar's ra
 // and the control then renders its default forever while the repo says
 // otherwise. Seeding is what makes the read-back work, so it is asserted for
 // every key rather than for the new one.
+test("the dialog names the open project, and a section's component shows only for its own section", () => {
+  const { scope: s, shell } = loadComponent("wbSettingsDialog");
+  assert.equal(s.projectOpen(), false);
+  assert.equal(s.projectScopeLabel(), "Project · none open");
+  assert.equal(s.projectSectionHint(), "Open a project to edit its settings");
+  shell.$store.projects.setOpen("owner/repo");
+  assert.equal(s.projectOpen(), true);
+  assert.equal(s.projectSectionHint(), "");
+  assert.equal(s.scopeLabel({ scope: "client" }), "This browser only");
+  assert.equal(s.scopeLabel({ scope: "daemon" }), "Daemon · all projects");
+  assert.match(s.scopeLabel({ scope: "project" }), /^Project · .+/u);
+  s.settingsSection = "devices";
+  assert.equal(s.sectionShown("devices", "devices"), false, "a closed dialog shows no section");
+  s.settingsOpen = true;
+  assert.equal(s.sectionShown("devices", "devices"), true);
+  assert.equal(s.sectionShown("telegram", "devices"), false);
+  assert.equal(s.readonlyHint({ readonly: true }) !== "", true);
+  assert.equal(s.tristateLabel("unset"), "Default (not set)");
+});
+
 test("every schema key is seeded, so config.get can merge over it", () => {
   const { scope: state } = loadComponent("wbSettingsDialog");
   for (const section of WB_SETTINGS) {
@@ -267,8 +287,8 @@ test("every name the dialog's markup reads is its own or in its uses list", () =
   // The Devices and Telegram sections are components of their own, nested
   // one level deeper: they read their own names, not this dialog's.
   const markup = partMarkup(PART)
-    .replace(/<template x-if="sec\.id === 'telegram'[\s\S]*?(?=<template x-if="sec\.id === 'devices')/u, "")
-    .replace(/<template x-if="sec\.id === 'devices'[\s\S]*?<\/template>\s*<\/section>/u, "</section>");
+    .replace(/<template x-if="sectionShown\(sec\.id, 'telegram'\)"[\s\S]*?(?=<template x-if="sectionShown\(sec\.id, 'devices'\))/u, "")
+    .replace(/<template x-if="sectionShown\(sec\.id, 'devices'\)"[\s\S]*?<\/template>\s*<\/section>/u, "</section>");
   const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
   // `x-for="sec in …"` and `x-for="(e, i) in …"` name the loop's own variables.
   const loop = new Set(attrs.filter((m) => m[1] === "x-for").flatMap((m) => bindingNames(m[2].split(" in ")[0])));

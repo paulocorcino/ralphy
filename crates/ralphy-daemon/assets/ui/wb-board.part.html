@@ -2,7 +2,7 @@
       <section class="kanban" x-show="kanbanOpen" x-cloak aria-label="Kanban board">
         <div class="kanban-head">
           <span class="kanban-title"><svg x-icon="'square-kanban'"></svg> Board</span>
-          <span class="kanban-scope" x-text="$store.projects.openSlug ? $store.projects.projectLabel($store.projects.openSlug) : 'No project open'" :title="$store.projects.projectTitle($store.projects.openSlug)"></span>
+          <span class="kanban-scope" x-text="scopeLabel()" :title="$store.projects.projectTitle($store.projects.openSlug)"></span>
           <span class="spacer"></span>
           <div class="kanban-search">
             <svg x-icon="'search'"></svg>
@@ -29,12 +29,12 @@
         </div>
 
         <div class="kanban-empty" x-show="!$store.projects.openSlug">Open a project to see its board.</div>
-        <div class="kanban-loading" x-show="$store.projects.openSlug && boardRefreshing && projectIssues().length === 0">
+        <div class="kanban-loading" x-show="refreshNoteShown()">
           <span class="kanban-spinner" aria-hidden="true"></span>
           Loading the board for <b x-text="$store.projects.projectLabel($store.projects.openSlug)"></b>…
         </div>
         <div class="kanban-empty"
-             x-show="$store.projects.openSlug && !boardRefreshing && !$store.board.boardError[$store.projects.openSlug] && projectIssues().length === 0">
+             x-show="emptyNoteShown()">
           No issues in <b x-text="$store.projects.projectLabel($store.projects.openSlug)"></b>.
         </div>
         <div class="kanban-error" x-show="$store.projects.openSlug && $store.board.boardError[$store.projects.openSlug]">
@@ -88,7 +88,7 @@
                     </div>
                     <div class="kc-labels" x-show="(iss.labels || []).length">
                       <template x-for="l in iss.labels" :key="l">
-                        <span class="kc-label" :style="`background:${labelColor(l)};color:${labelInk(l)}`" x-text="labelShort(l)"></span>
+                        <span class="kc-label" :style="labelStyle(l)" x-text="labelShort(l)"></span>
                       </template>
                     </div>
                   </article>
@@ -103,11 +103,9 @@
           <template x-if="selectedIssue()">
             <div class="kd-inner">
               <div class="kd-head">
-                <span class="kd-state" :class="selectedIssue().state === 'closed' ? (selectedIssue().reason || 'completed') : 'open'">
-                  <i class="bi" :class="selectedIssue().state === 'closed'
-                    ? (selectedIssue().reason === 'not_planned' ? 'bi-slash-circle' : 'bi-check-circle-fill')
-                    : 'bi-record-circle'"></i>
-                  <span x-text="selectedIssue().state === 'closed' ? closeLabel(selectedIssue()) : 'Open'"></span>
+                <span class="kd-state" :class="issueStateClass()">
+                  <i class="bi" :class="issueStateIcon()"></i>
+                  <span x-text="issueStateText()"></span>
                 </span>
                 <span class="spacer"></span>
                 <a class="kd-gh" x-show="githubUrl(selectedIssue().number)"
@@ -131,7 +129,7 @@
 
               <div class="kd-meta">
                 <div class="kd-meta-row"><span class="kd-k">Column</span><span class="kd-v" x-text="kanbanColumnTitle(selectedIssue())"></span></div>
-                <div class="kd-meta-row"><span class="kd-k">Assignees</span><span class="kd-v" x-text="(selectedIssue().assignees || []).join(', ') || '—'"></span></div>
+                <div class="kd-meta-row"><span class="kd-k">Assignees</span><span class="kd-v" x-text="assigneeText()"></span></div>
                 <div class="kd-meta-row"><span class="kd-k">Opened</span><span class="kd-v" x-text="kfmtDate(selectedIssue().created)"></span></div>
                 <div class="kd-meta-row"><span class="kd-k">Updated</span><span class="kd-v" x-text="kfmtDate(selectedIssue().updated)"></span></div>
               </div>
@@ -142,7 +140,7 @@
                   <template x-for="b in issueBlockers(selectedIssue())" :key="b.number">
                     <a class="kd-blocker" :class="{ open: b.open }" x-show="githubUrl(b.number)"
                        :href="githubUrl(b.number)" target="_blank" rel="noopener" :title="b.title">
-                      <i class="bi" :class="b.open ? 'bi-lock-fill' : 'bi-unlock'"></i><span x-text="'#' + b.number"></span>
+                      <i class="bi" :class="blockerIcon(b.open)"></i><span x-text="'#' + b.number"></span>
                     </a>
                   </template>
                 </div>
@@ -152,7 +150,7 @@
                 <span class="kd-k">Labels</span>
                 <div class="kd-labels">
                   <template x-for="l in selectedIssue().labels" :key="l">
-                    <span class="kd-label" :style="`background:${labelColor(l)};color:${labelInk(l)}`" x-text="l"></span>
+                    <span class="kd-label" :style="labelStyle(l)" x-text="l"></span>
                   </template>
                   <span class="kd-nolabel" x-show="(selectedIssue().labels || []).length === 0">No labels</span>
                   <button class="kd-label-edit" @click.stop="toggleLabelMenu()"
@@ -163,7 +161,7 @@
                     <template x-for="l in KANBAN_LABELS" :key="'opt-' + l">
                       <button class="dropdown-item kd-label-opt" @click="toggleLabel(selectedIssue(), l)"
                               :disabled="labelsLocked()" :title="labelLockReason()">
-                        <span class="kd-label-swatch" :style="`background:${labelColor(l)}`"></span>
+                        <span class="kd-label-swatch" :style="labelSwatchStyle(l)"></span>
                         <span class="kd-label-optname" x-text="l"></span>
                         <i class="bi bi-check2" x-show="hasLabel(selectedIssue(), l)"></i>
                       </button>
@@ -185,7 +183,7 @@
 
               <div class="kd-comments" x-show="(selectedIssue().comments || []).length">
                 <div class="kd-comments-head"
-                     x-text="selectedIssue().comments.length + ' comment' + (selectedIssue().comments.length === 1 ? '' : 's')"></div>
+                     x-text="commentCountText()"></div>
                 <template x-for="(c, idx) in selectedIssue().comments" :key="idx">
                   <div class="kd-comment">
                     <div class="kd-comment-head"><b x-text="c.author"></b><span class="kd-comment-at" x-text="kfmtDate(c.at)"></span></div>
@@ -214,7 +212,7 @@
           <template x-if="planVerdict()">
             <div class="plan-verdict" :class="{ warn: planVerdict().infeasible }">
               <div class="plan-verdict-head">
-                <i class="bi" :class="planVerdict().infeasible ? 'bi-exclamation-triangle' : 'bi-check-circle'"></i>
+                <i class="bi" :class="planVerdictIcon()"></i>
                 <b x-text="planVerdict().heading"></b>
                 <span class="plan-verdict-chip" x-show="planVerdict().needsSplit">needs split</span>
                 <span class="spacer"></span>

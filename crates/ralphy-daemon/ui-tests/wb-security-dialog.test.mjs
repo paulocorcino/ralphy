@@ -106,6 +106,31 @@ test("password bodies always carry the field and add `current` once enrolled", (
   assert.equal(state.passwordBody(""), "password=&current=old");
 });
 
+test("a password can be saved only with a draft, a matching confirmation and the current password when one is set", () => {
+  const { state, shell } = dialog();
+  const form = state.securityForm;
+  assert.equal(state.canSavePassword(), false, "an empty draft");
+  form.passwordDraft = "   ";
+  form.passwordConfirm = "   ";
+  assert.equal(state.canSavePassword(), false, "a blank draft");
+  form.passwordDraft = "pw";
+  assert.equal(state.canSavePassword(), false, "no matching confirmation");
+  form.passwordConfirm = "pw";
+  assert.equal(state.canSavePassword(), true);
+  shell.$store.connection.securityChanged({ passwordSet: true });
+  assert.equal(state.canSavePassword(), false, "a set password asks for the current one");
+  form.passwordCurrent = "old";
+  assert.equal(state.canSavePassword(), true);
+});
+
+test("each badge reads on or off from its fact", () => {
+  const { state } = dialog();
+  assert.equal(state.securityBadgeClass(true), "on");
+  assert.equal(state.securityBadgeClass(false), "off");
+  assert.equal(state.securityBadgeText(true, "set", "not set"), "set");
+  assert.equal(state.securityBadgeText(false, "set", "not set"), "not set");
+});
+
 test("step-up refusals name the throttle's wait and a rejected code", () => {
   const { state } = dialog();
   state.noteStepUpRefusal({ status: 429, headers: { get: () => "17" } });

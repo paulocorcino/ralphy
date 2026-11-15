@@ -42,7 +42,7 @@ REPO_ROOT = os.path.dirname(
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 TREE_FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
-TREE = f"{TREE_FILES}.rawTree()"
+TREE = f"{TREE_FILES}.tree()"
 FILES = 80
 
 results = []

@@ -244,6 +244,9 @@ export function devices() {
         this.error = `Could not read the devices: ${why}.`;
       }
     },
+    activityLabel(d: { device: string }) {
+      return this.open === d.device ? "Hide activity" : "Show activity";
+    },
     async toggle(d: { device: string }) {
       if (this.open === d.device) {
         this.open = null;

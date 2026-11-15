@@ -16,7 +16,7 @@ function fixture(name) {
 
 const section = () => {
   const part = partMarkup("wb-settings-dialog.part.html");
-  return part.slice(part.indexOf('x-data="wbTelegramSetup"'), part.indexOf("<template x-if=\"sec.id === 'devices'"));
+  return part.slice(part.indexOf('x-data="wbTelegramSetup"'), part.indexOf("<template x-if=\"sectionShown(sec.id, 'devices')"));
 };
 
 // The setup with a daemon that answers each request with the next reply, and

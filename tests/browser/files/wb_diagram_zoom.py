@@ -164,9 +164,9 @@ def launch(daemon_dir):
 
 def open_from_tree(page, title):
     page.wait_for_function(
-        f"(t) => !!{FILES}._tree && !!{FILES}._tree.findFirst(n => n.title === t)", arg=title, timeout=20000
+        f"(t) => !!{FILES}.tree() && !!{FILES}.tree().findFirst(n => n.title === t)", arg=title, timeout=20000
     )
-    page.evaluate(f"(t) => {FILES}.openFile({FILES}._tree.findFirst(n => n.title === t))", arg=title)
+    page.evaluate(f"(t) => {FILES}.openFile({FILES}.tree().findFirst(n => n.title === t))", arg=title)
 
 
 # The article of the open markdown pane, once the diagram is drawn and the

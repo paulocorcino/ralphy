@@ -57,6 +57,13 @@ const tick = () => new Promise((r) => { setImmediate(r); });
 const valueOf = (state, label) => state.propsRows().find((r) => r.label === label)?.value;
 const labels = (state) => state.propsRows().map((r) => r.label);
 
+test("the Copy button reads Copied once the facts are copied", () => {
+  const { state } = dialog();
+  assert.equal(state.propsCopyLabel(), "Copy");
+  state.props.copied = true;
+  assert.equal(state.propsCopyLabel(), "Copied");
+});
+
 test("wbPropertiesDialog lists only shell() names in uses, and its members left shell()", () => {
   const { data, shell } = loadComponent("wbPropertiesDialog");
   for (const n of data.uses) assert.ok(n in shell, n);

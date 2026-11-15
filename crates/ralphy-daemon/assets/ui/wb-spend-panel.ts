@@ -176,6 +176,23 @@ export function wbSpend() {
         unpricedOnly: this.spendLedgerUnpricedOnly,
       });
     },
+    // The refresh control waits while a read is out or no project is open.
+    spendRefreshDisabled() {
+      const none = (this.$store.projects.openSlug ?? "") === "";
+      return this.spend.loading || this.ledger.loading || none;
+    },
+    // The refresh control reads again what the open pane shows.
+    refreshSpendPane() {
+      if (this.spendPane !== "ledger") {
+        void this.loadSpend();
+        return;
+      }
+      this.ledger.slug = null;
+      void this.loadLedger();
+    },
+    deliveryAttemptsTitle(attempts: number) {
+      return attempts === 1 ? "1 execute attempt" : `${attempts} execute attempts`;
+    },
     // Deferred to the first switch: the ledger is the one response that grows
     // with the project's history.
     setSpendPane(key: string) {

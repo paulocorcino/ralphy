@@ -223,7 +223,7 @@ def open_menu_on(page, rel):
     a virtual-scrolled row would be testing hit geometry instead."""
     return page.evaluate(
         "(rel) => { const c = " + FILES + ";"
-        "  const n = c._tree.findFirst(x => c.relPath(x) === rel);"
+        "  const n = c.tree().findFirst(x => c.relPath(x) === rel);"
         "  if (!n) return false; n.setActive(); c.showMenu(120, 120, n); return true; }",
         arg=rel,
     )
@@ -285,7 +285,7 @@ def click_move_here(page):
 def open_file(page, rel):
     page.evaluate(
         "(rel) => { const c = " + FILES + ";"
-        "  const n = c._tree.findFirst(x => c.relPath(x) === rel); c.openFile(n); }",
+        "  const n = c.tree().findFirst(x => c.relPath(x) === rel); c.openFile(n); }",
         arg=rel,
     )
 
@@ -419,7 +419,7 @@ def main():
             )
             click_move_here(page)
             page.wait_for_function(
-                f"() => {FILES}.relPath({FILES}._tree.getActiveNode()) === 'dst/a.txt'",
+                f"() => {FILES}.relPath({FILES}.tree().getActiveNode()) === 'dst/a.txt'",
                 timeout=15000,
             )
             check(
@@ -434,8 +434,8 @@ def main():
             # A bounded wait already proved it above; the read is the end state.
             check(
                 "…and the tree selects the node at its DESTINATION",
-                page.evaluate(f"() => {FILES}.relPath({FILES}._tree.getActiveNode())") == "dst/a.txt",
-                "active={}".format(page.evaluate(f"() => {FILES}.relPath({FILES}._tree.getActiveNode())")),
+                page.evaluate(f"() => {FILES}.relPath({FILES}.tree().getActiveNode())") == "dst/a.txt",
+                "active={}".format(page.evaluate(f"() => {FILES}.relPath({FILES}.tree().getActiveNode())")),
             )
 
             # --- scenario f: the open tab followed the file --------------------
@@ -496,7 +496,7 @@ def main():
             page.evaluate(f"() => {FILES}.revealRel('src/inner.txt')")
             page.wait_for_function(
                 "() => { const c = " + FILES + ";"
-                "  return !!c._tree.findFirst(x => c.relPath(x) === 'src/inner.txt'); }",
+                "  return !!c.tree().findFirst(x => c.relPath(x) === 'src/inner.txt'); }",
                 timeout=15000,
             )
             open_file(page, "src/inner.txt")
@@ -515,7 +515,7 @@ def main():
             pick_into(page, "dst")
             click_move_here(page)
             page.wait_for_function(
-                f"() => {FILES}.relPath({FILES}._tree.getActiveNode()) === 'dst/src'",
+                f"() => {FILES}.relPath({FILES}.tree().getActiveNode()) === 'dst/src'",
                 timeout=15000,
             )
             check(
@@ -594,7 +594,7 @@ def main():
             page.evaluate(f"() => {FILES}.revealRel('.ralphy/keep.txt')")
             page.wait_for_function(
                 "() => { const c = " + FILES + ";"
-                "  return !!c._tree.findFirst(x => c.relPath(x) === '.ralphy/keep.txt'); }",
+                "  return !!c.tree().findFirst(x => c.relPath(x) === '.ralphy/keep.txt'); }",
                 timeout=15000,
             )
             check("the menu opens over `.ralphy/keep.txt`", open_menu_on(page, ".ralphy/keep.txt"))

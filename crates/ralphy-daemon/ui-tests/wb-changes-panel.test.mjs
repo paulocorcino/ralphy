@@ -451,3 +451,29 @@ test("a read failure shows the words for a daemon code, never the code", async (
   await changes.loadSync("o/r");
   assert.equal(changes.syncByProject["o/r"].note, "Could not read the branch: the worktree does not exist");
 });
+
+test("Pull is locked by a write lock, a remote act in flight or a branch with no upstream", () => {
+  const { changes, shell } = page();
+  shell.$store.projects.setOpen("o/r");
+  assert.equal(changes.pullLocked(), false);
+  changes.syncBusy = "push";
+  assert.equal(changes.pullLocked(), true, "an act is out");
+  assert.equal(changes.pullTitle(), "Waiting for the push to finish");
+  assert.equal(changes.fetchTitle(), "Waiting for the push to finish");
+  changes.syncBusy = null;
+  changes.syncByProject["o/r"] = { state: "no-upstream" };
+  assert.equal(changes.pullLocked(), true, "no upstream");
+  assert.match(changes.pullTitle(), /no upstream/u);
+});
+
+test("the checkout chip and the change count follow the open project", () => {
+  const { changes, shell } = page();
+  assert.equal(changes.changesCountText(), "", "no project is open");
+  assert.equal(changes.checkoutChipTitle(), "");
+  assert.equal(changes.checkoutChipIcon(), "bi-house-door");
+  shell.$store.projects.setOpen("o/r");
+  globalThis.window.Alpine.store("checkouts").changesCount["o/r"] = null;
+  assert.equal(changes.changesCountText(), "—");
+  globalThis.window.Alpine.store("checkouts").changesCount["o/r"] = 4;
+  assert.equal(changes.changesCountText(), 4);
+});

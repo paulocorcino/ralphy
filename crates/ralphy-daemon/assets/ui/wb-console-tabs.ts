@@ -64,6 +64,15 @@ export function wbConsoleTabMenu() {
       this.menuAt = { top: Math.round((rect?.bottom ?? 0) + 4), left: Math.round(rect?.left ?? 0) };
       this.open = true;
     },
+    menuStyle() {
+      return `top: ${this.menuAt.top}px; left: ${this.menuAt.left}px`;
+    },
+    groupKey(g: ColumnGroup) {
+      return g.fence ? g.fence.id : "-loose";
+    },
+    rowTitle(r: ColumnRow) {
+      return r.enabled ? "" : (r.reason ?? "");
+    },
     rowLabel(r: ColumnRow) {
       return WBColumns.rowLabel(r, window.WBConsoleName.consoleLabel);
     },

@@ -281,3 +281,31 @@ test("the run picker closes when the page closes every menu", () => {
   fire("workbench:menus-close", null);
   assert.equal(runs.runMenu, false);
 });
+
+test("the Runs panel words its stop control, feed control and run form", () => {
+  const { runs } = page();
+  assert.equal(runs.stopTitle(), "Stop this run");
+  runs.runStopping = "r1";
+  assert.equal(runs.stopTitle(), "Stop already requested");
+  assert.equal(runs.rawFeedTitle(), "Expand the output feed");
+  assert.equal(runs.rawFeedIcon(), "bi-chevron-down");
+  runs.rawFeedOpen = true;
+  assert.equal(runs.rawFeedTitle(), "Collapse the output feed");
+  assert.equal(runs.rawFeedIcon(), "bi-chevron-up");
+  assert.equal(runs.executeAgentLabel(), "Agent");
+  runs.runCfg.split = true;
+  assert.equal(runs.executeAgentLabel(), "Execute agent");
+  runs.runCfg.branchMode = "new";
+  assert.match(runs.branchHelp(), /^Creates an afk\/run-/u);
+  runs.runCfg.branchMode = "current";
+  assert.match(runs.branchHelp(), /^Commits on the current branch \(/u);
+});
+
+test("the empty runs note shows only for an open project with no runs and no read error", () => {
+  const { runs, shell } = page();
+  assert.equal(runs.runsEmptyShown(), false, "no project is open");
+  shell.$store.projects.setOpen("o/r");
+  assert.equal(runs.runsEmptyShown(), true);
+  globalThis.window.Alpine.store("runs").runsError = "unreadable";
+  assert.equal(runs.runsEmptyShown(), false, "a read error shows instead");
+});

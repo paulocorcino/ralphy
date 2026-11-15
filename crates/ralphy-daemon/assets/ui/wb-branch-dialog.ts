@@ -178,6 +178,16 @@ export function wbBranchDialog() {
       return this.branchModal.worktrees[name] ?? "";
     },
 
+    branchIsCurrent(name: string) {
+      return name === this.branchModal.current;
+    },
+    branchIcon(name: string) {
+      return this.branchIsCurrent(name) ? "bi-check2" : "bi-git";
+    },
+    branchAriaDisabled(name: string) {
+      return this.branchHeldBy(name) ? "true" : null;
+    },
+
     // Enter = act on the top match, else create the typed branch (quick-pick).
     // A held top match does nothing: it cannot be switched to.
     branchEnter() {

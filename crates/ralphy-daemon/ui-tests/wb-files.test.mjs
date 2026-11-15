@@ -1008,3 +1008,18 @@ test("the files search button names its keys from the list of commands", () => {
   assert.equal(loadComponent("wbFiles").scope.searchFilesTitle, "Search files (Ctrl+Shift+F)");
   assert.match(partMarkup("wb-files.part.html"), /:title="searchFilesTitle"/u);
 });
+
+test("an upload can be cancelled until it is done", () => {
+  const { files } = page();
+  for (const state of ["sending", "waiting", "failed"]) assert.equal(files.uploadCancellable({ state }), true, state);
+  assert.equal(files.uploadCancellable({ state: "done" }), false);
+});
+
+test("the stale-list note shows only with rows on screen and no peer down", () => {
+  const { files } = page();
+  assert.equal(files.treeStaleShown(), false);
+  files.treeStale = "The list shown is the last one read.";
+  assert.equal(files.treeStaleShown(), true);
+  files.treeError = "the daemon answered 500";
+  assert.equal(files.treeStaleShown(), false);
+});

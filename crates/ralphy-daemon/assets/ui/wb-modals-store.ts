@@ -25,7 +25,7 @@ import { WBSecurityDialog } from "./wb-security-dialog.ts";
 import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { ConfirmAsk, ModalEntry, PromptAsk, Timer } from "./wb-shell-types.d.ts";
-import { canFocus, isTextField } from "./wb-dom-need.ts";
+import { canFocus, isElement, isTextField } from "./wb-dom-need.ts";
 import { isRecord } from "./wb-api.ts";
 
 /** What `main.ts` gives the store. */
@@ -253,6 +253,15 @@ export function modalsStore(_deps: ModalsStoreDeps) {
       const resolve = confirmResolve;
       confirmResolve = null;
       if (resolve) resolve(ok);
+    },
+    confirmEnter(event: KeyboardEvent) {
+      const onButton = isElement(event.target) && event.target.closest("button") !== null;
+      if (!this.confirmModal.open || onButton) return;
+      event.preventDefault();
+      this.confirmRespond(true);
+    },
+    confirmButtonClass() {
+      return this.confirmModal.danger ? "danger" : "accent";
     },
     // Resolve the typed string, or `null`. Mirrors askConfirm.
     askPrompt(opts: PromptAsk = {}) {

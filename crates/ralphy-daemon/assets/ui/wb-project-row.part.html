@@ -1,20 +1,20 @@
               <li class="project" :class="{ open: $store.projects.rowOpen(p), peer: !!p.daemon, unavailable: !$store.projects.peerAvailable(g) }">
-            <div class="project-head" tabindex="-1" @click="toggle($store.projects.repoRef(p), p)" :title="$store.projects.peerAvailable(g) ? rowTitle(p) : unavailableTitle(g)">
+            <div class="project-head" tabindex="-1" @click="toggle($store.projects.repoRef(p), p)" :title="projectHeadTitle(p, g)">
               <span class="chevron"><svg x-icon="'chevron-right'"></svg></span>
               <span class="dot" :class="dotClass(p.state)" :title="dotTitle(p.state, p.dotDetail)"></span>
               <i
                 class="remote"
-                :class="p.remote === 'github' ? 'bi bi-github' : 'bi bi-hdd'"
-                :title="p.remote === 'github' ? 'On GitHub' : 'Local only'"
+                :class="remoteIcon(p)"
+                :title="remoteTitle(p)"
               ></i>
               <span class="project-slug" x-text="repoLabel(p)" :title="$store.projects.projectTitle($store.projects.repoRef(p))" :data-slug="p.slug"></span>
               <button
                 class="branch-chip"
                 x-show="$store.projects.rowOpen(p) || projectBadge($store.projects.repoRef(p)).show"
                 :class="{ dirty: $store.checkouts.chipDirty(p), disabled: !$store.checkouts.canSwitchBranch(p), collapsed: !$store.projects.rowOpen(p) }"
-                :tabindex="$store.projects.rowOpen(p) ? 0 : -1"
+                :tabindex="chipTabindex(p)"
                 @click="branchChipClick(p, $event)"
-                :title="$store.projects.rowOpen(p) ? $store.checkouts.branchChipTitle(p) : projectBadge($store.projects.repoRef(p)).title"
+                :title="chipTitle(p)"
               >
                 <span class="branch-chip-ref" x-show="$store.projects.rowOpen(p)">
                   <svg x-icon="$store.checkouts.chipIcon(p)"></svg>
@@ -26,7 +26,7 @@
                   x-text="projectBadge($store.projects.repoRef(p)).text"
                 ></span>
                 <span class="branch-chip-dot"
-                      x-show="$store.projects.rowOpen(p) && !projectBadge($store.projects.repoRef(p)).show && $store.checkouts.chipDirty(p) && $store.checkouts.canSwitchBranch(p)"></span>
+                      x-show="chipDotShown(p)"></span>
               </button>
               <button
                 class="project-remove"

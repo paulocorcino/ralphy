@@ -1,10 +1,10 @@
           <div x-data="wbColumns">
           <div class="canvas-foot" x-cloak>
-            <span class="pill" x-text="consoleCount + (consoleCount === 1 ? ' console' : ' consoles')"></span>
+            <span class="pill" x-text="consoleCountLabel()"></span>
             <span class="pill" x-text="'Stage ' + stageW + ' × ' + stageH"></span>
           </div>
           <div class="dropdown column-menu" x-show="columnMenu" @click.outside="columnMenu = false" x-cloak
-               :style="`top: ${columnMenuAt.top}px; right: ${columnMenuAt.right}px; max-width: ${columnMenuAt.maxWidth}px; max-height: ${columnMenuAt.maxHeight}px`">
+               :style="columnMenuStyle()">
             <div class="column-dir" role="group" aria-label="Where the console opens" x-show="!columnSwitch">
               <button type="button" class="column-dir-btn" data-dir="right" :aria-pressed="columnDir === 'right'"
                       :class="{ on: columnDir === 'right' }" @click="setColumnDir('right')">
@@ -19,12 +19,12 @@
                    x-model="columnFilter" placeholder="Filter" aria-label="Filter consoles"
                    @keydown.enter.prevent="swapFirstColumn()" @keydown.escape.prevent="columnMenu = false">
             <div class="column-list">
-              <template x-for="g in columnView()" :key="g.fence ? g.fence.id : '-loose'">
+              <template x-for="g in columnView()" :key="columnGroupKey(g)">
                 <div class="column-group">
                   <div class="dropdown-head column-group-head" x-show="g.fence">
                     <span class="column-group-name" x-text="g.fence?.name"></span>
                   </div>
-                  <template x-for="r in g.rows" :key="(columnSwitch ? 'switch ' : '') + r.id">
+                  <template x-for="r in g.rows" :key="columnRowKey(r)">
                     <div class="column-row">
                       <button class="column-item" :disabled="columnRowOff(r)" :title="columnRowTip(r)"
                               :data-id="r.id" @click="pickColumn(r.id)">

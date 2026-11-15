@@ -180,7 +180,8 @@ fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
         "the label reason must reuse writeLockReason, not parallel it"
     );
     assert!(
-        squeeze(&app_js).contains("if(this.labelsLocked())return;"),
+        squeeze(include_str!("../../assets/ui/wb-board-shown.ts"))
+            .contains("if(board.labelsLocked())return;"),
         "toggleLabel must refuse behind the disabled rows too"
     );
 }
@@ -219,7 +220,7 @@ fn the_board_surfaces_the_plan_the_next_run_would_execute() {
     // The plan folds (`planSummary`, the pill, `isBundleReason`, and the
     // zero-open-steps verdict that mirrors `plan::count_open_steps`) are
     // driven by `ui-tests/wb-runs.test.mjs`.
-    let app_js = shell_family();
+    let app_js = shell_family() + include_str!("../../assets/ui/wb-board-shown.ts");
     for pin in [
         r#"path: ".ralphy/plan.md","#,
         r#"window.WBDaemon.write("plan.discard", { repo: slug })"#,
@@ -232,7 +233,7 @@ fn the_board_surfaces_the_plan_the_next_run_would_execute() {
     let app_squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
         app_squeezed.contains(
-            r#"const ok = await this.$store.modals.askConfirm({ title: "Discard this plan?","#
+            r#"const ok = await board.$store.modals.askConfirm({ title: "Discard this plan?","#
         ),
         "discardPlan must confirm first"
     );
