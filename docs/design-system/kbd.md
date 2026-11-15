@@ -34,7 +34,7 @@ From `wb-consoles-tab-menus.part.html`:
 
 ## Spacing
 
-Measured in Chromium on 2026-11-14. In a row: padding 0.32px 5.44px, 16px high, 10.56px text, radius 4px. The menu head shows it with the same box.52px.
+Measured in Chromium on 2026-11-14. In a row: padding 0.32px 5.44px, 16px high, 10.56px text, radius 4px. The menu head shows it with the same box.
 
 ## Modes
 
@@ -52,7 +52,7 @@ One rule for every `.kbd`, in a row or in a menu head.
 ## Files
 
 - `styles/05-workspace.css`: `.dropdown-item .kbd` and the two others
-- `wb-consoles-tab-menus.part.html`
+- `wb-consoles-tab-menus.part.html`, `wb-palette.part.html`
 
 ## Keyboard
 

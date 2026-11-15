@@ -28,6 +28,8 @@ export type Command = {
   label: string;
   keys: readonly Keys[];
   scope: Scope;
+  // `false`: a key with no row in the palette (a walk on the stage).
+  palette?: false;
 };
 
 /** What a component gives a command; `which` is the code or key pressed. */
@@ -35,6 +37,8 @@ export type Binding = {
   can: (which: string) => boolean;
   // `false`: nothing was done, and the key is not taken.
   run: (which: string) => boolean | void;
+  // The palette's row for one key, when the label of the command is not enough.
+  label?: (which: string) => string;
 };
 
 const chord = (code: string): Keys => ({ kind: "chord", code });
@@ -48,7 +52,7 @@ export const COMMANDS: readonly Command[] = [
   {
     id: "search.open",
     group: "Page",
-    label: "Open the search: files when a project is open, projects otherwise",
+    label: "Search files or projects",
     keys: [{ kind: "typed", key: "/" }],
     scope: "page",
   },
@@ -58,6 +62,20 @@ export const COMMANDS: readonly Command[] = [
     label: "Open the files search",
     keys: [{ kind: "modShift", key: "f" }],
     scope: "always",
+  },
+  {
+    id: "palette.open",
+    group: "Page",
+    label: "Open the command palette",
+    keys: [chord("KeyP")],
+    scope: "terminal",
+  },
+  {
+    id: "settings.open",
+    group: "Page",
+    label: "Open settings",
+    keys: [],
+    scope: "page",
   },
   {
     id: "consoles.row",
@@ -86,6 +104,7 @@ export const COMMANDS: readonly Command[] = [
     label: "Walk the columns and their rows, or else the fences",
     keys: ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].map((code) => chord(code)),
     scope: "terminal",
+    palette: false,
   },
 ];
 
@@ -204,3 +223,70 @@ export function wireCommands(doc: Pick<Document, "addEventListener">, blocked: B
     dispatchKey(e, "page", blocked);
   });
 }
+
+/** One row of the palette: a command that can run now, for one of its keys. */
+export type PaletteRow = { id: string; which: string; label: string; keys: Keys | null };
+
+function whichOf(k: Keys) {
+  return k.kind === "chord" ? k.code : k.key;
+}
+
+// The commands that may have rows: bound, not the palette itself, not a walk.
+function listed() {
+  return COMMANDS.flatMap((cmd) => {
+    const binding = bindings.get(cmd.id);
+    const shown = binding !== undefined && cmd.id !== "palette.open" && cmd.palette !== false;
+    return shown ? [{ cmd, binding }] : [];
+  });
+}
+
+/** The commands that can run now, one row per key; the palette is not one. */
+export function paletteRows(): PaletteRow[] {
+  const rows: PaletteRow[] = [];
+  for (const { cmd, binding } of listed()) {
+    const keys: (Keys | null)[] = cmd.keys.length > 0 ? [...cmd.keys] : [null];
+    for (const k of keys) {
+      const which = k ? whichOf(k) : "";
+      if (!binding.can(which)) continue;
+      rows.push({ id: cmd.id, which, label: binding.label?.(which) ?? cmd.label, keys: k });
+    }
+  }
+  return rows;
+}
+
+/** Run one palette row, if its command can still run. */
+export function runRow(row: Pick<PaletteRow, "id" | "which">) {
+  const binding = bindings.get(row.id);
+  if (binding?.can(row.which) === true) binding.run(row.which);
+}
+
+const ARROWS: Readonly<Record<string, string | undefined>> = {
+  ArrowLeft: "←",
+  ArrowRight: "→",
+  ArrowUp: "↑",
+  ArrowDown: "↓",
+};
+
+// The key of an `e.code`, as a person reads it: `Digit3` is 3, `KeyR` is R.
+function codeText(code: string) {
+  return ARROWS[code] ?? code.replace(/^(?:Digit|Key)/u, "").replace("Slash", "/");
+}
+
+/** The keys as a person reads them on their system (ADR-0087 D11). */
+export function keysText(k: Keys, mac: boolean) {
+  switch (k.kind) {
+    case "chord":
+      return (mac ? "⌥⇧" : "Alt+Shift+") + codeText(k.code);
+    case "typed":
+      return k.key;
+    case "modShift":
+      return (mac ? "⌘⇧" : "Ctrl+Shift+") + k.key.toUpperCase();
+    default: {
+      const never: never = k;
+      return String(never);
+    }
+  }
+}
+
+/** Whether this page runs on a Mac (or an iPad or iPhone). */
+export const IS_MAC = /Mac|iPhone|iPad/u.test(navigator.platform || navigator.userAgent || "");

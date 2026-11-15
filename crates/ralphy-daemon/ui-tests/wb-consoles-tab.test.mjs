@@ -361,6 +361,7 @@ test("the Alt+Shift keys reach the menus and the columns through the listeners t
   menus.openConsoleItem = (row) => calls.push("row " + row.digit);
   menus.openConsoleRunMenu = () => calls.push("run");
   menus.jumpFenceAt = (n) => (calls.push("fence " + n), true);
+  menus.fenceAt = () => ({ id: "f", name: "one" });
   columns.arrowStep = (axis, step) => (calls.push(`arrow ${axis} ${step}`), true);
   assert.equal(key("Digit0").prevented, true);
   assert.equal(key("KeyR").prevented, true);

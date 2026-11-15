@@ -1,0 +1,41 @@
+    <div class="palette" x-data="wbPalette">
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('paletteOpen', () => closePalette())">
+      <div class="modal palette-modal" role="dialog" aria-modal="true" aria-label="Command palette">
+        <input
+          class="text-field palette-input"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          role="combobox"
+          aria-expanded="true"
+          aria-controls="palette-list"
+          aria-label="Find a command"
+          placeholder="Find a command…"
+          x-ref="paletteInput"
+          x-model="query"
+          :aria-activedescendant="'palette-row-' + active"
+          @input="active = 0"
+          @keydown="paletteKey($event)"
+        />
+        <div id="palette-list" class="palette-list" role="listbox" aria-label="Commands">
+          <template x-for="(row, i) in rows()" :key="row.id + row.which">
+            <button
+              class="dropdown-item palette-row"
+              type="button"
+              role="option"
+              tabindex="-1"
+              :id="'palette-row-' + i"
+              :class="{ active: i === active }"
+              :aria-selected="i === active"
+              @mousemove="active = i"
+              @click="pick(row)"
+            >
+              <span class="palette-label" x-text="row.label"></span>
+              <kbd class="kbd" x-show="row.keys" x-text="keysOf(row)"></kbd>
+            </button>
+          </template>
+          <p class="empty-note" x-show="rows().length === 0">No command matches.</p>
+        </div>
+      </div>
+    </div>
+    </div>

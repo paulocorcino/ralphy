@@ -287,10 +287,14 @@ export function wbConsoleMenus() {
     },
 
     // Ordinal, not id: the row's position in `fenceList()`, read LIVE (the
-    // menu's snapshot may be stale). Returns whether it landed.
+    // menu's snapshot may be stale). Null while the consoles tab is hidden.
+    fenceAt(n: number) {
+      if (this.$store.tabs.active !== "consoles") return null;
+      return WBConsole.fenceList()[n - 1] ?? null;
+    },
+    // Returns whether it landed.
     jumpFenceAt(n: number) {
-      if (this.$store.tabs.active !== "consoles") return false;
-      const f = WBConsole.fenceList()[n - 1];
+      const f = this.fenceAt(n);
       if (!f) return false;
       this.fenceMenu = false;
       return WBConsole.jumpToFence(f.id) !== null;
@@ -314,6 +318,7 @@ export function wbConsoleMenus() {
           const row = rowOf(code);
           if (row) this.openConsoleItem(row);
         },
+        label: (code) => `Open a console: ${rowOf(code)?.label ?? ""}`,
       });
       bindCommand("consoles.run", {
         can: () => true,
@@ -325,9 +330,14 @@ export function wbConsoleMenus() {
       // Alt+Shift+F<n> → the n-th fence, F1..F12 (the fence cap). None of the
       // reserved neighbours is hit — Alt+F4, Shift+F10, F11, F12 each want their
       // exact combo (MEASURED: with Alt+Shift held, F10–F12 reach the document).
+      const fenceOf = (code: string) => this.fenceAt(Number(code.slice(1)));
       bindCommand("fence.go", {
-        can: () => true,
+        can: (code) => fenceOf(code) !== null,
         run: (code) => this.jumpFenceAt(Number(code.slice(1))),
+        label: (code) => {
+          const name = fenceOf(code)?.name ?? "";
+          return `Go to the fence ${name === "" ? code.slice(1) : name}`;
+        },
       });
     },
   });

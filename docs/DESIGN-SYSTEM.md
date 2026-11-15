@@ -239,6 +239,7 @@ outline shows focus with `outline: 1px solid var(--focus-ring)` and
 | [Toast and flash line](./design-system/toast.md)          | `.wb-toast`                     | Code     |
 | [Command block](./design-system/command-block.md)         | `.rel-cmd`                      | 2 parts  |
 | [Touch key strip](./design-system/touch-keys.md)          | `.session-keys`, `.session-key` | Code     |
+| [Command palette](./design-system/command-palette.md)     | `.palette-modal`                | 1 part   |
 
 The count is the number of `*.part.html` files and pages that use the
 class, measured on 2026-11-14 with `grep -l`. "Code" means the element is
@@ -261,8 +262,9 @@ Decided on 2026-11-14 in [ADR-0087](./adr/0087-the-workbench-keyboard-is-one-com
 Built so far: the list (`COMMANDS` in `wb-commands.ts`) and its one
 listener. Each page shortcut is a command of the list; a component binds
 its action with `bindCommand`, and the Code column below names that line.
-A terminal asks the list before it gives a chord to the page. The rest of
-this list is not built yet; the tables below describe the code of today.
+A terminal asks the list before it gives a chord to the page. The
+[command palette](./design-system/command-palette.md) is built. The help
+screen is not built yet; the tables below describe the code of today.
 
 - **No prefix key.** A page shortcut is one chord: Alt+Shift (⌥⇧ on a Mac)
   and one more key. Only `/`, `?` and Ctrl+Shift+F (Cmd+Shift+F) differ;
@@ -315,6 +317,7 @@ this list is not built yet; the tables below describe the code of today.
 
 | Action                                                                                 | Keys                                   | Component                   | Code                                                   |
 | -------------------------------------------------------------------------------------- | -------------------------------------- | --------------------------- | ------------------------------------------------------ |
+| Open the command palette                                                               | Alt+Shift+P                            | Command palette             | `wb-palette.ts:37`                                     |
 | Open the search: files when a project is open, projects otherwise                      | `/`                                    | Page                        | `wb-wire.ts:448`                                       |
 | Open the files search, also from the code editor and from a terminal                   | Ctrl+Shift+F (Cmd+Shift+F on macOS)    | Page                        | `wb-wire.ts:459`                                       |
 | Run the row with that digit in the Consoles menu                                       | Alt+Shift+0 to 9                       | Consoles menu               | `wb-consoles-tab-menus.ts:311`                         |

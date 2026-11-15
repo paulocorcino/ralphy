@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { shell } from "../assets/ui/app.ts";
 import { wire } from "../assets/ui/wb-wire.ts";
 import { wireCommands } from "../assets/ui/wb-commands.ts";
+import { wbPalette as palette } from "../assets/ui/wb-palette.ts";
 import { hostsDialog } from "../assets/ui/wb-hosts-dialog.ts";
 import { settingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 import { devices } from "../assets/ui/wb-devices.ts";
@@ -89,6 +90,7 @@ export const STORES = {
 // The Alpine components, by the name the markup gives `x-data`: `loadComponent`
 // builds each from its module's export (ADR-0073 D3, ADR-0075 D7).
 const MODULE_COMPONENTS = {
+  wbPalette: palette,
   wbHostsDialog: hostsDialog,
   wbSettingsDialog: settingsDialog,
   wbDevices: devices,

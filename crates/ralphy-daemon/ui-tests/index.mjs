@@ -42,6 +42,7 @@ import "./wb-console-feeds.test.mjs";
 import "./wb-attention.test.mjs";
 import "./wb-arrow-keys.test.mjs";
 import "./wb-commands.test.mjs";
+import "./wb-palette.test.mjs";
 import "./wb-login-notice.test.mjs";
 import "./wb-presence.test.mjs";
 import "./wb-console-dormancy.test.mjs";

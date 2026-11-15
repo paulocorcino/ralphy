@@ -173,10 +173,11 @@ fn the_console_chrome_holds_its_three_rules() {
     // Counted, not `contains`: the family also holds the two consoles
     // components, so a bare `contains` stays green when the shell's own send
     // or hear is gone. Five is the shell's one, their two, the + menu's, and
-    // the attention panel's (wb-attention.ts).
+    // the attention panel's (wb-attention.ts); the palette sends a sixth, and
+    // the runs picker hears a sixth.
     assert!(
-        app.matches(close).count() == 5
-            && app.matches(hear).count() == 5
+        app.matches(close).count() == 6
+            && app.matches(hear).count() == 6
             && app.contains("this.avatarMenu = false;"),
         "the shell must close the account menu on the one menus event, and send it"
     );
