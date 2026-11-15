@@ -63,6 +63,10 @@ export function wbRuns() {
       if (!hs.includes(this.planSection)) this.planSection = hs[0] ?? "";
     },
 
+    pickRun(runid: string) {
+      this.selectRun(runid);
+      this.runMenu = false;
+    },
     selectRun(runid: string) {
       this.$store.runs.setCurrentRun(runid);
       this.trailFocus = null; // the arrival marker belonged to the run we left

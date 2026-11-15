@@ -147,8 +147,7 @@ export function wbConsoleMenus() {
       const command = WBAgents.runCommand(this.consoleRunText);
       if (command === null) return;
       this.newPlainConsole(command);
-      this.agentMenu = false;
-      this.closeConsoleRun();
+      this.closeAgentMenu();
     },
     // Alt+Shift+R: the menu, open (never toggled shut), with the field focused.
     // The menu lives in the Consoles tab's toolbar: on any other tab it would
@@ -189,9 +188,12 @@ export function wbConsoleMenus() {
     closeMenus() {
       sendWindow(window, "workbench:menus-close");
     },
-    closeOwnMenus() {
+    closeAgentMenu() {
       this.agentMenu = false;
       this.closeConsoleRun();
+    },
+    closeOwnMenus() {
+      this.closeAgentMenu();
       this.windowMenu = false;
       this.fenceMenu = false;
       this.noteMenu = false;

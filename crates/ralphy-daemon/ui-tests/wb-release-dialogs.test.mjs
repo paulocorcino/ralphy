@@ -216,7 +216,7 @@ test("the account menu closes itself and asks the dialogs to open with their eve
     // sends the event.
     const sent = [];
     menu.avatarMenu = true;
-    menu.$dispatch = (name) => sent.push(name);
+    loaded.window.dispatchEvent = (e) => sent.push(e.type);
     evalIn(menu, click);
     assert.equal(menu.avatarMenu, false, `${event}: the menu closes`);
     assert.deepEqual(sent, [event]);

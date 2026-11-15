@@ -323,7 +323,7 @@ test("the rail button asks the dialog to open with workbench:settings-open, and 
   const loaded = loadShell();
   const { scope: state } = loadComponent("wbSettingsDialog", { from: loaded });
   const sent = [];
-  loaded.state.$dispatch = (name) => sent.push(name);
+  loaded.window.dispatchEvent = (e) => sent.push(e.type);
   evalIn(loaded.state, click);
   assert.deepEqual(sent, ["workbench:menus-close", "workbench:settings-open"]);
 

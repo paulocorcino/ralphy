@@ -3,7 +3,7 @@
             <button class="btn" @click.stop="toggleAgentMenu()" title="Open a console" aria-label="Consoles">
               <i class="bi bi-terminal"></i> <span class="btn-label">Consoles</span> <svg x-icon="'chevron-down'"></svg>
             </button>
-            <div class="dropdown console-menu" x-show="agentMenu" @click.outside="agentMenu = false; closeConsoleRun()" x-cloak>
+            <div class="dropdown console-menu" x-show="agentMenu" @click.outside="closeAgentMenu()" x-cloak>
               <div class="dropdown-head" :title="consoleMenuTitle()">
                 <span x-text="consoleMenuHead()"></span>
                 <kbd class="kbd" x-text="consoleShortcutHint()"></kbd>

@@ -1,8 +1,7 @@
 //! An Alpine attribute of the workbench markup holds one member read or one
 //! call with plain arguments (#942). A compound site has one of five shapes:
 //! more than one `&&` or `||`, a `? :`, a template string, the comma
-//! operator, or a call on `$event` with a statement after it. The count per
-//! file only goes down.
+//! operator, or more than one statement. The count per file only goes down.
 
 use super::*;
 use lex::{lex, Tok, Token};
@@ -85,7 +84,7 @@ fn is_compound(toks: &[Token]) -> bool {
             .iter()
             .any(|t| t.is("?") || matches!(t.tok, Tok::Tpl(_)))
         || has_comma_operator(toks)
-        || has_statement_after_event_call(toks)
+        || has_statement_sequence(toks)
 }
 
 /// Each token with the bracket depth it sits at: a `(`, `[` or `{` is at the
@@ -112,31 +111,17 @@ fn has_comma_operator(toks: &[Token]) -> bool {
         .any(|(t, d)| d == 0 && t.is(","))
 }
 
-/// A statement that calls a member of `$event`, followed by another statement.
-fn has_statement_after_event_call(toks: &[Token]) -> bool {
-    let at = depths(toks);
-    let ends: Vec<usize> = toks
-        .iter()
-        .zip(&at)
-        .enumerate()
-        .filter(|(_, (t, &d))| d == 0 && t.is(";"))
-        .map(|(k, _)| k)
-        .collect();
-    let mut from = 0;
-    for end in ends {
-        let call = toks.get(from..end).unwrap_or_default();
-        if calls_event(call) && toks.iter().skip(end + 1).any(|t| !t.is(";")) {
+/// A `;` outside brackets with another statement after it.
+fn has_statement_sequence(toks: &[Token]) -> bool {
+    let mut ended = false;
+    for (t, d) in toks.iter().zip(depths(toks)) {
+        if d == 0 && t.is(";") {
+            ended = true;
+        } else if ended {
             return true;
         }
-        from = end + 1;
     }
     false
-}
-
-/// Whether `statement` starts with `$event` and holds a call.
-fn calls_event(statement: &[Token]) -> bool {
-    let starts_with_event = statement.first().and_then(Token::ident) == Some("$event");
-    starts_with_event && statement.iter().any(|t| t.is("("))
 }
 
 #[test]
@@ -148,6 +133,7 @@ fn counts_each_shape_of_compound_logic() {
         "`row-${id}`",
         "pick(), close()",
         "$event.preventDefault(); save()",
+        "menu = false; open(row)",
     ] {
         assert!(counted(shape), "expected compound: {shape}");
     }
@@ -160,6 +146,9 @@ fn counts_each_shape_of_compound_logic() {
         "say('a ? b, c')",
         "items.map((a, b) => a)",
         "$event.preventDefault()",
+        "open = true",
+        "save();",
+        "run(() => { a(); b() })",
     ] {
         assert!(!counted(plain), "expected plain: {plain}");
     }

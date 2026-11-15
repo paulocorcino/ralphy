@@ -16,16 +16,16 @@
               <svg x-icon="'circle-dot'"></svg> <span x-text="$store.connection.uptimeText || 'connecting…'"></span>
             </span>
           </div>
-          <button class="dropdown-item rel-item" x-show="$store.release.releaseHasNews" x-cloak @click="avatarMenu = false; $dispatch('workbench:whats-new-open')">
+          <button class="dropdown-item rel-item" x-show="$store.release.releaseHasNews" x-cloak @click="openFromAvatarMenu('workbench:whats-new-open')">
             <i class="bi bi-stars"></i><span x-text="$store.release.releaseSummary"></span>
           </button>
-          <button class="dropdown-item" @click="avatarMenu = false; $dispatch('workbench:security-open')">
+          <button class="dropdown-item" @click="openFromAvatarMenu('workbench:security-open')">
             <i class="bi bi-shield-lock"></i><span>Security settings</span>
           </button>
-          <button class="dropdown-item" @click="avatarMenu = false; $dispatch('workbench:help-open')">
+          <button class="dropdown-item" @click="openFromAvatarMenu('workbench:help-open')">
             <svg x-icon="'keyboard'"></svg><span>Keyboard shortcuts</span>
           </button>
-          <button class="dropdown-item" @click="avatarMenu = false; $dispatch('workbench:about-open')">
+          <button class="dropdown-item" @click="openFromAvatarMenu('workbench:about-open')">
             <i class="bi bi-info-circle"></i><span>About</span>
           </button>
           <button class="dropdown-item" @click="$store.connection.logOff()">

@@ -85,7 +85,7 @@
               <div class="dropdown-head" x-text="'Active runs · ' + $store.projects.projectLabel($store.projects.openSlug)"></div>
               <template x-for="r in $store.runs.projectRuns()" :key="r.runid">
                 <button class="dropdown-item run-menu-item" :class="{ active: r.runid === $store.runs.currentRunId }"
-                        @click="selectRun(r.runid); runMenu = false">
+                        @click="pickRun(r.runid)">
                   <span class="run-face" x-text="r.face"></span>
                   <span class="run-menu-name">
                     <b x-text="runTitle(r)"></b>

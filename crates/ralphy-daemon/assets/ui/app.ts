@@ -357,6 +357,10 @@ export function shell() {
       this.sideOpen = true;
       void this.$nextTick(() => this.$refs["projectSearch"]?.focus());
     },
+    showSettings() {
+      sendWindow(window, "workbench:menus-close");
+      sendWindow(window, "workbench:settings-open");
+    },
     toggleRuns() {
       this.runsOpen = !this.runsOpen;
       // Closing drops the board-arrival marker (wb-runs-panel.ts): a
