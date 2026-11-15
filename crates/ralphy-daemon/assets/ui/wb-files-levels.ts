@@ -4,9 +4,8 @@
    read from `tree.list`, painted from memory when it was read before and
    read again in the background, and the rules that keep the memory honest.
 
-   Each step takes the files component as `files`. The tree is read and
-   changed only through `files.rawTree()`: `this` of the component is Alpine's
-   Proxy, and a change made through the Proxy leaves rows at stale offsets.
+   Each step takes the files component as `files` and reaches the tree only
+   through `files.tree()`, which keeps it out of Alpine's Proxy.
    --------------------------------------------------------------------------- */
 import { WBFail } from "./wb-fail.ts";
 import { WBReadRetry } from "./wb-read-retry.ts";
@@ -23,10 +22,9 @@ export type TreeMemory = {
 /** What a level step reads, writes or calls on the files component. */
 type LevelFiles = {
   $store: AlpineMagics["$store"];
-  _tree: WunderbaumTree | null;
   _treeCache: Map<string, TreeEntry[]> | null;
   _treeValidated: Set<string> | null;
-  rawTree(): WunderbaumTree | null;
+  tree(): WunderbaumTree | null;
   relPath(node: WunderbaumNode | null): string;
   isFolder(node: WunderbaumNode | null | undefined): boolean;
   fileIcon(title: string): string;
@@ -131,13 +129,13 @@ function treeNodes(files: LevelFiles, entries: TreeEntry[]): WunderbaumSource[] 
 // The node whose children are the level `rel`: the root for "", else its folder.
 function levelNode(files: LevelFiles, rel: string): WunderbaumNode | null {
   if (rel !== "") return files.findFolderByRel(rel);
-  return files.rawTree()?.root ?? null;
+  return files.tree()?.root ?? null;
 }
 
 // Re-read a level painted from cache and reconcile ONLY if the directory
 // changed: the common case costs one read and zero DOM work.
 export function revalidateLevel(files: LevelFiles, rel: string) {
-  if (!files._tree || !files.useDaemonTree()) return Promise.resolve();
+  if (!files.tree() || !files.useDaemonTree()) return Promise.resolve();
   const { cache } = files.treeMem();
   const key = files.treeKey(rel);
   const before = JSON.stringify(cache.get(key) ?? null);
@@ -147,7 +145,7 @@ export function revalidateLevel(files: LevelFiles, rel: string) {
       .fetchTreeLevel(rel)
       .then(() => {
         // A project switch in flight: another project's tree.
-        const moved = slug !== files.$store.projects.openSlug || !files._tree;
+        const moved = slug !== files.$store.projects.openSlug || !files.tree();
         const same = moved || JSON.stringify(cache.get(key) ?? null) === before;
         const node = same ? null : levelNode(files, rel);
         return node ? files.reconcileLevel(node, rel) : Promise.resolve();

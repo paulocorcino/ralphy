@@ -16,7 +16,7 @@ type NudgeFiles = {
   _treeCheckout: string | null;
   _headTimer: ReturnType<typeof setTimeout> | null;
   HEAD_SETTLE_MS: number;
-  rawTree(): WunderbaumTree | null;
+  tree(): WunderbaumTree | null;
   findFolderByRel(rel: string): WunderbaumNode | null;
   reconcileLevel(node: WunderbaumNode, rel: string): Promise<void>;
   treeWentStale(err: unknown): void;
@@ -61,7 +61,7 @@ export function headMoved(files: NudgeFiles) {
 // A `tree.dirty` nudge for `rel`: refetch that level IF it is on screen. A
 // nudge for a collapsed/absent dir is DROPPED (ADR-0036 §4).
 export function treeDirty(files: NudgeFiles, rel: string) {
-  const tree = files.rawTree();
+  const tree = files.tree();
   if (!tree) return Promise.resolve();
   const node = rel === "" ? tree.root : files.findFolderByRel(rel);
   if (!node) return Promise.resolve(); // not in the tree → invisible, drop

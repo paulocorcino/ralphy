@@ -4,9 +4,8 @@
    context-menu listener of the host, and the memory of the expanded folders
    that a mount puts back.
 
-   Each step takes the files component as `files`. The tree is read and
-   changed only through `files.rawTree()`: `this` of the component is Alpine's
-   Proxy, and a change made through the Proxy leaves rows at stale offsets.
+   Each step takes the files component as `files` and reaches the tree only
+   through `files.tree()`, which keeps it out of Alpine's Proxy.
    --------------------------------------------------------------------------- */
 import { WBFleet } from "./wb-fleet.ts";
 import { WBReadRetry } from "./wb-read-retry.ts";
@@ -23,7 +22,6 @@ export type TreeSub = ReturnType<WBDaemonApi["subscribeTree"]>;
 /** What a mount or a teardown reads, writes or calls on the files component. */
 type MountFiles = {
   $store: AlpineMagics["$store"];
-  _tree: WunderbaumTree | null;
   _treeSub: TreeSub | null;
   _treeCheckout: string | null;
   _treeGen: number;
@@ -36,7 +34,8 @@ type MountFiles = {
   treeError: string;
   treeStale: string;
   treeNotLive: string;
-  rawTree(): WunderbaumTree | null;
+  tree(): WunderbaumTree | null;
+  setTree(t: WunderbaumTree | null): void;
   relPath(node: WunderbaumNode | null): string;
   isFolder(node: WunderbaumNode | null | undefined): boolean;
   nodeDetail(node: WunderbaumNode): WorkbenchNodeDetail;
@@ -81,7 +80,7 @@ export function mountTree(files: MountFiles) {
   const gen = (files._treeGen = (files._treeGen || 0) + 1);
   files.treeLoading = files.useDaemonTree() && !mem.cache.has(files.treeKey(""));
 
-  files._tree = new mar10.Wunderbaum({
+  const mounted = new mar10.Wunderbaum({
     element: host,
     header: false,
     // The FILES search narrows the tree through this (`applyFileSearch`).
@@ -179,6 +178,7 @@ export function mountTree(files: MountFiles) {
     // Files dropped from the computer open the upload dialog.
     dnd: treeDrop(files),
   });
+  files.setTree(mounted);
 
   // One `tree` channel of the page socket per open project; the root is always
   // watched. A `tree.dirty` push refetches only the affected subtree; a
@@ -227,10 +227,10 @@ function rememberExpansion(files: MountFiles) {
   // A restore expands nodes itself; recording a half-restored tree would
   // truncate the list being replayed.
   const slug = files.$store.projects.openSlug;
-  if (files._restoringExpansion || !files._tree || slug == null || slug === "") return;
+  if (files._restoringExpansion || !files.tree() || slug == null || slug === "") return;
   const { expanded } = files.treeMem();
   const rels: string[] = [];
-  files.rawTree()?.root.visit((n: WunderbaumNode) => {
+  files.tree()?.root.visit((n: WunderbaumNode) => {
     if (files.isFolder(n) && n.expanded) rels.push(files.relPath(n));
   });
   expanded.set(slug, rels);
@@ -247,13 +247,13 @@ function savedRels(expanded: Map<string, string[]>, slug: string | null | undefi
 async function restoreExpansion(files: MountFiles) {
   const slug = files.$store.projects.openSlug;
   const rels = savedRels(files.treeMem().expanded, slug);
-  const tree = files.rawTree();
+  const tree = files.tree();
   if (rels.length === 0 || !tree) return;
   files._restoringExpansion = true;
   try {
     for (const rel of [...rels].toSorted((a, b) => a.split("/").length - b.split("/").length)) {
       // A project switch mid-replay: this list no longer describes the tree.
-      if (slug !== files.$store.projects.openSlug || !files._tree) return;
+      if (slug !== files.$store.projects.openSlug || !files.tree()) return;
       const node = tree.findFirst((n: WunderbaumNode) => files.relPath(n) === rel);
       if (node && !node.expanded) await node.setExpanded(true);
     }
@@ -269,9 +269,9 @@ export function destroyTree(files: MountFiles) {
   files._treeSub = null;
   files._treeCheckout = null;
   try {
-    files._tree?.destroy();
+    files.tree()?.destroy();
   } catch {}
-  files._tree = null;
+  files.setTree(null);
   document.querySelectorAll(".wb-host").forEach((h) => {
     h.replaceChildren();
   });

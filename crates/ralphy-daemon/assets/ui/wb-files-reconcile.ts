@@ -5,15 +5,14 @@
    what the operator sees before the teardown, open the folders again, and
    put the selection and the scroll offset back.
 
-   Each step takes the files component as `files` and reads the tree only
-   through `files.rawTree()`: `this` of the component is Alpine's Proxy, and a
-   change made through the Proxy leaves rows at stale offsets.
+   Each step takes the files component as `files` and reaches the tree only
+   through `files.tree()`, which keeps it out of Alpine's Proxy.
    --------------------------------------------------------------------------- */
 import { levelShows } from "./wb-files-levels.ts";
 
 /** What a reconcile step reads from the files component. */
 type ReconcileFiles = {
-  rawTree(): WunderbaumTree | null;
+  tree(): WunderbaumTree | null;
   relPath(node: WunderbaumNode | null): string;
   isFolder(node: WunderbaumNode | null | undefined): boolean;
   revealRel(rel: string, opts?: { restore?: boolean }): Promise<unknown>;
@@ -47,7 +46,7 @@ type LevelView = { expandedRels: string[]; activeRel: string | null; scrollTop: 
 // children.
 export function liveNode(files: ReconcileFiles, node: WunderbaumNode, rel: string) {
   if (node.tree) return node;
-  const raw = files.rawTree();
+  const raw = files.tree();
   const live =
     rel === "" ? raw?.root : raw?.findFirst((n: WunderbaumNode) => files.relPath(n) === rel);
   return live && !live.isLoading() ? live : undefined;
@@ -60,11 +59,11 @@ export function snapshotLevel(files: ReconcileFiles, node: WunderbaumNode): Leve
   node.visit((n: WunderbaumNode) => {
     if (files.isFolder(n) && n.expanded) expandedRels.push(files.relPath(n));
   });
-  const activeRel = files.relPath(files.rawTree()?.getActiveNode() ?? null) || null;
+  const activeRel = files.relPath(files.tree()?.getActiveNode() ?? null) || null;
   // The teardown shrinks the list under the viewport, the browser clamps
   // `scrollTop` to the shorter list, and the re-activation in `restoreView`
   // scrolls to the selected row. Nothing else puts the offset back.
-  const scrollTop = files.rawTree()?.element.scrollTop ?? 0;
+  const scrollTop = files.tree()?.element.scrollTop ?? 0;
   return { expandedRels, activeRel, scrollTop };
 }
 
@@ -73,7 +72,7 @@ export function snapshotLevel(files: ReconcileFiles, node: WunderbaumNode): Leve
 export async function reexpand(files: ReconcileFiles, expandedRels: string[]) {
   expandedRels.sort((a, b) => a.split("/").length - b.split("/").length);
   for (const r of expandedRels) {
-    const f = files.rawTree()?.findFirst((n: WunderbaumNode) => files.relPath(n) === r);
+    const f = files.tree()?.findFirst((n: WunderbaumNode) => files.relPath(n) === r);
     if (f && !f.expanded) await f.setExpanded(true);
   }
 }
@@ -89,7 +88,7 @@ async function restoreSelection(files: ReconcileFiles, seq: number, activeRel: s
 export async function restoreView(files: ReconcileFiles, seq: number, view: LevelView) {
   await restoreSelection(files, seq, view.activeRel);
   // A search is on: the reloaded level has no match marks yet.
-  const raw = files.rawTree();
+  const raw = files.tree();
   if (raw?.isFilterActive() === true) raw.updateFilter();
   // A reveal that landed mid-pass owns the scroll position.
   if (raw?.element && (files._revealSeq || 0) === seq) {
@@ -143,7 +142,7 @@ export async function reconcileLevel(
       files._reconciling.delete(rel);
     }
     if (files._reconcilePending.delete(rel)) {
-      const again = rel === "" ? files.rawTree()?.root : files.findFolderByRel(rel);
+      const again = rel === "" ? files.tree()?.root : files.findFolderByRel(rel);
       if (again) await files.reconcileLevel(again, rel);
     }
   } finally {
