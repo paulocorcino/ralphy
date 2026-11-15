@@ -124,15 +124,13 @@ Cmd+C in a terminal, and the help screen.
 
 ## Compliance
 
-- D1, D8: checked by a test in `crates/ralphy-daemon/ui-tests` that reads
-  the list and fails on a refused key or two commands with one key (to be
-  written with the list).
-- D2: checked by an ast-grep rule that refuses a page shortcut (`altKey`
-  with `shiftKey`, or `/` or `?`, on `document`) outside the module of the
-  list, as a ratchet: baseline 4 known listeners (the four files of the
-  Context); the check fails if the count goes up.
-- D3: checked by a test in `ui-tests` that a chord whose command cannot run
-  is not given to the page (to be written with the list).
+- D1, D8: checked by `crates/ralphy-daemon/ui-tests/wb-commands.test.mjs`
+  (the list holds no refused key and no key twice).
+- D2: checked by `ast-grep/rules/page-shortcut-in-the-list.yml`: an
+  Alt+Shift test or a typed `/` or `?` outside `wb-commands.ts` fails, with
+  no exception. The four listeners of the Context moved into the list.
+- D3: checked by `crates/ralphy-daemon/ui-tests/wb-console-press.test.mjs`
+  (a terminal gives a chord to the page only when its command can run now).
 - D4, D5, D6, D7, D9, D11: not checked by code: manual, reviewed in the PR
   and by a browser check in `tests/browser`.
 - D10: not checked by code: manual, reviewed in the PR.

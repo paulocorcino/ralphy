@@ -8,7 +8,7 @@
    `pressRoute` in `wb-console-input.ts`.
    --------------------------------------------------------------------------- */
 import * as WBConsoleInput from "./wb-console-input.ts";
-import { dispatchKey } from "./wb-commands.ts";
+import { altShift, dispatchKey } from "./wb-commands.ts";
 
 const { dragThreshold, dragBegins, pressRoute, forceSelectionKeys, holdMoveReport } =
   WBConsoleInput;
@@ -22,11 +22,6 @@ export type PressDeps = {
   writeClipboard: (text: string, term: XtermTerminal) => void;
 };
 
-// Alt+Shift with no Ctrl and no Meta.
-function altShiftOnly(e: KeyboardEvent) {
-  return e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey;
-}
-
 // The page takes a chord only when its command can run now, and runs it
 // here, before xterm sends the key to the child (ADR-0087 D3). A page with
 // no list (a detached popup) binds no command, so its terminal keeps every
@@ -36,7 +31,7 @@ function chordTaker(win: PressDeps["window"]) {
     win.Alpine.store("modals").consoleShortcutsBlocked(fromTerminal);
   let taken = "";
   return (e: KeyboardEvent) => {
-    if (!altShiftOnly(e)) return false;
+    if (!altShift(e)) return false;
     if (e.type !== "keydown") return e.code === taken;
     taken = dispatchKey(e, "terminal", blocked) ? e.code : "";
     return taken !== "";

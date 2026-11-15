@@ -307,7 +307,7 @@ A terminal asks the list before it gives a chord to the page. The
   so a terminal blocks them too, except where the next rule says otherwise.
 - A terminal gives an Alt+Shift chord to the page only when a command of
   the list can run now and does something; it runs the command before xterm
-  sees the key (`chordTaker`, `wb-console-press.ts:34`). The commands that
+  sees the key (`chordTaker`, `wb-console-press.ts:29`). The commands that
   pass a terminal are the digits, R, F1 to F12 and the arrows. Every other
   key in a terminal goes to xterm, and xterm sends it to the child program.
 - The dialogs built in TypeScript (`wb-messages.ts`, `wb-console-worktree.ts`,
@@ -326,7 +326,7 @@ A terminal asks the list before it gives a chord to the page. The
 | Open the Consoles menu on its command field                                            | Alt+Shift+R                            | Consoles menu               | `wb-consoles-tab-menus.ts:318`                         |
 | Go to fence 1 to 12                                                                    | Alt+Shift+F1 to F12                    | Fences menu                 | `wb-consoles-tab-menus.ts:328`                         |
 | Walk the columns (Left, Right) and the rows of a column (Up, Down), or else the fences | Alt+Shift+arrows                       | Stage                       | `wb-consoles-tab.ts:449`                               |
-| Copy the selection of a terminal                                                       | Ctrl+Insert                            | Terminal                    | `wb-console-press.ts:53`                               |
+| Copy the selection of a terminal                                                       | Ctrl+Insert                            | Terminal                    | `wb-console-press.ts:46`                               |
 | End the drag of a window where it is                                                   | Escape                                 | Session window              | `wb-stage-window-gestures.ts:199`                      |
 | Scroll the stage sideways                                                              | Shift+wheel                            | Stage                       | `wb-stage-view.ts:428`                                 |
 | Close the top modal                                                                    | Escape                                 | Modal                       | `wb-modals-store.ts:177`                               |
@@ -386,7 +386,7 @@ diagram editor keys were tried the same way and work.
    lost.** The terminal gave Alt+Shift+0 to 9 and Alt+Shift+R to the page
    always, also when the page then had nothing to do. Now the terminal asks
    the list, and a chord whose command cannot run goes to the child program.
-   Code: `wb-console-press.ts:34`. Issue #953.
+   Code: `wb-console-press.ts:29`. Issue #953.
 2. **Fixed: Alt+Shift+F1 to F12 did not work from a terminal.** The fence
    command now passes a terminal, as the digits, R and the arrows do. Code:
    `wb-commands.ts` (`fence.go`). Issue #954.

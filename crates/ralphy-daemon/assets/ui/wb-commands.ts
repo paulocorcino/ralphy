@@ -163,7 +163,9 @@ type KeyEvent = Pick<
 >;
 
 const plain = (e: KeyEvent) => !e.ctrlKey && !e.metaKey && !e.altKey;
-const altShift = (e: KeyEvent) => e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey;
+/** Alt+Shift (⌥⇧) with no Ctrl and no Meta: the chord of every page shortcut. */
+export const altShift = (e: Pick<KeyEvent, "altKey" | "shiftKey" | "ctrlKey" | "metaKey">) =>
+  e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey;
 const modShift = (e: KeyEvent) => (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey;
 
 function matches(k: Keys, e: KeyEvent) {
