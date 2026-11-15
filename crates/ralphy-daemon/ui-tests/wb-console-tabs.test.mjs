@@ -9,7 +9,6 @@ import { createPlace } from "../assets/ui/wb-console-place.ts";
 import { createStageWindow } from "../assets/ui/wb-stage-window.ts";
 import { createDormancy } from "../assets/ui/wb-console-dormancy.ts";
 import { createStack } from "../assets/ui/wb-stage-stack.ts";
-import { wirePress } from "../assets/ui/wb-console-press.ts";
 import { idLookups } from "./fake-document.mjs";
 
 // The store reaches `WBViewer` as a bare global: each test puts the real one back.
@@ -624,24 +623,4 @@ test("Alt+Shift+arrows walk the grid of the active console tab", () => {
   } finally {
     restore();
   }
-});
-
-const keep = (selectorHit) => {
-  let handler = null;
-  wirePress({
-    term: { attachCustomKeyEventHandler: (h) => (handler = h) },
-    body: { closest: (sel) => (selectorHit(sel) ? {} : null), addEventListener() {} },
-    window: {},
-    writeClipboard() {},
-  });
-  return handler({ type: "keydown", altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, code: "ArrowLeft" });
-};
-
-// The terminal's key handler: it gives Alt+Shift+arrows to the page in a
-// column of the stage and in the grid of a console tab, and keeps them in a
-// lone window.
-test("a terminal in a tab's grid lets Alt+Shift+arrows go to the page", () => {
-  assert.equal(keep((sel) => sel.includes(".session-window.tab-grid")), false);
-  assert.equal(keep((sel) => sel.includes(".session-window.column")), false);
-  assert.equal(keep(() => false), true, "a lone window keeps the chord for its child");
 });

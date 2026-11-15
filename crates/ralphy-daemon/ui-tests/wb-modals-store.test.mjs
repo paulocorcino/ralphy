@@ -54,9 +54,9 @@ test("the shortcuts are blocked while the Security, Settings or What's new dialo
   const { state, window } = loadShell({
     document: { addEventListener: (type, fn) => type === "keydown" && keydowns.push(fn) },
   });
-  // The Ctrl/Cmd+Shift+F listener: the one that opens the files search.
-  const filesKey = keydowns.find((fn) => /shiftKey/u.test(String(fn)) && /file-search-open/u.test(String(fn)));
-  assert.ok(filesKey, "app.ts registers the Ctrl+Shift+F listener at load");
+  // The page shortcuts' listener, which runs Ctrl/Cmd+Shift+F.
+  const filesKey = keydowns.find((fn) => /dispatchKey/u.test(String(fn)));
+  assert.ok(filesKey, "the page adds the listener of the page shortcuts at load");
   const searches = [];
   state.$store.connection.authChanged(true);
   state.$store.projects.setOpen("o/r");

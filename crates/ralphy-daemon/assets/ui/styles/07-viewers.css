@@ -27,8 +27,8 @@
 .viewer-toolbar {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.3rem 0.55rem;
+  gap: var(--space-4);
+  padding: var(--space-3) 0.55rem;
   background: var(--chrome);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -46,7 +46,7 @@
   min-width: 0;
   flex: 0 1 auto;
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
 }
 .viewer-dir,
 .viewer-file {
@@ -66,16 +66,16 @@
 }
 .vbtn {
   font: inherit;
-  font-size: 0.76rem;
+  font-size: var(--fs-sm);
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.2rem 0.5rem;
+  padding: var(--space-2) var(--space-5);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--space-3);
   flex: 0 0 auto;
 }
 /* The outline button exists for the narrow pane only; wide, the outline is
@@ -94,7 +94,7 @@
     min-width: 34px;
     min-height: 34px;
     justify-content: center;
-    padding: 0.2rem;
+    padding: var(--space-2);
   }
   .md-toc-btn {
     display: inline-flex;
@@ -126,13 +126,13 @@
 /* The mirror pane's tag: the toolbar names the same path as the pane it
    mirrors, so the tag is what says this is the second editor. */
 .viewer-mirror-tag {
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-muted);
   border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 0 0.3rem;
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-3);
 }
 .vbtn.save.dirty {
   opacity: 1;
@@ -160,11 +160,11 @@
   height: 100%;
   margin: 0;
   overflow: auto;
-  padding: 0.5rem 0.7rem;
+  padding: var(--space-5) 0.7rem;
   background: var(--log-bg);
   color: var(--text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.82rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
 }
 
 /* --- image viewer (ADR-0049) ----------------------------------------------
@@ -177,7 +177,7 @@
   align-items: center;
   justify-content: center;
   overflow: auto;
-  padding: 1rem;
+  padding: var(--space-8);
   background-color: var(--log-bg);
   background-image:
     linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
@@ -206,8 +206,8 @@
 /* The intrinsic size, next to the path: metadata, not a control. */
 .img-meta {
   color: var(--text-muted);
-  font-size: 0.75rem;
-  margin-left: 0.6rem;
+  font-size: var(--fs-sm);
+  margin-left: var(--space-6);
 }
 /* The encoding pill: what the pane saves with, read like metadata, pressed
    like a control (its menu reopens or saves with another encoding). */
@@ -224,22 +224,22 @@
   overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 0.25rem;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--shadow-float);
   z-index: 20;
 }
 .enc-item {
   all: unset;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-5);
   width: 100%;
   box-sizing: border-box;
-  padding: 0.3rem 0.55rem;
+  padding: var(--space-3) 0.55rem;
   border-radius: var(--radius);
   color: var(--text);
-  font-size: 0.8rem;
+  font-size: var(--fs-md);
   cursor: pointer;
 }
 .enc-item:hover {
@@ -256,7 +256,7 @@
    pane it concerns, never only from a flash in another panel. */
 .viewer-save-err {
   color: var(--danger);
-  font-size: 0.75rem;
+  font-size: var(--fs-sm);
   white-space: nowrap;
 }
 
@@ -269,8 +269,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  padding: 1.5rem;
+  gap: var(--space-5);
+  padding: var(--space-9);
   text-align: center;
   color: var(--text-muted);
 }
@@ -283,7 +283,7 @@
 }
 .refused-hint {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--fs-md);
   max-width: 34rem;
 }
 
@@ -299,15 +299,15 @@
   flex-shrink: 0;
   border-right: 1px solid var(--border);
   overflow: auto;
-  padding: 0.5rem 0.3rem;
+  padding: var(--space-5) var(--space-3);
   background: var(--chrome);
 }
 .outline-item {
   display: block;
   color: var(--text-muted);
-  font-size: 0.76rem;
-  padding: 0.15rem 0.4rem;
-  border-radius: 3px;
+  font-size: var(--fs-sm);
+  padding: 0.15rem var(--space-4);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -322,16 +322,14 @@
 }
 .outline-item.lvl-h3 {
   padding-left: 1.4rem;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
 }
 .outline-item.lvl-h4 {
   padding-left: 1.9rem;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
 }
 .outline-empty {
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  padding: 0.3rem 0.4rem;
+  padding: var(--space-3) var(--space-4);
 }
 .md-scroll {
   flex: 1;
@@ -377,8 +375,8 @@
   .outline-item {
     white-space: normal;
     overflow-wrap: anywhere;
-    padding-top: 0.3rem;
-    padding-bottom: 0.3rem;
+    padding-top: var(--space-3);
+    padding-bottom: var(--space-3);
   }
 }
 /* Narrow: the prose measure is the pane, so the article's side padding and
@@ -386,7 +384,7 @@
    two things left eating the width the outline just gave back. */
 @container viewer (max-width: 560px) {
   .md-body {
-    padding: 1.2rem 1rem 3rem;
+    padding: 1.2rem var(--space-8) 3rem;
   }
   .md-body h1 {
     font-size: 1.5em;
@@ -532,7 +530,7 @@
   font-size: 0.875em;
   background: color-mix(in srgb, var(--console-border) 22%, transparent);
   color: var(--console-text);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   padding: 0.12em 0.38em;
 }
 .md-body pre,
@@ -653,13 +651,13 @@
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 0.8rem;
+  gap: var(--space-7);
   margin: 1.6em 0 0.6em;
 }
 .md-body .dbml-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 0.8rem;
+  gap: var(--space-7);
   align-items: start;
 }
 .md-body .dbml-card {
@@ -667,7 +665,7 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.5rem 0.7rem 0.4rem;
+  padding: var(--space-5) 0.7rem var(--space-4);
 }
 .md-body .dbml-card h3 {
   margin: 0 0 0.4em;
@@ -713,7 +711,7 @@
   margin-left: 0.4em;
   padding: 0 0.35em;
   border: 1px solid var(--border-focus);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-size: 0.85em;
 }
 /* A `hidden` card, group or row stays hidden: the rules above set `display`,
@@ -727,7 +725,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--space-5);
   margin: 0 0 1em;
 }
 .md-body .dbml-bar .dbml-summary {
@@ -737,7 +735,7 @@
   padding: 0.1em 0.6em;
   background: transparent;
   border: 1px solid var(--border-focus);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   font: inherit;
   font-size: 0.8em;
@@ -765,7 +763,7 @@
 }
 .md-body .dbml-more {
   display: block;
-  margin: 0.4rem 0 0.2rem;
+  margin: var(--space-4) 0 var(--space-2);
 }
 /* A click on a column name marks it and the columns with the same name. */
 .md-body .dbml-cols .dbml-col-name {
@@ -792,8 +790,8 @@
 }
 .md-body .mermaid-error {
   color: var(--danger);
-  font-family: ui-monospace, monospace;
-  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
 }
 .md-body mark.find-hit {
   background: rgba(232, 217, 168, 0.32);
@@ -804,15 +802,15 @@
   background: var(--console-text);
   /* Fixed dark ink ON the gold highlight — deliberately not a ramp token, so
      lightening the ground never drops this pair's contrast. */
-  color: #1a1613;
+  color: var(--ink-on-gold);
 }
 
 /* the in-page find bar for markdown */
 .md-find {
   display: none;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.3rem 0.55rem;
+  gap: var(--space-4);
+  padding: var(--space-3) 0.55rem;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
@@ -821,12 +819,12 @@
 }
 .md-find-input {
   font: inherit;
-  font-size: 0.8rem;
+  font-size: var(--fs-md);
   color: var(--text);
   background: var(--log-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.2rem 0.45rem;
+  padding: var(--space-2) 0.45rem;
   width: 220px;
 }
 .md-find-input:focus {
@@ -835,7 +833,7 @@
 }
 .md-find-count {
   color: var(--text-muted);
-  font-size: 0.74rem;
+  font-size: var(--fs-xs);
   min-width: 3.5em;
 }
 
@@ -891,7 +889,7 @@
 .zoom-overlay {
   position: fixed;
   inset: 0;
-  z-index: 510;
+  z-index: var(--z-zoom);
   background: rgba(8, 6, 5, 0.94);
 }
 .zoom-overlay:focus {
@@ -931,17 +929,17 @@
   right: 0.75rem;
   display: flex;
   gap: 0.35rem;
-  padding: 0.3rem;
+  padding: var(--space-3);
   background: var(--chrome);
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
 .zoom-bar-btn {
   font: inherit;
-  font-size: 0.76rem;
+  font-size: var(--fs-sm);
   min-width: 2.2rem;
   height: 2.2rem;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-5);
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border);
@@ -953,7 +951,7 @@
   border-color: var(--border-focus);
 }
 .zoom-bar-btn:focus-visible {
-  outline: 2px solid var(--border-focus);
+  outline: 1px solid var(--focus-ring);
   outline-offset: 1px;
 }
 @media (any-pointer: coarse) {

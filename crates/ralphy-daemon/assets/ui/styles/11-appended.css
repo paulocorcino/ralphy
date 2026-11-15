@@ -38,12 +38,12 @@
 .runs-feed-head {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.3rem 0.6rem;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-6);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  font-size: 0.66rem;
+  font-size: var(--fs-2xs);
 }
 .runs-feed-head .spacer {
   flex: 1;
@@ -54,7 +54,7 @@
   place-items: center;
   width: 16px;
   height: 16px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   cursor: pointer;
 }
@@ -72,8 +72,8 @@
      all, and clipping it mid-path is the readability defect. */
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 0.7rem;
-  padding: 0.4rem 0.6rem;
+  font-size: var(--fs-xs);
+  padding: var(--space-4) var(--space-6);
   background: var(--log-bg);
   color: var(--text-muted);
 }
@@ -89,10 +89,8 @@
 .runs-verb-error {
   display: flex;
   align-items: flex-start;
-  gap: 0.4rem;
-  padding: 0.4rem 0.6rem;
-  color: var(--danger);
-  font-size: 0.72rem;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
   border-bottom: 1px solid var(--border);
 }
 /* Bounded for the same reason the feed is: the text is whatever the CLI last
@@ -112,7 +110,7 @@
   place-items: center;
   width: 16px;
   height: 16px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--danger);
 }
@@ -143,10 +141,10 @@
 }
 .move-crumb {
   margin: 0;
-  padding: 0.95rem 0.95rem 0.5rem;
+  padding: 0.95rem 0.95rem var(--space-5);
   color: var(--text-muted);
-  font-size: 0.8rem;
-  font-family: var(--mono, monospace);
+  font-size: var(--fs-md);
+  font-family: var(--font-mono);
   word-break: break-all;
 }
 .move-list {
@@ -157,24 +155,24 @@
 .move-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-5);
   width: 100%;
-  padding: 0.4rem 0.4rem;
+  padding: var(--space-4) var(--space-4);
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text);
-  font-size: 0.85rem;
+  font-size: var(--fs-lg);
   text-align: left;
   cursor: pointer;
 }
 .move-row:hover {
-  background: var(--surface-2, var(--surface));
+  background: var(--surface);
 }
 /* The rows are the picker's only navigation, so keyboard reach needs a ring of
    its own — the UA default is invisible against this surface. */
 .move-row:focus-visible {
-  outline: 2px solid var(--border-focus);
+  outline: 1px solid var(--focus-ring);
   outline-offset: -2px;
 }
 .move-row.up {
@@ -182,15 +180,11 @@
 }
 .move-empty {
   margin: 0;
-  padding: 0.4rem 0.55rem 0.2rem;
-  color: var(--text-muted);
-  font-size: 0.78rem;
+  padding: var(--space-4) 0.55rem var(--space-2);
 }
 .move-error {
   margin: 0;
   padding: 0.45rem 0.95rem 0;
-  color: var(--danger);
-  font-size: 0.78rem;
 }
 /* #364 move picker end */
 
@@ -201,27 +195,27 @@
 }
 .props-list {
   display: grid;
-  gap: 0.4rem;
+  gap: var(--space-4);
   margin: 0;
-  padding: 0.8rem 0.95rem 0.5rem;
+  padding: var(--space-7) 0.95rem var(--space-5);
 }
 .props-row {
   display: grid;
   grid-template-columns: 8.5rem 1fr;
-  gap: 0.6rem;
+  gap: var(--space-6);
   align-items: baseline;
 }
 .props-row dt {
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: var(--fs-md);
 }
 .props-row dd {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-4);
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--fs-lg);
   word-break: break-all;
 }
 .props-retry {
@@ -234,7 +228,7 @@
   cursor: pointer;
 }
 .props-retry:focus-visible {
-  outline: 2px solid var(--border-focus);
+  outline: 1px solid var(--focus-ring);
   outline-offset: 2px;
 }
 /* Read by a screen reader, drawn nowhere. */
@@ -257,11 +251,11 @@
 .upload-line {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.82rem;
+  gap: var(--space-5);
+  font-size: var(--fs-md);
 }
 .upload-file {
-  padding: 0.3rem 0.4rem;
+  padding: var(--space-3) var(--space-4);
 }
 .upload-file.refused {
   color: var(--text-muted);
@@ -275,32 +269,32 @@
 }
 .upload-state {
   color: var(--text-muted);
-  font-size: 0.74rem;
+  font-size: var(--fs-xs);
 }
 .upload-choice {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.8rem;
-  margin: 0.6rem 0.95rem 0;
+  gap: var(--space-7);
+  margin: var(--space-6) 0.95rem 0;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 0.8rem;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-md);
 }
 .upload-card {
-  margin: 0.4rem var(--side-gutter);
-  padding: 0.4rem 0.5rem;
+  margin: var(--space-4) var(--side-gutter);
+  padding: var(--space-4) var(--space-5);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 0.8rem;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-md);
 }
 .upload-card-head {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-4);
   margin-bottom: 0.25rem;
 }
 .upload-row {
-  padding: 0.2rem 0;
+  padding: var(--space-2) 0;
 }
 .upload-row progress {
   width: 100%;
@@ -308,8 +302,6 @@
 }
 .upload-error {
   margin: 0.15rem 0 0;
-  color: var(--danger);
-  font-size: 0.74rem;
 }
 /* The row a drag of files from the computer is over: Wunderbaum sets these
    classes, and its own stylesheet does not draw them. */

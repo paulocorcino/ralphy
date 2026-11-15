@@ -1,0 +1,10 @@
+id: page-shortcut-in-the-list
+valid:
+  - 'if (e.key === "Escape") close();'
+  - 'if (e.shiftKey && e.key === "Tab") back();'
+  - 'if (altShift(e)) take(e);'
+invalid:
+  - 'if (e.altKey && e.shiftKey && !e.ctrlKey) run();'
+  - 'if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;'
+  - 'if (e.key !== "/" || e.ctrlKey) return;'
+  - 'if (ev.key === "?") help();'

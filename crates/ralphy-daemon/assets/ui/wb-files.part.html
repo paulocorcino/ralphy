@@ -43,7 +43,7 @@
                  what is open is the confusion that sent an operator typing a
                  file name into it (2026-09-10). -->
             <button class="head-act" :class="{ on: fileSearch.open }" @click.stop="toggleFileSearch()"
-                    title="Search files (Ctrl+Shift+F)">
+                    :title="searchFilesTitle">
               <i class="bi bi-search"></i>
             </button>
           </div>
@@ -73,9 +73,9 @@
                 <i class="bi bi-x"></i>
               </button>
             </span>
-            <span class="seg" role="group" aria-label="Search by">
-              <button :class="{ on: fileSearch.mode === 'name' }" @click="setFileSearchMode('name')">Name</button>
-              <button :class="{ on: fileSearch.mode === 'content' }" @click="setFileSearchMode('content')">Content</button>
+            <span class="seg seg-sm" role="group" aria-label="Search by">
+              <button class="seg-btn" :class="{ on: fileSearch.mode === 'name' }" @click="setFileSearchMode('name')">Name</button>
+              <button class="seg-btn" :class="{ on: fileSearch.mode === 'content' }" @click="setFileSearchMode('content')">Content</button>
             </span>
           </div>
           <!-- What the search could not show: "searching…", the 200-hit cap,

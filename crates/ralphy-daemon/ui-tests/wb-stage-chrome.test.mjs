@@ -3,6 +3,9 @@
 // console and no browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { UI } from "./harness.mjs";
 import { createChrome } from "../assets/ui/wb-stage-chrome.ts";
 import { createGestures } from "../assets/ui/wb-stage-stack.ts";
 
@@ -148,6 +151,30 @@ test("a titlebar drag is a gesture from the press to the release, and only a mov
   assert.deepEqual(Object.keys(writes[0].fields), ["rect"]);
 });
 
+// A focused terminal hears a bubbling Escape first and sends it to its
+// child, so the drag listens in the capture phase and stops the key.
+test("Escape ends a drag, in the capture phase, and no one else hears it", () => {
+  const { deps, document } = fakeDeps();
+  const phases = [];
+  const add = document.addEventListener;
+  document.addEventListener = (type, fn, capture) => {
+    if (type === "keydown") phases.push(capture === true);
+    add(type, fn);
+  };
+  const { makeDraggable } = createChrome(deps);
+  const win = fakeElement();
+  const handle = fakeElement();
+  makeDraggable(win, handle);
+  handle.listeners.pointerdown[0](press(100, 100));
+  document.fire("pointermove", { pointerId: 1, buttons: 1, clientX: 160, clientY: 140 });
+  const escape = { key: "Escape", stopped: false };
+  escape.stopPropagation = () => (escape.stopped = true);
+  document.fire("keydown", escape);
+  assert.equal(deps.gestures.active(win), false, "the drag ended");
+  assert.deepEqual(phases, [true], "the Escape listener is a capture one");
+  assert.equal(escape.stopped, true, "the Escape goes no further");
+});
+
 test("a resize band is a gesture too, and a tap on it writes nothing", () => {
   const { deps, writes, document } = fakeDeps();
   const { startResize } = createChrome(deps);
@@ -247,4 +274,17 @@ test("a record with a rect and max is maximized after the window is on the stage
   buildChrome("shell", "~", { kind: "console", rect, max: false }, "console");
   buildChrome("shell", "~", { kind: "console", max: true }, "console");
   assert.equal(calls.length, 1);
+});
+
+// The consoles climb to `Z_CEIL` (wb-stage-stack.ts) and then renormalize;
+// every named layer of `01-base.css` must stay above them, or a raised
+// console covers the frame chrome, a menu or a modal.
+test("every named layer sits above the consoles' ceiling", () => {
+  const stack = readFileSync(join(UI, "wb-stage-stack.ts"), "utf8");
+  const ceil = Number(/const Z_CEIL = (\d+);/u.exec(stack)?.[1]);
+  assert.ok(ceil > 0, "Z_CEIL is read from wb-stage-stack.ts");
+  const base = readFileSync(join(UI, "styles", "01-base.css"), "utf8");
+  const layers = [...base.matchAll(/(--z-[a-z-]+): (\d+);/gu)];
+  assert.ok(layers.length > 0, "01-base.css names its layers");
+  for (const [, name, value] of layers) assert.ok(Number(value) > ceil, `${name} ${value} > ${ceil}`);
 });

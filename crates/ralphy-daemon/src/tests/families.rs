@@ -351,6 +351,7 @@ pub(super) const SHELL_FAMILY: &[(&str, &str)] = &[
         include_str!("../../assets/ui/wb-files-upload.ts"),
     ),
     ("wb-files.ts", include_str!("../../assets/ui/wb-files.ts")),
+    ("wb-help.ts", include_str!("../../assets/ui/wb-help.ts")),
     (
         "wb-hosts-dialog.ts",
         include_str!("../../assets/ui/wb-hosts-dialog.ts"),
@@ -367,6 +368,10 @@ pub(super) const SHELL_FAMILY: &[(&str, &str)] = &[
     (
         "wb-move-dialog.ts",
         include_str!("../../assets/ui/wb-move-dialog.ts"),
+    ),
+    (
+        "wb-palette.ts",
+        include_str!("../../assets/ui/wb-palette.ts"),
     ),
     (
         "wb-projects-store.ts",

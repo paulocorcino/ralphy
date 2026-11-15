@@ -251,8 +251,11 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
         closeCheckoutMenu();
       }
     };
+    // Stopped: a terminal that still has the focus would send it to its child.
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeCheckoutMenu();
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      closeCheckoutMenu();
     };
     document.addEventListener("pointerdown", away, true);
     document.addEventListener("keydown", key, true);

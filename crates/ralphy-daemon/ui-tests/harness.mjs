@@ -17,6 +17,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { shell } from "../assets/ui/app.ts";
 import { wire } from "../assets/ui/wb-wire.ts";
+import { wireCommands } from "../assets/ui/wb-commands.ts";
+import { wbPalette as palette } from "../assets/ui/wb-palette.ts";
+import { wbHelp as help } from "../assets/ui/wb-help.ts";
 import { hostsDialog } from "../assets/ui/wb-hosts-dialog.ts";
 import { settingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 import { devices } from "../assets/ui/wb-devices.ts";
@@ -88,6 +91,8 @@ export const STORES = {
 // The Alpine components, by the name the markup gives `x-data`: `loadComponent`
 // builds each from its module's export (ADR-0073 D3, ADR-0075 D7).
 const MODULE_COMPONENTS = {
+  wbPalette: palette,
+  wbHelp: help,
   wbHostsDialog: hostsDialog,
   wbSettingsDialog: settingsDialog,
   wbDevices: devices,
@@ -250,6 +255,8 @@ export function loadShell(opts = {}) {
   const detached = wire(window, document, { messages });
   const given = { projects: opts.projects, ...opts.stores };
   for (const [name, store] of Object.entries(STORES)) stores[name] = given[name] || store({ messages, detached });
+  // The page shortcuts' one listener, as `main.ts` adds it.
+  wireCommands(document, (fromTerminal) => stores.modals.consoleShortcutsBlocked(fromTerminal));
   const state = shell();
   state.$store = stores;
   return { state, window, document };

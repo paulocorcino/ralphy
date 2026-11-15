@@ -273,3 +273,11 @@ test("catalog wording: a node title names the status with the catalog text", () 
     assert.equal(own.nodeTitle(active, iss), `#1 — t · ${w.text}`, key);
   }
 });
+
+// Escape in a menu and every other menu trigger send `workbench:menus-close`.
+test("the run picker closes when the page closes every menu", () => {
+  const { runs, fire } = page();
+  runs.runMenu = true;
+  fire("workbench:menus-close", null);
+  assert.equal(runs.runMenu, false);
+});

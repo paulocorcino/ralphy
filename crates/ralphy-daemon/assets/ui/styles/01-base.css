@@ -22,21 +22,29 @@
   --surface: #342d27;
   --surface-hi: #423a31;
   --log-bg: #2a2521;
+  /* The ground of a console window, behind the terminal. */
+  --window-bg: #0c0a08;
   --border: #4c4239;
   --border-focus: #7a6d5f;
+  /* The edge of a text field: 3:1 against the field and the modal (WCAG 1.4.11). */
+  --border-field: #867565;
   --text: #d4ccc0;
   /* Headings and `strong`: a step ABOVE the body, but deliberately short of
      white. The near-white this replaced glared against the warm ground —
      hierarchy comes from the step, not from maximum luminance. */
   --text-strong: #e9e1d4;
   --text-muted: #a49c91;
-  --danger: #c56b5c;
+  --danger: #ce8174;
   --console-text: #e8d9a8;
   --console-bg: #2b2410;
   --console-border: #5a4a1e;
+  /* Dark ink on a gold fill, fixed so a lighter ground never lowers it. */
+  --ink-on-gold: #1a1613;
   --live: #7fae7f;
   /* cool accent for planning / sleep states in the Runs trail */
   --info: #6f9fc0;
+  /* Amber: "needs attention" (ADR-0035, amendment of 2026-11-14). */
+  --warn: #d29922;
   /* the chrome is monospace (terminal feel), but rendered prose (plan.md in the
      Runs panel) reads better in a UI sans — code/pre stay mono. */
   --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -67,6 +75,49 @@
      content of either row: the 21.75px branch chip and the 22px buttons. */
   --row-h: 33px;
   --runs-w: 400px;
+  /* The type scale of the chrome (docs/DESIGN-SYSTEM.md). `rem` is the 16px
+     root, not the 13px body. */
+  --fs-2xs: 0.66rem;
+  --fs-xs: 0.72rem;
+  --fs-sm: 0.78rem;
+  --fs-md: 0.8rem;
+  --fs-lg: 0.9rem;
+  --fs-xl: 1.15rem;
+  /* The spacing scale: the values the chrome already used most. A value
+     between two steps moves to the scale when its panel changes. */
+  --space-1: 0.1rem;
+  --space-2: 0.2rem;
+  --space-3: 0.3rem;
+  --space-4: 0.4rem;
+  --space-5: 0.5rem;
+  --space-6: 0.6rem;
+  --space-7: 0.8rem;
+  --space-8: 1rem;
+  --space-9: 1.5rem;
+  /* Radii (one name per value; `--radius` is the 4px default). */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-pill: 999px;
+  /* The stacking order of the page, low to high. The consoles take 0 to 120
+     (`Z_CEIL`, wb-console.ts); every layer above them is named here. */
+  --z-frame: 130;
+  --z-panel: 150;
+  --z-rail-menu: 160;
+  --z-ctxmenu: 200;
+  --z-modal: 500;
+  --z-zoom: 510;
+  --z-modal-ask: 520;
+  --z-login: 900;
+  --z-dropdown: 1000;
+  --z-toast: 3000;
+  /* Three depths: a floating menu or window, a modal, a toast. */
+  --shadow-float: 0 10px 30px rgba(0, 0, 0, 0.55);
+  --shadow-modal: 0 24px 70px rgba(0, 0, 0, 0.6);
+  --shadow-toast: 0 4px 18px rgba(0, 0, 0, 0.4);
+  /* The one focus ring (ADR-0035, amendment of 2026-11-14). */
+  --focus-ring: var(--console-text);
   /* The note card's six tones (ADR-0064 §3). Desaturated against the warm
      ground on purpose: a card is a surface the operator READS, so the tone is
      an edge band and a wash, never a highlighter. The names are the closed set
@@ -102,7 +153,7 @@ input[type="checkbox"]:not(.switch input) {
   margin: 0;
   background: var(--log-bg);
   border: 1px solid var(--border-focus);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 input[type="checkbox"]:not(.switch input):checked {
@@ -118,8 +169,29 @@ input[type="checkbox"]:not(.switch input):checked::before {
   transform: translateY(-1px) rotate(-45deg);
 }
 input[type="checkbox"]:not(.switch input):focus-visible {
-  outline: 1px solid var(--console-text);
+  outline: 1px solid var(--focus-ring);
   outline-offset: 2px;
+}
+/* The one focus ring (ADR-0035, amendment of 2026-11-14). `:root` lifts it
+   over the `all: unset` of a control's own rule, which removes the browser
+   outline. A full-width row draws it inside, where its menu cannot clip it. */
+:root :is(button, a[href], summary, select, [role="tab"]):focus-visible {
+  outline: 1px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+:root
+  :is(
+    .menu-item,
+    .dropdown-item,
+    .window-item,
+    .fence-item,
+    .note-item,
+    .column-item,
+    .console-tab-item,
+    .ctx-item,
+    .settings-navitem
+  ):focus-visible {
+  outline-offset: -2px;
 }
 input[type="checkbox"]:not(.switch input):disabled {
   opacity: 0.5;
@@ -131,7 +203,7 @@ body {
 }
 body {
   margin: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   background: var(--bg);
   color: var(--text);
   font-size: 13px;
@@ -186,7 +258,7 @@ body.side-collapsed {
     left: var(--rail-w);
     width: min(var(--side-w), calc(100vw - var(--rail-w)));
     /* the Runs panel's level: over the floating consoles, under the modals */
-    z-index: 150;
+    z-index: var(--z-panel);
     box-shadow: 10px 0 30px rgba(0, 0, 0, 0.35);
   }
   body.side-collapsed .side {
@@ -240,13 +312,13 @@ body.side-collapsed {
 .stat {
   color: var(--text-muted);
   display: inline-flex;
-  gap: 0.3rem;
+  gap: var(--space-3);
   align-items: center;
 }
 /* daemon uptime: a live-green dot signals the daemon is alive. `stale` (over 6s
    without a heartbeat) still greys it — the menu is where you go to ask. */
 .uptime {
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
 }
 .uptime [data-lucide] {
   color: var(--live);
@@ -263,9 +335,7 @@ body.side-collapsed {
 }
 /* repos-load failure (#202): a small honest warning row in the sidebar. */
 .side-error {
-  color: var(--danger);
-  font-size: 0.78rem;
-  padding: 0.4rem 0.75rem;
+  padding: var(--space-4) 0.75rem;
   border-bottom: 1px solid var(--border);
 }
 /* The daemon's chosen avatar, in the rail's account button. It holds an EMOJI
@@ -283,4 +353,105 @@ body.side-collapsed {
   background: var(--surface-hi);
   font-size: 15px;
   line-height: 1;
+}
+
+/* --- status text (docs/design-system/status-text.md) ----------------------
+   One rule per kind. New markup uses the shared class; the older classes
+   join the list and keep only their own padding and alignment. */
+.empty-note,
+.attention-empty,
+.runs-empty,
+.side-empty,
+.outline-empty,
+.branch-empty,
+.kanban-empty,
+.kanban-col-empty,
+.move-empty {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.error-line,
+.side-error,
+.runs-error,
+.files-error,
+.chg-error,
+.prompt-error,
+.about-error,
+.desk-history-error,
+.devices-error,
+.kanban-error,
+.kd-error,
+.runs-verb-error,
+.move-error,
+.upload-error,
+.rel-error {
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+.help-text,
+.run-help,
+.set-help,
+.sec-note {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+/* --- chip and badge (docs/design-system/chip-badge.md) --------------------
+   A chip names a thing and may be clicked; a badge gives a count or a state.
+   One shape each. `:root` lifts the shape over a button's `all: unset`; the
+   older classes join the lists and keep their own colors. */
+:root
+  :is(
+    .chip,
+    .branch-chip,
+    .checkout-chip,
+    .ledger-chip,
+    .kanban-plan-chip
+  ) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) 0.45rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-xs);
+}
+:root
+  :is(
+    .badge,
+    .scope-chip,
+    .sec-badge,
+    .chg-badge,
+    .plan-verdict-chip
+  ) {
+  padding: 0.05rem 0.45rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-2xs);
+}
+.chip,
+.badge {
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--log-bg);
+}
+.tone-gold {
+  color: var(--console-text);
+  border-color: var(--console-border);
+}
+.tone-live {
+  color: var(--live);
+  border-color: color-mix(in srgb, var(--live) 45%, var(--border));
+}
+.tone-warn {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+}
+.tone-danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+.tone-info {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--info) 35%, var(--border));
+  background: color-mix(in srgb, var(--info) 12%, var(--log-bg));
 }

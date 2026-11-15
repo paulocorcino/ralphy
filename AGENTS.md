@@ -34,6 +34,10 @@ the source is `.github/workflows/ci.yml` and the test jobs of
 - **[docs/TESTING.md](./docs/TESTING.md)** — how to write a test that fails
   only when the behavior breaks. Read it before you add, change, or review a
   test, or before a browser check of the workbench page.
+- **[docs/DESIGN-SYSTEM.md](./docs/DESIGN-SYSTEM.md)** — the workbench
+  catalog: tokens, components and shortcuts. Read it before a visual change
+  or a new key in the workbench, and build from a component it lists. A new
+  component, color, spacing value or shortcut gets its entry there first.
 
 ## Architecture — ports & adapters, ubiquitous-language-first
 

@@ -423,7 +423,7 @@ fn shell_pins_the_frame_chrome() {
         .split_once('}')
         .expect("the .canvas-foot rule must close")
         .0;
-    for pin in ["pointer-events: none", "z-index: 130"] {
+    for pin in ["pointer-events: none", "z-index: var(--z-frame)"] {
         assert!(
             foot.contains(pin),
             "the .canvas-foot rule must keep {pin} — above the consoles, inert to the pointer \

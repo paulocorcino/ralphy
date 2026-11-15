@@ -2,6 +2,8 @@
 
 Status: accepted (documents the design shipped in the daemon UI; extracted
 from `crates/ralphy-daemon/assets/ui/index.html`).
+Amended 2026-11-14 (a third accent `--warn`, a lighter `--danger`, one focus
+ring, Lucide for new icons).
 
 The daemon serves a single embedded page — the workbench launcher and its
 floating session windows (ADR-0032). This ADR records its **visual language**
@@ -195,6 +197,50 @@ up 4% larger than its own body, which is no hierarchy at all.
   deliberate amendment to this ADR, not an ad-hoc hex in the stylesheet.
 - The palette is documented once; the stylesheet stays the single source of the
   literal values, and this ADR the source of their *meaning*.
-</content>
 
-</invoke>
+## Amendment (2026-11-14): measured gaps, a third accent, one focus ring
+
+An audit of the stylesheet and a measure of the page in Chromium (desktop,
+150% zoom, tablet, phone) found gaps between this ADR and the page. The
+audit is [docs/design-system/audit.md](../design-system/audit.md). The
+tokens, their pixel values and every component are listed in
+[docs/DESIGN-SYSTEM.md](../DESIGN-SYSTEM.md). That file is now the
+registry of values; this ADR stays the source of their meaning. It changes
+this ADR in these places.
+
+- **§1 Palette: the token table follows the stylesheet.** `danger-border`
+  and `console-bg-hi` were never defined in `01-base.css`; the danger
+  button mixes its border from `--danger` with `color-mix()`. Five tokens
+  exist that the table did not list: `--live` (a live daemon or console, a
+  passed check), `--info` (planning and sleep states), `--font-ui` (rendered
+  prose), and the note tones of ADR-0064.
+- **§1 Accents: a third accent, `--warn`, amber `#d29922`.** Its one job is
+  "needs attention": the attention badge and an urgent release note. Gold
+  means "off the curated path" and terracotta means "danger"; neither says
+  "look at this soon". It was already in the stylesheet three times as a
+  literal hex value. The rule against a decorative accent stands: `--warn`
+  has a job.
+- **§1 Accents: `--danger` is `#ce8174`, not `#c56b5c`.** Measured, the old
+  value gave 3.63:1 as text on `--surface` and 4.02:1 on `--chrome`, under
+  the 4.5:1 of WCAG AA. The new value has the same hue and gives 4.52:1 on
+  `--surface` and 5.01:1 on `--chrome`. Danger text, the danger button and
+  the offline state follow the one token.
+- **§5 Focus: one focus ring.** Every control that removes the browser
+  outline shows focus with `outline: 1px solid var(--focus-ring)` and a 2px
+  offset, where `--focus-ring` is `--console-text`. The checkbox already
+  drew focus this way. A window still marks focus with `--border-focus`.
+  A modal keeps Tab inside itself while it is open.
+- **Icons: Lucide for new icons.** The page used two libraries: Bootstrap
+  Icons (a font, 100 uses in the parts) and Lucide (SVG through `x-icon`,
+  55 uses). A new icon is Lucide. A Bootstrap icon moves to Lucide when
+  its panel changes for other work, not in one change.
+- **Text field: one ground, `--log-bg`.** The same as the checkbox, the
+  switch track and the segmented track.
+- **Text field: an edge at 3:1, `--border-field` (`#867565`).** `--border`
+  gave 1.4 to 1.65:1 against the field and the modal, under the 3:1 that
+  WCAG 1.4.11 asks for the edge of a control. A focused field keeps this
+  edge and shows the focus ring.
+- **Sizes on touch screens stay as they are.** A control does not grow on
+  a phone or a tablet; larger controls would distort the page. A size may
+  go down, or be made the same as its siblings. The touch key strip of a
+  console stays the one element sized for fingers.

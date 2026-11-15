@@ -165,9 +165,12 @@ export function createWindowGestures(deps: WindowGestureDeps) {
         pan.follow(last);
       };
       // Escape ends the drag where the window sits — no revert: a keyboard exit
-      // from a loop whose mouseup may never arrive.
+      // from a loop whose mouseup may never arrive. CAPTURE, and stopped: a
+      // focused terminal would send the Escape to its child (ADR-0087 D9).
       const onKey = (ev: KeyboardEvent) => {
-        if (ev.key === "Escape") onUp();
+        if (ev.key !== "Escape") return;
+        ev.stopPropagation();
+        onUp();
       };
       const onUp = () => {
         pan.stop();
@@ -177,7 +180,7 @@ export function createWindowGestures(deps: WindowGestureDeps) {
         // in) ends in `pointercancel` and NEVER in `pointerup`.
         document.removeEventListener("pointercancel", onUp);
         document.removeEventListener("contextmenu", onUp);
-        document.removeEventListener("keydown", onKey);
+        document.removeEventListener("keydown", onKey, true);
         window.removeEventListener("blur", onUp);
         applyExtent();
         // A tap persists NOTHING: it moved nothing.
@@ -193,7 +196,7 @@ export function createWindowGestures(deps: WindowGestureDeps) {
       // `contextmenu`: a menu over the page ends the gesture whether or not the
       // browser also blurs; a double `onUp` is idempotent.
       document.addEventListener("contextmenu", onUp);
-      document.addEventListener("keydown", onKey);
+      document.addEventListener("keydown", onKey, true);
       e.preventDefault();
     });
   }

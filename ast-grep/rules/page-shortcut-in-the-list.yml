@@ -1,0 +1,19 @@
+# ADR-0087 D2: every page shortcut is a command of the list in wb-commands.ts,
+# and one listener runs it. A page shortcut is read nowhere else: no other
+# test of the Alt+Shift chord, and no other test of a typed `/` or `?`.
+id: page-shortcut-in-the-list
+language: typescript
+severity: error
+message: "A page shortcut is a command of the list: add it to COMMANDS in wb-commands.ts and give it its action with bindCommand."
+files:
+  - crates/ralphy-daemon/assets/ui/**/*.ts
+ignores:
+  - crates/ralphy-daemon/assets/ui/wb-commands.ts
+rule:
+  any:
+    - pattern: $E.altKey && $E.shiftKey
+    - pattern: "!$E.altKey || !$E.shiftKey"
+    - pattern: $E.key === "/"
+    - pattern: $E.key !== "/"
+    - pattern: $E.key === "?"
+    - pattern: $E.key !== "?"

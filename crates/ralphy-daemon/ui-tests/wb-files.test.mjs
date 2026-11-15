@@ -962,3 +962,8 @@ test("a nudge re-reads an image tab through the image read, and a text tab throu
   assert.deepEqual(reads, [["image", "img/a.png"], ["file.read", "img/b.txt"]]);
   assert.deepEqual(changed, [["i", "data:image/png;base64,AA=="], ["t", "text"]]);
 });
+
+test("the files search button names its keys from the list of commands", () => {
+  assert.equal(loadComponent("wbFiles").scope.searchFilesTitle, "Search files (Ctrl+Shift+F)");
+  assert.match(partMarkup("wb-files.part.html"), /:title="searchFilesTitle"/u);
+});

@@ -44,6 +44,7 @@ import { applySearch, clearSearch, resetSearch, searchNow } from "./wb-files-sea
 import { typedSearch } from "./wb-files-typing.ts";
 import { listenFiles, logFailure } from "./wb-files-events.ts";
 import type { TreeSub } from "./wb-files-mount.ts";
+import { commandKeys } from "./wb-commands.ts";
 import type { TreeMemory } from "./wb-files-levels.ts";
 import type { Hit } from "./wb-file-search.ts";
 import type { Group } from "./wb-fleet.ts";
@@ -51,6 +52,8 @@ import type { Group } from "./wb-fleet.ts";
 export function wbFiles() {
   // Every `shell()` member this component's code or markup reads or calls.
   return component(["checkoutChipClick"], {
+    // The search button's title names its keys for the system (ADR-0087 D11).
+    searchFilesTitle: `Search files (${commandKeys("files.search")})`,
     // Wunderbaum copies source keys it does not define into `node.data`, so
     // `folder:true` lands at `node.data.folder` and `node.folder` is forever
     // `undefined`; `node.children` is `null` on a lazy or empty folder. Either

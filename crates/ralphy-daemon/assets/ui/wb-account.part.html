@@ -40,6 +40,9 @@
           <button class="dropdown-item" @click="avatarMenu = false; $dispatch('workbench:security-open')">
             <i class="bi bi-shield-lock"></i><span>Security settings</span>
           </button>
+          <button class="dropdown-item" @click="avatarMenu = false; $dispatch('workbench:help-open')">
+            <svg x-icon="'keyboard'"></svg><span>Keyboard shortcuts</span>
+          </button>
           <button class="dropdown-item" @click="avatarMenu = false; $dispatch('workbench:about-open')">
             <i class="bi bi-info-circle"></i><span>About</span>
           </button>

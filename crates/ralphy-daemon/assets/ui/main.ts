@@ -29,6 +29,8 @@ import { wbRuns } from "./wb-runs-panel.ts";
 import { wbBoard } from "./wb-board.ts";
 import { wbChanges } from "./wb-changes-panel.ts";
 import { wbBranchDialog } from "./wb-branch-dialog.ts";
+import { wbPalette } from "./wb-palette.ts";
+import { wbHelp } from "./wb-help.ts";
 import { wbSpend } from "./wb-spend-panel.ts";
 import { wbAccount } from "./wb-account.ts";
 import { wbLogin } from "./wb-login.ts";
@@ -45,6 +47,8 @@ import { createMessages } from "./wb-messages.ts";
 import { createStack, createGestures } from "./wb-stage-stack.ts";
 import { shell } from "./app.ts";
 import { wire } from "./wb-wire.ts";
+import { wireArrowKeys } from "./wb-arrow-keys.ts";
+import { wireCommands } from "./wb-commands.ts";
 import { iconDirective } from "./wb-icon.ts";
 import { projectsStore } from "./wb-projects-store.ts";
 import { connectionStore } from "./wb-connection-store.ts";
@@ -91,6 +95,11 @@ window.WBNotes = createNotes(window, document, {
 // them about unsaved work before a build reload, and the store `tabs` hands
 // them a file it detaches.
 const detached = wire(window, document, { messages });
+wireArrowKeys(document);
+// The page shortcuts: one listener for the list of commands.
+wireCommands(document, (fromTerminal) =>
+  Alpine.store("modals").consoleShortcutsBlocked(fromTerminal),
+);
 Alpine.directive("icon", iconDirective);
 // The modal stack, the confirm, the prompt and the flash line, first: the
 // door and every store and component after it flash and ask through it. It
@@ -138,6 +147,8 @@ Alpine.data("wbRuns", wbRuns);
 Alpine.data("wbBoard", wbBoard);
 Alpine.data("wbChanges", wbChanges);
 Alpine.data("wbBranchDialog", wbBranchDialog);
+Alpine.data("wbPalette", wbPalette);
+Alpine.data("wbHelp", wbHelp);
 Alpine.data("wbSpend", wbSpend);
 Alpine.data("wbAccount", wbAccount);
 Alpine.data("wbLogin", wbLogin);

@@ -38,15 +38,15 @@
 .tab {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0 0.5rem 0 0.7rem;
+  gap: var(--space-4);
+  padding: 0 var(--space-5) 0 0.7rem;
   max-width: 220px;
   color: var(--text-muted);
   background: var(--chrome);
   border-right: 1px solid var(--border);
   cursor: pointer;
   user-select: none;
-  font-size: 0.8rem;
+  font-size: var(--fs-md);
   white-space: nowrap;
 }
 .tab:hover {
@@ -58,13 +58,13 @@
   box-shadow: inset 0 2px 0 var(--console-border);
 }
 .tab .tab-ic {
-  font-size: 0.9rem;
+  font-size: var(--fs-lg);
   opacity: 0.85;
 }
 /* The pinned tab (the slot's pane) carries a pin glyph and the same accent
    the active tab's top edge has: it is on screen too, on the right. */
 .tab .tab-pin {
-  font-size: 0.75rem;
+  font-size: var(--fs-sm);
   color: var(--console-text);
 }
 .tab.pinned {
@@ -80,7 +80,7 @@
   place-items: center;
   width: 16px;
   height: 16px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   cursor: pointer;
 }
@@ -212,11 +212,11 @@
   place-items: center;
   width: 18px;
   height: 18px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--chrome);
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   cursor: pointer;
 }
 .viewers-divider .slot-close:hover {
@@ -230,9 +230,9 @@
      arithmetic — reliable where align-items left a few px of drift. */
   margin-top: auto;
   margin-bottom: auto;
-  gap: 0.5rem;
+  gap: var(--space-5);
   flex-shrink: 0;
-  padding: 0 0.7rem 0 0.8rem;
+  padding: 0 0.7rem 0 var(--space-7);
   border-left: 1px solid var(--border);
 }
 /* fixed, centred height so the buttons don't fill the bar edge-to-edge (which
@@ -240,7 +240,7 @@
 .canvas-tools .btn {
   height: 24px;
   padding: 0 0.55rem;
-  font-size: 0.74rem;
+  font-size: var(--fs-xs);
 }
 /* On a phone (wb-viewport.ts `PHONE_QUERY`) the toolbar and the fixed Consoles tab are
    their icons: the words cost 260px of a 400px bar and the glyphs already name
@@ -255,7 +255,7 @@
     padding: 0 0.45rem;
   }
   .canvas-tools .btn {
-    gap: 0.2rem;
+    gap: var(--space-2);
   }
 }
 
@@ -270,24 +270,28 @@
   min-width: 200px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 0.25rem;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--shadow-float);
   /* above the floating consoles (z-index ~60+), which extend up into this
      dropdown's drop zone once tiled. */
-  z-index: 1000;
+  z-index: var(--z-dropdown);
 }
 .dropdown-head {
   color: var(--text-muted);
-  font-size: 0.72rem;
-  padding: 0.3rem 0.5rem;
+  font-size: var(--fs-xs);
+  padding: var(--space-3) var(--space-5);
   border-bottom: 1px solid var(--border);
-  margin-bottom: 0.2rem;
+  margin-bottom: var(--space-2);
 }
 /* `.window-item` is the Go-to picker's row (issue #337), `.fence-item` the
    fence picker's (issue #343) and `.note-item` the note picker's (ADR-0064
    §10): the same menu grammar under DIFFERENT class names, so every existing
-   `.dropdown-item` query scoped to the New-console menu stays inert. */
+   `.dropdown-item` query scoped to the New-console menu stays inert.
+   `.menu-item` is the shared name for a new menu; `.ctx-item` is the
+   context menu's row. */
+.menu-item,
+.ctx-item,
 .dropdown-item,
 .window-item,
 .fence-item,
@@ -297,15 +301,17 @@
   all: unset;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-5);
   width: 100%;
   box-sizing: border-box;
   padding: 0.35rem 0.55rem;
   border-radius: var(--radius);
   color: var(--text);
-  font-size: 0.82rem;
+  font-size: var(--fs-md);
   cursor: pointer;
 }
+.menu-item:not(:disabled):hover,
+.ctx-item:not(:disabled):hover,
 .dropdown-item:not(:disabled):hover,
 .window-item:hover,
 .fence-item:hover,
@@ -318,6 +324,8 @@
    inert (the plain console, which falls back to the home dir, stays enabled). */
 /* `.fence-item` joins it for the fence cap: the three share the `all: unset` base
    above, so they share how a refused row looks. */
+.menu-item:disabled,
+.ctx-item:disabled,
 .dropdown-item:disabled,
 .fence-item:disabled,
 .note-item:disabled,
@@ -333,7 +341,7 @@
 .console-choice {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--space-3);
 }
 .console-choice .dropdown-item {
   flex: 1;
@@ -342,16 +350,16 @@
 .console-choice .row-try {
   all: unset;
   flex: none;
-  padding: 0.2rem 0.35rem;
+  padding: var(--space-2) 0.35rem;
   border-radius: var(--radius);
   color: var(--console-text);
-  font-size: 0.66rem;
+  font-size: var(--fs-2xs);
   cursor: pointer;
 }
 .console-choice .row-try:hover,
 .console-choice .row-try:focus-visible {
   background: var(--surface-hi);
-  outline: 1px solid var(--console-border);
+  outline: 1px solid var(--focus-ring);
 }
 /* Always visible, never hover-only: the command console was hard to find
    when it hid behind a setting. Muted until pointed at. */
@@ -360,11 +368,11 @@
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.2rem 0.35rem;
+  gap: var(--space-3);
+  padding: var(--space-2) 0.35rem;
   border-radius: var(--radius);
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
@@ -373,19 +381,19 @@
 .console-choice .row-run:focus-visible {
   color: var(--console-text);
   background: var(--surface-hi);
-  outline: 1px solid var(--console-border);
+  outline: 1px solid var(--focus-ring);
 }
 .console-run {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  padding-bottom: 0.2rem;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
 }
 .console-run input {
   box-sizing: border-box;
   width: 100%;
   font-family: var(--font-mono);
-  font-size: 0.82rem;
+  font-size: var(--fs-md);
   color: var(--text);
   background: var(--log-bg);
   border: 1px solid var(--console-border);
@@ -400,7 +408,7 @@
   border-color: var(--border-focus);
 }
 .console-run-hint {
-  font-size: 0.66rem;
+  font-size: var(--fs-2xs);
   color: var(--text-muted);
 }
 .dropdown-item .bi,
@@ -416,7 +424,7 @@
 .window-item .row-off,
 .column-item .row-off {
   margin-left: auto;
-  font-size: 0.66rem;
+  font-size: var(--fs-2xs);
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -444,7 +452,7 @@
   display: inline-grid;
   place-items: center;
   flex: none;
-  padding: 0 0.6rem;
+  padding: 0 var(--space-6);
   color: var(--text-muted);
   cursor: pointer;
 }
@@ -483,7 +491,7 @@
 .column-dir {
   flex: none;
   display: flex;
-  margin-bottom: 0.3rem;
+  margin-bottom: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
@@ -496,8 +504,8 @@
   justify-content: center;
   gap: 0.35rem;
   cursor: pointer;
-  padding: 0.3rem 0.5rem;
-  font-size: 0.78rem;
+  padding: var(--space-3) var(--space-5);
+  font-size: var(--fs-sm);
   color: var(--text-muted);
   background: var(--log-bg);
 }
@@ -512,14 +520,14 @@
   background: var(--surface-hi);
 }
 .column-dir-btn:focus-visible {
-  outline: 1px solid var(--border-focus);
+  outline: 1px solid var(--focus-ring);
   outline-offset: -1px;
 }
 .column-group-head {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
-  margin-top: 0.2rem;
+  gap: var(--space-5);
+  margin-top: var(--space-2);
   white-space: nowrap;
 }
 /* The fence name keeps its room. */
@@ -534,7 +542,7 @@
   box-sizing: border-box;
   margin-bottom: 0.25rem;
   font: inherit;
-  font-size: 0.82rem;
+  font-size: var(--fs-md);
   color: var(--text);
   background: var(--log-bg);
   border: 1px solid var(--border);
@@ -567,10 +575,10 @@
 .column-open {
   all: unset;
   flex: none;
-  padding: 0.3rem 0.45rem;
+  padding: var(--space-3) 0.45rem;
   border-radius: var(--radius);
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   cursor: pointer;
   opacity: 0.45;
 }
@@ -586,7 +594,7 @@
   visibility: hidden;
 }
 .column-empty {
-  padding: 0.35rem 0.6rem;
+  padding: 0.35rem var(--space-6);
   opacity: 0.7;
 }
 .column-item .row-name,
@@ -607,7 +615,7 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--space-5);
   /* The legend is a pattern, not prose — it must never break across lines. */
   white-space: nowrap;
 }
@@ -635,22 +643,20 @@
 /* how many of this row's consoles are already open — a readout; the click
    still launches */
 .dropdown-item .row-live {
-  font-size: 0.66rem;
+  font-size: var(--fs-2xs);
   color: var(--console-text);
   white-space: nowrap;
 }
 /* keyboard-accelerator hint, right-aligned in the row — the same treatment in
    the New-console menu and the Fence menu, because it is the same promise */
-.dropdown-item .kbd,
-.fence-item .kbd,
-.console-choice .row-run .kbd {
+.kbd {
   margin-left: auto;
   font: inherit;
-  font-size: 0.66rem;
+  font-size: var(--fs-2xs);
   color: var(--text-muted);
   background: var(--log-bg);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius);
   padding: 0.02rem 0.34rem;
   white-space: nowrap;
 }
@@ -676,7 +682,7 @@
   z-index: 1;
   pointer-events: none;
   border: 1px dashed var(--border-focus);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, 0.022);
 }
 /* Shrink-wrapped, NOT the fence's full width: the head is the only part of a
@@ -687,7 +693,7 @@
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.25rem 0.4rem;
+  padding: 0.25rem var(--space-4);
   width: max-content;
   /* ABOVE the resize bands, and DOM order is not enough to say so: the bands
      are `position:absolute` and this band is static, and a positioned box paints
@@ -719,7 +725,7 @@
   display: flex;
   align-items: center;
   gap: 0.15rem;
-  padding: 0.25rem 0.1rem;
+  padding: 0.25rem var(--space-1);
   pointer-events: none;
 }
 .fence-name {
@@ -729,7 +735,7 @@
   width: 11rem;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius);
   padding: 0 0.25rem;
   color: var(--text-muted);
   font: inherit;
@@ -757,10 +763,10 @@
   flex: 0 0 auto;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   line-height: 1;
-  padding: 0 0.3rem;
+  padding: 0 var(--space-3);
   cursor: pointer;
 }
 .fence-drop:hover {
@@ -871,10 +877,10 @@
   flex: 0 0 auto;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   line-height: 1;
-  padding: 0 0.3rem;
+  padding: 0 var(--space-3);
   cursor: pointer;
 }
 .fence-arrange:hover {
@@ -890,10 +896,10 @@
   flex: 0 0 auto;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   line-height: 1;
-  padding: 0 0.3rem;
+  padding: 0 var(--space-3);
   cursor: pointer;
 }
 .fence-detach:hover {
@@ -908,10 +914,10 @@
   flex: 0 0 auto;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   line-height: 1;
-  padding: 0 0.3rem;
+  padding: 0 var(--space-3);
   cursor: pointer;
 }
 .fence-lock .bi {
@@ -925,10 +931,10 @@
   flex: 0 0 auto;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   line-height: 1;
-  padding: 0 0.3rem;
+  padding: 0 var(--space-3);
   cursor: pointer;
 }
 .fence-columns .bi {
@@ -987,10 +993,10 @@
   width: 2.4rem;
   height: 2.4rem;
   border: 1px dashed var(--border-focus);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--bg);
   color: var(--text-muted);
-  font-size: 1.2rem;
+  font-size: var(--fs-xl);
   line-height: 1;
   cursor: pointer;
 }

@@ -11,7 +11,7 @@
   flex: 1;
 }
 .rail > :last-child {
-  margin-bottom: 0.6rem;
+  margin-bottom: var(--space-6);
 }
 
 /* --- account puck at the head of the rail ---------------------------------- */
@@ -19,7 +19,7 @@
    `align-items`, so it needs nothing but the gap that sets it apart from the
    view buttons below — it is not one of them. */
 .rail-acct {
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-5);
 }
 /* The menu drops to the SIDE, over the sidebar: a 48px column cannot host a
    190px card below the button, and the rail is not clipped, so nothing cuts it.
@@ -38,7 +38,7 @@
 .acct-stats {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-5);
   padding: 0.35rem 0.55rem 0.45rem;
   border-bottom: 1px solid var(--border);
   margin-bottom: 0.25rem;
@@ -64,7 +64,7 @@
 .acct-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-5);
 }
 .acct-mark {
   display: inline-grid;
@@ -87,14 +87,14 @@
    name, so it takes the body size back. */
 .acct-name {
   color: var(--text);
-  font-size: 0.85rem;
+  font-size: var(--fs-lg);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .acct-role {
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
@@ -102,7 +102,7 @@
 .modal-scrim {
   position: fixed;
   inset: 0;
-  z-index: 500;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 3vh 2vw;
@@ -120,7 +120,9 @@
 .settings-dialog,
 .release-dialogs,
 .runs-panel,
-.board-panel {
+.board-panel,
+.palette,
+.help {
   display: contents;
 }
 /* The two dialogs a MODAL can raise (`askConfirm` / `askPrompt`) sit one tier
@@ -133,7 +135,7 @@
    pasted into index.html. */
 .modal-scrim:has(> .confirm-modal),
 .modal-scrim:has(> .prompt-modal) {
-  z-index: 520;
+  z-index: var(--z-modal-ask);
 }
 .modal {
   display: flex;
@@ -142,14 +144,14 @@
   max-height: 92vh;
   background: var(--chrome);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-modal);
   overflow: hidden;
 }
 .modal-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-5);
   padding: 0.7rem 0.9rem;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
@@ -162,7 +164,7 @@
 }
 .modal-sub {
   color: var(--text-muted);
-  font-size: 0.74rem;
+  font-size: var(--fs-xs);
 }
 .modal-head .spacer {
   flex: 1;
@@ -173,7 +175,7 @@
   place-items: center;
   width: 24px;
   height: 24px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text-muted);
   cursor: pointer;
 }
@@ -184,20 +186,20 @@
 .modal-foot {
   display: flex;
   align-items: center;
-  gap: 0.8rem;
-  padding: 0.6rem 0.9rem;
+  gap: var(--space-7);
+  padding: var(--space-6) 0.9rem;
   border-top: 1px solid var(--border);
   background: var(--surface);
 }
 .modal-foot .foot-note {
   flex: 1;
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
 }
 .foot-note code {
   background: var(--log-bg);
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   padding: 0 0.25em;
 }
 
@@ -211,7 +213,7 @@
    `.warn` is the plan asking for a human (no open steps: infeasible or a bundle) —
    the runner's own test, not the heading's claim. */
 .plan-verdict {
-  padding: 0.6rem 0.9rem;
+  padding: var(--space-6) 0.9rem;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--info) 8%, var(--chrome));
 }
@@ -221,8 +223,8 @@
 .plan-verdict-head {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.82rem;
+  gap: var(--space-4);
+  font-size: var(--fs-md);
 }
 .plan-verdict-head .spacer {
   flex: 1;
@@ -231,21 +233,18 @@
   color: var(--danger);
 }
 .plan-verdict-chip {
-  padding: 0 0.4rem;
   border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
-  border-radius: 999px;
   color: var(--danger);
-  font-size: 0.68rem;
 }
 .plan-verdict-steps {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
 .plan-verdict-why {
   margin: 0.35rem 0 0;
   color: var(--text);
-  font-size: 0.8rem;
+  font-size: var(--fs-md);
   line-height: 1.5;
 }
 /* The plan itself, in the reading font the Runs panel's prose uses. It scrolls
@@ -255,9 +254,9 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 0.7rem 0.95rem 1rem;
+  padding: 0.7rem 0.95rem var(--space-8);
   font-family: var(--font-ui);
-  font-size: 0.84rem;
+  font-size: var(--fs-md);
   line-height: 1.6;
 }
 .plan-doc code,
@@ -273,7 +272,7 @@
   margin: 0;
   padding: 1.05rem 0.95rem 1.15rem;
   color: var(--text);
-  font-size: 0.9rem;
+  font-size: var(--fs-lg);
   line-height: 1.5;
 }
 /* no foot-note here, so right-align the Cancel / confirm buttons. The About
@@ -293,17 +292,17 @@
   margin: 0;
   padding: 0.95rem 0.95rem 0;
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: var(--fs-md);
 }
 .prompt-input {
   margin: 0.7rem 0.95rem 0;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--fs-lg);
   color: var(--text);
   background: var(--log-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.45rem 0.6rem;
+  padding: 0.45rem var(--space-6);
 }
 .prompt-input::placeholder {
   color: var(--text-muted);
@@ -317,8 +316,6 @@
 .prompt-error {
   margin: 0;
   padding: 0.45rem 0.95rem 0;
-  color: var(--danger);
-  font-size: 0.78rem;
 }
 .prompt-modal .modal-foot {
   justify-content: flex-end;
@@ -331,19 +328,17 @@
   width: min(440px, 96vw);
 }
 .about-body {
-  padding: 1.1rem 1.1rem 1rem;
+  padding: 1.1rem 1.1rem var(--space-8);
   overflow: auto;
 }
 .about-error {
-  margin: 0 0 0.8rem;
-  color: var(--danger);
-  font-size: 0.78rem;
+  margin: 0 0 var(--space-7);
 }
 /* hero: the mark beside the name + version */
 .about-hero {
   display: flex;
   align-items: center;
-  gap: 0.8rem;
+  gap: var(--space-7);
 }
 .about-mark {
   display: inline-grid;
@@ -375,12 +370,12 @@
 .about-version {
   align-self: flex-start;
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   color: var(--console-text);
   background: var(--console-bg);
   border: 1px solid var(--console-border);
-  border-radius: 999px;
-  padding: 0.05rem 0.5rem;
+  border-radius: var(--radius-pill);
+  padding: 0.05rem var(--space-5);
   text-decoration: none;
 }
 .about-version:hover {
@@ -388,7 +383,7 @@
 }
 /* fact rows: label on the left, value on the right */
 .about-facts {
-  margin: 1rem 0 0;
+  margin: var(--space-8) 0 0;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -399,26 +394,26 @@
 .about-fact {
   display: flex;
   align-items: baseline;
-  gap: 0.8rem;
+  gap: var(--space-7);
   padding: 0.55rem 0.7rem;
   background: var(--surface);
 }
 .about-fact dt {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-4);
   width: 108px;
   flex-shrink: 0;
   margin: 0;
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 .about-fact dd {
   margin: 0;
   min-width: 0;
-  font-size: 0.82rem;
+  font-size: var(--fs-md);
   word-break: break-word;
 }
 .about-fact dd a {
@@ -429,9 +424,9 @@
   text-decoration: underline;
 }
 .about-copyright {
-  margin: 1rem 0 0;
+  margin: var(--space-8) 0 0;
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   line-height: 1.5;
 }
 
@@ -445,7 +440,7 @@
   width: 190px;
   flex-shrink: 0;
   border-right: 1px solid var(--border);
-  padding: 0.5rem;
+  padding: var(--space-5);
   overflow: auto;
   display: flex;
   flex-direction: column;
@@ -455,17 +450,17 @@
 .settings-navgroup {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.5rem 0.55rem 0.3rem;
+  gap: var(--space-4);
+  padding: var(--space-5) 0.55rem var(--space-3);
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 .settings-navgroup:not(:first-child) {
-  margin-top: 0.5rem;
+  margin-top: var(--space-5);
   border-top: 1px solid var(--border);
-  padding-top: 0.6rem;
+  padding-top: var(--space-6);
 }
 .settings-navgroup.project {
   color: var(--console-text);
@@ -477,11 +472,11 @@
   all: unset;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0.55rem;
+  gap: var(--space-5);
+  padding: var(--space-4) 0.55rem;
   border-radius: var(--radius);
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: var(--fs-md);
   cursor: pointer;
 }
 .settings-navitem[disabled] {
@@ -508,7 +503,7 @@
   flex: 1;
   min-width: 0;
   overflow: auto;
-  padding: 1rem 1.3rem 1.6rem;
+  padding: var(--space-8) 1.3rem 1.6rem;
 }
 .settings-h2row {
   display: flex;
@@ -516,16 +511,13 @@
   gap: 0.7rem;
 }
 .settings-h2 {
-  margin: 0.2rem 0 0.2rem;
+  margin: var(--space-2) 0 var(--space-2);
   font-size: 1.05rem;
   color: var(--text-strong);
 }
 .scope-chip {
-  font-size: 0.66rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-radius: 999px;
-  padding: 0.1rem 0.5rem;
   border: 1px solid var(--border);
   color: var(--text-muted);
   background: var(--log-bg);
@@ -539,27 +531,27 @@
 }
 .settings-noproject {
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: var(--fs-md);
   line-height: 1.6;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   padding: 0.7rem 0.9rem;
 }
 .settings-noproject .bi {
   color: var(--console-text);
-  margin-right: 0.3rem;
+  margin-right: var(--space-3);
 }
 .settings-noproject code {
   background: var(--log-bg);
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   padding: 0 0.25em;
 }
 .settings-blurb {
   margin: 0 0 1.1rem;
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: var(--fs-md);
   line-height: 1.5;
 }
 .set-row {
@@ -569,29 +561,39 @@
 .set-main {
   display: flex;
   align-items: center;
-  gap: 0.8rem;
+  gap: var(--space-7);
 }
 .set-label {
   flex: 1;
-  font-size: 0.85rem;
+  font-size: var(--fs-lg);
   color: var(--text);
 }
-.set-input {
+/* The text field (docs/design-system/text-field.md). `.text-field` is the
+   shared name; `.set-input` and `.host-input` are its older names. */
+.text-field,
+.set-input,
+.host-input {
   font: inherit;
-  font-size: 0.82rem;
+  font-size: var(--fs-md);
   color: var(--text);
   background: var(--log-bg);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-field);
   border-radius: var(--radius);
-  padding: 0.35rem 0.5rem;
+  padding: 0.35rem var(--space-5);
+}
+.set-input {
   min-width: 220px;
 }
+.text-field:focus,
+.host-input:focus,
 .set-input:focus {
-  outline: none;
-  border-color: var(--border-focus);
+  outline: 1px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 /* A key the daemon refuses to write is shown, not edited. Dimmed rather than
    hidden: the operator still has to be able to read what the gate is. */
+.text-field:disabled,
+.host-input:disabled,
 .set-input:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -607,16 +609,37 @@
   height: 18px;
 }
 .set-input.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   width: 100%;
   min-width: 0;
 }
 .set-help {
-  margin: 0.4rem 0 0;
-  color: var(--text-muted);
-  font-size: 0.76rem;
-  line-height: 1.5;
+  margin: var(--space-4) 0 0;
   max-width: 60ch;
+}
+
+/* On a phone (the 560px of `PHONE_QUERY`, wb-viewport.ts) two columns cut the
+   fields at the right edge: the section list goes above the section, with
+   its own scroll, and a field may drop under its label. */
+@media (max-width: 560px) {
+  .settings-body {
+    flex-direction: column;
+  }
+  .settings-nav {
+    width: auto;
+    max-height: 35vh;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .settings-content {
+    padding: var(--space-7) 0.9rem 1.2rem;
+  }
+  .set-main {
+    flex-wrap: wrap;
+  }
+  .set-input {
+    min-width: min(220px, 100%);
+  }
 }
 
 /* --- security modal ------------------------------------------------------- */
@@ -624,43 +647,40 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 1rem 1.1rem;
+  padding: var(--space-8) 1.1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
+  gap: var(--space-7);
 }
 .security-modal {
   width: min(560px, 96vw);
 }
 .sec-card {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
-  padding: 0.8rem 0.9rem;
+  padding: var(--space-7) 0.9rem;
 }
 .sec-card-head {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--space-6);
   margin-bottom: 0.45rem;
 }
 .sec-card-title {
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: var(--fs-lg);
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-4);
 }
 .sec-card-title .bi {
   color: var(--console-text);
 }
 .sec-badge {
   margin-left: auto;
-  font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-radius: 999px;
-  padding: 0.05rem 0.5rem;
   border: 1px solid var(--border);
   color: var(--text-muted);
   background: var(--log-bg);
@@ -673,15 +693,12 @@
   color: var(--text-muted);
 }
 .sec-note {
-  margin: 0 0 0.6rem;
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  line-height: 1.55;
+  margin: 0 0 var(--space-6);
 }
 .sec-actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-5);
   flex-wrap: wrap;
 }
 .sec-actions .set-input {
@@ -690,14 +707,12 @@
 }
 /* Settings → Desk history (wb-desk-history.js). */
 .desk-history > .sec-actions {
-  margin-bottom: 0.6rem;
+  margin-bottom: var(--space-6);
 }
-.desk-history-error {
-  color: var(--danger);
-}
+
 .desk-history-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-5);
   flex-wrap: wrap;
 }
 /* Settings → Devices (wb-devices.js). */
@@ -705,29 +720,27 @@
 .telegram-state {
   margin-left: auto;
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
 }
 .telegram-state.fault {
   color: var(--danger);
 }
 
 .devices > .sec-actions {
-  margin-bottom: 0.6rem;
+  margin-bottom: var(--space-6);
 }
-.devices-error {
-  color: var(--danger);
-}
+
 .device-this {
   font-size: 0.8em;
   color: var(--info);
 }
 .device-events {
-  margin-top: 0.4rem;
+  margin-top: var(--space-4);
   font-size: 0.85em;
 }
 .device-event {
   display: flex;
-  gap: 0.6rem;
+  gap: var(--space-6);
   flex-wrap: wrap;
 }
 .device-event-when,
@@ -755,18 +768,20 @@
 /* the one-time TOTP reveal (QR + secret) */
 .totp-reveal {
   display: flex;
-  gap: 1rem;
-  padding: 0.8rem;
-  margin-top: 0.4rem;
+  gap: var(--space-8);
+  padding: var(--space-7);
+  margin-top: var(--space-4);
   background: var(--log-bg);
   border: 1px solid var(--console-border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 .totp-qr {
   flex-shrink: 0;
+  /* stylelint-disable-next-line color-no-hex -- a QR code needs a white
+     ground to scan */
   background: #fff;
   padding: 6px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   line-height: 0;
 }
 .totp-qr img {
@@ -784,14 +799,14 @@
 }
 .totp-warn {
   color: var(--console-text);
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
 }
 .qr-fail {
   color: var(--danger);
-  font-size: 0.75rem;
+  font-size: var(--fs-sm);
 }
 
 /* a small toggle switch */
@@ -812,7 +827,7 @@
   inset: 0;
   background: var(--log-bg);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   transition: background 0.15s ease;
 }
 .switch-track::before {
@@ -831,6 +846,18 @@
   background: var(--console-bg);
   border-color: var(--console-border);
 }
+.switch input:focus-visible + .switch-track {
+  outline: 1px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+/* A switch the daemon will not let the operator turn: dimmed, as a disabled
+   checkbox is. */
+.switch:has(input:disabled) {
+  cursor: not-allowed;
+}
+.switch input:disabled + .switch-track {
+  opacity: 0.5;
+}
 .switch input:checked + .switch-track::before {
   transform: translate(18px, -50%);
   background: var(--console-text);
@@ -847,7 +874,7 @@ body.locked .runs {
 .login-gate {
   position: fixed;
   inset: 0;
-  z-index: 900;
+  z-index: var(--z-login);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -879,7 +906,7 @@ body.locked .runs {
   width: 26px;
   height: 26px;
   flex-shrink: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--surface-hi);
   border: 1px solid var(--border);
   font-size: 15px;
@@ -889,7 +916,7 @@ body.locked .runs {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  font-size: 0.82rem;
+  font-size: var(--fs-md);
   color: var(--text-muted);
 }
 /* The "keep me signed in" row — a checkbox and its label, muted like the
@@ -897,20 +924,20 @@ body.locked .runs {
 .login-remember {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.82rem;
+  gap: var(--space-5);
+  font-size: var(--fs-md);
   color: var(--text-muted);
   cursor: pointer;
   user-select: none;
 }
 .login-input {
   font: inherit;
-  font-size: 1.15rem;
+  font-size: var(--fs-xl);
   letter-spacing: 0.12em;
   color: var(--text);
   background: var(--log-bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   padding: 0.55rem 0.65rem;
 }
 .login-input:focus {
@@ -944,8 +971,8 @@ body.locked .runs {
   color: var(--console-text);
   background: var(--console-bg);
   border: 1px solid var(--console-border);
-  border-radius: 8px;
-  padding: 0.6rem;
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
   cursor: pointer;
 }
 .login-btn:hover {
@@ -954,10 +981,76 @@ body.locked .runs {
 .login-err {
   min-height: 1.1em;
   color: var(--danger);
-  font-size: 0.8rem;
+  font-size: var(--fs-md);
 }
 .login-hint {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   opacity: 0.8;
+}
+
+/* --- command palette (ADR-0087 D6) ----------------------------------------- */
+/* A modal near the top, as wide as a menu: a text field over a list of menu
+   rows, each with its kbd hint. The active row has the row hover ground. */
+.modal-scrim:has(> .palette-modal) {
+  place-items: start center;
+  padding-top: 12vh;
+}
+.palette-modal {
+  width: min(560px, 96vw);
+  max-height: 70vh;
+  padding: var(--space-5);
+  gap: var(--space-5);
+}
+.palette-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.palette-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  overflow-y: auto;
+}
+.palette-row.active {
+  background: var(--surface-hi);
+}
+.palette-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- help screen (ADR-0087 D7) ---------------------------------------------- */
+/* A modal of sections; each line is a label and its kbd hint, as a menu row
+   shows a shortcut. It only shows text. */
+.help-modal {
+  width: min(640px, 96vw);
+}
+.help-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  overflow-y: auto;
+}
+.help-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.help-title {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.help-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  font-size: var(--fs-md);
+}
+.help-modal .help-text {
+  margin: 0;
 }
