@@ -29,6 +29,7 @@ instructions or verification of the current implementation.
   supported-adapter inventory.
 - [Effort vocabulary probes](effort-vocabulary-probes.md)
 - [Claude Code hook probes, 2026-10-28](claude-hook-probes-2026-10-28.md)
+- [An HTML file with scripts, served by a route: probe of 2026-11-15](html-script-preview-probe-2026-11-15.md)
 - [Note editor experiment, 2026-09-22](spike-note-editor-2026-09-22.md)
 - [Raw live captures](../spike/live/)
 
