@@ -16,7 +16,7 @@
         </template>
         <template x-if="runIsLive()">
           <button class="run-verb danger" data-act="run-stop" @click="stopRun($store.runs.currentRun()?.runid)"
-                  :disabled="!!runStopping" :title="runStopping ? 'Stop already requested' : 'Stop this run'">
+                  :disabled="!!runStopping" :title="stopTitle()">
             <i class="bi bi-stop-fill"></i> Stop
           </button>
         </template>
@@ -42,8 +42,8 @@
           <span>Output</span>
           <span class="spacer"></span>
           <button class="runs-feed-act" data-act="feed-collapse" @click="rawFeedOpen = !rawFeedOpen"
-                  :title="rawFeedOpen ? 'Collapse the output feed' : 'Expand the output feed'">
-            <i class="bi" :class="rawFeedOpen ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+                  :title="rawFeedTitle()">
+            <i class="bi" :class="rawFeedIcon()"></i>
           </button>
           <button class="runs-feed-act" data-act="feed-dismiss" @click="dismissFeed()"
                   title="Dismiss the output feed"><i class="bi bi-x"></i></button>
@@ -53,7 +53,7 @@
 
       <div class="runs-empty" x-show="!$store.projects.openSlug">Open a project to see its runs.</div>
       <div class="runs-error" x-show="$store.runs.runsError" x-text="$store.runs.runsError"></div>
-      <div class="runs-empty" x-show="$store.projects.openSlug && $store.runs.projectRuns().length === 0 && !$store.runs.runsError">
+      <div class="runs-empty" x-show="runsEmptyShown()">
         No active runs in <b x-text="$store.projects.projectLabel($store.projects.openSlug)"></b>. Click <b>“Run”</b> to start one.
       </div>
 
@@ -89,7 +89,7 @@
                   <span class="run-face" x-text="r.face"></span>
                   <span class="run-menu-name">
                     <b x-text="runTitle(r)"></b>
-                    <small x-text="runIdentity(r) + (runClock(r) ? ' · ' + runClock(r) : '')"></small>
+                    <small x-text="runMenuIdentity(r)"></small>
                   </span>
                   <span class="run-prog" x-text="r.completed + '/' + r.queueTotal"></span>
                 </button>
@@ -108,7 +108,7 @@
             <ol class="trail">
               <template x-for="iss in ($store.runs.currentRun()?.issues || [])" :key="iss.number">
                 <li class="trail-node" :data-issue="iss.number"
-                    :class="'st-' + issueState($store.runs.currentRun(), iss) + (trailFocus === iss.number ? ' focus' : '')"
+                    :class="trailNodeClass(iss)"
                     :title="nodeTitle($store.runs.currentRun(), iss)" @click="focusIssue(iss.number)">
                   <span class="trail-ic" x-text="issueGlyph($store.runs.currentRun(), iss)"></span>
                   <span class="trail-n" x-text="'#' + iss.number"></span>
@@ -165,7 +165,7 @@
         </div>
         <div class="run-body">
           <div class="run-field">
-            <label class="run-label" x-text="runCfg.split ? 'Execute agent' : 'Agent'"></label>
+            <label class="run-label" x-text="executeAgentLabel()"></label>
             <p class="run-help">
               Agent that does the work<span x-show="!runCfg.split">, planning and execution</span>.
             </p>
@@ -199,9 +199,7 @@
               <button class="seg-btn" :class="{ on: runCfg.branchMode === 'new' }" @click="runCfg.branchMode = 'new'">New</button>
               <button class="seg-btn" :class="{ on: runCfg.branchMode === 'current' }" @click="runCfg.branchMode = 'current'">Current</button>
             </div>
-            <p class="run-help" x-text="runCfg.branchMode === 'new'
-              ? 'Creates an afk/run-… branch from the base and commits there.'
-              : ('Commits on the current branch (' + $store.projects.openProjectBranch() + ').')"></p>
+            <p class="run-help" x-text="branchHelp()"></p>
           </div>
 
           <div class="run-preview">

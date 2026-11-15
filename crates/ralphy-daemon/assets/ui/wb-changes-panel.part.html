@@ -5,9 +5,9 @@
             class="checkout-chip"
             x-show="$store.projects.openProject() && $store.checkouts.hasWorktrees($store.projects.openProject())"
             @click.stop="checkoutChipClick($store.projects.openProject(), $event.currentTarget)"
-            :title="$store.projects.openProject() ? $store.checkouts.checkoutTitle($store.projects.openProject()) : ''"
+            :title="checkoutChipTitle()"
           >
-            <i class="bi" :class="$store.checkouts.checkoutOf($store.projects.openSlug) ? 'bi-folder2' : 'bi-house-door'"></i>
+            <i class="bi" :class="checkoutChipIcon()"></i>
             <span class="checkout-chip-name" x-text="$store.checkouts.checkoutOf($store.projects.openSlug) || 'primary'"></span>
             <i class="bi bi-chevron-down"></i>
           </button>
@@ -15,7 +15,7 @@
           <span
             class="count"
             :class="{ zero: $store.checkouts.changesCount[$store.projects.openSlug] === 0 }"
-            x-text="$store.projects.openSlug ? ($store.checkouts.changesCount[$store.projects.openSlug] ?? '—') : ''"
+            x-text="changesCountText()"
             :title="changesReadError[$store.projects.openSlug] || 'Working-tree changes'"
           ></span>
         </div>
@@ -117,14 +117,14 @@
           <div class="chg-bar">
             <button class="bar-act" data-act="fetch" :disabled="$store.connection.writeLocked() || !!syncBusy"
                     :class="{ busy: syncBusy === 'fetch' }"
-                    :title="syncBusyTitle('fetch') || $store.connection.writeLockReason() || 'Fetch from the upstream'"
+                    :title="fetchTitle()"
                     @click.stop="syncFetch($store.projects.openSlug)">
               <svg x-icon="'radar'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Fetch</span>
             </button>
-            <button class="bar-act" data-act="pull" :disabled="$store.connection.writeLocked() || !!syncBusy || !!pullBlocked()"
+            <button class="bar-act" data-act="pull" :disabled="pullLocked()"
                     x-show="!pullBlocked()"
                     :class="{ busy: syncBusy === 'pull' }"
-                    :title="syncBusyTitle('pull') || pullBlocked() || $store.connection.writeLockReason() || 'Pull from the upstream (fast-forward only)'"
+                    :title="pullTitle()"
                     @click.stop="syncPull($store.projects.openSlug)">
               <svg x-icon="'cloud-download'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Pull</span>
             </button>

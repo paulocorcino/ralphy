@@ -208,3 +208,23 @@ test("a Ledger read that lands after a project switch writes no rows", async () 
   });
   assert.deepEqual([spend.ledger.records, spend.ledger.slug, spend.ledger.loading], [[], null, false]);
 });
+
+test("the refresh control waits while a read is out or no project is open", () => {
+  const { spend, shell } = page();
+  shell.$store.projects.setOpen("o/r");
+  assert.equal(spend.spendRefreshDisabled(), false);
+  spend.ledger.loading = true;
+  assert.equal(spend.spendRefreshDisabled(), true, "a ledger read is out");
+  spend.ledger.loading = false;
+  spend.spend.loading = true;
+  assert.equal(spend.spendRefreshDisabled(), true, "a spend read is out");
+  spend.spend.loading = false;
+  shell.$store.projects.setOpen(null);
+  assert.equal(spend.spendRefreshDisabled(), true, "no project is open");
+});
+
+test("a delivery names its execute attempts", () => {
+  const { spend } = page();
+  assert.equal(spend.deliveryAttemptsTitle(1), "1 execute attempt");
+  assert.equal(spend.deliveryAttemptsTitle(3), "3 execute attempts");
+});

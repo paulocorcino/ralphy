@@ -17,8 +17,8 @@
             </select>
             <span class="spend-bar-spacer"></span>
             <button class="side-refresh" :class="{ spinning: spend.loading || ledger.loading }"
-                    :disabled="spend.loading || ledger.loading || !$store.projects.openSlug"
-                    @click="spendPane === 'ledger' ? (ledger.slug = null, loadLedger()) : loadSpend()"
+                    :disabled="spendRefreshDisabled()"
+                    @click="refreshSpendPane()"
                     title="Refresh" aria-label="Refresh spend">
               <svg x-icon="'refresh-cw'"></svg>
             </button>
@@ -117,7 +117,7 @@
                           <span class="delivery-issue" x-text="d.label"></span>
                           <span class="delivery-title" x-text="d.title" x-show="d.title"></span>
                           <span class="delivery-attempts" x-show="d.attempts > 0"
-                                :title="d.attempts === 1 ? '1 execute attempt' : d.attempts + ' execute attempts'">⟳<span x-text="d.attempts"></span></span>
+                                :title="deliveryAttemptsTitle(d.attempts)">⟳<span x-text="d.attempts"></span></span>
                           <span class="delivery-value" :class="{ floor: d.floor }" x-text="d.value"></span>
                           <span class="delivery-share" x-text="d.share"></span>
                         </div>

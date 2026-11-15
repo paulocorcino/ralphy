@@ -329,3 +329,56 @@ test("catalog wording: the board words a run state with the catalog text", () =>
     assert.equal(state.runStateWord(key), w.text, key);
   }
 });
+
+test("the board shows its refresh note only while an open project with no issues refreshes", async () => {
+  const state = observedBoard([
+    { status: "ok", board: { issues: [{ number: 7, title: "x", labels: [] }], labels: [] } },
+  ]);
+  state.boardRefreshing = true;
+  assert.equal(state.refreshNoteShown(), true, "open project, no issues, refreshing");
+  state.boardRefreshing = false;
+  assert.equal(state.refreshNoteShown(), false, "nothing refreshes");
+  assert.equal(state.emptyNoteShown(), true, "the empty note takes its place");
+  state.$store.projects.setOpen(null);
+  state.boardRefreshing = true;
+  assert.equal(state.refreshNoteShown(), false, "no project is open");
+  state.$store.projects.setOpen("o/r");
+  state.boardRefreshing = false;
+  await state.loadBoard();
+  state.boardRefreshing = true;
+  assert.equal(state.refreshNoteShown(), false, "the project has an issue");
+  state.boardRefreshing = false;
+  assert.equal(state.emptyNoteShown(), false, "the project has an issue");
+});
+
+test("the issue view words its state, assignees and comment count", () => {
+  const state = observedBoard([]);
+  const base = { number: 3, title: "t", labels: [], assignees: [], comments: [], blockedBy: [] };
+  state.selectedIssue = () => ({ ...base, state: "open", reason: null });
+  assert.equal(state.issueStateClass(), "open");
+  assert.equal(state.issueStateIcon(), "bi-record-circle");
+  assert.equal(state.issueStateText(), "Open");
+  assert.equal(state.assigneeText(), "—");
+  assert.equal(state.commentCountText(), "0 comments");
+  state.selectedIssue = () => ({
+    ...base,
+    state: "closed",
+    reason: "not_planned",
+    assignees: ["a", "b"],
+    comments: [{ at: "", author: "x", body: "" }],
+  });
+  assert.equal(state.issueStateClass(), "not_planned");
+  assert.equal(state.issueStateIcon(), "bi-slash-circle");
+  assert.equal(state.assigneeText(), "a, b");
+  assert.equal(state.commentCountText(), "1 comment");
+  state.selectedIssue = () => ({ ...base, state: "closed", reason: null });
+  assert.equal(state.issueStateClass(), "completed");
+  assert.equal(state.issueStateIcon(), "bi-check-circle-fill");
+});
+
+test("the board scope names the open project, or says none is open", () => {
+  const state = observedBoard([]);
+  assert.equal(state.scopeLabel(), state.$store.projects.projectLabel("o/r"));
+  state.$store.projects.setOpen(null);
+  assert.equal(state.scopeLabel(), "No project open");
+});
