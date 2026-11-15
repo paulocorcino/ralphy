@@ -521,3 +521,17 @@ test("paintColumns gives the focus back to a column only while the keys are free
     done();
   }
 });
+
+test("the columns list counts consoles in the singular and keys a switch row apart", () => {
+  const { scope: state } = loadComponent("wbColumns");
+  state.consoleCount = 1;
+  assert.equal(state.consoleCountLabel(), "1 console");
+  state.consoleCount = 2;
+  assert.equal(state.consoleCountLabel(), "2 consoles");
+  state.columnSwitch = true;
+  assert.equal(state.columnRowKey({ id: "a" }), "switch a");
+  state.columnSwitch = false;
+  assert.equal(state.columnRowKey({ id: "a" }), "a");
+  assert.equal(state.columnGroupKey({ fence: null }), "-loose");
+  assert.equal(state.columnGroupKey({ fence: { id: "f" } }), "f");
+});

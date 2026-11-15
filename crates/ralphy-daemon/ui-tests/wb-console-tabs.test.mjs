@@ -624,3 +624,14 @@ test("Alt+Shift+arrows walk the grid of the active console tab", () => {
     restore();
   }
 });
+
+test("the + menu shows a reason on a console it cannot pick, and none on one it can", () => {
+  const { scope: state } = loadComponent("wbConsoleTabMenu");
+  assert.equal(state.rowTitle({ enabled: true, reason: "x" }), "");
+  assert.equal(state.rowTitle({ enabled: false, reason: "busy" }), "busy");
+  assert.equal(state.rowTitle({ enabled: false }), "");
+  assert.equal(state.groupKey({ fence: { id: "f" } }), "f");
+  assert.equal(state.groupKey({ fence: null }), "-loose");
+  state.menuAt = { top: 5, left: 7 };
+  assert.equal(state.menuStyle(), "top: 5px; left: 7px");
+});

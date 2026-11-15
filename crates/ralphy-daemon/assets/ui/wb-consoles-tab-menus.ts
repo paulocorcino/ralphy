@@ -77,6 +77,33 @@ export function wbConsoleMenus() {
       const last = name.split("/").pop() ?? "";
       return last === "" ? name : last;
     },
+    consoleMenuTitle() {
+      const slug = this.$store.projects.openSlug;
+      return slug === null || slug === "" ? "" : this.$store.projects.projectTitle(slug);
+    },
+    consoleMenuHead() {
+      const slug = this.$store.projects.openSlug;
+      return slug === null || slug === "" ? "Home (no project open)" : this.consoleMenuRepoName();
+    },
+    consoleIcon(it: MenuRow) {
+      return it.plain ? "bi-terminal-fill" : "bi-terminal";
+    },
+    windowMenuHead() {
+      return this.windowList.length > 0 ? "Consoles on the stage" : "No consoles yet";
+    },
+    fenceMenuHead() {
+      return this.fenceItems.length > 0 ? "Fences on the stage" : "No fences yet";
+    },
+    noteMenuHead() {
+      return this.noteItems.length > 0 ? "Notes on the stage" : "No notes yet";
+    },
+    noteTopTitle(n: NoteItem) {
+      if (n.away) return "This note is in a detached window";
+      return n.onTop ? "Put back" : "Keep on top";
+    },
+    noteTopIcon(n: NoteItem) {
+      return n.onTop ? "bi-pin-fill" : "bi-pin-angle";
+    },
     // Every row is a launch (the menu is "New console"); `opts.tryAnyway` is
     // the unavailable row's escape hatch.
     openConsoleItem(item: MenuRow & { command?: string }, opts: { tryAnyway?: boolean } = {}) {
