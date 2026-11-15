@@ -165,6 +165,39 @@ async fn the_silence_clock_starts_at_the_first_input() {
     manager.close(id);
 }
 
+/// An Antigravity console sends no hook line before the first prompt, so the
+/// clock never makes it silent; a failed start check still does.
+#[tokio::test]
+async fn an_antigravity_console_is_not_silent_by_the_clock() {
+    let manager = Arc::new(SessionManager::new());
+    let dir = tempfile::tempdir().expect("temp dir");
+    let agent = crate::session::Agent::Antigravity;
+    let files = crate::agent_state::StatusFiles::for_agent(agent, dir.path(), 1).expect("hooks");
+    files.create_status().expect("the status file");
+    let mut spec = console_spec(std::env::temp_dir(), 24, 80, None);
+    spec.status = Some(files);
+    let (id, att) = manager
+        .spawn_attached(
+            "owner/r".to_owned(),
+            "antigravity".to_owned(),
+            "agent".to_owned(),
+            None,
+            None,
+            None,
+            spec,
+        )
+        .expect("the platform shell must spawn");
+    let sess = Arc::clone(&manager.sessions.lock().expect("sessions mutex")[&id]);
+    att.write(b"x").expect("a write");
+    let far = SystemTime::now() + SILENT_AFTER * 10;
+    sess.poll_status(far, None);
+    assert_eq!(block_at(&sess, far), None, "the clock does not apply");
+    sess.poll_status(far, Some("exit 1"));
+    let block = block_at(&sess, far).expect("a failed start check is silent");
+    assert_eq!(block.source, Some(crate::agent_state::Unreported::Silent));
+    manager.close(id);
+}
+
 /// A console of `agent` with hooks, on the platform shell, after its tick
 /// folded one `PermissionRequest` line: the state is `waiting`.
 fn waiting_for_a_permission(

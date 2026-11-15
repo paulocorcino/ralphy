@@ -164,11 +164,11 @@ fn a_silent_console_is_one_request() {
     assert_eq!(got.len(), 1, "{got:?}");
     let request = &got[0];
     assert_eq!(request.kind, Kind::ConsoleSilent);
-    assert_eq!(request.id, "console:3");
+    assert_eq!(request.id, "silent:3");
     assert_eq!(request.console.as_deref(), Some("3"));
     assert_eq!(request.detail.as_deref(), Some(reason));
     assert_eq!(request.since, "1970-01-01T00:00:00Z");
-    assert!(!request.dismissable);
+    assert!(request.dismissable);
     let wire = serde_json::to_value(request).expect("a request serializes");
     assert_eq!(wire["kind"], "console-silent", "{wire}");
 }
@@ -187,6 +187,21 @@ fn a_console_with_no_state_source_by_design_is_no_request() {
     let mut went_silent = console(5, None, None);
     went_silent.agent_state = Some(AgentState::silent("No hook event.".to_owned(), at));
     let got = list(&[by_design, went_silent], &RunsRead::default(), &|_| false);
+    let ids: Vec<&str> = got.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(ids, ["silent:5"], "{got:?}");
+}
+
+/// A dismissed silence hides the silent request only: the same console's
+/// later `waiting` has another id and is listed.
+#[test]
+fn a_dismissed_silence_does_not_hide_a_later_wait() {
+    let at = std::time::SystemTime::UNIX_EPOCH;
+    let dismissed = |id: &str| id == "silent:5";
+    let mut silent = console(5, None, None);
+    silent.agent_state = Some(AgentState::silent("No hook event.".to_owned(), at));
+    assert_eq!(list(&[silent], &RunsRead::default(), &dismissed), []);
+    let waits = console(5, Some("waiting"), None);
+    let got = list(&[waits], &RunsRead::default(), &dismissed);
     let ids: Vec<&str> = got.iter().map(|r| r.id.as_str()).collect();
     assert_eq!(ids, ["console:5"], "{got:?}");
 }

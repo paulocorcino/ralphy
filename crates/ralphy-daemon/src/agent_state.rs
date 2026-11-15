@@ -371,6 +371,16 @@ impl HookVendor {
         }
     }
 
+    /// Whether the silence clock applies (ADR-0059 A2, amendment of
+    /// 2026-11-15). `agy` sends its first event with the first prompt, so
+    /// the clock cannot tell a broken hook from a prompt not sent yet.
+    pub(crate) fn silent_by_the_clock(self) -> bool {
+        match self {
+            HookVendor::Claude | HookVendor::Codex | HookVendor::OpenCode => true,
+            HookVendor::Antigravity => false,
+        }
+    }
+
     /// Whether the vendor sends an event when the operator grants a
     /// permission (ADR-0085 D7.5): Claude sends `PostToolUse` as the tool
     /// runs, `OpenCode` sends `permission.replied`; Codex sends nothing until

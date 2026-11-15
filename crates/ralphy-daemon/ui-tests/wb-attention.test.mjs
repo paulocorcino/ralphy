@@ -182,14 +182,13 @@ test("the age of a request is short", () => {
 });
 
 test("only a finished run can be dismissed", async (t) => {
-  // The rows as the daemon sends them: a waiting console, a waiting run, a
-  // silent console, and the issues a finished run left.
+  // The rows as the daemon sends them: a waiting console, a waiting run,
+  // and the issues a finished run left.
   const waiting = fixture("api-attention").requests[0];
   const finished = fixture("api-attention--finished").requests;
   const run = { ...waiting, id: "run:01R", kind: "run-waiting", console: undefined, run: "01R" };
-  const silent = { ...waiting, kind: "console-silent" };
   const { data } = page(t, { replies: [{ requests: [] }] });
-  for (const row of [waiting, run, silent]) {
+  for (const row of [waiting, run]) {
     assert.equal(data.canDismiss(row), false, row.kind);
   }
   assert.equal(finished[0].kind, "run-finished");
@@ -373,6 +372,22 @@ test("opening the console of a done request dismisses it", async (t) => {
   await new Promise((resolve) => { setImmediate(resolve); });
   const posts = sent.filter(([method]) => method === "POST");
   assert.deepEqual(posts, [["POST", "/api/attention/dismiss", JSON.stringify({ id: "done:1:1" })]]);
+});
+
+test("a click on the row of a silent request shows the console and dismisses it", async (t) => {
+  const silent = { ...waitingRow(), id: "silent:1", kind: "console-silent", dismissable: true };
+  const session = { id: 1, repo: silent.repo, agent: "antigravity", kind: "agent", started_at: 1, daemon_id: "", environment: "", record: "w-local" };
+  const { data } = page(t, { sessions: [session], replies: [{ requests: [] }] });
+  const sent = [];
+  globalThis.fetch = (url, init) => {
+    sent.push([init.method, url, init.body]);
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ requests: [] }) });
+  };
+  data.requests = [silent];
+  data.act(silent);
+  await new Promise((resolve) => { setImmediate(resolve); });
+  const posts = sent.filter(([method]) => method === "POST");
+  assert.deepEqual(posts, [["POST", "/api/attention/dismiss", JSON.stringify({ id: "silent:1" })]]);
 });
 
 const peerSession = (id, daemon_id, record) => ({ id, repo: "owner/app", agent: "claude", kind: "agent", started_at: 1, daemon_id, environment: "", record });

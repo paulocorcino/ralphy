@@ -45,6 +45,9 @@ Measured in Chromium on 2026-11-14. Menu: padding 4px, radius 6px. Head: padding
 
 Rows are 27px high in every mode.
 
+On a phone, a menu of the consoles toolbar hangs from the right edge of the
+toolbar, not from its own button, and is never wider than the canvas.
+
 ## Variants
 
 The row grammar is one rule with six class names: `.dropdown-item`,
