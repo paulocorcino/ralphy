@@ -1240,3 +1240,57 @@ test("atDeskCap is true once the desk holds the cap", async () => {
     globalThis.fetch = realFetch;
   }
 });
+
+// A page with no tabs store (the detached fence page) shows each console;
+// a console is not shown while a file tab is the active one. `placeTabs`
+// reaches the dormancy of a window that came onto the stage.
+function stagePage(extras) {
+  const kids = [];
+  const stage = {
+    clientWidth: 1280,
+    querySelectorAll: (sel) => (sel === ".session-window" ? kids : []),
+    append: (w) => {
+      w.parentElement = stage;
+      kids.push(w);
+    },
+  };
+  const pane = { clientWidth: 1280, querySelectorAll: () => [], append() {} };
+  const elements = { stage, "console-tabs-pane": pane };
+  const wb = load(extras, {
+    ...idLookups((id) => elements[id] ?? null),
+    createElement: () => ({ style: {}, addEventListener() {}, append() {}, remove() {} }),
+  });
+  const classes = new Set(["session-window"]);
+  const win = {
+    _deskId: "w1",
+    _visible: true,
+    _term: { sessionId: 7 },
+    _dormantTimer: null,
+    parentElement: null,
+    dataset: {},
+    style: { setProperty() {}, removeProperty() {} },
+    classList: {
+      contains: (c) => classes.has(c),
+      add: (c) => classes.add(c),
+      remove: (c) => classes.delete(c),
+      toggle: (c, on) => (on ? classes.add(c) : classes.delete(c), on),
+    },
+  };
+  kids.push(win);
+  return { wb, win };
+}
+
+test("a console on a page with no Alpine is shown and does not throw", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { wb, win } = stagePage();
+  wb.placeTabs([], null);
+  assert.equal(win._dormantTimer, null, "a shown console on screen stays awake");
+});
+
+test("a console is not shown while another tab is active", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const tabs = { active: "file:a.txt" };
+  const { wb, win } = stagePage({ Alpine: { store: () => tabs } });
+  wb.placeTabs([], null);
+  assert.notEqual(win._dormantTimer, null, "a console behind a file tab may sleep");
+});
