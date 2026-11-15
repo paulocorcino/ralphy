@@ -203,6 +203,9 @@ export function sessionOf(
 }
 
 export function wbAttention() {
+  // The ids the last list held (`null` before the first list: what is on the
+  // page at load is not new). A closure `let`, out of Alpine's data.
+  let known: Set<string> | null = null;
   // It reads no `shell()` member.
   return component([], {
     open: false,
@@ -210,9 +213,6 @@ export function wbAttention() {
     // The clock the ages are read at: set at each read, and each minute.
     now: Date.now(),
     _seq: 0,
-    // The ids the last list held (`null` before the first list: what is on
-    // the page at load is not new).
-    _known: null as Set<string> | null,
     _dismissing: new Set<string>(),
     // The console the page URL names, until it is shown.
     _link: null as { daemon: string; session: number } | null,
@@ -302,13 +302,13 @@ export function wbAttention() {
     },
 
     show(requests: AttentionRequest[]) {
-      const known = this._known;
-      this._known = new Set(requests.map((r) => r.id));
+      const before = known;
+      known = new Set(requests.map((r) => r.id));
       this.requests = requests;
       this.now = Date.now();
       document.title = attentionTitle(this.requests.length);
-      if (known && document.hidden && WBNotify.isOn()) {
-        for (const request of requests) if (!known.has(request.id)) this.announce(request);
+      if (before && document.hidden && WBNotify.isOn()) {
+        for (const request of requests) if (!before.has(request.id)) this.announce(request);
       }
     },
 

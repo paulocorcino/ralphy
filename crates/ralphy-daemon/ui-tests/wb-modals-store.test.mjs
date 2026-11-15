@@ -160,3 +160,18 @@ test("typing in the prompt keeps the text and clears the refusal under it", () =
   assert.equal(store.promptModal.value, "a");
   assert.equal(store.promptModal.error, "", "the refusal goes once the operator types");
 });
+
+test("dialog resolvers stay out of the reactive data", async () => {
+  const store = loadShell().state.$store.modals;
+  const before = new Set(Object.values(store));
+  const first = store.askConfirm({ title: "one" });
+  const second = store.askConfirm({ title: "two" });
+  assert.equal(await first, false, "a second confirm answers the first with false");
+  const prompt = store.askPrompt({ title: "name" });
+  const held = Object.values(store).filter((v) => typeof v === "function" && !before.has(v));
+  assert.deepEqual(held, [], "no field of the data holds a resolver");
+  store.confirmRespond(true);
+  assert.equal(await second, true);
+  store.promptRespond("a");
+  assert.equal(await prompt, "a");
+});

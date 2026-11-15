@@ -74,6 +74,20 @@ test("step-up asks for a code only once a TOTP seed is armed", async () => {
   assert.equal(await cancelled, null, "cancel resolves null so the action stops");
 });
 
+test("the step-up resolver stays out of the reactive data", async () => {
+  const { state, data, shell } = dialog();
+  shell.$store.connection.securityChanged({ totpEnrolled: true });
+  const before = new Set(Object.values(data));
+  const first = state.askFreshCode("one");
+  const held = Object.values(data).filter((v) => typeof v === "function" && !before.has(v));
+  assert.deepEqual(held, [], "no field of the data holds the resolver");
+  const second = state.askFreshCode("two");
+  assert.equal(await first, null, "a second ask answers the first with null");
+  state.stepUp.code = "123456";
+  state.submitStepUp();
+  assert.equal(await second, "123456");
+});
+
 test("step-up bodies carry the code only when there is one", () => {
   const { state } = dialog();
   assert.equal(state.stepUpBody({}, ""), "", "no seed armed: an empty body");

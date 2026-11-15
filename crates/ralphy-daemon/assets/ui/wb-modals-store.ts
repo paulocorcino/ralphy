@@ -111,6 +111,9 @@ function nameProblem(name: string) {
 // `deps` is the shape every store takes; the store is where the door's flash
 // and confirm end, so it never calls the door.
 export function modalsStore(_deps: ModalsStoreDeps) {
+  // The pending dialogs' resolvers: closure `let`s, out of Alpine's data.
+  let confirmResolve: ((ok: boolean) => void) | null = null;
+  let promptResolve: ((name: string | null) => void) | null = null;
   return {
     // The flash line; `flash` writes it, and it clears itself.
     runsActionMsg: "",
@@ -135,7 +138,6 @@ export function modalsStore(_deps: ModalsStoreDeps) {
       cancelLabel: "Cancel",
       danger: false,
     },
-    _confirmResolve: null as ((ok: boolean) => void) | null,
     // The prompt dialog (replaces window.prompt, which is suppressible
     // per-origin and never appears in an unfocused popup). `askPrompt`
     // resolves the typed string, or null.
@@ -148,7 +150,6 @@ export function modalsStore(_deps: ModalsStoreDeps) {
       confirmLabel: "Create",
       error: "",
     },
-    _promptResolve: null as ((name: string | null) => void) | null,
     // The Escape keydown a modal has already answered.
     _escapeEvent: null as Event | null,
     // The one binding every `.modal-scrim` in index.html uses:
@@ -238,22 +239,22 @@ export function modalsStore(_deps: ModalsStoreDeps) {
     // Resolve `true`/`false` on the operator's choice. A pending dialog is
     // settled `false` first so a second call never strands its promise.
     askConfirm(opts: ConfirmAsk = {}) {
-      if (this._confirmResolve) this.confirmRespond(false);
+      if (confirmResolve) this.confirmRespond(false);
       this.confirmModal = confirmModalOf(opts);
       return new Promise<boolean>((resolve) => {
-        this._confirmResolve = resolve;
+        confirmResolve = resolve;
       });
     },
     // Close the dialog and settle its promise with the choice.
     confirmRespond(ok: boolean) {
       this.confirmModal.open = false;
-      const resolve = this._confirmResolve;
-      this._confirmResolve = null;
+      const resolve = confirmResolve;
+      confirmResolve = null;
       if (resolve) resolve(ok);
     },
     // Resolve the typed string, or `null`. Mirrors askConfirm.
     askPrompt(opts: PromptAsk = {}) {
-      if (this._promptResolve) this.promptRespond(null);
+      if (promptResolve) this.promptRespond(null);
       this.promptModal = {
         open: true,
         title: (opts.title ?? "") || "Name",
@@ -271,7 +272,7 @@ export function modalsStore(_deps: ModalsStoreDeps) {
         el.setSelectionRange(el.value.length, el.value.length);
       });
       return new Promise<string | null>((resolve) => {
-        this._promptResolve = resolve;
+        promptResolve = resolve;
       });
     },
     // The prompt's field changed: keep the text, and clear the refusal under
@@ -296,8 +297,8 @@ export function modalsStore(_deps: ModalsStoreDeps) {
     // Close the dialog and settle its promise with `name` (null = cancelled).
     promptRespond(name: string | null) {
       this.promptModal.open = false;
-      const resolve = this._promptResolve;
-      this._promptResolve = null;
+      const resolve = promptResolve;
+      promptResolve = null;
       if (resolve) resolve(name);
     },
   };
