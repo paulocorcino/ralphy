@@ -169,8 +169,8 @@ export function createConsole(
   // its tab is the active one (ADR-0037 §3d). The dormancy rule and the GPU
   // budget both read it.
   const windowShown = (win: ConsoleWin) => {
-    const tabs = window.Alpine.store("tabs");
-    return inTab(win) ? win.classList.contains("tab-shown") : tabs.active === "consoles";
+    if (inTab(win)) return win.classList.contains("tab-shown");
+    return !("Alpine" in window) || window.Alpine.store("tabs").active === "consoles";
   };
   // ---- dormancy and resume: `wb-console-dormancy.ts` ---------------------------
   // Built before the window states, which take `refreshCover`. Its listeners
