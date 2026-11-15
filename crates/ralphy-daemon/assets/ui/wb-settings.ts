@@ -54,6 +54,8 @@ export type Item = {
   default: unknown;
   placeholder?: string;
   options?: readonly string[];
+  // A read-only item is disabled, not editable: the daemon refuses to write its key, the value
+  // stays readable.
   readonly?: boolean;
   min?: number;
   max?: number;

@@ -130,7 +130,11 @@ Alpine.store("uploads", uploadsStore({ messages }));
 // Each name is the `x-data` of one element in `index.html`.
 Alpine.data("shell", shell);
 Alpine.data("wbSettingsDialog", settingsDialog);
+// The devices body is built only while its section is open, so it reads the log at each opening,
+// never at page load.
 Alpine.data("wbDevices", devices);
+// The Telegram body is built only while its section is open, so its password field never sits in a
+// closed modal.
 Alpine.data("wbTelegramSetup", telegramSetup);
 Alpine.data("wbSecurityDialog", securityDialog);
 Alpine.data("wbReleaseDialogs", releaseDialogs);

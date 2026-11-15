@@ -10,8 +10,6 @@
           <button class="modal-x" @click="closeSecurity()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="security-body">
-          <!-- Step-up (ADR-0032 amendment E): one prompt for every action that
-               lowers the posture once a TOTP seed is armed. -->
           <section class="sec-card step-up" x-show="stepUp.open" x-cloak>
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-shield-lock"></i>
@@ -29,7 +27,6 @@
           <p class="sec-note" style="margin:0;color:var(--danger)" x-show="securityForm.stepUpError"
              x-text="securityForm.stepUpError"></p>
 
-          <!-- Access token -->
           <section class="sec-card">
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-key"></i> Access token</span>
@@ -45,7 +42,6 @@
             </div>
           </section>
 
-          <!-- Password -->
           <section class="sec-card">
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-asterisk"></i> Login password</span>
@@ -57,11 +53,6 @@
               <span x-show="$store.connection.security.passwordSet">Changing or removing it asks for the current one.</span>
             </p>
             <div class="sec-actions">
-              <!-- Each in its own `x-if`, and not one wrapper around the three:
-                   they are flex children of `.sec-actions`, and a div around
-                   them would be the flex item instead. The condition is the
-                   modal being OPEN — a password field in a closed modal is
-                   still one to the browser's password manager. -->
               <template x-if="securityOpen">
                 <input class="set-input" type="password" placeholder="Current password" autocomplete="current-password"
                        x-show="$store.connection.security.passwordSet" x-model="securityForm.passwordCurrent" />
@@ -85,7 +76,6 @@
             </p>
           </section>
 
-          <!-- TOTP -->
           <section class="sec-card">
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-phone"></i> Two-factor (TOTP)</span>
@@ -96,12 +86,10 @@
               Works with any authenticator app. Scan the QR code, then enter a code to finish.
             </p>
 
-            <!-- not enrolled & nothing in flight → begin enrolment -->
             <div class="sec-actions" x-show="!$store.connection.security.totpEnrolled && !securityForm.pendingEnroll">
               <button class="btn accent" @click="enrollTotp()"><i class="bi bi-qr-code"></i> Enroll and show the QR code</button>
             </div>
 
-            <!-- in-flight enrolment: QR + secret + the confirm-code step -->
             <div class="totp-reveal" x-show="securityForm.pendingEnroll">
               <div class="totp-qr" x-html="securityForm.qrHtml"></div>
               <div class="totp-meta">
@@ -122,14 +110,12 @@
               </div>
             </div>
 
-            <!-- enrolled → revoke -->
             <div class="sec-actions" x-show="$store.connection.security.totpEnrolled && !securityForm.pendingEnroll">
               <span class="sec-note" style="margin:0;flex:1">Enrolled. Revoke to start over.</span>
               <button class="btn danger" @click="revokeTotp()"><i class="bi bi-trash"></i> Revoke stored TOTP</button>
             </div>
           </section>
 
-          <!-- Require login -->
           <section class="sec-card">
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-door-closed"></i> Require login</span>
@@ -150,7 +136,6 @@
                x-text="securityForm.requireLoginError"></p>
           </section>
 
-          <!-- Remote images -->
           <section class="sec-card">
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-image"></i> Remote images</span>

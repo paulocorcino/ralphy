@@ -20,6 +20,7 @@ export type ReleaseView = {
   latest: unknown;
   gap: unknown[];
   disabled: boolean;
+  // The update button shows only where the daemon can hand over; the command always shows.
   can_update: boolean;
 };
 

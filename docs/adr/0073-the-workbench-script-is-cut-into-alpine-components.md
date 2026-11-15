@@ -781,3 +781,69 @@ hold part of its work without a rule that names the shape:
 4. Each cut still follows a responsibility the component already has (the
    2026-10-11 amendment, decision 1). No cut moves code only to lower the
    count.
+
+## Amendment (2026-11-15): the markup holds bindings only
+
+Status of this amendment: accepted (by the operator, 2026-11-15)
+
+Epic #948 keeps Alpine and sets two rules for the markup of the workbench
+(every `.html` file of `crates/ralphy-daemon/assets/ui/`). The markup
+says what is bound to what. The TypeScript member holds the logic and the
+reason for it.
+
+1. **No HTML comment.** The one exception is a line that holds only the build
+   marker `<!-- part: <name>.part.html -->` (`build/parts.rs` reads it). A CSS
+   comment inside a `<style>` is not an HTML comment and is not counted.
+2. **An Alpine attribute holds one member read or one call with plain
+   arguments.** A `:class` or `:style` object whose values are each one
+   single read is allowed. A site is compound when it has one of five shapes:
+   - more than one `&&` or `||`;
+   - a `? :`;
+   - a template string;
+   - the comma operator;
+   - a call on `$event` with a statement after it.
+
+   A compound site becomes a member of the component, named for the rule it
+   states. Phase D of the epic moves them; a ratchet counts the sites left
+   per file, and a count only goes down.
+
+Where the words of a deleted comment go:
+
+- A comment that only retells the markup is deleted.
+- A comment that states an invariant of a binding goes to the doc comment of
+  the member the binding calls.
+- A comment that states a fact about the page head (viewport, icons,
+  manifest, status bar) goes to `docs/WORKBENCH-BUILD-GUIDE.md`.
+
+Measures at `7751dd67`:
+
+- 277 `<!--` in 30 files. 29 are part markers, so 248 are comments: 43 in the
+  dialogs, 82 in the side panels and 123 in the shell, the sidebar, the
+  consoles tab and the detached pages. `index.html` holds 91 of them.
+- A first regex scan finds about 92 compound sites in 20 files. The count of
+  the ratchet is the real one: the ratchet measures it per file, and the
+  first value of each file is written where the ratchet lands.
+
+Two ratchets hold the rules in
+`crates/xtask/tests/ratchets/`: `workbench_markup_has_no_comments` (zero, with
+no baseline) and `attribute_logic_matches_the_baseline` (a count per file,
+exact).
+
+Measures of `attribute_logic_matches_the_baseline` when it landed (#942):
+117 compound sites in 20 files. `wb-hosts-dialog.part.html` 17,
+`wb-board.part.html` 13, `wb-security-dialog.part.html` 11,
+`wb-settings-dialog.part.html` 11, `index.html` 9,
+`wb-consoles-tab-menus.part.html` 8, `wb-runs-panel.part.html` 8,
+`wb-changes-panel.part.html` 6, `wb-project-row.part.html` 6,
+`wb-consoles-tab-columns.part.html` 4, `wb-files.part.html` 4,
+`wb-release-dialogs.part.html` 4, `wb-console-tabs.part.html` 3,
+`wb-spend-panel.part.html` 3, and 2 or 1 in `wb-add-project-dialog`,
+`wb-branch-dialog`, `wb-confirm-dialog`, `wb-login`, `wb-move-dialog` and
+`wb-properties-dialog`. The ratchet reads each expression through the
+`ui-copy` lexer, so a `?` or a `,` inside a string is not counted, and a
+comma inside brackets (call arguments, arrow parameters, a `:class` object)
+is not the comma operator. `x-data`, `x-ref`, `x-transition*` and the left
+side of `x-for` hold no expression and are not read. The rule did not
+change. Two statements in one handler with no call on `$event`
+(`@click="menu = false; open()"`) are not one of the five shapes, so the
+ratchet does not count them.

@@ -101,6 +101,25 @@ libraries are classic scripts.
   module component from its export (`MODULE_COMPONENTS`).
 - **Type check.** `tsc --noEmit -p crates/ralphy-daemon/assets/ui`, in the
   UI gate of [AGENTS.md](../AGENTS.md).
+- **The markup holds bindings only.** An `.html` file has no comment except
+  the part marker, and an Alpine attribute is one member read or one call. The
+  logic lives in the TypeScript member: see [the amendment of
+  ADR-0073](./adr/0073-the-workbench-script-is-cut-into-alpine-components.md#amendment-2026-11-15-the-markup-holds-bindings-only).
+
+## The page head
+
+These facts about the `<head>` of the workbench pages hold today. Read them before you change a tag there.
+
+- The viewport has `interactive-widget=resizes-content` and no `maximum-scale`. Chrome on Android shrinks the
+  layout for the keyboard, and pinch-zoom stays.
+- The SVG icon is the source. The `.ico` answers the automatic `/favicon.ico` request.
+- The manifest and `apple-touch-icon` offer the same 192px raster, because iOS reads only `apple-touch-icon` for the
+  home screen. `icon-192.png` and `icon-512.png` are scalings of the 16px grid of `favicon.svg`.
+- The iOS status bar style is `black`, not `black-translucent`, because the shell has no safe-area inset outside the
+  full-screen console.
+- The note editor stylesheet comes before the card stylesheet, because `13-notes.css` sets the `--crepe-*` tokens that
+  theme it.
+- Monaco's AMD loader installs a global `define`, so its script comes after every UMD vendor script.
 
 ## Vendored libraries
 

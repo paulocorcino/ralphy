@@ -21,8 +21,6 @@
                 <a class="rel-version" :href="entry.url" target="_blank" rel="noopener" x-text="entry.title"></a>
                 <span class="rel-date" x-text="entry.date"></span>
               </div>
-              <!-- A release published before the changelog record started has no
-                   highlights to show. It says so rather than rendering blank. -->
               <p class="rel-none" x-show="!entry.highlights.length">
                 No summary for this release.
                 <a :href="entry.url" target="_blank" rel="noopener">Read the release notes</a>.
@@ -35,9 +33,6 @@
             </div>
           </template>
         </div>
-        <!-- The update the page asks for (ADR-0056 §11). The daemon shuts down
-             when the new binary is in place, and every console is a child of
-             its terminal, so the question lists the consoles that close. -->
         <div class="rel-confirm" x-show="relUpdate.phase !== 'idle'" x-cloak>
           <template x-if="relUpdate.phase === 'confirm'">
             <div class="rel-confirm-body">
@@ -84,10 +79,6 @@
           </template>
         </div>
         <div class="modal-foot rel-foot">
-          <!-- The button only where the daemon can hand over (`can_update`,
-               ADR-0056 §11); the command always, because it works in every case. -->
-          <!-- Hidden while the update question is open: the question names
-               the consoles itself, and one list is clearer than two. -->
           <p class="rel-warn" x-show="releaseConsoleWarning && relUpdate.phase === 'idle'">
             <i class="bi bi-exclamation-triangle"></i>
             <span x-text="releaseConsoleWarning"></span>
@@ -113,10 +104,6 @@
               <span>Check for new releases</span>
             </label>
           </div>
-          <!-- The update stops the daemon before it starts the new build. A
-               workbench console dies with it: on Windows `kill_tree_by_pid`
-               walks the tree, and elsewhere the console loses its terminal.
-               With the button shown, the button is the way to update. -->
           <p class="rel-hint" x-show="!$store.release.release.can_update">
             Do not use a workbench console: the update closes all consoles.
             This page connects again by itself.
@@ -136,10 +123,6 @@
         <div class="about-body">
           <p class="about-error" x-show="about.error" x-text="about.error"></p>
 
-          <!-- hero: the daemon's own mark, the product name + version. The mark
-               is the avatar chosen at baptism, not a generic robot — this card
-               is about THIS daemon, and the rail's account puck already taught
-               the operator which picture means it. -->
           <div class="about-hero">
             <div class="about-mark" x-text="$store.connection.identityMark()"></div>
             <div class="about-headline">
@@ -151,7 +134,6 @@
             </div>
           </div>
 
-          <!-- fact rows: license · source · creator -->
           <dl class="about-facts">
             <div class="about-fact">
               <dt><i class="bi bi-file-earmark-text"></i> License</dt>

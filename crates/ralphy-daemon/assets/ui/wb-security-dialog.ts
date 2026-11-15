@@ -89,6 +89,8 @@ export function securityDialog() {
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
   // type check fails on a name the code reads.
   return component([], {
+    // Each password field has its own `x-if` on this, because the fields are flex children of
+    // `.sec-actions` and a wrapper would become the flex item.
     securityOpen: false,
     // The dialog's own form state. The fact it shows is `security` in the store
     // `connection`.

@@ -6,7 +6,6 @@
     <title>Ralphy · detached file</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="alternate icon" href="favicon.ico" sizes="any" />
-    <!-- same vendored styles as the shell, so the viewer looks identical -->
     <link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.min.css" />
     <link rel="stylesheet" href="vendor/devicon/devicon.min.css" />
     <!-- part: head.part.html -->
@@ -31,16 +30,12 @@
     </style>
   </head>
   <body>
-    <!-- wb-file-viewer.ts mounts the single file pane here (reused verbatim from the
-         shell); this popup runs its own Monaco / marked / mermaid. -->
     <div id="viewers"></div>
 
     <script type="module" src="detached-main.js"></script>
     <script src="vendor/marked.min.js"></script>
     <script src="vendor/dompurify.min.js"></script>
     <script src="vendor/mermaid.min.js"></script>
-    <!-- Monaco's AMD loader installs a global `define`; it MUST come after the
-         UMD vendors above (see index.html). -->
     <script src="vendor/monaco/vs/loader.js"></script>
   </body>
 </html>

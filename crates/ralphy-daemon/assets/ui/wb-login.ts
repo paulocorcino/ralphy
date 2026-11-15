@@ -106,6 +106,9 @@ export function wbLogin() {
       else boxes[chars.length]?.focus();
     },
 
+    // The password field leaves the document when the daemon accepts the login, because a hidden
+    // field is still filled by the password manager; the first digit box carries `one-time-code` so
+    // the browser fills all six digits there and does not save the code as a user name.
     otpInput(i: number, e: Event & { target: HTMLInputElement }) {
       const v = e.target.value.replaceAll(/\D/gu, "");
       if (v.length > 1) {

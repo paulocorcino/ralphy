@@ -360,6 +360,8 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     peerIcon(g: Group) {
       return WBFleet.stateIcon(g);
     },
+    // The `:class` of `.peer-state.wake` binds plain strings, never an object inside the array:
+    // Alpine turns that into `[object Object]` and `waking` never applies.
     peerFault(g: Group) {
       return WBFleet.stateFault(g);
     },

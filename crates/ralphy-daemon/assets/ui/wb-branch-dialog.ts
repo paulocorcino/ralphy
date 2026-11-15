@@ -85,6 +85,8 @@ export function wbBranchDialog() {
         dirty: p.dirty,
         // The dirty warning is about the tree the switch will hit (#407);
         // `dirty` stays the primary's for its picker row.
+        // The dirty-tree note shows because a run aborts on a dirty tree and a checkout can fail
+        // against uncommitted files.
         checkoutDirty: wt ? wt.dirty : p.dirty,
         worktrees: {},
       };

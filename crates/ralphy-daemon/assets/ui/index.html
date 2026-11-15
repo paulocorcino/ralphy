@@ -3,39 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="ralphy-build" content="">
-    <!-- `interactive-widget=resizes-content` puts the virtual keyboard INSIDE
-         the layout viewport on Chrome/Android: the page shrinks and the console
-         refits itself with no JS. iOS ignores it and pans the visual viewport
-         instead, which is what `keyboardInset` in wb-console.js measures. No
-         `maximum-scale`: pinch-zoom stays the operator's. -->
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, interactive-widget=resizes-content"
     />
     <title>Ralphy</title>
-    <!-- The SVG is the source and what a modern browser picks; the .ico answers
-         the automatic /favicon.ico request that no markup can suppress. -->
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="alternate icon" href="favicon.ico" sizes="any" />
-    <!-- Installable, because a tablet has no F11 and no Esc. Added to the home
-         screen the shell launches in `display: standalone` — no browser chrome
-         at all, permanently, with no fullscreen state for the operator to get
-         stuck in. The per-console fullscreen button is the desktop answer; this
-         is the iPad one, and they are independent.
-
-         iOS ignores the manifest's icons for the home screen and reads
-         `apple-touch-icon`, so the same 192px raster is offered both ways;
-         `icon-192.png`/`icon-512.png` are pixel-exact 12×/32× scalings of
-         favicon.svg's 16px grid (re-cut them when that art changes).
-         `mobile-web-app-capable` is the standard spelling; the `apple-` one is
-         still what older iOS reads. -->
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icon-192.png" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <!-- `black`, deliberately, not `black-translucent`: the translucent style
-         puts the shell's own chrome UNDER the status bar, and the workbench
-         layout has no safe-area inset outside the fullscreen console. -->
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="ralphy" />
     <meta name="theme-color" content="#14110f" />
@@ -44,82 +22,36 @@
     <link rel="stylesheet" href="vendor/wunderbaum/wunderbaum.css" />
     <link rel="stylesheet" href="vendor/xterm.css" />
     <!-- part: head.part.html -->
-    <!-- The note editor's own stylesheet, BEFORE the card's: `13-notes.css`
-         sets the `--crepe-*` tokens that theme it (ADR-0064 §6). -->
     <link rel="stylesheet" href="vendor/crepe/crepe.css" />
     <link rel="stylesheet" href="styles/13-notes.css" />
   </head>
   <body x-data="shell" x-cloak :class="{ 'side-collapsed': !sideOpen, 'runs-open': runsOpen, locked: !$store.connection.authed }">
-    <!-- The daemon runs a newer build than this page, and the page holds
-         unsaved work (ADR-0070 D6). It stays until the reload. -->
     <div class="build-notice" x-show="$store.connection.buildSkew" x-cloak role="status">
       Ralphy was updated. Save your open work, and this page loads the new version.
     </div>
-    <!-- A login of this daemon was used on another device (wb-login-notice.ts):
-         one notice for each pair of login and device, on every open page,
-         until the operator ends that login or says the use was their own. -->
     <!-- part: wb-login-notice.part.html -->
-    <!-- Icons drawn in more than one place, each drawn with `<use>`.
-         `os-linux`: Bootstrap Icons has the Windows and Apple logos but no
-         Linux penguin, so this is the "Linux" icon of Simple Icons 13.21.0
-         (CC0-1.0). `plugged`: Lucide v0.460.0 ships no connected counterpart
-         to `unplug`, so this is its two halves pushed together. -->
     <svg class="svg-defs" width="0" height="0" aria-hidden="true" focusable="false">
       <symbol id="os-linux" viewBox="0 0 24 24"><path fill="currentColor" d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139zm.529 3.405h.013c.213 0 .396.062.584.198.19.135.33.332.438.533.105.259.158.459.166.724 0-.02.006-.04.006-.06v.105a.086.086 0 01-.004-.021l-.004-.024a1.807 1.807 0 01-.15.706.953.953 0 01-.213.335.71.71 0 00-.088-.042c-.104-.045-.198-.064-.284-.133a1.312 1.312 0 00-.22-.066c.05-.06.146-.133.183-.198.053-.128.082-.264.088-.402v-.02a1.21 1.21 0 00-.061-.4c-.045-.134-.101-.2-.183-.333-.084-.066-.167-.132-.267-.132h-.016c-.093 0-.176.03-.262.132a.8.8 0 00-.205.334 1.18 1.18 0 00-.09.4v.019c.002.089.008.179.02.267-.193-.067-.438-.135-.607-.202a1.635 1.635 0 01-.018-.2v-.02a1.772 1.772 0 01.15-.768c.082-.22.232-.406.43-.533a.985.985 0 01.594-.2zm-2.962.059h.036c.142 0 .27.048.399.135.146.129.264.288.344.465.09.199.14.4.153.667v.004c.007.134.006.2-.002.266v.08c-.03.007-.056.018-.083.024-.152.055-.274.135-.393.2.012-.09.013-.18.003-.267v-.015c-.012-.133-.04-.2-.082-.333a.613.613 0 00-.166-.267.248.248 0 00-.183-.064h-.021c-.071.006-.13.04-.186.132a.552.552 0 00-.12.27.944.944 0 00-.023.33v.015c.012.135.037.2.08.334.046.134.098.2.166.268.01.009.02.018.034.024-.07.057-.117.07-.176.136a.304.304 0 01-.131.068 2.62 2.62 0 01-.275-.402 1.772 1.772 0 01-.155-.667 1.759 1.759 0 01.08-.668 1.43 1.43 0 01.283-.535c.128-.133.26-.2.418-.2zm1.37 1.706c.332 0 .733.065 1.216.399.293.2.523.269 1.052.468h.003c.255.136.405.266.478.399v-.131a.571.571 0 01.016.47c-.123.31-.516.643-1.063.842v.002c-.268.135-.501.333-.775.465-.276.135-.588.292-1.012.267a1.139 1.139 0 01-.448-.067 3.566 3.566 0 01-.322-.198c-.195-.135-.363-.332-.612-.465v-.005h-.005c-.4-.246-.616-.512-.686-.71-.07-.268-.005-.47.193-.6.224-.135.38-.271.483-.336.104-.074.143-.102.176-.131h.002v-.003c.169-.202.436-.47.839-.601.139-.036.294-.065.466-.065zm2.8 2.142c.358 1.417 1.196 3.475 1.735 4.473.286.534.855 1.659 1.102 3.024.156-.005.33.018.513.064.646-1.671-.546-3.467-1.089-3.966-.22-.2-.232-.335-.123-.335.59.534 1.365 1.572 1.646 2.757.13.535.16 1.104.021 1.67.067.028.135.06.205.067 1.032.534 1.413.938 1.23 1.537v-.043c-.06-.003-.12 0-.18 0h-.016c.151-.467-.182-.825-1.065-1.224-.915-.4-1.646-.336-1.77.465-.008.043-.013.066-.018.135-.068.023-.139.053-.209.064-.43.268-.662.669-.793 1.187-.13.533-.17 1.156-.205 1.869v.003c-.02.334-.17.838-.319 1.35-1.5 1.072-3.58 1.538-5.348.334a2.645 2.645 0 00-.402-.533 1.45 1.45 0 00-.275-.333c.182 0 .338-.03.465-.067a.615.615 0 00.314-.334c.108-.267 0-.697-.345-1.163-.345-.467-.931-.995-1.788-1.521-.63-.4-.986-.87-1.15-1.396-.165-.534-.143-1.085-.015-1.645.245-1.07.873-2.11 1.274-2.763.107-.065.037.135-.408.974-.396.751-1.14 2.497-.122 3.854a8.123 8.123 0 01.647-2.876c.564-1.278 1.743-3.504 1.836-5.268.048.036.217.135.289.202.218.133.38.333.59.465.21.201.477.335.876.335.039.003.075.006.11.006.412 0 .73-.134.997-.268.29-.134.52-.334.74-.4h.005c.467-.135.835-.402 1.044-.7zm2.185 8.958c.037.6.343 1.245.882 1.377.588.134 1.434-.333 1.791-.765l.211-.01c.315-.007.577.01.847.268l.003.003c.208.199.305.53.391.876.085.4.154.78.409 1.066.486.527.645.906.636 1.14l.003-.007v.018l-.003-.012c-.015.262-.185.396-.498.595-.63.401-1.746.712-2.457 1.57-.618.737-1.37 1.14-2.036 1.191-.664.053-1.237-.2-1.574-.898l-.005-.003c-.21-.4-.12-1.025.056-1.69.176-.668.428-1.344.463-1.897.037-.714.076-1.335.195-1.814.12-.465.308-.797.641-.984l.045-.022zm-10.814.049h.01c.053 0 .105.005.157.014.376.055.706.333 1.023.752l.91 1.664.003.003c.243.533.754 1.064 1.189 1.637.434.598.77 1.131.729 1.57v.006c-.057.744-.48 1.148-1.125 1.294-.645.135-1.52.002-2.395-.464-.968-.536-2.118-.469-2.857-.602-.369-.066-.61-.2-.723-.4-.11-.2-.113-.602.123-1.23v-.004l.002-.003c.117-.334.03-.752-.027-1.118-.055-.401-.083-.71.043-.94.16-.334.396-.4.69-.533.294-.135.64-.202.915-.47h.002v-.002c.256-.268.445-.601.668-.838.19-.201.38-.336.663-.336zm7.159-9.074c-.435.201-.945.535-1.488.535-.542 0-.97-.267-1.28-.466-.154-.134-.28-.268-.373-.335-.164-.134-.144-.333-.074-.333.109.016.129.134.199.2.096.066.215.2.36.333.292.2.68.467 1.167.467.485 0 1.053-.267 1.398-.466.195-.135.445-.334.648-.467.156-.136.149-.267.279-.267.128.016.034.134-.147.332a8.097 8.097 0 01-.69.468zm-1.082-1.583V5.64c-.006-.02.013-.042.029-.05.074-.043.18-.027.26.004.063 0 .16.067.15.135-.006.049-.085.066-.135.066-.055 0-.092-.043-.141-.068-.052-.018-.146-.008-.163-.065zm-.551 0c-.02.058-.113.049-.166.066-.047.025-.086.068-.14.068-.05 0-.13-.02-.136-.068-.01-.066.088-.133.15-.133.08-.031.184-.047.259-.005.019.009.036.03.03.05v.02h.003z"/></symbol>
       <symbol id="plugged" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 7 5-5"/><path d="m2 22 5-5"/><path d="M8.3 18.3a2.4 2.4 0 0 0 3.4 0L14 16l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="M9.5 11.5 12 9"/><path d="M12.5 14.5 15 12"/><path d="m10 8 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z"/></symbol>
     </svg>
-    <!-- The top bar is GONE (#top-bar-removal): a full-width strip cost 47px of
-         height to carry five things, and every one of them had a better home.
-         The daemon's identity — its mark, its name, its uptime — is one subject,
-         so it is now one control: the account puck at the head of the rail, with
-         the numbers inside the menu it already opened. The product's name and
-         the project crumb are not reinstated anywhere: the menu head says which
-         daemon this is, and the sidebar names the open project on its top row.
-         Nothing on the plane is a caption for something the operator can read
-         off the thing itself. -->
 
-    <!-- icon rail: switches the sidebar's view. impl: Projects toggles the
-         sidebar; Runs opens the right-hand run panel; Kanban opens the tasks
-         board as a canvas overlay (wb-kanban.js). -->
     <nav class="rail">
-      <!-- Account puck: the rail's head, above the views, because it is not a
-           view — it is who you are talking to. impl: the mark is the daemon's
-           avatar (/api/identity); the menu carries the name, the live uptime and
-           the security verbs. The menu opens to the SIDE (`.rail .account-menu`),
-           over the sidebar: a 48px column has no room to drop one downward. -->
       <!-- part: wb-account.part.html -->
       <button :class="{ active: sideOpen && sideView === 'projects' }" @click="showSideView('projects')" title="Projects"><svg x-icon="'folder-tree'"></svg></button>
-      <!-- Changes carries NO badge of any kind: a rail roll-up would claim a
-           cross-repo aggregate this UI never computes (#317, PRD #314). The
-           count's home is the per-project row in the Projects view. -->
       <button :class="{ active: sideOpen && sideView === 'changes' }" @click="showSideView('changes')" title="Changes"><svg x-icon="'git-compare'"></svg></button>
       <button :class="{ active: runsOpen }" @click="toggleRuns()" title="Runs"><svg x-icon="'refresh-cw'"></svg></button>
       <button :class="{ active: kanbanOpen }" @click="toggleKanban()" title="Kanban (tasks)"><svg x-icon="'square-kanban'"></svg></button>
-      <!-- Spend opens a CANVAS TAB (ADR-0037 §3, amended by #358: a closable tab
-           may be a daemon view, not only an open file), so `$store.tabs.active` tracks the
-           canvas rather than a panel of its own. -->
       <button :class="{ active: $store.tabs.active === 'spend' }" @click="$dispatch('workbench:spend-open')" title="Spend (cost of this project)"><svg x-icon="'coins'"></svg></button>
-      <!-- spacer pushes the settings gear to the bottom of the rail -->
       <span class="rail-spacer"></span>
       <button :class="{ active: $store.modals.modalOpen('settingsOpen') }" @click="$dispatch('workbench:menus-close'); $dispatch('workbench:settings-open')" title="Settings"><svg x-icon="'settings'"></svg></button>
-      <!-- The attention list (wb-attention.ts): the requests that wait for the
-           operator, as the daemon computed them. The badge is the count, hidden
-           at 0; the same count is in the tab title. It is the last control of
-           the rail, so its panel opens to the SIDE and grows upward. -->
       <!-- part: wb-attention.part.html -->
     </nav>
 
-    <!-- sidebar: project accordion. impl: `$store.projects.projects` comes from the daemon
-         (mirror of /api/repos) — slug, branch, state (reachability), remote
-         (github|local), and a file `tree`. Opening one lifts it to the top and
-         mounts its tree; only one open at a time. -->
     <aside class="side">
       <div class="projects-view" x-show="sideView === 'projects'">
       <div class="side-head">
         <span>Projects</span>
         <span class="spacer"></span>
-        <!-- manual refresh: the list does not auto-update (only the live dots do),
-             so this re-reads /api/repos to pick up new repos / branch changes. -->
         <button
           class="side-refresh"
           :class="{ spinning: $store.projects.reposLoading }"
@@ -130,35 +62,21 @@
         >
           <svg x-icon="'refresh-cw'"></svg>
         </button>
-        <!-- Add a project (#501) comes before Hosts: it is the more frequent act. -->
         <button class="side-refresh side-add-project" @click="$dispatch('workbench:add-project-open')" title="Add a project" aria-label="Add a project">
           <svg x-icon="'folder-plus'"></svg>
         </button>
-        <!-- Lucide v0.460.0 has no `server-plus`: this is its `server` with the
-             lower unit shortened so a plus fits beside it. -->
         <button class="side-refresh side-add-host" @click="$dispatch('workbench:hosts-open')" title="Hosts" aria-label="Hosts">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="10" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/><path d="M18 15v6"/><path d="M15 18h6"/></svg>
         </button>
-        <!-- count of located projects, at a glance ($store.projects.projects.length) -->
         <span class="count" x-text="$store.projects.projects.length" title="Number of projects"></span>
       </div>
-      <!-- daemon-mode repos-load failure (M5, #202): honest error, not seed. -->
       <div class="side-error" x-show="$store.projects.reposError" x-text="$store.projects.reposError" x-cloak></div>
-      <!-- The peers' last good read, kept when a read fails (ADR-0070 D3). -->
       <div class="side-error" x-show="$store.projects.fleetError" x-text="$store.projects.fleetError" x-cloak></div>
-      <!-- The peers the daemon could not read (ADR-0070 D4). -->
       <div class="side-error" x-show="$store.projects.fleetRejectNote" x-text="$store.projects.fleetRejectNote" x-cloak></div>
-      <!-- No project yet: say what to do first (#501). A failed read shows its
-           error above instead. -->
       <div class="side-empty projects-empty" x-show="!$store.projects.projects.length && !$store.projects.reposError && !$store.projects.reposLoading" x-cloak>
         <p>No projects yet</p>
         <button class="btn accent" @click="$dispatch('workbench:add-project-open')"><svg x-icon="'folder-plus'"></svg> Add a project</button>
       </div>
-      <!-- filters the list client-side on slug/branch; "/" (global shortcut)
-           focuses this input; Escape clears it. Hidden while a project is
-           open: `has-open` hides every other row, so there is nothing for it
-           to filter, and a search box that is visible but does nothing is
-           the one an operator types a file name into. -->
       <div class="side-search" x-show="!$store.projects.openSlug">
         <svg x-icon="'search'"></svg>
         <input type="text"
@@ -173,11 +91,6 @@
         class="projects"
         :class="{ 'has-open': $store.projects.openSlug }"
       >
-        <!-- The federated sidebar (#349): one group per environment, local
-             first. `.env-block` is `display: contents`, so every `li.project`
-             stays a direct flex item of `ul.projects` — the open project's
-             `order: -1` rise and the `has-open` sibling hiding both keep
-             working across groups. A fleet of one renders no headers at all. -->
         <template x-for="g in $store.projects.fleetGroups(filteredProjects())" :key="g.key">
           <div class="env-block">
             <div class="env-group" x-show="g.header" :title="$store.projects.groupTitle(g)">
@@ -189,15 +102,6 @@
               </span>
               <span class="env-label"><span class="env-host" x-text="$store.projects.groupHost(g) ? $store.projects.groupHost(g) + ' · ' : ''"></span><span class="env-os" x-text="$store.projects.groupLabel(g)"></span></span>
               <span class="env-daemon" x-show="g.showName" x-text="g.name"></span>
-              <!-- The state is a glyph, its word in the tooltip and the
-                   aria-label (wb-fleet.js `stateIcon`). The glyph becomes the
-                   wake button on the two states a nudge can answer. Same glyph,
-                   same place: the operator sees the unplugged peer and acts on
-                   it without hunting for a control, and the click is the whole
-                   consent (ADR-0046). -->
-              <!-- `:class` binds plain strings, never an object nested in the
-                   array: Alpine stringifies that to the literal class
-                   `[object Object]` and the `waking` state never applies. -->
               <button
                 class="peer-state wake"
                 x-show="$store.projects.peerWakeable(g)"
@@ -207,8 +111,6 @@
                 :aria-label="$store.projects.waking[g.daemon] ? 'waking' : peerStateWord(g.state)"
                 @click.stop="$store.projects.wakePeer(g.daemon)"
               ><svg x-icon="'unplug'"></svg></button>
-              <!-- An SSH host on another protocol: the same glyph installs
-                   this computer's Ralphy there. The click is the permission. -->
               <button
                 class="peer-state wake"
                 x-show="$store.projects.peerUpdatable(g)"
@@ -234,41 +136,16 @@
             </template>
           </div>
         </template>
-        <!-- The open project's files (wb-files.ts): ONE element after the
-             rows, shown for the open project. Its flex `order` puts it right
-             under the open row (02-rail-sidebar.css). -->
         <!-- part: wb-files.part.html -->
-        <!-- ===================================================================
-             The end of the FILES tree of the open project (wbFiles).
-        ==================================================================== -->
       </ul>
       </div>
 
-      <!-- Changes: a rail VIEW, not a section under the project row (#317).
-           PRD #297 recorded the trigger — "if Changes ever grows its own
-           toolbar it outgrows a section" — and PRD #314's write controls fire
-           it. Scoped to `$store.projects.openSlug` alone; the per-project count lives on the
-           Projects row above, so it stays reachable with no navigation. -->
       <!-- part: wb-changes-panel.part.html -->
-      <!-- ===================================================================
-           The end of the CHANGES view of the open project (wbChanges).
-      ==================================================================== -->
     </aside>
 
-    <!-- canvas -->
-    <!-- On a phone the sidebar floats over the canvas (01-base.css), so a tap
-         on the canvas is the tap outside it. -->
     <main class="canvas" @pointerdown="phone() && (sideOpen = false)">
-      <!-- tab strip: the first tab (Consoles) is fixed and never closes; every
-           opened file rides in after it and can be closed. The console controls
-           live at the strip's right edge — kept above the workspace so a
-           floating console can never cover them. -->
       <div class="tabbar">
         <div class="tabstrip" role="tablist" aria-label="Open tabs">
-          <!-- one tab per entry in `$store.tabs.tabs`: index 0 is the fixed Consoles tab
-               (not closable); the rest are opened files. Click activates,
-               MIDDLE-click (button 1) or × closes — `auxclick` also fires for the
-               right button, which must never cost the operator their tab. -->
           <template x-for="t in $store.tabs.tabs" :key="t.id">
             <div
               class="tab" role="tab" tabindex="0" :aria-selected="$store.tabs.active === t.id"
@@ -280,201 +157,66 @@
             >
               <i class="tab-ic" :class="t.icon"></i>
               <span class="tab-title" x-text="t.title"></span>
-              <!-- the slot's pane (ADR-0037 §3c): on screen too, on the right -->
               <i class="tab-pin bi bi-pin-angle-fill" x-show="$store.tabs.slot?.kind === 'pin' && $store.tabs.slot.id === t.id"></i>
               <button class="tab-close" x-show="t.closable" @click.stop="$store.tabs.closeTab(t.id)" title="Close">
                 <i class="bi bi-x"></i>
               </button>
             </div>
           </template>
-          <!-- A console of the stage in its own tab (ADR-0037 §3d). The rows are
-               the rows of the column list; the classes are their own, so
-               queries scoped to the column list stay inert. -->
           <!-- part: wb-console-tabs.part.html -->
         </div>
 
-        <!-- console controls, only meaningful on the Consoles tab -->
         <!-- part: wb-consoles-tab-menus.part.html -->
-        <!-- ===================================================================
-             The end of the console menus (wbConsoleMenus, wb-consoles-tab.ts).
-             =================================================================== -->
       </div>
 
       <div class="tabbody">
-        <!-- Consoles tab: the floating-console workspace. Consoles live here as
-             draggable windows over the dotted floor. -->
-        <!-- The pane of the console tabs (ADR-0037 §3d): the window of a
-             console that has a tab moves here from the stage, and only the
-             active tab's window is shown. -->
         <section id="console-tabs-pane" class="console-tabs-pane"
                  :class="{ 'tab-hidden': !$store.tabs.consoleTabShown() }"></section>
         <section class="consoles-tab" :class="{ 'tab-hidden': !$store.tabs.stageShown() }">
-          <!-- `#workspace` is the VIEWPORT (overflow:auto) and `#stage` the plane
-               it scrolls over; wb-console.js appends the floating console windows
-               into the stage and sizes it from their bbox (issue #336). -->
           <div id="workspace"><div id="stage"></div></div>
-          <!-- The saved desk cannot be read (ADR-0070 D4): say so, and offer
-               the one action. The daemon keeps the old file under a new name. -->
           <div class="desk-failure" x-show="deskFailure" x-cloak role="alert">
             <span x-text="'Could not read the saved desk: ' + deskFailure"></span>
             <button class="btn" @click="startNewDesk()"
                     title="The old desk file is kept with a new name.">Start a new desk</button>
           </div>
-          <!-- The footer pills and the columns list are the state of
-               wbColumns (wb-consoles-tab.ts). The wrapper is not positioned,
-               so both still resolve against `.consoles-tab`. -->
           <!-- part: wb-consoles-tab-columns.part.html -->
         </section>
 
-        <!-- ===================================================================
-             Spend tab (#358, PRD #355) — what the OPEN project cost.
-
-             Every number on screen arrives already RENDERED by `/api/spend`:
-             the total, the token meter, each volume and each percentage. The
-             only arithmetic on this page is a bar's CSS width. `spendView()`
-             (wb-spend.js) decides which of the four states is on screen and
-             carries the explanatory copy — words and decisions, never figures.
-
-             Composition: one hero band carrying the number the tab exists for,
-             then a two-column body — the token split on the left, the unpriced
-             volume on the right. The grid is what the following slices extend:
-             #359's tiles join the hero band and its grids drop under the body,
-             into a rhythm that is already established rather than invented per
-             pane.
-
-             Palette: the ADR-0035 warm-dark tokens, no new hex. The two
-             existing accents are used for the only two claims that earn one —
-             gold for a figure that is a floor and for the half of the gap that
-             is still actionable, terracotta for what is lost. Everything else
-             is the grey ramp, and length does the rest of the work.
-             ================================================================ -->
         <!-- part: wb-spend-panel.part.html -->
 
-        <!-- file-viewer panes are appended here by wb-file-viewer.ts, one per file
-             tab (code = Monaco, markdown = rendered+mermaid). impl: a seed
-             synthesises file bytes — fetch the real file; a Save emits a `save`
-             intent (workbench:action) carrying the new content to persist. -->
         <div id="viewers"></div>
       </div>
 
-      <!-- ===================================================================
-           Kanban board — an overlay over the canvas, toggled by the Kanban rail
-           button. The open project's issues placed in four columns
-           by ralphy's own judgment (wb-kanban.js): Backlog · Ready for agent ·
-           Ready for human · Closed. The two Ready columns are ordered by the
-           dependency graph (Kahn, blocked.rs); Backlog is a flat filtered list.
-           Read-only except labels; clicking a card opens the detail drawer.
-      ==================================================================== -->
       <!-- part: wb-board.part.html -->
 
     </main>
 
-    <!-- ===================================================================
-         The Runs panel and the run modal: the component `wbRuns`.
-    ==================================================================== -->
     <!-- part: wb-runs-panel.part.html -->
 
-    <!-- right-click menu, built per-node by app.js (open/rename/copy-path/
-         new/delete). Each item emits a workbench:action intent — no direct FS. -->
     <div id="ctxmenu" class="ctxmenu"></div>
 
-    <!-- ===================================================================
-         Settings modal — data-driven from WB_SETTINGS (wb-settings.ts). Left
-         rail = sections; right = the knobs for the active section, each with a
-         plain-English blurb. Changing a value emits `setting-change`; the
-         daemon persists it via `config.set`/`config.unset`.
-    ==================================================================== -->
     <!-- part: wb-settings-dialog.part.html -->
 
-    <!-- ===================================================================
-         Security modal — mirrors ralphy's daemon auth model (ADR-0032):
-         access token, optional password (PBKDF2), and TOTP 2FA whose secret is
-         shown exactly once. "Revoke" is the real "delete the daemon-totp file".
-    ==================================================================== -->
     <!-- part: wb-security-dialog.part.html -->
 
-    <!-- ===================================================================
-         About — the daemon's product card: the git-published version (tracks
-         the release tag), the one-line description, and the license / source /
-         creator facts. All read from `/api/about`; a single fetch, no writes.
-    ==================================================================== -->
-    <!-- What's new (ADR-0056 §7): the WHOLE gap between the running build and
-         the newest, newest first — not just the last release. At a candidate
-         every few days the typical reader is several behind, and a panel that
-         showed only the last one would hide the reason to take it. -->
     <!-- part: wb-release-dialogs.part.html -->
 
-    <!-- ===================================================================
-         Branch switcher — click the branch chip on a project to open. A
-         filtered list (current pinned + ticked) with a create-from-current
-         affordance when the typed name is new. Switching/creating emits an
-         intent (`branch-switch` / `branch-create`); the daemon runs the real
-         `git checkout`. The UI reflects the new branch optimistically.
-         Below the list, a Worktrees section (`worktree.list`, ADR-0063 §4)
-         renders once the daemon answered the listing: one row per workbench
-         worktree — clicking it SELECTS that checkout for the project (#406):
-         the Files tree, the viewer, Find and the branch chip follow it, and
-         the choice is remembered in the desk; `primary` selects the primary
-         tree back — then a create row whose own field + Enter runs
-         `worktree.add` (ADR-0063 §2) from the current branch. Each worktree
-         row's tail holds a remove action (`worktree.remove`, #409) that
-         surfaces each gate's message verbatim (ADR-0063 §4); `.stop` keeps
-         the row's own selecting click out of it.
-    ==================================================================== -->
     <!-- part: wb-branch-dialog.part.html -->
     <!-- part: wb-palette.part.html -->
     <!-- part: wb-confirm-dialog.part.html -->
     <!-- part: wb-help.part.html -->
     <!-- part: wb-prompt-dialog.part.html -->
 
-    <!-- ===================================================================
-         Move destination picker (issue #364) — browses real directories one
-         level at a time through `tree.list`, so the destination of a move is
-         PICKED, never typed. wb-move-dialog.ts is the component that owns it:
-         the files open it with `workbench:move-open`, and it answers with
-         `workbench:move-confirmed`. The moved folder and its own subtree are
-         absent from the rows by construction.
-    ==================================================================== -->
     <!-- part: wb-move-dialog.part.html -->
 
-    <!-- ===================================================================
-         The upload dialog (wbUploadDialog, wb-files-upload.ts): the files
-         dropped or picked for one folder, the ones over the limit, and one
-         choice for the names that exist.
-    ==================================================================== -->
     <!-- part: wb-files-upload.part.html -->
 
-    <!-- ===================================================================
-         Properties of a file or a folder: the facts of one path (`file.stat`)
-         and, for a folder, what is inside it (`tree.size`), which can take
-         seconds. wb-properties-dialog.ts is the component that owns it: the
-         files open it with `workbench:properties-open`. Names and values are
-         shown with x-text only.
-    ==================================================================== -->
     <!-- part: wb-properties-dialog.part.html -->
 
-    <!-- ===================================================================
-         Add a project (#501): a folder on this computer or on a peer becomes
-         a project. The daemon that owns the folder lists it (`dir.list`) and
-         runs `ralphy daemon add` (`project.add`); wb-add-project.ts holds the
-         state. Folder names are shown with x-text only.
-    ==================================================================== -->
     <!-- part: wb-add-project-dialog.part.html -->
 
-    <!-- ===================================================================
-         Add a host (#497): a computer reached over SSH becomes a peer. The
-         daemon runs `ralphy host …` on this computer; wb-hosts.ts holds the
-         state, and wb-hosts-dialog.ts is the component that owns it. Everything
-         the host says is shown with x-text only.
-    ==================================================================== -->
     <!-- part: wb-hosts-dialog.part.html -->
 
-    <!-- ===================================================================
-         Login gate — a fully-opaque overlay shown when `!authed`. Because it's
-         solid (not just dimmed) and the chrome is blanked (body.locked), there's
-         nothing behind to read: the real daemon never renders the app until
-         /api/login succeeds, so there's nothing to peek at.
-    ==================================================================== -->
     <!-- part: wb-login.part.html -->
 
     <script src="vendor/marked.min.js"></script>
@@ -488,13 +230,8 @@
     <script src="vendor/xterm-addon-webgl.js"></script>
     <script src="vendor/xterm-addon-web-links.js"></script>
     <script src="vendor/xterm-addon-unicode11.js"></script>
-    <!-- Monaco's AMD loader installs a global `define`; it MUST come after every
-         UMD vendor above, or they register as anonymous AMD modules and never
-         set window.marked / mermaid / Wunderbaum / Terminal. -->
     <script src="vendor/monaco/vs/loader.js"></script>
     <script src="vendor/crepe/crepe.js"></script>
-    <!-- The page's one module (ADR-0075 D5). It runs after the classic scripts
-         above, imports the rest of the page, and starts Alpine. -->
     <script type="module" src="main.js"></script>
   </body>
 </html>
