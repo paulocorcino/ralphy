@@ -170,10 +170,10 @@ fn run_all(root: &Path, steps: &[Step], options: &Options, xtask: &Path) -> Resu
         out.flush().context("writing the gate table")?;
         let start = Instant::now();
         let log = dir.join(format!("{}.log", step.name));
-        let outcome = if options.fast && step.slow {
-            Outcome::Skipped
-        } else {
+        let outcome = if step.runs.in_gate(options.fast) {
             run_step(root, step, xtask, &log)?
+        } else {
+            Outcome::Skipped
         };
         let secs = start.elapsed().as_secs_f64();
         writeln!(out, "{:<18}{secs:>7.1}s", outcome.label()).context("writing the gate table")?;

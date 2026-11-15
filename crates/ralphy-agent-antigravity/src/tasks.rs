@@ -121,6 +121,7 @@ fn held_one_shot(
         model: options.model,
         effort: options.effort,
         waiver: options.run_without_guard_proof,
+        proof_window: crate::status::PROOF_WINDOW,
         timeout: options.timeout,
         idle_minutes: 0,
     };

@@ -1,3 +1,4 @@
+use super::steps::Runs;
 use super::*;
 
 const NO_SUCH_TOOL: &str = "ralphy-gate-test-no-such-tool";
@@ -10,7 +11,7 @@ fn cargo_step(name: &'static str, args: &'static [&'static str]) -> Step {
         args,
         env: &[],
         needs: None,
-        slow: false,
+        runs: Runs::Always,
     }
 }
 
@@ -81,15 +82,20 @@ fn a_cargo_subcommand_that_is_not_installed_is_missing() {
 }
 
 #[test]
-fn fast_skips_only_the_slow_steps() {
+fn fast_skips_the_full_only_steps_and_runs_the_fast_only_ones() {
     let root = tempfile::tempdir().unwrap();
     let steps = [
         Step {
             program: NO_SUCH_TOOL,
-            slow: true,
+            runs: Runs::FullOnly,
             ..cargo_step("slow", &[])
         },
         cargo_step("quick", &["--version"]),
+        Step {
+            program: NO_SUCH_TOOL,
+            runs: Runs::FastOnly,
+            ..cargo_step("pins", &[])
+        },
     ];
     let fast = run_all(
         root.path(),
@@ -98,7 +104,7 @@ fn fast_skips_only_the_slow_steps() {
         Path::new("unused"),
     )
     .unwrap();
-    assert_eq!(fast, [Outcome::Skipped, Outcome::Passed]);
+    assert_eq!(fast, [Outcome::Skipped, Outcome::Passed, Outcome::Missing]);
     assert!(!Outcome::Skipped.is_bad());
     let full = run_all(
         root.path(),
@@ -107,7 +113,7 @@ fn fast_skips_only_the_slow_steps() {
         Path::new("unused"),
     )
     .unwrap();
-    assert_eq!(full[0], Outcome::Missing);
+    assert_eq!(full, [Outcome::Missing, Outcome::Passed, Outcome::Skipped]);
 }
 
 #[test]

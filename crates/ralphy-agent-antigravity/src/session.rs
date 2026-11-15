@@ -53,6 +53,8 @@ pub(crate) struct Session<'a> {
     pub(crate) effort: Option<&'a str>,
     /// The operator lets an unproven session go on.
     pub(crate) waiver: bool,
+    /// How long the session waits for the proof that the guard runs.
+    pub(crate) proof_window: Duration,
     /// The wall-clock budget.
     pub(crate) timeout: Duration,
     /// The idle window in minutes; `0` turns the watch off.
@@ -121,7 +123,7 @@ impl Session<'_> {
             log_file: self.log_path.to_path_buf(),
             root: self.root.to_path_buf(),
             waiver: self.waiver,
-            window: status::PROOF_WINDOW,
+            window: self.proof_window,
         }
     }
 }
