@@ -98,9 +98,12 @@ async fn launch(port: u16, fields: serde_json::Value) -> Ws {
     page::console(port, fields).await
 }
 
-async fn read_until(ws: &mut Ws, needle: &str) -> (String, Option<serde_json::Value>) {
+type Seen = (String, Option<serde_json::Value>);
+/// `want_open`: wait for `session-open` too; under load it can follow the text (#950).
+async fn read_until(ws: &mut Ws, needle: &str, want_open: bool) -> Seen {
     let mut terminal = String::new();
     let mut open = None;
+    let mut found = false;
     let completed = tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(message) = ws.next().await {
             match message.expect("the websocket frame arrives") {
@@ -121,12 +124,16 @@ async fn read_until(ws: &mut Ws, needle: &str) -> (String, Option<serde_json::Va
                             .expect("the frame is sent");
                         }
                         terminal.push_str(&String::from_utf8_lossy(&data));
-                        if terminal.replace("\r\n", "").contains(needle) {
+                        found = terminal.replace("\r\n", "").contains(needle);
+                        if found && (!want_open || open.is_some()) {
                             return true;
                         }
                     }
                     Ok(Frame::Command(command)) if command.verb == "session-open" => {
                         open = Some(command.payload);
+                        if found {
+                            return true;
+                        }
                     }
                     Ok(Frame::Command(command))
                         if command.verb == "session-end" && needle == "session-end" =>
@@ -245,7 +252,7 @@ async fn a_free_console_runs_on_this_daemon(
         serde_json::json!({ "console": 1, "repo": repo }),
     )
     .await;
-    let (_, open) = read_until(&mut console, "READY").await;
+    let (_, open) = read_until(&mut console, "READY", true).await;
     let open = open.expect("free console must announce its effective environment");
     let console_id = open
         .get("session")
@@ -254,7 +261,7 @@ async fn a_free_console_runs_on_this_daemon(
     assert_eq!(open["daemon_id"], LOCAL_ID);
     assert_eq!(open["environment"], PEER_ENVIRONMENT);
     send_line(&mut console, "argv").await;
-    let (argv, _) = read_until(&mut console, "ARGV:").await;
+    let (argv, _) = read_until(&mut console, "ARGV:", false).await;
     assert!(
         argv.replace("\r\n", "").contains(&format!(
             "ARGV:-d Ubuntu-22.04 --cd {}",
@@ -288,7 +295,7 @@ async fn a_free_console_runs_on_this_daemon(
         serde_json::json!({ "id": console_id, "repo": repo, "takeover": 1 }),
     )
     .await;
-    let (replayed, reopened) = read_until(&mut console, "ARGV:").await;
+    let (replayed, reopened) = read_until(&mut console, "ARGV:", true).await;
     assert!(replayed.contains("-d Ubuntu-22.04 --cd"));
     assert_eq!(
         reopened
@@ -318,12 +325,12 @@ async fn an_agent_console_runs_on_the_owner(local: &Daemon, peer: &Daemon, repo:
         serde_json::json!({ "repo": repo, "agent": "claude" }),
     )
     .await;
-    let (_, agent_open) = read_until(&mut agent, "READY").await;
+    let (_, agent_open) = read_until(&mut agent, "READY", true).await;
     let agent_open = agent_open.expect("peer agent must announce its owning daemon");
     assert_eq!(agent_open["daemon_id"], PEER_ID);
     assert_eq!(agent_open["environment"], PEER_ENVIRONMENT);
     send_line(&mut agent, "argv").await;
-    let (agent_argv, _) = read_until(&mut agent, "ARGV:").await;
+    let (agent_argv, _) = read_until(&mut agent, "ARGV:", false).await;
     let argv = agent_argv
         .replace("\r\n", "")
         .split("ARGV:")
@@ -386,13 +393,13 @@ async fn the_owner_folds_the_console_name(local: &Daemon, repo: &str) {
         }),
     )
     .await;
-    let (_, named_open) = read_until(&mut named, "READY").await;
+    let (_, named_open) = read_until(&mut named, "READY", true).await;
     let named_open = named_open.expect("peer agent must announce its name");
     assert_eq!(named_open["name"], "wb-a-b-path-x");
     send_line(&mut named, "argv").await;
     // The echo of a second line proves the whole ARGV line has arrived.
     send_line(&mut named, "end").await;
-    let (named_argv, _) = read_until(&mut named, "GOT:end").await;
+    let (named_argv, _) = read_until(&mut named, "GOT:end", false).await;
     let argv = named_argv
         .replace("\r\n", "")
         .split("ARGV:")
@@ -454,13 +461,13 @@ async fn a_free_console_on_a_peer_with_no_distro_runs_on_the_peer() {
         serde_json::json!({ "console": 1, "repo": repo }),
     )
     .await;
-    let (_, open) = read_until(&mut console, "READY").await;
+    let (_, open) = read_until(&mut console, "READY", true).await;
     let open = open.expect("the peer's console must announce its owner");
     let console_id = open["session"].as_u64().unwrap();
     assert_eq!(open["daemon_id"], PEER_ID);
     assert_eq!(open["environment"], PEER_ENVIRONMENT);
     send_line(&mut console, "tunnel-marker").await;
-    read_until(&mut console, "GOT:tunnel-marker").await;
+    read_until(&mut console, "GOT:tunnel-marker", false).await;
 
     let peer_rows = http_json(
         peer.port,
@@ -484,7 +491,7 @@ async fn a_free_console_on_a_peer_with_no_distro_runs_on_the_peer() {
         serde_json::json!({ "id": console_id, "repo": repo, "takeover": 1 }),
     )
     .await;
-    let (replayed, reopened) = read_until(&mut console, "GOT:tunnel-marker").await;
+    let (replayed, reopened) = read_until(&mut console, "GOT:tunnel-marker", true).await;
     assert!(replayed.contains("GOT:tunnel-marker"), "got: {replayed}");
     assert_eq!(reopened.unwrap()["daemon_id"], PEER_ID);
 

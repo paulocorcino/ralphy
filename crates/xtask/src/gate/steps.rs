@@ -19,8 +19,29 @@ pub(super) struct Step {
     /// A program that must be on `PATH` besides `program`: the binary of a
     /// cargo subcommand, which cargo reports as an error, not as missing.
     pub needs: Option<&'static str>,
-    /// `--fast` skips it: the workspace tests and the doctests.
-    pub slow: bool,
+    /// Whether `--fast` runs it.
+    pub runs: Runs,
+}
+
+/// When a step runs: in every gate, or only in a full or a `--fast` one.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum Runs {
+    Always,
+    /// The workspace tests and the doctests: `--fast` skips them.
+    FullOnly,
+    /// A quick part of a full-only step, so `--fast` still runs it.
+    FastOnly,
+}
+
+impl Runs {
+    /// Whether a gate with `fast` set runs a step of this kind.
+    pub(super) fn in_gate(self, fast: bool) -> bool {
+        match self {
+            Self::Always => true,
+            Self::FullOnly => !fast,
+            Self::FastOnly => fast,
+        }
+    }
 }
 
 const fn step(
@@ -36,7 +57,7 @@ const fn step(
         args,
         env: &[],
         needs: None,
-        slow: false,
+        runs: Runs::Always,
     }
 }
 
@@ -389,9 +410,31 @@ pub(super) const STEPS: &[Step] = &[
             &["nextest", "run", "--locked", "-p", "xtask"],
         )
     },
+    // The daemon's pins on its own source text (`src/tests/`): they break on a
+    // refactor that changes no behavior, and they take about 20 s. The full
+    // `nextest` step below runs them too.
     Step {
         needs: Some("cargo-nextest"),
-        slow: true,
+        runs: Runs::FastOnly,
+        ..step(
+            "source-pins",
+            &["Test"],
+            "cargo",
+            &[
+                "nextest",
+                "run",
+                "--locked",
+                "-p",
+                "ralphy-daemon",
+                "--lib",
+                "-E",
+                "test(/^tests::/)",
+            ],
+        )
+    },
+    Step {
+        needs: Some("cargo-nextest"),
+        runs: Runs::FullOnly,
         ..step(
             "nextest",
             &["Test"],
@@ -408,7 +451,7 @@ pub(super) const STEPS: &[Step] = &[
         )
     },
     Step {
-        slow: true,
+        runs: Runs::FullOnly,
         ..step(
             "doctest",
             &["Doctests"],
