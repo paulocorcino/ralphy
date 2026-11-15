@@ -3,13 +3,13 @@
     {
       "name": "Alpine.js",
       "npm": "alpinejs",
-      "version": "3.14.1",
-      "source": "https://registry.npmjs.org/alpinejs/-/alpinejs-3.14.1.tgz",
+      "version": "3.17.5",
+      "source": "https://registry.npmjs.org/alpinejs/-/alpinejs-3.17.5.tgz",
       "files": [
         {
           "path": "alpine.esm.js",
-          "sha256": "696bde2fae60bd07fbfaf4b950738badc988e04426c78957931d706f596d2521",
-          "note": "dist/module.esm.js: the ES module build, which does not start itself. Not dist/module.esm.min.js: in this tarball it is built from 3.13.10"
+          "sha256": "a33d2b1ce6ff039700cc5cb4e0850502db8b44be7cdbe5efbcb4a5f7faa2cfc4",
+          "note": "dist/module.esm.js: the ES module build, which does not start itself. Not dist/module.esm.min.js: the minified build is harder to review in a diff"
         }
       ]
     },
