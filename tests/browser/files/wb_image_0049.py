@@ -235,12 +235,12 @@ def open_from_tree(page, title):
     """Open a file the way a double-click does — through `openFile(node)`, so
     `classify` and its refusal are exercised, not bypassed by `openTab`."""
     page.wait_for_function(
-        f"(t) => !!{FILES}._tree && !!{FILES}._tree.findFirst(n => n.title === t)",
+        f"(t) => !!{FILES}.tree() && !!{FILES}.tree().findFirst(n => n.title === t)",
         arg=title,
         timeout=20000,
     )
     page.evaluate(
-        f"(t) => {FILES}.openFile({FILES}._tree.findFirst(n => n.title === t))", arg=title
+        f"(t) => {FILES}.openFile({FILES}.tree().findFirst(n => n.title === t))", arg=title
     )
 
 

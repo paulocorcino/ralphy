@@ -231,7 +231,7 @@ def expand(page, slug, rel):
     """Expand a folder through the tree's own API and wait for its children."""
     page.evaluate(
         "async (rel) => { const c = " + FILES + ";"
-        "  const n = c._tree.findFirst(x => c.relPath(x) === rel);"
+        "  const n = c.tree().findFirst(x => c.relPath(x) === rel);"
         "  if (n) await n.setExpanded(true); }",
         arg=rel,
     )

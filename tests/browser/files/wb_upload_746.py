@@ -141,8 +141,7 @@ def launch(daemon_dir):
 DROP = """
 ([rel, files]) => {
   const c = Alpine.$data(document.querySelector('[x-data="wbFiles"]'));
-  // By rel path, not by node: `c._tree` is Alpine's Proxy, so its nodes are
-  // not the objects `getNode` answers.
+  // By rel path, not by node object.
   const row = [...document.querySelectorAll('.wb-host .wb-row')].find(r => {
     const n = mar10.Wunderbaum.getNode(r);
     return n && c.relPath(n) === rel;
@@ -199,7 +198,7 @@ async ([rel, ms, mode]) => {
     }
     await new Promise(r => setTimeout(r, 100));
   }
-  const node = c._tree.findFirst(x => c.relPath(x) === rel);
+  const node = c.tree().findFirst(x => c.relPath(x) === rel);
   if (mode !== 'drop') {
     fire('dragleave');
     return { expanded: !!node?.expanded };
@@ -267,7 +266,7 @@ def wait_all_done(page, count, timeout=60000):
 def tree_has(page, rel, timeout=15000):
     try:
         page.wait_for_function(
-            f"(rel) => {{ const c = {FILES}; return !!c._tree.findFirst(x => c.relPath(x) === rel); }}",
+            f"(rel) => {{ const c = {FILES}; return !!c.tree().findFirst(x => c.relPath(x) === rel); }}",
             arg=rel,
             timeout=timeout,
         )
@@ -278,7 +277,7 @@ def tree_has(page, rel, timeout=15000):
 
 def menu_labels(page, rel):
     page.evaluate(
-        f"(rel) => {{ const c = {FILES}; const n = rel ? c._tree.findFirst(x => c.relPath(x) === rel) : null;"
+        f"(rel) => {{ const c = {FILES}; const n = rel ? c.tree().findFirst(x => c.relPath(x) === rel) : null;"
         "  if (n) n.setActive(); c.showMenu(120, 120, n); }",
         arg=rel,
     )
@@ -339,7 +338,7 @@ def main():
             )
             check("a: the progress card is laid out", card)
             page.screenshot(path=SHOT)
-            page.evaluate(f"() => {FILES}._tree.findFirst(x => x.title === 'docs').setExpanded(true)")
+            page.evaluate(f"() => {FILES}.tree().findFirst(x => x.title === 'docs').setExpanded(true)")
             check("a: docs/one.txt appears in the tree", tree_has(page, "docs/one.txt"))
             page.evaluate(f"() => {UPLOADS}.clearFinished()")
 
@@ -382,7 +381,7 @@ def main():
             picked = Path(tempfile.mkdtemp(prefix="wb746_pick_")) / "picked.txt"
             picked.write_text("picked\n", encoding="utf-8")
             page.evaluate(
-                f"(rel) => {{ const c = {FILES}; const n = c._tree.findFirst(x => c.relPath(x) === rel); n.setActive(); c.showMenu(120, 120, n); }}",
+                f"(rel) => {{ const c = {FILES}; const n = c.tree().findFirst(x => c.relPath(x) === rel); n.setActive(); c.showMenu(120, 120, n); }}",
                 arg="docs",
             )
             with page.expect_file_chooser() as fc:
@@ -412,7 +411,7 @@ def main():
 
             page.route("**/api/command", route)
             page.evaluate(
-                f"(rel) => {{ const c = {FILES}; const n = c._tree.findFirst(x => c.relPath(x) === rel); n.setActive(); c.showMenu(120, 120, n); }}",
+                f"(rel) => {{ const c = {FILES}; const n = c.tree().findFirst(x => c.relPath(x) === rel); n.setActive(); c.showMenu(120, 120, n); }}",
                 arg="docs",
             )
             with page.expect_file_chooser() as fc:
@@ -448,7 +447,7 @@ def main():
             subprocess.run([EXE, "config", "set", "files.upload_max_mb", "1"], cwd=fixture, check=True, capture_output=True)
             over.write_bytes(b"x" * (MB + 1))
             page.evaluate(
-                f"(rel) => {{ const c = {FILES}; const n = c._tree.findFirst(x => c.relPath(x) === rel); n.setActive(); c.showMenu(120, 120, n); }}",
+                f"(rel) => {{ const c = {FILES}; const n = c.tree().findFirst(x => c.relPath(x) === rel); n.setActive(); c.showMenu(120, 120, n); }}",
                 arg="docs",
             )
             with page.expect_file_chooser() as fc:

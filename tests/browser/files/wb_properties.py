@@ -182,7 +182,7 @@ def open_menu_on(page, rel):
     the way the tree's own `contextmenu` listener does."""
     return page.evaluate(
         "(rel) => { const c = " + FILES + ";"
-        "  const n = rel === null ? null : c._tree.findFirst(x => c.relPath(x) === rel);"
+        "  const n = rel === null ? null : c.tree().findFirst(x => c.relPath(x) === rel);"
         "  if (rel !== null && !n) return false; if (n) n.setActive(); c.showMenu(120, 120, n); return true; }",
         arg=rel,
     )

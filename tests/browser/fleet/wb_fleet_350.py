@@ -147,7 +147,7 @@ def open_row(page, peer):
 
 def wait_tree(page, title):
     page.wait_for_function(
-        f"(t) => !!{FILES}._tree && !!{FILES}._tree.findFirst(n => n.title === t)",
+        f"(t) => !!{FILES}.tree() && !!{FILES}.tree().findFirst(n => n.title === t)",
         arg=title,
         timeout=20000,
     )
@@ -156,7 +156,7 @@ def wait_tree(page, title):
 def open_file(page, title):
     wait_tree(page, title)
     page.evaluate(
-        f"(t) => {FILES}.openFile({FILES}._tree.findFirst(n => n.title === t))",
+        f"(t) => {FILES}.openFile({FILES}.tree().findFirst(n => n.title === t))",
         arg=title,
     )
 
@@ -326,7 +326,7 @@ def main():
             check(
                 "peer create refreshes the open tree without reload",
                 page.evaluate(
-                    f"() => !!{FILES}._tree.findFirst(n => n.title === 'fresh.txt')"
+                    f"() => !!{FILES}.tree().findFirst(n => n.title === 'fresh.txt')"
                 ),
             )
 
