@@ -364,7 +364,7 @@ impl Renderer {
         let terminal = s
             .run
             .active_issue()
-            .is_some_and(|e| active_phase(&e.status).is_none());
+            .is_some_and(|e| active_phase(e.status).is_none());
         if terminal {
             self.close_active(s);
         }
@@ -403,7 +403,7 @@ impl Renderer {
         let live = s
             .run
             .active_issue()
-            .is_some_and(|e| active_phase(&e.status).is_some());
+            .is_some_and(|e| active_phase(e.status).is_some());
         if !self.opts.color || !live {
             return;
         }
@@ -429,7 +429,7 @@ fn repaint_active_bar(s: &LiveState, opts: RenderOpts) {
     let (Some(entry), Some(bar)) = (s.run.active_issue(), s.active_bar.as_ref()) else {
         return;
     };
-    let Some(phase) = active_phase(&entry.status) else {
+    let Some(phase) = active_phase(entry.status) else {
         return;
     };
     // API-degraded: the retry prefix eats into the budget too, so the line

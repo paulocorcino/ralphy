@@ -14,6 +14,7 @@ mod html;
 mod js;
 mod lex;
 mod rules;
+mod wording;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -58,6 +59,7 @@ pub(crate) enum Kind {
     Helper,
     Const,
     Call,
+    WordingValue,
 }
 
 impl Kind {
@@ -79,6 +81,7 @@ impl Kind {
             Kind::Helper => "js:helper",
             Kind::Const => "js:const",
             Kind::Call => "js:call",
+            Kind::WordingValue => "wording:value",
         }
     }
 }
@@ -144,7 +147,8 @@ pub(crate) fn ui_copy_cmd(args: &[String]) -> Result<()> {
         helpers: &rules.copy_helpers,
         calls: &rules.copy_calls,
     };
-    let rows = inventory(&root.join(UI_DIR), &pins, fns)?;
+    let mut rows = inventory(&root.join(UI_DIR), &pins, fns)?;
+    rows.extend(wording_rows(&root)?);
     if lint {
         let report = check::check(&rows, &rules);
         print!("{}", check::to_text(&report));
@@ -197,6 +201,15 @@ fn inventory(ui: &Path, pins: &[Pin], fns: CopyFns<'_>) -> Result<Vec<Row>> {
     Ok(rows)
 }
 
+/// The rows of the wording catalog.
+fn wording_rows(root: &Path) -> Result<Vec<Row>> {
+    let mut rows = Vec::new();
+    for (file, found) in wording::rows_by_file(root)? {
+        rows.extend(found.into_iter().map(|f| row_of(&file, f, &[])));
+    }
+    Ok(rows)
+}
+
 /// Every row of one source file, in line order.
 fn rows_of(name: &str, src: &str, pins: &[Pin], fns: CopyFns<'_>) -> Vec<Row> {
     let mut found = Vec::new();
@@ -206,19 +219,20 @@ fn rows_of(name: &str, src: &str, pins: &[Pin], fns: CopyFns<'_>) -> Vec<Row> {
         js::scan(src, 1, fns, &mut found);
     }
     found.sort_by_key(|f| f.line);
-    found
-        .into_iter()
-        .map(|f| Row {
-            pinned_by: pinned_by(name, &f, pins),
-            text: f.text,
-            file: name.to_owned(),
-            line: f.line,
-            kind: f.kind,
-            area: f.area.unwrap_or_default(),
-            concatenated: f.concatenated,
-            continues: f.continues,
-        })
-        .collect()
+    found.into_iter().map(|f| row_of(name, f, pins)).collect()
+}
+
+fn row_of(name: &str, f: Found, pins: &[Pin]) -> Row {
+    Row {
+        pinned_by: pinned_by(name, &f, pins),
+        text: f.text,
+        file: name.to_owned(),
+        line: f.line,
+        kind: f.kind,
+        area: f.area.unwrap_or_default(),
+        concatenated: f.concatenated,
+        continues: f.continues,
+    }
 }
 
 /// The claims that pin this text, as `file:line`.

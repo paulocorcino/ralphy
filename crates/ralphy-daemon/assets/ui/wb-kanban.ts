@@ -297,7 +297,7 @@ export const WBKanban = {
           face: r.face,
           agent: r.agent,
           state: st,
-          glyph: WBRun.GLYPH[st],
+          glyph: WBRun.stateGlyph(st),
           phase: r.phase,
         };
       }

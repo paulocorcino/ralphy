@@ -86,7 +86,7 @@ fn golden_render_active_line_is_derived_from_the_fold() {
     });
     let entry = s.active_issue().expect("an active issue");
     let line = render_active_line(
-        active_phase(&entry.status).expect("a non-terminal phase"),
+        active_phase(entry.status).expect("a non-terminal phase"),
         entry.number,
         &entry.title,
         entry.model.as_deref(),
@@ -107,7 +107,7 @@ fn golden_render_active_line_is_derived_from_the_fold() {
         invocations: 0,
         usage: UsageLite::default(),
     });
-    assert_eq!(active_phase(&s.issues[0].status), None);
+    assert_eq!(active_phase(s.issues[0].status), None);
 }
 
 #[test]

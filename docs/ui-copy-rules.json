@@ -2,8 +2,8 @@
   "adr": "docs/adr/0065-the-workbench-written-voice.md",
   "casing": {
     "rule": "sentence",
-    "notes": "Every text starts with a capital letter. After the first word, only proper nouns are capitalized. A text that starts with a {placeholder}, a quote, a bracket or a symbol is judged by its first word.",
-    "exempt_kinds": ["js:term-notice"],
+    "notes": "Every text starts with a capital letter. After the first word, only proper nouns are capitalized. A text that starts with a {placeholder}, a quote, a bracket or a symbol is judged by its first word. A wording:value text is a state word or a fallback such as [ok], so casing does not apply to it.",
+    "exempt_kinds": ["js:term-notice", "wording:value"],
     "state_words": [
       "active",
       "completed",

@@ -1,0 +1,14 @@
+[package]
+name = "ralphy-wording"
+version = "0.1.0-rc.43"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Leaf crate for Ralphy's wording catalog: the text domains, the form of a value wording, the domain file, and the function that fills placeholders."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

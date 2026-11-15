@@ -13,6 +13,7 @@ pub(super) fn seen(rows: &[Row]) -> Vec<(&'static str, &str)> {
 
 mod html_rows;
 mod js_rows;
+mod wording_rows;
 
 fn scratch(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("xtask-ui-copy-{}-{tag}", std::process::id()));
@@ -185,6 +186,11 @@ fn check_is_an_error_when_the_report_fails_and_ok_when_it_is_clean() {
 }"#,
     );
     put(&root, "crates/ralphy-daemon/src/tests.rs", "");
+    put(
+        &root,
+        "assets/wording/run.json",
+        r#"{"domain":"run","values":{}}"#,
+    );
     let page = "crates/ralphy-daemon/assets/ui/index.html";
     let args = [
         "--root",

@@ -12,20 +12,9 @@ const TELEGRAM_LIMIT: usize = 4096;
 /// rather than one line per issue (ADR-0007 D6).
 const FULL_LIST_MAX: usize = 30;
 
-/// The status emoji for an issue (ADR-0007 D3 icon table).
-fn status_emoji(status: &IssueStatus) -> &'static str {
-    match status {
-        IssueStatus::Planning => "🧠",
-        IssueStatus::Executing => "⚙️",
-        IssueStatus::Planned => "📝",
-        IssueStatus::Done => "✅",
-        IssueStatus::Skipped => "⏭️",
-        IssueStatus::Blocked => "⛔",
-        IssueStatus::Infeasible => "🤷",
-        IssueStatus::NeedsSplit => "🧩",
-        IssueStatus::NonGreen => "❌",
-        IssueStatus::Hitl => "🙋",
-    }
+/// The catalog icon of an issue status.
+fn status_emoji(status: IssueStatus) -> &'static str {
+    status.wording().icon.as_deref().unwrap_or_default()
 }
 
 /// One rendered issue line: `emoji #n title`. The card carries no per-issue clock —
@@ -33,7 +22,7 @@ fn status_emoji(status: &IssueStatus) -> &'static str {
 /// a clock only misleads. A dependency skip appends ` (blocked by #N)` when the
 /// gating blocker(s) are known, so the operator sees which issue held it.
 fn issue_line(entry: &IssueEntry) -> String {
-    let emoji = status_emoji(&entry.status);
+    let emoji = status_emoji(entry.status);
     let blocked_by = if entry.status == IssueStatus::Skipped
         && entry.kind == Some(SkipKind::BlockedBy)
         && !entry.blocked_by.is_empty()
@@ -57,23 +46,26 @@ fn issue_line(entry: &IssueEntry) -> String {
 /// unchanged, but a parked-on-split run is visibly different.
 fn counters_line(state: &RunState) -> String {
     let c = state.counts();
+    let count = |status: IssueStatus, n: usize| format!("{} {n}", status_emoji(status));
     let mut line = format!(
-        "▶️ {} · ✅ {} · ⏭️ {} · ⛔ {} · 🤷 {} · ❌ {}",
-        state.total, c.done, c.skipped, c.blocked, c.infeasible, c.non_green
+        "▶️ {} · {} · {} · {} · {} · {}",
+        state.total,
+        count(IssueStatus::Done, c.done),
+        count(IssueStatus::Skipped, c.skipped),
+        count(IssueStatus::Blocked, c.blocked),
+        count(IssueStatus::Infeasible, c.infeasible),
+        count(IssueStatus::NonGreen, c.non_green),
     );
-    if c.needs_split > 0 {
-        write!(line, " · 🧩 {}", c.needs_split).expect(WRITE_TO_STRING);
-    }
-    // A `📝 N` counter appears only on a plan-only (dry-run) pass, so the common
-    // card stays unchanged but a dry run is visibly not a stalled one.
-    if c.planned > 0 {
-        write!(line, " · 📝 {}", c.planned).expect(WRITE_TO_STRING);
-    }
-    // A `🙋 N` counter appears only when a chain is parked on a human gate
-    // (ADR-0014) — the common card stays unchanged, but a run waiting on a
-    // person is visibly different.
-    if c.hitl > 0 {
-        write!(line, " · 🙋 {}", c.hitl).expect(WRITE_TO_STRING);
+    // Each of these counters appears only when non-zero, so the common card stays
+    // unchanged: a parked split, a plan-only (dry-run) pass, a human gate (ADR-0014).
+    for (status, n) in [
+        (IssueStatus::NeedsSplit, c.needs_split),
+        (IssueStatus::Planned, c.planned),
+        (IssueStatus::Hitl, c.hitl),
+    ] {
+        if n > 0 {
+            write!(line, " · {}", count(status, n)).expect(WRITE_TO_STRING);
+        }
     }
     line
 }
@@ -210,14 +202,26 @@ pub(super) fn render_final_push(state: &RunState) -> String {
     // A bundle verdict parks the queue on a human split — the footer must say
     // so, or a run that ends "green" hides the pending human step.
     let split_part = if c.needs_split > 0 {
-        format!(", 🧩 {} awaiting split", c.needs_split)
+        let w = IssueStatus::NeedsSplit.wording();
+        format!(
+            ", {} {} {}",
+            status_emoji(IssueStatus::NeedsSplit),
+            c.needs_split,
+            w.text
+        )
     } else {
         String::new()
     };
     // A chain parked on a human gate (ADR-0014) is a pending human step the
     // footer must name, or a run that ends "green" hides it.
     let hitl_part = if c.hitl > 0 {
-        format!(", 🙋 {} waiting on human", c.hitl)
+        let w = IssueStatus::Hitl.wording();
+        format!(
+            ", {} {} {}",
+            status_emoji(IssueStatus::Hitl),
+            c.hitl,
+            w.text
+        )
     } else {
         String::new()
     };

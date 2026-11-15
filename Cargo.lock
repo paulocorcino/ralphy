@@ -2233,6 +2233,7 @@ dependencies = [
  "ralphy-run-snapshot",
  "ralphy-telegram",
  "ralphy-usage-scan",
+ "ralphy-wording",
  "regex",
  "serde",
  "serde_json",
@@ -2413,6 +2414,14 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "ralphy-wording"
+version = "0.1.0-rc.43"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

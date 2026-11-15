@@ -57,6 +57,7 @@ fn each_forbidden_edge_is_reported() {
         node("ralphy-cli", &["ralphy-agent-claude", "ralphy-core"]),
         node("ralphy-git-read", &["ralphy-proc-util"]),
         node("ralphy-telegram", &["ralphy-core"]),
+        node("ralphy-wording", &["ralphy-core"]),
     ];
     let core = "ralphy-core depends on no adapter and not on ralphy-adapter-support";
     let leaf = "ralphy-pricing and ralphy-release are leaf crates";
@@ -71,8 +72,39 @@ fn each_forbidden_edge_is_reported() {
             format!("ralphy-pricing -> ralphy-core: {leaf}"),
             "ralphy-git-read -> ralphy-proc-util: ralphy-git-read is a leaf crate".to_owned(),
             "ralphy-telegram -> ralphy-core: ralphy-telegram is a leaf crate".to_owned(),
+            "ralphy-wording -> ralphy-core: ralphy-wording is a leaf crate".to_owned(),
         ]
     );
+}
+
+/// The graph keeps only workspace edges, so this reads every dependency of the crate.
+#[test]
+fn wording_depends_only_on_serde() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
+    let output = Command::new(env!("CARGO"))
+        .args(["metadata", "--no-deps", "--format-version", "1"])
+        .arg("--manifest-path")
+        .arg(&manifest)
+        .output()
+        .map_err(|e| format!("running cargo metadata: {e}"))
+        .expect("this test needs the call to succeed");
+    assert!(output.status.success(), "cargo metadata failed");
+    let metadata: Value = serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("parsing cargo metadata: {e}"))
+        .expect("this test needs the call to succeed");
+    let package = metadata["packages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|p| p["name"] == "ralphy-wording")
+        .expect("the workspace has the ralphy-wording package");
+    let deps: BTreeSet<&str> = package["dependencies"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|d| d["name"].as_str())
+        .collect();
+    assert_eq!(deps, BTreeSet::from(["serde", "serde_json"]));
 }
 
 fn node(name: &str, deps: &[&str]) -> (String, Vec<String>) {
@@ -100,6 +132,8 @@ fn forbidden_edges(graph: &[(String, Vec<String>)]) -> Vec<String> {
                     Some("ralphy-git-read is a leaf crate")
                 } else if from == "ralphy-telegram" {
                     Some("ralphy-telegram is a leaf crate")
+                } else if from == "ralphy-wording" {
+                    Some("ralphy-wording is a leaf crate")
                 } else {
                     None
                 };

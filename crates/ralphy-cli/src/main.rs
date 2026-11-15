@@ -52,6 +52,7 @@ mod ui;
 mod uninstall;
 mod update;
 mod usage;
+mod wording;
 
 #[cfg(test)]
 #[path = "../../ralphy-daemon/tests/support/golden.rs"]
