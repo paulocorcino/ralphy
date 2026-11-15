@@ -71,6 +71,13 @@ export const COMMANDS: readonly Command[] = [
     scope: "terminal",
   },
   {
+    id: "help.open",
+    group: "Page",
+    label: "Show the keyboard shortcuts",
+    keys: [chord("Slash"), { kind: "typed", key: "?" }],
+    scope: "terminal",
+  },
+  {
     id: "settings.open",
     group: "Page",
     label: "Open settings",
@@ -178,7 +185,7 @@ function matches(k: Keys, e: KeyEvent) {
 export function commandFor(e: KeyEvent) {
   for (const cmd of COMMANDS) {
     const k = cmd.keys.find((x) => matches(x, e));
-    if (k) return { cmd, which: k.kind === "chord" ? k.code : k.key };
+    if (k) return { cmd, which: k.kind === "chord" ? k.code : k.key, scope: scopeOf(cmd, k) };
   }
   return null;
 }
@@ -195,6 +202,11 @@ export function bindCommand(id: string, binding: Binding) {
 export type Blocked = (fromTerminal: boolean) => boolean;
 export type Source = "page" | "terminal";
 
+// A typed key never passes a terminal or a field, whatever its command's scope.
+function scopeOf(cmd: Command, k: Keys): Scope {
+  return k.kind === "typed" ? "page" : cmd.scope;
+}
+
 function allowed(scope: Scope, source: Source, blocked: Blocked) {
   if (scope === "always") return true;
   if (scope === "terminal") return !blocked(true);
@@ -210,7 +222,7 @@ export function dispatchKey(e: KeyEvent, source: Source, blocked: Blocked) {
   const hit = commandFor(e);
   const binding = hit ? bindings.get(hit.cmd.id) : undefined;
   if (!hit || !binding) return false;
-  if (!allowed(hit.cmd.scope, source, blocked)) return false;
+  if (!allowed(hit.scope, source, blocked)) return false;
   if (!binding.can(hit.which) || binding.run(hit.which) === false) return false;
   ran.add(e);
   e.preventDefault();
@@ -290,3 +302,16 @@ export function keysText(k: Keys, mac: boolean) {
 
 /** Whether this page runs on a Mac (or an iPad or iPhone). */
 export const IS_MAC = /Mac|iPhone|iPad/u.test(navigator.platform || navigator.userAgent || "");
+
+/** All the keys of a command, as a person reads them: `Alt+Shift+0 to 9`. */
+export function commandKeysText(cmd: Command, mac: boolean) {
+  const chords = cmd.keys.filter((k) => k.kind === "chord");
+  const parts = cmd.keys.filter((k) => k.kind !== "chord").map((k) => keysText(k, mac));
+  const [first, ...rest] = chords;
+  if (first) {
+    const tail = rest.map((k) => codeText(k.code));
+    const more = tail.length > 3 ? ` to ${tail.at(-1) ?? ""}` : tail.map((t) => " " + t).join("");
+    parts.unshift(keysText(first, mac) + more);
+  }
+  return parts.join(" or ");
+}

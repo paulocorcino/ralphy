@@ -121,7 +121,8 @@
 .release-dialogs,
 .runs-panel,
 .board-panel,
-.palette {
+.palette,
+.help {
   display: contents;
 }
 /* The two dialogs a MODAL can raise (`askConfirm` / `askPrompt`) sit one tier
@@ -1018,4 +1019,38 @@ body.locked .runs {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* --- help screen (ADR-0087 D7) ---------------------------------------------- */
+/* A modal of sections; each line is a label and its kbd hint, as a menu row
+   shows a shortcut. It only shows text. */
+.help-modal {
+  width: min(640px, 96vw);
+}
+.help-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  overflow-y: auto;
+}
+.help-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.help-title {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.help-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  font-size: var(--fs-md);
+}
+.help-modal .help-text {
+  margin: 0;
 }

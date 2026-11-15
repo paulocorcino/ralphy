@@ -1,0 +1,27 @@
+    <div class="help" x-data="wbHelp">
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('helpOpen', () => closeHelp())">
+      <div class="modal help-modal" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+        <div class="modal-head">
+          <svg x-icon="'keyboard'"></svg>
+          <span class="modal-title">Keyboard shortcuts</span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeHelp()" title="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="help-body">
+          <template x-for="section in sections" :key="section.title">
+            <section class="help-section">
+              <h3 class="help-title" x-text="section.title"></h3>
+              <template x-for="line in section.lines" :key="line.label">
+                <div class="help-line">
+                  <span class="help-label" x-text="line.label"></span>
+                  <kbd class="kbd" x-text="line.keys"></kbd>
+                </div>
+              </template>
+            </section>
+          </template>
+          <p class="help-text">In a terminal, every other key goes to the program.</p>
+          <p class="help-text" x-show="fnNote">Hold the fn key for F1 to F12.</p>
+        </div>
+      </div>
+    </div>
+    </div>

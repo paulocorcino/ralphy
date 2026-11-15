@@ -111,6 +111,7 @@ test("Escape closes every modal, Settings and Security included", () => {
     "branchOpen",
     "paletteOpen",
     "$store.modals.confirmModal.open",
+    "helpOpen",
     "$store.modals.promptModal.open",
     "movePick.open",
     "upload.open",
@@ -131,6 +132,7 @@ test("Escape closes every modal, Settings and Security included", () => {
       aboutOpen: "wbReleaseDialogs",
       branchOpen: "wbBranchDialog",
       paletteOpen: "wbPalette",
+      helpOpen: "wbHelp",
       "movePick.open": "wbMoveDialog",
       "upload.open": "wbUploadDialog",
       "props.open": "wbPropertiesDialog",
@@ -289,7 +291,7 @@ test("every dialog in the document is marked modal", () => {
   const dialogs = Array.from(HTML.matchAll(/<div\b(?:[^>"]|"[^"]*")*>/gu), (m) => m[0]).filter((t) =>
     /\brole="(?:alert)?dialog"/u.test(t),
   );
-  assert.equal(dialogs.length, 15);
+  assert.equal(dialogs.length, 16);
   for (const tag of dialogs) {
     assert.match(tag, /\baria-modal="true"/u, tag.replaceAll(/\s+/gu, " "));
   }
@@ -319,6 +321,7 @@ test("a page put together from its parts", () => {
       "wbReleaseDialogs",
       "wbBranchDialog",
       "wbPalette",
+      "wbHelp",
       "wbMoveDialog",
       "wbUploadDialog",
       "wbPropertiesDialog",
@@ -327,9 +330,9 @@ test("a page put together from its parts", () => {
       "wbLogin",
     ],
   );
-  assert.equal(SCRIMS.length, 15);
+  assert.equal(SCRIMS.length, 16);
   assert.equal(SCRIMS.at(-1).path, "addHost.open");
   assert.equal(SCRIMS.at(-1).component, "wbHostsDialog");
-  assert.equal((HTML.match(/\brole="(?:alert)?dialog"/gu) || []).length, 15);
+  assert.equal((HTML.match(/\brole="(?:alert)?dialog"/gu) || []).length, 16);
   assert.doesNotMatch(assembledPage("index.html"), /<!-- part:/u, "a marker is left in the page");
 });

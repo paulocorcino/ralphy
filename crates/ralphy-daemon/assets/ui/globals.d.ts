@@ -449,6 +449,7 @@ interface WindowEventMap {
   "workbench:security-open": CustomEvent<null>;
   "workbench:about-open": CustomEvent<null>;
   "workbench:settings-open": CustomEvent<null>;
+  "workbench:help-open": CustomEvent<null>;
   "workbench:add-project-open": CustomEvent<null>;
   "workbench:hosts-open": CustomEvent<null>;
 }
