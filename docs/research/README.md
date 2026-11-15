@@ -14,6 +14,12 @@ instructions or verification of the current implementation.
   [analysis against Ralphy](loop-engineering-vs-ralphy.md)
 - [Agent squads: the foundations](agent-squads-foundations-2026-10-11.md)
   (decisions G1–G16 and the fact spikes)
+- [Idle consoles: process supervision, safe freeze, timeout theory, 2026-11-15](idle-console-supervision-research-2026-11-15.md)
+  (web research for ADR-0083)
+- [Chromium process management, 2026-11-15](chromium-process-management-research-2026-11-15.md)
+  (launcher, Task Manager, Performance Manager; reference for ADR-0083)
+- [Process checkpoint and restore for idle consoles, 2026-11-15](process-checkpoint-restore-research-2026-11-15.md)
+  (CRIU, DMTCP, VM snapshots, `memory.reclaim`; a third state for ADR-0083)
 
 ## Historical experiments
 

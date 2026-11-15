@@ -11,6 +11,7 @@ Amended 2026-10-28: D6, a guard that cannot start fails open; an unattended sess
 Amended by ADR-0076 (proposed: a new trust zone, an agent in a squad, and a console token given to the agent by design as an exception to D7).
 
 Amended by ADR-0083 (proposed: D13, an undocumented OS call to suspend a console's processes, and the daemon acts only on processes in its custody record).
+Amended by ADR-0088 (proposed: D13, the undocumented call is the job freeze, and the daemon acts only on a container it made).
 
 Amended 2026-11-07: D7, the page may send the Telegram token, write-only.
 
@@ -446,6 +447,9 @@ surface.
 - D13, amendment of 2026-10-24: not checked by code: the custody check is
   pinned by a test of the suspend entry point; the FFI module is reviewed
   in the PR.
+- D13, amendment of 2026-11-15: not checked by code: the freeze and end entry
+  points take a container, pinned by their test; the FFI module is reviewed
+  in the PR.
 - D14: not checked by code: manual, reviewed in the PR.
 
 ## Amendment 2026-10-24 — D13: an undocumented OS call, and processes in custody
@@ -572,3 +576,28 @@ from the Bot API is redacted before it is logged or returned, because the
 request URL holds the token. The routes are behind the guard of every route,
 so only a logged-in page, a bearer, or the local machine under the
 `localhost` policy may set or remove the bot.
+
+## Amendment 2026-11-15 — D13: the job freeze, and a container the daemon made
+
+Changes the amendment of 2026-10-24 to D13, by ADR-0088 and the ADR-0083
+amendment of 2026-11-15 (both proposed). D13 stays: `unsafe` is for FFI only.
+
+- Suspended is built last, and only if measurements justify it (ADR-0083
+  amendment of 2026-11-15, slice 3). If it is built, the undocumented call
+  that suspends a console is the job freeze
+  (`NtSetInformationJobObject` with `JobObjectFreezeInformation`) on the
+  console's job object, which has `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`: if
+  the daemon dies, the job's last handle closes and the tree ends, so it is
+  never left stopped. The process state-change object stays allowed as the
+  fallback. The other conditions of 2026-10-24 stay: one named FFI module,
+  no documented call that does the job, and a failure turns the feature off.
+- The daemon suspends, resumes or ends only a container it made for one of
+  its consoles (ADR-0088 D5). It never signals or terminates a PID that it
+  read from a list. This replaces the custody check by PID, creation time and
+  executable, which remains only for the root of a console in
+  `process-group` mode.
+- A console's job allows breakaway only on request, so `ralphy daemon
+  restart` run inside a console keeps working. A process that asks for it
+  leaves the console. The CLI refuses its verbs that act when it runs inside
+  a console (`RALPHY_CONSOLE_ID`); this guards against a mistake, not against
+  an agent that wants harm: the zone "the agent session" acts as the operator.

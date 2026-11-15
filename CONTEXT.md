@@ -314,6 +314,39 @@ daemon starts. (ADR-0083)
 _Avoid_: pinned (the stage's origin is what is pinned), keep alive, locked
 (see **Locked**).
 
+**Deactivate**:
+To make an agent console **inactive** by hand, one or many at once: it
+becomes **Hibernated** when its agent can resume. The opposite of
+**Reactivate**. (ADR-0083)
+_Avoid_: sleep, put to sleep (see **Reactivate**), hibernate (the state, not
+the action), close, end (that ends the console's processes for good).
+
+**Idle blocker**:
+A named reason that keeps an idle console from becoming **Suspended** or
+**Hibernated**, such as an agent in a turn or a **work process**. (ADR-0083)
+_Avoid_: lock, exemption, keep-alive.
+
+**Process registry**:
+The record, in each **daemon**, of the processes that belong to each
+**workbench session** and what they cost, kept through one container per
+console. (ADR-0088)
+_Avoid_: task manager (the view in the workbench), process table (the
+operating system's), custody record (the file that survives a daemon
+restart).
+
+**Container mode**:
+How a **daemon** holds a console's processes: `job` (a Windows job object),
+`cgroup` (a delegated Linux cgroup) or `process-group` (no container, so no
+**Suspended**). (ADR-0088)
+_Avoid_: sandbox, isolation (no security boundary is meant).
+
+**Work process**:
+A process that an agent started during a turn and that still runs after the
+turn ended, such as a dev server or a watcher. Its console is not idle.
+(ADR-0088)
+_Avoid_: background job, child (an MCP server is a child too, and it is part
+of the agent).
+
 **Writer slot**:
 The right to type into a **workbench session**, held by one browser client at
 a time. The other attached clients are **watchers**: they see the same output
