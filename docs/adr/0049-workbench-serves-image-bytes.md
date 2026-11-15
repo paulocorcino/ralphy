@@ -2,6 +2,8 @@
 
 Status: accepted (2026-07-26).
 
+Amended by ADR-0089 (§2: one route, with a token as its only key, serves the files of an HTML document whose scripts the operator allowed).
+
 The workbench refuses to open an image. A `.png` in the tree carries an image
 icon, and clicking it flashes `binary` and closes the tab it just opened — the
 refusal is enforced twice, client-side (`BINARY_EXT` in `app.js`) and

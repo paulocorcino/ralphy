@@ -31,6 +31,7 @@ import { sendDocument } from "./wb-events.ts";
 import { need } from "./wb-dom-need.ts";
 import type { Messages } from "./wb-messages.ts";
 import { isRendered } from "./wb-viewer-render.ts";
+import { createViewerScripts } from "./wb-viewer-scripts.ts";
 import { createViewerEncoding, encodingLabel, refreshEncodingPill } from "./wb-viewer-encoding.ts";
 import { createViewerFind } from "./wb-viewer-find.ts";
 import { createViewerMarkdown, linkTarget, remoteImageNotice } from "./wb-viewer-markdown.ts";
@@ -169,6 +170,15 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     saver,
     encoding: viewerEncoding,
   });
+  const scripts = createViewerScripts({
+    document,
+    messages,
+    alive,
+    setCaption,
+    renderStatic: (rec) => {
+      markdown.renderMarkdown(rec);
+    },
+  });
   const markdown: ViewerMarkdown = createViewerMarkdown({
     window,
     document,
@@ -181,6 +191,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     saver,
     encoding: viewerEncoding,
     find,
+    scripts,
   });
   const { buildMarkdown, drawMermaid, jumpTo } = markdown;
   const { refresh, show, mirrors, mirrored, closeMirror } = createViewerSlot({
@@ -406,6 +417,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
       // Delete from the map FIRST: a pending mountEditor() checks membership
       // before touching the DOM, so a tab closed mid-boot mounts nothing.
       map.delete(id);
+      scripts.end(rec);
       disposeEditor(rec);
       rec.el?.remove();
     },

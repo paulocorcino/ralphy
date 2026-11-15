@@ -56,14 +56,18 @@ test("the policy of the document takes web images only when the daemon allows th
   }
 });
 
+// A reply of `GET /api/security/state`.
+function stateReply(ok, remote) {
+  return { ok, status: ok ? 200 : 401, json: () => Promise.resolve({ remote_images: remote }) };
+}
+
 test("the daemon's answer says if web images are allowed, and no answer is a no", async () => {
-  const state = (remote) => ({ ok: true, status: 200, json: async () => ({ remote_images: remote }) });
   // [what the request does, web images allowed]
   const rows = [
-    [async () => state(true), true],
-    [async () => state(false), false],
-    [async () => ({ ok: false, status: 401, json: async () => ({ remote_images: true }) }), false],
-    [async () => { throw new TypeError("no network"); }, false],
+    [() => Promise.resolve(stateReply(true, true)), true],
+    [() => Promise.resolve(stateReply(true, false)), false],
+    [() => Promise.resolve(stateReply(false, true)), false],
+    [() => Promise.reject(new TypeError("no network")), false],
   ];
   const real = globalThis.fetch;
   try {
@@ -131,7 +135,7 @@ test("the text of the frame keeps the doctype of the file, and adds none", () =>
 test("the frame replaces the body of the article and has an empty sandbox", () => {
   const appended = [];
   const article = { innerHTML: "<p>old</p>", append: (el) => appended.push(el) };
-  const frame = mountFrame(article, { createElement: (tag) => element(tag) });
+  const frame = mountFrame(article, { createElement: (tag) => element(tag) }, "");
   // oxlint-disable-next-line no-restricted-properties -- reads a fake element; the rule is for writes
   assert.equal(article.innerHTML, "");
   assert.deepEqual(appended, [frame]);

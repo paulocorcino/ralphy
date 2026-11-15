@@ -1492,3 +1492,19 @@ This amends the `checkout` part of the `worktree.list` amendment
   (`cfba9d8b`, `a494cab3`).
 - **A refusal frame on the watch socket.** The socket has none, and the
   listing that comes before every watch already tells the client.
+
+## Amendment (2026-11-15): `file.preview`, the token of an HTML file with scripts
+
+By [ADR-0089](./0089-an-html-file-runs-its-scripts-only-when-the-operator-allows-it.md).
+
+| Verb | Class | Payload | Reply |
+| --- | --- | --- | --- |
+| `file.preview` | Native | `repo`, `checkout` | `{status:"ok", token}` |
+| `file.preview` | Native | `repo`, `revoke` | `{status:"ok"}` |
+
+It is the first verb of the `Native` class: the daemon answers it from its
+own memory, with no child and no read of the repository. The token opens
+`GET /preview/<token>/<path>` for the files of the checkout, and `revoke`
+ends it. The verb is never relayed: for a project of a peer it answers
+the failure `scripts-on-a-peer` of the wording catalog, because the browser
+cannot reach the route of a peer.

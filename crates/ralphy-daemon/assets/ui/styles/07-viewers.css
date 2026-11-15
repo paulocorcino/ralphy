@@ -640,6 +640,14 @@
 .md-viewer[data-kind="html"] [data-act="find"] {
   display: none;
 }
+/* Only an HTML file has scripts to run. */
+.md-viewer:not([data-kind="html"]) [data-act="scripts"] {
+  display: none;
+}
+.vbtn.on {
+  color: var(--warn);
+  border-color: var(--warn);
+}
 .md-viewer[data-kind="html"] .md-scroll {
   overflow: hidden;
 }

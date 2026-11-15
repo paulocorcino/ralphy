@@ -77,6 +77,8 @@ interface DaemonReplies {
     truncated?: boolean;
   };
   "file.image": DaemonReply & { mediaType?: string; base64?: string };
+  /** The token of the route that serves an HTML file with its scripts. */
+  "file.preview": DaemonReply & { token?: string };
   "file.write": WriteReply;
   "file.create": WriteReply;
   "file.rename": WriteReply;

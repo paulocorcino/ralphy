@@ -39,11 +39,7 @@ function keepFragmentOnly(link: Element) {
 }
 
 /** Parse the text of an HTML file into the document the frame may show. */
-export function frameDocument(
-  content: string,
-  parser: DOMParser,
-  remoteImages: boolean,
-): Document {
+export function frameDocument(content: string, parser: DOMParser, remoteImages: boolean): Document {
   const parsed = parser.parseFromString(content, "text/html");
   const policy = parsed.createElement("meta");
   policy.setAttribute("http-equiv", "Content-Security-Policy");
@@ -62,14 +58,21 @@ export function frameSource(parsed: Document): string {
   return doctype + markupOf(parsed.documentElement);
 }
 
-/** Replace the body of `article` with an empty frame that has no rights. */
-export function mountFrame(article: Element, doc: Document): HTMLIFrameElement {
+/** What a frame may do: nothing, or run the scripts of its document (ADR-0089). */
+export type FrameRights = "" | "allow-scripts";
+
+/** Replace the body of `article` with an empty frame that has only `rights`. */
+export function mountFrame(
+  article: Element,
+  doc: Document,
+  rights: FrameRights,
+): HTMLIFrameElement {
   setMarkup(article, "");
   const frame = doc.createElement("iframe");
   frame.className = "html-frame";
   frame.title = "File preview";
-  // Empty on purpose: every right stays off, and none is ever added.
-  frame.setAttribute("sandbox", "");
+  // Never `allow-same-origin`: the document keeps an opaque origin.
+  frame.setAttribute("sandbox", rights);
   article.append(frame);
   return frame;
 }

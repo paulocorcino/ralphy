@@ -11,24 +11,29 @@ const DAEMON_JSON: &str = include_str!("../../../assets/wording/daemon.json");
 pub enum DaemonFailure {
     /// A `ralphy` command failed with an error that has no failure of its own.
     RalphyFailed,
+    /// The scripts of an HTML file were asked for a project of a peer, whose
+    /// preview route the browser cannot reach (ADR-0089 D3).
+    ScriptsOnAPeer,
 }
 
 impl FailureSet for DaemonFailure {
     const DOMAIN: TextDomain = TextDomain::Daemon;
 
     fn all() -> &'static [Self] {
-        &[Self::RalphyFailed]
+        &[Self::RalphyFailed, Self::ScriptsOnAPeer]
     }
 
     fn code(self) -> &'static str {
         match self {
             Self::RalphyFailed => "ralphy-failed",
+            Self::ScriptsOnAPeer => "scripts-on-a-peer",
         }
     }
 
     fn detail_names(self) -> &'static [&'static str] {
         match self {
             Self::RalphyFailed => &["cause"],
+            Self::ScriptsOnAPeer => &[],
         }
     }
 }

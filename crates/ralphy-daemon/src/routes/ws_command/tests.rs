@@ -106,3 +106,47 @@ fn no_workflow_turns_on_the_scroll_probe() {
     }
     assert!(read > 0, "no workflow was read");
 }
+
+/// A registry with the repo `demo` at `repo`, beside `dir`.
+fn registered(dir: &Path, repo: &Path) -> CommandCtx {
+    let ctx = ctx(dir);
+    let mut store = registry::RegistryStore::default();
+    store.upsert("demo", &repo.to_string_lossy());
+    registry::save_to(&store, &ctx.registry_path).expect("the registry is saved");
+    ctx
+}
+
+// ADR-0089 D3: the verb makes a token for the files of the repo, and ends it.
+#[tokio::test]
+async fn file_preview_makes_a_token_for_the_repo_and_ends_it() {
+    let dir = tempfile::tempdir().expect("a temp dir is writable");
+    let repo = tempfile::tempdir().expect("a temp dir is writable");
+    let ctx = registered(dir.path(), repo.path());
+    let mut cmd = command("file.preview");
+    cmd.payload = serde_json::json!({ "repo": "demo" });
+    let Answer::Reply(reply) = answer_one(&ctx, &cmd, &nobody()).await else {
+        panic!("the verb streamed");
+    };
+    assert_eq!(reply["status"], "ok", "{reply}");
+    let token = reply["token"].as_str().expect("a token").to_owned();
+    let now = std::time::Instant::now();
+    assert_eq!(
+        crate::preview::PREVIEWS.root_of(&token, now),
+        Some(repo.path().to_path_buf())
+    );
+
+    cmd.payload = serde_json::json!({ "repo": "demo", "revoke": token });
+    let Answer::Reply(reply) = answer_one(&ctx, &cmd, &nobody()).await else {
+        panic!("the verb streamed");
+    };
+    assert_eq!(reply, serde_json::json!({ "status": "ok" }));
+    assert_eq!(crate::preview::PREVIEWS.root_of(&token, now), None);
+
+    // A repo this daemon does not know gets no token.
+    cmd.payload = serde_json::json!({ "repo": "nope" });
+    let Answer::Reply(reply) = answer_one(&ctx, &cmd, &nobody()).await else {
+        panic!("the verb streamed");
+    };
+    assert_eq!(reply["status"], "error", "{reply}");
+    assert_eq!(reply.get("token"), None, "{reply}");
+}

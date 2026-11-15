@@ -15,6 +15,8 @@ Amended by ADR-0088 (proposed: D13, the undocumented call is the job freeze, and
 
 Amended 2026-11-07: D7, the page may send the Telegram token, write-only.
 
+Amended by ADR-0089 (D10: an HTML file runs its scripts when the operator allows it, from a route with a token; a frame cannot navigate to a data endpoint).
+
 ## Context
 
 Ralphy runs AI agents with shell access on the operator's machine, serves a
@@ -616,8 +618,8 @@ workbench.
 
 1. **The `sandbox` attribute is empty.** The document gets an opaque origin
    and none of the rights: no script, no form, no pop-up, no navigation of
-   the page. A right is never added. A document that needs script is not
-   shown with script; that would be a new decision, with another origin.
+   the page. A right is never added to this frame. A document that needs
+   script is shown by the other frame of ADR-0089, from a route.
 2. **The page adds a policy to the document.** Its first element in `<head>`
    is a `<meta http-equiv="Content-Security-Policy">` with
    `default-src 'none'; style-src 'unsafe-inline'; img-src data:`. The

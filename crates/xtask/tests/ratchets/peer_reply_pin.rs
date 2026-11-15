@@ -69,8 +69,10 @@ const NOT_PEER_REPLIES: &[(&str, &str, &str)] = &[
 /// keeps version 4: a run of an older peer sends none, and the run card then
 /// draws no agent dot, as for a vendor with no hooks. Version 5 changes
 /// no reply type: it changes the transport of the relayed consoles and spawn
-/// verbs, which ride a channel of the peer's page socket (#830).
-const PEER_REPLY_PIN: (u32, u64) = (5, 0x1da2_853b_91d2_a9f8);
+/// verbs, which ride a channel of the peer's page socket (#830). The new verb
+/// `file.preview` keeps version 5 (ADR-0089 D3): its `token` is optional in the
+/// page type, and the verb is never relayed, so no peer answers it.
+const PEER_REPLY_PIN: (u32, u64) = (5, 0x4a61_1984_d833_4f76);
 
 /// Where `PEER_PROTOCOL_VERSION` is, from the repo root.
 const PEER_RS: &str = "crates/ralphy-daemon/src/peer.rs";

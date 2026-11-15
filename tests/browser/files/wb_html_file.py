@@ -21,6 +21,15 @@ Scenario 7  the detached file window draws the frame
 Scenario 8  an image from the web is not asked for while remote images are
             off, and is drawn after the option is turned on and the page is
             loaded again
+Scenario 9  `app.html` shows no effect of its scripts until Run scripts is
+            pressed; then its inline script, its script file, its style
+            sheet, the image its CSS names and the image a script adds all
+            work, from a frame with `sandbox="allow-scripts"` (ADR-0089)
+Scenario 10 Stop scripts and Reload each draw the file with no script again,
+            and the token of the route is dead after Stop
+Scenario 11 the script of `attack.html` reaches no data endpoint: its
+            `fetch` is refused, and the daemon refuses the navigation of its
+            frame with `403`; the page's own read of that endpoint works
 
 Requires `playwright` (`pip install playwright`, then `playwright install`).
 
@@ -53,7 +62,7 @@ BASE = f"http://127.0.0.1:{PORT}/"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
-ENGINES = ("chromium", "firefox", "webkit")
+ENGINES = os.environ.get("WB_HTML_ENGINES", "chromium,firefox,webkit").split(",")
 CANARY = "canary-html-file"
 PIC_WIDTH = 3
 WEB_WIDTH = 7
@@ -114,6 +123,37 @@ fetch('/{CANARY}-script');</script>
 </body></html>
 """
 
+APP = """<!doctype html>
+<html><head><meta charset="utf-8"><title>App</title>
+<link rel="stylesheet" href="app/style.css">
+</head><body>
+<p id="inline">waiting</p>
+<p id="external">waiting</p>
+<div id="box" class="box"></div>
+<div id="slot"></div>
+<script>document.getElementById('inline').textContent = 'ran';</script>
+<script src="app/extra.js"></script>
+</body></html>
+"""
+APP_CSS = '.box { height: 40px; background-image: url("bg.png"); }\n'
+APP_JS = """document.getElementById('external').textContent = 'ran';
+var late = document.createElement('img');
+late.id = 'late';
+late.src = 'pic.png';
+document.getElementById('slot').appendChild(late);
+"""
+ATTACK = """<!doctype html>
+<html><head><meta charset="utf-8"><title>Attack</title></head><body>
+<p id="fetch">waiting</p>
+<script>
+fetch('/api/session', { credentials: 'include', mode: 'no-cors' }).then(
+  function () { document.getElementById('fetch').textContent = 'SENT'; },
+  function () { document.getElementById('fetch').textContent = 'refused'; });
+setTimeout(function () { location.href = '/api/session?from=frame'; }, 900);
+</script>
+</body></html>
+"""
+
 results = []
 
 
@@ -165,6 +205,12 @@ def make_fixture_repo():
     (docs / "report.html").write_text(REPORT, encoding="utf-8", newline="\n")
     (docs / "hostile.html").write_text(HOSTILE, encoding="utf-8", newline="\n")
     (docs / "pic.png").write_bytes(PIC)
+    (docs / "app.html").write_text(APP, encoding="utf-8", newline="\n")
+    (docs / "attack.html").write_text(ATTACK, encoding="utf-8", newline="\n")
+    (docs / "app").mkdir()
+    (docs / "app" / "style.css").write_text(APP_CSS, encoding="utf-8", newline="\n")
+    (docs / "app" / "extra.js").write_text(APP_JS, encoding="utf-8", newline="\n")
+    (docs / "app" / "bg.png").write_bytes(PIC)
     for args in (
         ["git", "init"],
         ["git", "config", "user.email", "wbhtml@example.com"],
@@ -368,6 +414,122 @@ def scenario_hostile(page, slug, engine, reached):
     )
 
 
+def frame_state(page, sel):
+    """The rights of the frame of a pane, its address, and the caption of the control."""
+    return page.evaluate(
+        """(s) => {
+          const f = document.querySelector(s + ' iframe.html-frame');
+          const b = document.querySelector(s + ' [data-act="scripts"]');
+          return [f.getAttribute('sandbox'), f.getAttribute('src') || '', b.getAttribute('title')];
+        }""",
+        sel,
+    )
+
+
+def scripted_frame(page, sel):
+    """The frame of a pane once it runs scripts, with its document loaded."""
+    page.wait_for_function(
+        "(s) => document.querySelector(s + ' iframe.html-frame')?.getAttribute('sandbox') === 'allow-scripts'",
+        arg=sel,
+        timeout=15000,
+    )
+    frame = page.query_selector(sel + " iframe.html-frame").content_frame()
+    frame.wait_for_selector("body", timeout=10000)
+    return frame
+
+
+def app_facts(frame):
+    frame.wait_for_function("() => [...document.images].every(i => i.complete)", timeout=10000)
+    return frame.evaluate(
+        """() => {
+          const box = getComputedStyle(document.getElementById('box'));
+          const late = document.getElementById('late');
+          return {
+            inline: document.getElementById('inline').textContent,
+            external: document.getElementById('external').textContent,
+            height: box.height,
+            background: box.backgroundImage.includes('/app/bg.png'),
+            late: late ? late.naturalWidth : null,
+          };
+        }"""
+    )
+
+
+def scenario_scripts(page, slug, engine):
+    open_path(page, slug, "docs/app.html")
+    sel = pane("docs/app.html")
+    static = app_facts(frame_of(page, sel))
+    before = frame_state(page, sel)
+    page.locator(f'{sel} [data-act="scripts"]').click()
+    frame = scripted_frame(page, sel)
+    frame.wait_for_function("() => document.getElementById('late') !== null", timeout=10000)
+    live = app_facts(frame)
+    after = frame_state(page, sel)
+    check(
+        f"{engine}: the scripts, the style sheet and their images work only after Run scripts",
+        static == {"inline": "waiting", "external": "waiting", "height": "0px", "background": False, "late": None}
+        and live == {"inline": "ran", "external": "ran", "height": "40px", "background": True, "late": PIC_WIDTH}
+        and before == ["", "", "Run scripts"]
+        and after[0] == "allow-scripts"
+        and after[1].startswith("/preview/")
+        and after[1].endswith("/docs/app.html")
+        and after[2] == "Stop scripts",
+        f"static={static} live={live} before={before} after={after}",
+    )
+    page.screenshot(path=os.path.join(SHOT_DIR, f"html-file-scripts-{engine}.png"))
+
+    old = after[1]
+    alive = page.evaluate("(u) => fetch(u).then(r => r.status)", old)
+    page.locator(f'{sel} [data-act="scripts"]').click()
+    stopped = app_facts(frame_of(page, sel))
+    stopped_state = frame_state(page, sel)
+    page.wait_for_timeout(300)
+    dead = page.evaluate("(u) => fetch(u).then(r => r.status)", old)
+
+    page.locator(f'{sel} [data-act="scripts"]').click()
+    scripted_frame(page, sel)
+    page.locator(f'{sel} [data-act="reload"]').click()
+    page.wait_for_function(
+        "(s) => document.querySelector(s + ' iframe.html-frame')?.getAttribute('sandbox') === ''", arg=sel, timeout=15000
+    )
+    reloaded = frame_state(page, sel)
+    check(
+        f"{engine}: Stop scripts and Reload draw the file with no script, and the token is dead after Stop",
+        stopped["inline"] == "waiting"
+        and stopped_state == ["", "", "Run scripts"]
+        and (alive, dead) == (200, 404)
+        and reloaded == ["", "", "Run scripts"],
+        f"stopped={stopped['inline']} state={stopped_state} token alive={alive} dead={dead} reloaded={reloaded}",
+    )
+
+
+def scenario_attack(page, slug, engine, answered):
+    answered.clear()
+    open_path(page, slug, "docs/attack.html")
+    sel = pane("docs/attack.html")
+    frame_of(page, sel)
+    page.locator(f'{sel} [data-act="scripts"]').click()
+    frame = scripted_frame(page, sel)
+    try:
+        frame.wait_for_function("() => document.getElementById('fetch').textContent !== 'waiting'", timeout=800)
+        fetched = frame.locator("#fetch").text_content()
+    except Exception:
+        fetched = "<no answer before the navigation>"
+    page.wait_for_timeout(2500)
+    # The control: the page's own read of the same endpoint.
+    own = page.evaluate("() => fetch('/api/session?from=page').then(r => r.status)")
+    page.wait_for_timeout(300)
+    seen = sorted(set(answered))
+    check(
+        f"{engine}: a script reaches no data endpoint: its fetch is refused and its navigation gets 403",
+        fetched == "refused"
+        and seen == [("frame", 403), ("page", 200)]
+        and own == 200
+        and page.url == BASE,
+        f"fetch={fetched} answered={seen} page's own read={own} page={page.url}",
+    )
+
+
 def scenario_detached(page, ctx, slug, engine):
     sel = pane("docs/report.html")
     open_path(page, slug, "docs/report.html")
@@ -390,6 +552,13 @@ def run_engine(pw, engine, slug):
     ctx = browser.new_context(viewport={"width": 1500, "height": 950})
     reached = []
     ctx.on("response", lambda r: reached.append(r.url) if CANARY in r.url else None)
+    answered = []
+
+    def session_reads(response):
+        if "/api/session?from=" in response.url:
+            answered.append((response.url.split("from=")[1], response.status))
+
+    ctx.on("response", session_reads)
     web_asked = []
 
     def web_image(route):
@@ -404,10 +573,14 @@ def run_engine(pw, engine, slug):
         enter(page, slug)
         scenario_report(page, slug, engine)
         scenario_hostile(page, slug, engine, reached)
+        scenario_scripts(page, slug, engine)
+        scenario_attack(page, slug, engine, answered)
+        # After the others: its closed window gives the tab back later, and
+        # the page then shows that tab.
         scenario_detached(page, ctx, slug, engine)
         scenario_remote(page, slug, engine, web_asked)
     except Exception as exc:
-        check(f"{engine}: the pass ran to the end", False, str(exc).splitlines()[0][:200])
+        check(f"{engine}: the pass ran to the end", False, " | ".join(str(exc).splitlines())[:900])
     finally:
         browser.close()
 

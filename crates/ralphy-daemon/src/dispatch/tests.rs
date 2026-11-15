@@ -63,6 +63,8 @@ fn verb_effect_classes() {
     // VERB fixes — only a `.note` path, and the container is the daemon's
     // to build, so the client never hands over bytes.
     assert_eq!(Verb::from_query("note.read"), Some(Verb::NoteRead));
+    assert_eq!(Verb::FilePreview.effect_class(), EffectClass::Native);
+    assert_eq!(Verb::from_query("file.preview"), Some(Verb::FilePreview));
     assert_eq!(Verb::NoteRead.effect_class(), EffectClass::Observe);
     assert_eq!(Verb::from_query("note.write"), Some(Verb::NoteWrite));
     assert_eq!(Verb::NoteWrite.effect_class(), EffectClass::Write);
@@ -99,8 +101,8 @@ fn verb_effect_classes() {
     }
     assert_eq!(
         Verb::ALL.len(),
-        54,
-        "the registry holds exactly fifty-four verbs"
+        55,
+        "the registry holds exactly fifty-five verbs"
     );
 }
 
@@ -318,7 +320,7 @@ fn takes_checkout_cwd_is_exactly_the_git_backed_family() {
         }
     }
     assert_eq!(count, 13, "the family is the 13 git-backed verbs");
-    assert_eq!(Verb::ALL.len(), 54, "Verb::ALL grew — revisit the family");
+    assert_eq!(Verb::ALL.len(), 55, "Verb::ALL grew — revisit the family");
 
     for &v in Verb::ALL {
         if matches!(

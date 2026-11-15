@@ -38,6 +38,8 @@ export type PaneRecord = {
   /** The bytes of an external write a dirty pane has not taken yet. */
   pendingDisk?: string | undefined;
   mermaidPending?: HTMLElement[];
+  /** The token of an HTML pane whose scripts the operator allowed. */
+  scripts?: string | undefined;
   hits?: HTMLElement[];
   hitIdx?: number;
 };

@@ -23,6 +23,11 @@ use crate::assets::Shell;
 use crate::auth::AuthState;
 use crate::UI;
 
+/// Marks an answer that brings its own policy: a file of a preview, whose
+/// document must be framed by the page and must run its scripts (ADR-0089 D4).
+#[derive(Clone, Copy)]
+pub(crate) struct OwnPolicy;
+
 /// Append the security headers to `resp`. `map_response_with_state`
 /// middleware: runs after every handler, including the fallback that serves the
 /// UI, and reads the remote-images flag from the live auth state.
@@ -30,6 +35,9 @@ pub(crate) async fn security_headers<B>(
     State(auth): State<Arc<AuthState>>,
     mut resp: Response<B>,
 ) -> Response<B> {
+    if resp.extensions().get::<OwnPolicy>().is_some() {
+        return resp;
+    }
     let h = resp.headers_mut();
     h.insert(
         header::CONTENT_SECURITY_POLICY,

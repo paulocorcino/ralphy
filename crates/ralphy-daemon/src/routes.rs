@@ -34,6 +34,7 @@ mod audit_layer;
 mod guard;
 mod headers;
 mod presence;
+mod preview;
 mod ui_asset;
 mod ws_command;
 mod ws_session;
@@ -58,6 +59,7 @@ pub(crate) use guard::*;
 #[cfg(test)]
 pub(crate) use headers::{content_security_policy, inline_script_bodies};
 pub(crate) use presence::*;
+pub(crate) use preview::*;
 pub(crate) use ui_asset::*;
 pub(crate) use ws_command::*;
 pub(crate) use ws_session::*;
@@ -255,6 +257,7 @@ pub(crate) fn router_with_roster(
         .merge(audit_routes(&shared))
         .merge(stall_routes(&shared))
         .merge(telegram_routes(&shared))
+        .merge(preview_routes(&shared))
         .fallback(ui_asset)
         // Inside the guard: only requests the guard let through are recorded.
         .layer(axum::middleware::from_fn_with_state(audit, audit_layer))
