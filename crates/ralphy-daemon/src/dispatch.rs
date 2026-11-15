@@ -456,20 +456,6 @@ impl Verb {
         }
     }
 
-    /// The host family: no repo, local only, composed by [`host_argv`].
-    pub fn is_host(self) -> bool {
-        matches!(
-            self,
-            Verb::HostAliases
-                | Verb::HostKey
-                | Verb::HostTrust
-                | Verb::HostCheck
-                | Verb::HostAdd
-                | Verb::HostInstall
-                | Verb::HostRemove
-        )
-    }
-
     /// The git-backed family (ADR-0063 §2, ADR-0036 `checkout`): a selected
     /// `checkout` is the composed command's `current_dir`, so the verb acts on
     /// that worktree's index, working tree and HEAD; the argv is unchanged.
