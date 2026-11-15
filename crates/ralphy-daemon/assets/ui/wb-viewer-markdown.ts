@@ -7,7 +7,12 @@ import { inPane, isElement, need, needInput, required, targetClosest } from "./w
 import { decorateZoomable } from "./wb-zoom-overlay.ts";
 import { drawDiagram, slugOf } from "./wb-dbml-draw.ts";
 import { isRendered, renderBody } from "./wb-viewer-render.ts";
-import { frameDocument, frameSource, mountFrame } from "./wb-viewer-html.ts";
+import {
+  frameDocument,
+  frameSource,
+  mountFrame,
+  remoteImagesAllowed,
+} from "./wb-viewer-html.ts";
 import { encodingBtnHtml } from "./wb-viewer-encoding.ts";
 import type { MermaidWindow } from "./wb-dbml-draw.ts";
 import type { BytesRecord, ViewerRecord } from "./wb-file-viewer.ts";
@@ -296,15 +301,14 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
 
   // The frame gets its document once, with the images already in it: a new
   // `srcdoc` loads the document again.
+  async function fillFrame(rec: BytesRecord, frame: HTMLIFrameElement) {
+    const parsed = frameDocument(rec.content, new DOMParser(), await remoteImagesAllowed());
+    await resolveImages(rec, parsed);
+    frame.srcdoc = frameSource(parsed);
+  }
+
   function renderHtml(rec: BytesRecord, article: Element) {
-    const parsed = frameDocument(rec.content, new DOMParser());
-    const frame = mountFrame(article, document);
-    resolveImages(rec, parsed)
-      .then(() => {
-        frame.srcdoc = frameSource(parsed);
-        return null;
-      })
-      .catch(() => {});
+    fillFrame(rec, mountFrame(article, document)).catch(() => {});
   }
 
   // An image the page's CSP refused (a remote one, while remote images are

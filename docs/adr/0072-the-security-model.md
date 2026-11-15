@@ -622,7 +622,11 @@ workbench.
    is a `<meta http-equiv="Content-Security-Policy">` with
    `default-src 'none'; style-src 'unsafe-inline'; img-src data:`. The
    document keeps its inline style and its `data:` images, and it can send no
-   request.
+   request. When the daemon has remote images on (ADR-0032 amendment §F),
+   `img-src` gains `https:`, as the policy of the page does for markdown. The
+   page asks the daemon (`GET /api/security/state`) each time it draws the
+   file, and no answer means off. The frame also inherits the policy of the
+   page, so the stricter of the two holds.
 3. **The page rewrites the links.** A link to a fragment (`#part`) becomes
    `about:srcdoc#part`. Every other link loses its `href`.
 
@@ -656,8 +660,10 @@ Windows, on loopback, with the policy of `routes/headers.rs`, 2026-11-15.
   that.
 
 **Limits, accepted.** A script in the document does not run. A style sheet
-in another file, an image named in CSS and an image from the web do not
-load. The find bar and the heading index of the pane do not reach the
+in another file and an image named in CSS do not load. An image from the web
+loads only with remote images on. With that option on, and the page reached
+over `https` (a tunnel), an image of the document can name the daemon's own
+origin, as an image in markdown always can; this case is not measured. The find bar and the heading index of the pane do not reach the
 document, so the pane does not show them for this kind; the browser's own
 find does reach it.
 
@@ -678,6 +684,7 @@ find does reach it.
 
 **Compliance.** Checked by `ui-tests/wb-viewer-html.test.mjs` (the policy is
 the first element of the head, a fragment link is rewritten, any other link
-has no `href`, the frame has an empty `sandbox`), and in the three engines
+has no `href`, the frame has an empty `sandbox`, the policy takes `https:`
+only when the daemon allows web images), and in the three engines
 by `tests/browser/files/wb_html_file.py`, which opens a hostile file in a
 real daemon and lists the requests of the frame that the daemon answers.

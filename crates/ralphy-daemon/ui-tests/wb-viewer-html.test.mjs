@@ -3,7 +3,12 @@
 // engines are checked by tests/browser/files/wb_html_file.py.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { frameDocument, frameSource, mountFrame } from "../assets/ui/wb-viewer-html.ts";
+import {
+  frameDocument,
+  frameSource,
+  mountFrame,
+  remoteImagesAllowed,
+} from "../assets/ui/wb-viewer-html.ts";
 
 const XLINK = "http://www.w3.org/1999/xlink";
 
@@ -39,9 +44,46 @@ function parserOf(first, body) {
   return { parseFromString: (_text, type) => (type === "text/html" ? parsed : null) };
 }
 
+test("the policy of the document takes web images only when the daemon allows them", () => {
+  // [the daemon allows web images, the policy]
+  const rows = [
+    [false, "default-src 'none'; style-src 'unsafe-inline'; img-src data:"],
+    [true, "default-src 'none'; style-src 'unsafe-inline'; img-src data: https:"],
+  ];
+  for (const [remote, want] of rows) {
+    const parsed = frameDocument("", parserOf(element("title"), []), remote);
+    assert.equal(parsed.head.children[0].attrs().content, want, String(remote));
+  }
+});
+
+test("the daemon's answer says if web images are allowed, and no answer is a no", async () => {
+  const state = (remote) => ({ ok: true, status: 200, json: async () => ({ remote_images: remote }) });
+  // [what the request does, web images allowed]
+  const rows = [
+    [async () => state(true), true],
+    [async () => state(false), false],
+    [async () => ({ ok: false, status: 401, json: async () => ({ remote_images: true }) }), false],
+    [async () => { throw new TypeError("no network"); }, false],
+  ];
+  const real = globalThis.fetch;
+  try {
+    for (const [answer, want] of rows) {
+      const asked = [];
+      globalThis.fetch = (url, init) => {
+        asked.push([init.method, url]);
+        return answer();
+      };
+      assert.equal(await remoteImagesAllowed(), want);
+      assert.deepEqual(asked, [["GET", "/api/security/state"]]);
+    }
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+
 test("the policy is the first element of the head of the document", () => {
   const style = element("style");
-  const parsed = frameDocument("<style></style>", parserOf(style, []));
+  const parsed = frameDocument("<style></style>", parserOf(style, []), false);
   assert.equal(parsed.head.children.length, 2);
   assert.equal(parsed.head.children[1], style);
   assert.equal(parsed.head.children[0].tag, "meta");
@@ -68,7 +110,7 @@ test("a link to a fragment stays on the frame, and any other link has no target"
     ["p", { href: "https://example.com/x" }, { href: "https://example.com/x" }],
   ];
   const body = rows.map(([tag, before]) => element(tag, before));
-  frameDocument("", parserOf(element("title"), body));
+  frameDocument("", parserOf(element("title"), body), false);
   rows.forEach(([tag, before, want], i) => {
     assert.deepEqual(body[i].attrs(), want, `${tag} ${JSON.stringify(before)}`);
   });

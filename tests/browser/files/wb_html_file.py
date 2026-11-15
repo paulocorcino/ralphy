@@ -18,6 +18,9 @@ Scenario 6  `hostile.html` runs no script, its links have no target, and
             none of its requests reaches the daemon; a request of the page
             itself does (the control)
 Scenario 7  the detached file window draws the frame
+Scenario 8  an image from the web is not asked for while remote images are
+            off, and is drawn after the option is turned on and the page is
+            loaded again
 
 Requires `playwright` (`pip install playwright`, then `playwright install`).
 
@@ -53,6 +56,8 @@ SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 ENGINES = ("chromium", "firefox", "webkit")
 CANARY = "canary-html-file"
 PIC_WIDTH = 3
+WEB_WIDTH = 7
+WEB_IMAGE = "https://images.example/web.png"
 
 
 def png(width, height):
@@ -84,6 +89,7 @@ REPORT = f"""<!doctype html>
 <p><a id="jump" href="#end">Go to the end</a></p>
 <img id="pic" src="pic.png" alt="a file next to the report">
 <img id="inline" src="{INLINE}" alt="an inline image">
+<img id="web" src="{WEB_IMAGE}" alt="an image from the web">
 <div class="tall"></div>
 <h2 id="end">The end</h2>
 </body></html>
@@ -216,6 +222,52 @@ def frame_of(page, sel):
     return frame
 
 
+def images_of(frame):
+    frame.wait_for_function("() => [...document.images].every(i => i.complete)", timeout=10000)
+    return frame.evaluate(
+        "() => Object.fromEntries([...document.images].map(i => [i.id, [i.naturalWidth, i.src.slice(0, 15)]]))"
+    )
+
+
+def enter(page, slug):
+    page.wait_for_selector("[x-data]", timeout=8000)
+    page.wait_for_function("() => Alpine.store('projects').projects.length === 1", timeout=15000)
+    page.evaluate(
+        "(s) => { if (Alpine.store('projects').openSlug !== s)"
+        " Alpine.$data(document.querySelector('[x-data]')).toggle(s); }",
+        arg=slug,
+    )
+
+
+def set_remote_images(page, on):
+    return page.evaluate(
+        """async (on) => (await fetch('/api/security/remote-images', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'enable=' + on,
+        })).status""",
+        "true" if on else "false",
+    )
+
+
+def scenario_remote(page, slug, engine, web_asked):
+    """Runs last: the report was drawn with the option off."""
+    off = len(web_asked)
+    status = set_remote_images(page, True)
+    try:
+        page.reload()
+        enter(page, slug)
+        open_path(page, slug, "docs/report.html")
+        pics = images_of(frame_of(page, pane("docs/report.html")))
+        check(
+            f"{engine}: an image from the web is asked for and drawn only with remote images on",
+            off == 0 and status == 200 and len(web_asked) >= 1 and pics.get("web") == [WEB_WIDTH, "https://images."],
+            f"asked while off={off} status={status} asked after={len(web_asked)} web={pics.get('web')}",
+        )
+    finally:
+        set_remote_images(page, False)
+
+
 def scenario_report(page, slug, engine):
     open_path(page, slug, "docs/report.html")
     sel = pane("docs/report.html")
@@ -229,13 +281,14 @@ def scenario_report(page, slug, engine):
         f"sandbox={sandbox!r} h1={title!r} color={color}",
     )
 
-    frame.wait_for_function("() => [...document.images].every(i => i.complete)", timeout=10000)
-    pics = frame.evaluate(
-        "() => Object.fromEntries([...document.images].map(i => [i.id, [i.naturalWidth, i.src.slice(0, 15)]]))"
-    )
+    pics = images_of(frame)
     check(
-        f"{engine}: the image file and the inline image are drawn",
-        pics == {"pic": [PIC_WIDTH, "data:image/png;"], "inline": [5, "data:image/png;"]},
+        f"{engine}: the image file and the inline image are drawn, the web image is not",
+        pics == {
+            "pic": [PIC_WIDTH, "data:image/png;"],
+            "inline": [5, "data:image/png;"],
+            "web": [0, "https://images."],
+        },
         f"got={pics}",
     )
     page.screenshot(path=os.path.join(SHOT_DIR, f"html-file-{engine}.png"))
@@ -337,20 +390,22 @@ def run_engine(pw, engine, slug):
     ctx = browser.new_context(viewport={"width": 1500, "height": 950})
     reached = []
     ctx.on("response", lambda r: reached.append(r.url) if CANARY in r.url else None)
+    web_asked = []
+
+    def web_image(route):
+        web_asked.append(route.request.url)
+        route.fulfill(status=200, content_type="image/png", body=png(WEB_WIDTH, 1))
+
+    ctx.route("https://images.example/**", web_image)
     page = ctx.new_page()
     page.on("pageerror", lambda e: print("pageerror:", e, flush=True))
     try:
         page.goto(BASE)
-        page.wait_for_selector("[x-data]", timeout=8000)
-        page.wait_for_function("() => Alpine.store('projects').projects.length === 1", timeout=15000)
-        page.evaluate(
-            "(s) => { if (Alpine.store('projects').openSlug !== s)"
-            " Alpine.$data(document.querySelector('[x-data]')).toggle(s); }",
-            arg=slug,
-        )
+        enter(page, slug)
         scenario_report(page, slug, engine)
         scenario_hostile(page, slug, engine, reached)
         scenario_detached(page, ctx, slug, engine)
+        scenario_remote(page, slug, engine, web_asked)
     except Exception as exc:
         check(f"{engine}: the pass ran to the end", False, str(exc).splitlines()[0][:200])
     finally:
