@@ -117,6 +117,9 @@ ubiquitous language, and each crate is roughly one bounded context.
   ([ADR-0075](./docs/adr/0075-the-workbench-script-is-written-in-typescript.md)).
   Import a type with `import type`: the build removes types without
   knowing which imports are types.
+  The workbench markup holds bindings only: no HTML comment, and an Alpine
+  attribute is one member read or one call
+  ([ADR-0073](./docs/adr/0073-the-workbench-script-is-cut-into-alpine-components.md)).
   A new `*.test.mjs` file runs only when `ui-tests/index.mjs` imports it.
   Before a change there, read
   [docs/WORKBENCH-BUILD-GUIDE.md](./docs/WORKBENCH-BUILD-GUIDE.md): vendored

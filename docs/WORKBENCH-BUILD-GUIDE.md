@@ -101,6 +101,10 @@ libraries are classic scripts.
   module component from its export (`MODULE_COMPONENTS`).
 - **Type check.** `tsc --noEmit -p crates/ralphy-daemon/assets/ui`, in the
   UI gate of [AGENTS.md](../AGENTS.md).
+- **The markup holds bindings only.** An `.html` file has no comment except
+  the part marker, and an Alpine attribute is one member read or one call. The
+  logic lives in the TypeScript member: see [the amendment of
+  ADR-0073](./adr/0073-the-workbench-script-is-cut-into-alpine-components.md#amendment-2026-11-15-the-markup-holds-bindings-only).
 
 ## Vendored libraries
 
