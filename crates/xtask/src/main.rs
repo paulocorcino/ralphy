@@ -23,6 +23,7 @@ mod capabilities;
 mod changelog;
 mod complexity;
 mod gate;
+mod html_tags;
 mod oversized;
 mod release_cmds;
 mod ui_copy;
