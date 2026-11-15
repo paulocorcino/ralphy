@@ -12,8 +12,6 @@
         </div>
         <div class="settings-body">
           <nav class="settings-nav">
-            <!-- client group: this browser profile's own, held in the view
-                 store (wb-client-view.js) and never sent to the daemon -->
             <div class="settings-navgroup"><i class="bi bi-window-stack"></i> Workbench · this browser</div>
             <template x-for="sec in SETTINGS.filter((s) => s.scope === 'client')" :key="sec.id">
               <button
@@ -24,7 +22,6 @@
                 <i class="bi" :class="sec.icon"></i><span x-text="sec.title"></span>
               </button>
             </template>
-            <!-- daemon group: machine-wide, one for every project -->
             <div class="settings-navgroup"><i class="bi bi-hdd-network"></i> Daemon · this machine</div>
             <template x-for="sec in SETTINGS.filter((s) => s.scope === 'daemon')" :key="sec.id">
               <button
@@ -35,8 +32,6 @@
                 <i class="bi" :class="sec.icon"></i><span x-text="sec.title"></span>
               </button>
             </template>
-            <!-- project group: these settings belong to the open repo, persisted
-                 in <repo>/.ralphy/settings.json -->
             <div class="settings-navgroup project">
               <i class="bi" :class="$store.projects.openSlug ? 'bi-folder2-open' : 'bi-folder2'"></i>
               <span x-text="$store.projects.openSlug ? ('Project · ' + $store.projects.projectLabel($store.projects.openSlug)) : 'Project · none open'"></span>
@@ -65,7 +60,6 @@
                                 : ($store.projects.openSlug ? ('Project · ' + $store.projects.projectLabel($store.projects.openSlug)) : 'Project · none open')"></span>
                 </div>
                 <p class="settings-blurb" x-text="sec.blurb"></p>
-                <!-- per-project sections need an open repo to write into -->
                 <p class="settings-noproject" x-show="sec.scope === 'project' && !$store.projects.openSlug">
                   <i class="bi bi-info-circle"></i> Open a project to edit its settings. They are saved in
                   <code>&lt;repo&gt;/.ralphy/settings.json</code>.
@@ -74,7 +68,6 @@
                   <div class="set-row" x-show="sec.scope !== 'project' || $store.projects.openSlug">
                     <div class="set-main">
                       <label class="set-label" x-text="it.label"></label>
-                      <!-- control, chosen by type -->
                       <template x-if="it.type === 'select'">
                         <select class="set-input" @change="saveSetting(it.key, $event.target.value)">
                           <template x-for="o in it.options" :key="o">
@@ -89,28 +82,16 @@
                           </template>
                         </select>
                       </template>
-                      <!-- `readonly` is not decoration: the daemon REFUSES to
-                           write these keys, so an editable field here would
-                           take the edit and come back "config change refused".
-                           Disabled, the value is still readable. -->
                       <template x-if="it.type === 'text'">
                         <input class="set-input" type="text" :placeholder="it.placeholder || ''"
                                :disabled="it.readonly === true" :title="it.readonly === true ? 'Read-only. See the note below.' : ''"
                                :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
-                      <!-- `settingsOpen` is half of this condition on purpose: a
-                           `type="password"` sitting in a closed modal is still
-                           a password field to the browser's manager, and it is
-                           paired with whatever text field the operator types
-                           into next (see the login gate's note). -->
                       <template x-if="settingsOpen && it.type === 'password'">
                         <input class="set-input" type="password" :placeholder="it.placeholder || '••••••••'"
                                :disabled="it.readonly === true" :title="it.readonly === true ? 'Read-only. See the note below.' : ''"
                                :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
-                      <!-- a plain checkbox: the value is a real boolean, so it
-                           never goes through the string coercion the config
-                           inputs above need -->
                       <template x-if="it.type === 'toggle'">
                         <input class="set-check" type="checkbox"
                                :disabled="it.readonly === true" :title="it.readonly === true ? 'Read-only. See the note below.' : ''"
@@ -125,7 +106,6 @@
                     <p class="set-help" x-text="it.help"></p>
                   </div>
                 </template>
-                <!-- desk history: its own body, rows from wb-desk-history.js -->
                 <template x-if="sec.id === 'desk-history'">
                   <div class="desk-history">
                     <div class="sec-actions">
@@ -158,8 +138,6 @@
                     </template>
                   </div>
                 </template>
-                <!-- notifications: a test that shows one notification now,
-                     whether the switch is on or not -->
                 <template x-if="sec.id === 'notifications'">
                   <div class="notify-test">
                     <div class="sec-actions">
@@ -170,10 +148,6 @@
                     <p class="sec-note" x-show="notifyTestNote" x-text="notifyTestNote"></p>
                   </div>
                 </template>
-                <!-- telegram: its own body, the wbTelegramSetup component
-                     (wb-telegram-setup.ts), built only while the section is
-                     open, so the password field never sits in a closed
-                     modal. The token is sent once and never shown again. -->
                 <template x-if="sec.id === 'telegram' && settingsOpen && settingsSection === 'telegram'">
                   <div class="telegram-setup" x-data="wbTelegramSetup">
                     <p class="sec-note devices-error" x-show="error" x-text="error"></p>
@@ -213,9 +187,6 @@
                     <p class="sec-note" x-show="note" x-text="note"></p>
                   </div>
                 </template>
-                <!-- devices: its own body, the wbDevices component (wb-devices.ts).
-                     Built only while the section is open, so it reads the log
-                     each time it opens and never on a page load. -->
                 <template x-if="sec.id === 'devices' && settingsOpen && settingsSection === 'devices'">
                   <div class="devices" x-data="wbDevices">
                     <div class="sec-actions">

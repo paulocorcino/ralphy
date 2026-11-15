@@ -405,8 +405,8 @@ test("the main button is Install while Ralphy can be sent to the host", () => {
 
 test("the connection fields are never offered to autofill or a password manager", () => {
   const html = dialogPart();
-  const start = html.indexOf("<!-- 1. Connection");
-  const end = html.indexOf("<!-- 2. Host identity", start);
+  const start = html.indexOf('class="host-conn"');
+  const end = html.indexOf("addHost.step === 'identity'", start);
   assert.ok(start > 0 && end > start);
   const block = html.slice(start, end);
   const inputs = (block.match(/<input\b[^>]*>/gu) || []).filter((i) => !/type="checkbox"/u.test(i));

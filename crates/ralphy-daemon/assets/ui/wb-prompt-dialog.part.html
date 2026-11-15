@@ -1,11 +1,3 @@
-    <!-- ===================================================================
-         Prompt dialog — the design-system replacement for the native
-         window.prompt when the workbench needs one word from the operator
-         (naming a new file or folder). Driven by `promptModal` + `askPrompt()`
-         (the store `modals`). Enter submits through `promptSubmit()`, which validates and
-         keeps the dialog OPEN on a bad name so it can be fixed in place;
-         Escape/scrim/✕ cancel and resolve null.
-    ==================================================================== -->
     <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('$store.modals.promptModal.open', () => $store.modals.promptRespond(null))">
       <div
         class="modal prompt-modal"

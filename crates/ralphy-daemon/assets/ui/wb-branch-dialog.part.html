@@ -15,12 +15,7 @@
           <span class="spacer"></span>
           <button class="modal-x" @click="closeBranchModal()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
-        <!-- Branches ONLY (ADR-0063 amendment 2026-09-16 b): where a console
-             works is the console's own switcher, and what Files shows is the
-             Files bar's chip. Under a selected checkout the act lands on THAT
-             tree's HEAD (#407). -->
         <div class="branch-body">
-          <!-- filter box doubles as the create field -->
           <div class="branch-search">
             <svg x-icon="'search'"></svg>
             <input type="text"
@@ -30,8 +25,6 @@
               @keydown.enter.prevent="branchEnter()"
             />
           </div>
-          <!-- faithful nudge: the runner aborts on a dirty tree, and a checkout
-               can fail against uncommitted files. -->
           <p class="branch-dirty-note" x-show="branchModal.checkoutDirty">
             <i class="bi bi-exclamation-triangle"></i>
             There are uncommitted changes here. A run does not start while they exist, and a branch switch can fail. Commit or stash them first.
@@ -50,7 +43,6 @@
                 <span class="branch-tag" x-show="branchHeldBy(b)" :title="branchHeldBy(b)" x-text="'Open in ' + branchHeldBy(b)"></span>
               </li>
             </template>
-            <!-- create-from-current, shown only when the typed name is new -->
             <li class="branch-item create" x-show="canCreateBranch()" @click="createBranch()">
               <i class="bi bi-plus-lg"></i>
               <span class="branch-name">Create branch “<span x-text="branchModal.filter.trim()"></span>”</span>
