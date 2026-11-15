@@ -87,6 +87,11 @@ export function wbChanges() {
     commitMsg: "",
     commitMsgSlug: null as string | null,
 
+    // The list and the sync row of one project are read together.
+    readChanges(slug: string | null | undefined) {
+      void this.loadChanges(slug);
+      void this.loadSync(slug);
+    },
     // Re-read the working tree, only while the Changes panel is on screen: both
     // reads are local but each is a subprocess.
     refreshChanges() {
@@ -94,8 +99,7 @@ export function wbChanges() {
         return;
       }
       if (document.visibilityState !== "visible") return;
-      void this.loadChanges(this.$store.projects.openSlug);
-      void this.loadSync(this.$store.projects.openSlug);
+      this.readChanges(this.$store.projects.openSlug);
     },
 
     // The open project's change count (#307) via `changes.list`: reloads on
@@ -228,8 +232,7 @@ export function wbChanges() {
       changesSub = window.WBDaemon.subscribeChanges(slug, (frame) => {
         if (this.$store.connection.tabHidden()) return;
         if (WBChanges.shouldReload(frame, this.$store.projects.openSlug)) {
-          void this.loadChanges(this.$store.projects.openSlug);
-          void this.loadSync(this.$store.projects.openSlug);
+          this.readChanges(this.$store.projects.openSlug);
         }
       });
     },
@@ -252,15 +255,13 @@ export function wbChanges() {
       void this.$nextTick(() => {
         this.destroyChangesSub();
         this.mountChangesSub();
-        void this.loadChanges(this.$store.projects.openSlug);
-        void this.loadSync(this.$store.projects.openSlug);
+        this.readChanges(this.$store.projects.openSlug);
       });
     },
     // On `workbench:head-moved` (the files' socket heard `head.dirty`): re-read
     // what the branch drives: the chip, the sync row and the Changes count.
     gitFollowHead(ref: string) {
-      void this.loadChanges(ref);
-      void this.loadSync(ref);
+      this.readChanges(ref);
       // Under a selection the chip reads the worktree's branch from the
       // listing, not `p.branch`.
       if (this.$store.checkouts.checkoutOf(ref) !== null) {
@@ -345,8 +346,7 @@ export function wbChanges() {
         // A transport throw is NOT a refusal: the repo never answered.
         this._changesRefused("Could not stage: the daemon did not answer.");
       }
-      void this.loadChanges(slug);
-      void this.loadSync(slug);
+      this.readChanges(slug);
     },
 
     async unstagePaths(slug: string, paths: string[]) {
@@ -368,8 +368,7 @@ export function wbChanges() {
       } catch {
         this._changesRefused("Could not unstage: the daemon did not answer.");
       }
-      void this.loadChanges(slug);
-      void this.loadSync(slug);
+      this.readChanges(slug);
     },
 
     // Discard ONE row's changes (#319) — the only irreversible act here, so the
@@ -405,8 +404,7 @@ export function wbChanges() {
       } catch {
         this._changesRefused("Could not discard: the daemon did not answer.");
       }
-      void this.loadChanges(slug);
-      void this.loadSync(slug);
+      this.readChanges(slug);
     },
 
     async commitStaged(slug: string) {
@@ -434,8 +432,7 @@ export function wbChanges() {
       } catch {
         this._changesRefused("Could not commit: the daemon did not answer.");
       }
-      void this.loadChanges(slug);
-      void this.loadSync(slug);
+      this.readChanges(slug);
     },
 
     // A refusal from the CHANGES panel lands in that panel and STAYS; the flash
@@ -466,8 +463,7 @@ export function wbChanges() {
       // The page asks for a read of one project's change set and branch: the
       // sidebar refresh, a branch act, a new or restored checkout.
       window.addEventListener("workbench:changes-read", (e) => {
-        void this.loadChanges(e.detail.ref);
-        void this.loadSync(e.detail.ref);
+        this.readChanges(e.detail.ref);
       });
       // A new checkout of `ref`: another tree's change set is not this tree's
       // "last value" (ADR-0070 D3), so its reads start over.

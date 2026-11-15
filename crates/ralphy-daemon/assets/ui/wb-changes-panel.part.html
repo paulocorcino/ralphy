@@ -23,7 +23,7 @@
           <button
             class="head-act"
             :disabled="!$store.projects.openSlug"
-            @click="loadChanges($store.projects.openSlug); loadSync($store.projects.openSlug)"
+            @click="readChanges($store.projects.openSlug)"
             title="Refresh changes"
             aria-label="Refresh changes"
           >

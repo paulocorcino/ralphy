@@ -34,6 +34,17 @@ export function wbAccount() {
     closeAvatarMenu() {
       this.avatarMenu = false;
     },
+    // A menu item closes the menu, then asks for its dialog.
+    openFromAvatarMenu(
+      dialog:
+        | "workbench:whats-new-open"
+        | "workbench:security-open"
+        | "workbench:help-open"
+        | "workbench:about-open",
+    ) {
+      this.closeAvatarMenu();
+      sendWindow(window, dialog);
+    },
     toggleAvatarMenu() {
       const was = this.avatarMenu;
       sendWindow(window, "workbench:menus-close");

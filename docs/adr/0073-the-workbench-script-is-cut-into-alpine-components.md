@@ -801,7 +801,8 @@ reason for it.
    - a `? :`;
    - a template string;
    - the comma operator;
-   - a call on `$event` with a statement after it.
+   - more than one statement (this covers a call on `$event` with a
+     statement after it).
 
    A compound site becomes a member of the component, named for the rule it
    states. Phase D of the epic moves them; a ratchet counts the sites left
@@ -844,6 +845,10 @@ Measures of `attribute_logic_matches_the_baseline` when it landed (#942):
 comma inside brackets (call arguments, arrow parameters, a `:class` object)
 is not the comma operator. `x-data`, `x-ref`, `x-transition*` and the left
 side of `x-for` hold no expression and are not read. The rule did not
-change. Two statements in one handler with no call on `$event`
-(`@click="menu = false; open()"`) are not one of the five shapes, so the
-ratchet does not count them.
+change, but its fifth shape was a call on `$event` with a statement after
+it. It is now "more than one statement", and the measure moved by 8 sites:
+`index.html` 1, `wb-account.part.html` 4, `wb-changes-panel.part.html` 1,
+`wb-consoles-tab-menus.part.html` 1 and `wb-runs-panel.part.html` 1. The
+members that took them are `showSettings`, `openFromAvatarMenu`,
+`readChanges`, `closeAgentMenu` and `pickRun`. The ratchet table is empty
+again.

@@ -40,7 +40,7 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
     assert!(html.contains("class=\"rel-dot\" :class=\"$store.release.release.severity\""));
     assert!(html.contains("x-show=\"$store.release.releaseUnread\""));
     // The menu row asks the dialogs' own component to open (ADR-0073 D5).
-    assert!(html.contains("$dispatch('workbench:whats-new-open')"));
+    assert!(html.contains("openFromAvatarMenu('workbench:whats-new-open')"));
     assert!(html.contains("@workbench:whats-new-open.window=\"openWhatsNew()\""));
     assert!(html.contains("x-bind=\"$store.modals.scrim('whatsNewOpen', () => closeWhatsNew())\""));
     // The whole gap, not just the newest release.

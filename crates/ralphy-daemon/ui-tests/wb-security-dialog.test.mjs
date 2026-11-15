@@ -253,7 +253,7 @@ test("the account menu closes itself and asks the dialog to open with workbench:
   const { scope: menu } = loadComponent("wbAccount", { from: loaded });
   const sent = [];
   menu.avatarMenu = true;
-  menu.$dispatch = (name) => sent.push(name);
+  loaded.window.dispatchEvent = (e) => sent.push(e.type);
   evalIn(menu, click);
   assert.equal(menu.avatarMenu, false, "the menu closes");
   assert.deepEqual(sent, ["workbench:security-open"]);
