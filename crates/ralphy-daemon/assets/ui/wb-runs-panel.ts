@@ -386,6 +386,10 @@ export function wbRuns() {
       window.addEventListener("workbench:project-changed", () => {
         this.runsPanelFollowProject();
       });
+      // ONE dropdown at a time, and Escape closes every menu.
+      window.addEventListener("workbench:menus-close", () => {
+        this.runMenu = false;
+      });
       // A read of the open project's runs was kept. Only while showing: a
       // whole-plan `file.read` nobody can see is cost.
       window.addEventListener("workbench:runs-read", () => {

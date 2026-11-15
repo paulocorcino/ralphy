@@ -2,7 +2,7 @@
 // fake elements: no browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ARROW_LISTS, arrowStep, arrowTarget } from "../assets/ui/wb-arrow-keys.ts";
+import { ARROW_LISTS, arrowStep, arrowTarget, menuEscape } from "../assets/ui/wb-arrow-keys.ts";
 
 const [MENU, TABS] = ARROW_LISTS;
 
@@ -59,4 +59,45 @@ test("a field in a menu, a modifier or a hidden row keeps the key", () => {
   );
   assert.equal(arrowTarget(0, -1, "ArrowDown", MENU), -1, "an empty list moves nothing");
   assert.equal(arrowStep(key("ArrowDown"), null), false);
+});
+
+// Escape in a menu (wb-arrow-keys.ts `menuEscape`), on a fake page.
+function menuPage({ shown = true, active = null } = {}) {
+  const page = { closed: 0 };
+  const menu = { getClientRects: () => (shown ? [{}] : []), contains: (el) => el?.inMenu === true };
+  page.menus = () => [menu];
+  page.active = () => active;
+  page.closeAll = () => void page.closed++;
+  return page;
+}
+const focusable = () => ({ focused: false, focus() { this.focused = true; } });
+const inMenu = (field = false) => ({
+  inMenu: true,
+  matches: (sel) => field && sel.startsWith("input"),
+  closest: () => ({}),
+});
+
+test("Escape closes an open menu and gives the focus back to the element it came from", () => {
+  const opener = focusable();
+  const page = menuPage({ active: inMenu() });
+  assert.equal(menuEscape({ key: "Escape" }, page, opener), true);
+  assert.equal(page.closed, 1);
+  assert.equal(opener.focused, true);
+});
+
+test("Escape on the trigger closes the menu and leaves the focus where it is", () => {
+  const opener = focusable();
+  const page = menuPage({ active: { matches: () => false, closest: () => null } });
+  assert.equal(menuEscape({ key: "Escape" }, page, opener), true);
+  assert.equal(page.closed, 1);
+  assert.equal(opener.focused, false);
+});
+
+test("Escape leaves the key when no menu is open, and to a field inside a menu", () => {
+  const none = menuPage({ shown: false, active: inMenu() });
+  assert.equal(menuEscape({ key: "Escape" }, none, null), false);
+  const field = menuPage({ active: inMenu(true) });
+  assert.equal(menuEscape({ key: "Escape" }, field, null), false);
+  assert.equal(menuEscape({ key: "Enter" }, menuPage({ active: inMenu() }), null), false);
+  assert.equal(none.closed + field.closed, 0);
 });

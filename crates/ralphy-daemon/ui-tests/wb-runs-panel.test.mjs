@@ -258,3 +258,11 @@ test("the plan prose renders only for the issue its trailer names", () => {
     globalThis.DOMPurify = saved.DOMPurify;
   }
 });
+
+// Escape in a menu and every other menu trigger send `workbench:menus-close`.
+test("the run picker closes when the page closes every menu", () => {
+  const { runs, fire } = page();
+  runs.runMenu = true;
+  fire("workbench:menus-close", null);
+  assert.equal(runs.runMenu, false);
+});

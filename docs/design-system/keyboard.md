@@ -19,8 +19,8 @@ menu keeps its own arrow keys.
 | Component                                   | Where its keys are                                    |
 | ------------------------------------------- | ----------------------------------------------------- |
 | [Modal](./modal.md)                         | Escape, Tab and Shift+Tab; Enter in a confirm dialog  |
-| [Dropdown menu](./dropdown.md)              | Up, Down, Home and End                                |
-| [Context menu](./context-menu.md)           | Up, Down, Home and End                                |
+| [Dropdown menu](./dropdown.md)              | Up, Down, Home and End; Escape closes                 |
+| [Context menu](./context-menu.md)           | Up, Down, Home and End; Escape closes                 |
 | [Text field](./text-field.md)               | Enter saves and Escape cancels in the rename fields   |
 | [Segmented control](./segmented-control.md) | Tab; Left and Right inside a tab list                 |
 | [Tab](./tab.md)                             | Left, Right, Home and End; Enter or Space opens a tab |

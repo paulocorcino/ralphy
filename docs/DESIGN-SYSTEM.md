@@ -340,8 +340,9 @@ this list is not built yet; the tables below describe the code of today.
 | Confirm the authenticator code                                                         | Enter                                  | Security dialog             | `wb-security-dialog.part.html:115`                     |
 | Save the Telegram token                                                                | Enter                                  | Settings dialog             | `wb-settings-dialog.part.html:185`                     |
 | Go back one box and clear it; move between the boxes                                   | Backspace on an empty box; Left, Right | Login code                  | `wb-login.ts:123`                                      |
-| Move between the enabled rows, wrapping at the ends; go to the first or last row       | Up, Down; Home, End                    | Dropdown menu, context menu | `wb-arrow-keys.ts:69`                                  |
-| Move between the tabs; go to the first or last tab                                     | Left, Right; Home, End                 | Tab list                    | `wb-arrow-keys.ts:69`                                  |
+| Move between the enabled rows, wrapping at the ends; go to the first or last row       | Up, Down; Home, End                    | Dropdown menu, context menu | `wb-arrow-keys.ts:116`                                 |
+| Close the open menus; the focus goes back to where it came from                        | Escape                                 | Dropdown menu, context menu | `wb-arrow-keys.ts:129`                                 |
+| Move between the tabs; go to the first or last tab                                     | Left, Right; Home, End                 | Tab list                    | `wb-arrow-keys.ts:116`                                 |
 | Open the tab that has the focus                                                        | Enter, Space                           | Canvas tab                  | `index.html:276`                                       |
 | Close the menu                                                                         | Escape                                 | Checkout menu               | `wb-console-checkout.ts:261`                           |
 | Close the menu                                                                         | Escape                                 | Encoding menu               | `wb-viewer-encoding.ts:129`                            |
@@ -414,9 +415,9 @@ Checked, and no conflict found:
 
 ### Gaps
 
-- Most dropdown menus do not close on Escape. Only the checkout menu, the
-  encoding menu, the Columns menu filter and the command field of the
-  Consoles menu do. Issue #956.
+- Fixed: every dropdown menu and the context menu close on Escape, and the
+  focus goes back to the element it came from. A field inside a menu keeps
+  its own Escape. Issue #956.
 
 ## Measuring a change
 

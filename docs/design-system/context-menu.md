@@ -61,4 +61,6 @@ The row is the same rule as the [Dropdown menu](./dropdown.md) row
 
 ## Keyboard
 
-See [Keyboard](./keyboard.md).
+Up and Down move between the enabled rows, Home and End go to the ends,
+and Escape closes the menu and gives the focus back. See
+[Keyboard](./keyboard.md).
