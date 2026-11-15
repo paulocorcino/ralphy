@@ -419,11 +419,13 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     // Land a tab on the first occurrence of `term` (a content-search open).
     // A code pane whose editor has not mounted yet remembers the term and
     // acts once it has; a rendered markdown pane uses its own find bar; a
-    // diff or an image has nothing to find in.
+    // diff or an image has nothing to find in, and the page cannot reach
+    // into the frame of an HTML file.
     find(id: string, term: string) {
       const rec = map.get(id);
       if (!rec || !term) return;
       if (rec.kind === "diff" || rec.kind === "image") return;
+      if (rec.kind === "html" && !rec.editing) return;
       if (isRendered(rec.kind) && !rec.editing) {
         findInMarkdown(rec, term);
         return;

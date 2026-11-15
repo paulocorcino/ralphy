@@ -7,6 +7,7 @@ import { inPane, isElement, need, needInput, required, targetClosest } from "./w
 import { decorateZoomable } from "./wb-zoom-overlay.ts";
 import { drawDiagram, slugOf } from "./wb-dbml-draw.ts";
 import { isRendered, renderBody } from "./wb-viewer-render.ts";
+import { frameDocument, frameSource, mountFrame } from "./wb-viewer-html.ts";
 import { encodingBtnHtml } from "./wb-viewer-encoding.ts";
 import type { MermaidWindow } from "./wb-dbml-draw.ts";
 import type { BytesRecord, ViewerRecord } from "./wb-file-viewer.ts";
@@ -251,9 +252,13 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   function renderMarkdown(rec: BytesRecord) {
     if (!isRendered(rec.kind)) return;
     const article = inPane(rec, ".md-body");
+    if (rec.kind === "html") {
+      renderHtml(rec, article);
+      return;
+    }
     const file = { kind: rec.kind, content: rec.content, uid: rec.uid };
     rec.mermaidPending = renderBody(file, article, document);
-    resolveImages(rec, article);
+    resolveImages(rec, article).catch(() => {});
     decorateZoomable(article);
     buildOutline(rec, article);
     if (rec.visible) drawMermaid(rec);
@@ -267,24 +272,39 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   // loads, and `blockedImage` explains a refusal; a source that REFUSES is left alone
   // too — a broken image is an honest rendering of a broken link, and a
   // placeholder would fabricate.
-  function resolveImages(rec: ViewerRecord, article: Element) {
+  // The promise settles when every read has answered; it never rejects.
+  function resolveImages(rec: ViewerRecord, root: ParentNode): Promise<unknown> {
     // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test window has no WBDaemon
-    if (typeof window.WBDaemon?.readImage !== "function") return;
+    if (typeof window.WBDaemon?.readImage !== "function") return Promise.resolve();
     const dir = rec.path.includes("/") ? rec.path.slice(0, rec.path.lastIndexOf("/")) : "";
-    article.querySelectorAll<HTMLImageElement>("img[src]").forEach((img) => {
+    const reads = [...root.querySelectorAll<HTMLImageElement>("img[src]")].map((img) => {
       const src = img.getAttribute("src") ?? "";
       // Anything carrying a scheme (`data:`, `https:`) or rooted at `/` is not
       // ours to resolve.
-      if (/^[a-z][a-z0-9+.-]*:/iu.test(src) || src.startsWith("/")) return;
+      if (/^[a-z][a-z0-9+.-]*:/iu.test(src) || src.startsWith("/")) return Promise.resolve();
       const rel = repoRelative(dir, src);
-      if (rel === null) return;
-      WBDaemon.readImage(rec.project, rel, undefined, rec.checkout)
+      if (rel === null) return Promise.resolve();
+      return WBDaemon.readImage(rec.project, rel, undefined, rec.checkout)
         .then((url) => {
           if (url != null && url !== "") img.src = url;
           return null;
         })
         .catch(() => {});
     });
+    return Promise.all(reads);
+  }
+
+  // The frame gets its document once, with the images already in it: a new
+  // `srcdoc` loads the document again.
+  function renderHtml(rec: BytesRecord, article: Element) {
+    const parsed = frameDocument(rec.content, new DOMParser());
+    const frame = mountFrame(article, document);
+    resolveImages(rec, parsed)
+      .then(() => {
+        frame.srcdoc = frameSource(parsed);
+        return null;
+      })
+      .catch(() => {});
   }
 
   // An image the page's CSP refused (a remote one, while remote images are
