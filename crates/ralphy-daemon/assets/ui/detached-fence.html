@@ -2,7 +2,6 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <!-- Same keyboard behaviour as the shell: this popup paints consoles too. -->
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, interactive-widget=resizes-content"
@@ -10,13 +9,10 @@
     <title>Ralphy · detached fence</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="alternate icon" href="favicon.ico" sizes="any" />
-    <!-- same vendored styles as the shell, so the consoles look identical -->
     <link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.min.css" />
     <link rel="stylesheet" href="vendor/devicon/devicon.min.css" />
     <link rel="stylesheet" href="vendor/xterm.css" />
     <!-- part: head.part.html -->
-    <!-- The note editor's own stylesheet, BEFORE the card's: `13-notes.css`
-         sets the `--crepe-*` tokens that theme it (ADR-0064 §6). -->
     <link rel="stylesheet" href="vendor/crepe/crepe.css" />
     <link rel="stylesheet" href="styles/13-notes.css" />
     <style>
@@ -85,8 +81,6 @@
     </style>
   </head>
   <body>
-    <!-- The very ids `wb-console.ts` resolves for the viewport and the plane, so
-         this popup REUSES the consoles module rather than re-implementing it. -->
     <div id="workspace"><div id="stage"></div></div>
 
     <script type="module" src="detached-fence-main.js"></script>
@@ -95,11 +89,6 @@
     <script src="vendor/xterm-addon-webgl.js"></script>
     <script src="vendor/xterm-addon-web-links.js"></script>
     <script src="vendor/xterm-addon-unicode11.js"></script>
-    <!-- The note card rides into a detached fence (ADR-0064 §8), so the popup
-         builds one exactly as the shell does. -->
-    <!-- A ```mermaid fence in a note DRAWS (ADR-0064 §15), in the popup as on
-         the stage: the node view inside `crepe.js` reads these two globals,
-         and the sanitizer is the same one the file viewer uses. -->
     <script src="vendor/dompurify.min.js"></script>
     <script src="vendor/mermaid.min.js"></script>
     <script src="vendor/crepe/crepe.js"></script>
