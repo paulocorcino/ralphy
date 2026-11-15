@@ -10,23 +10,34 @@ use super::{apply_auth_change, step_up, store_unavailable};
 use crate::auth;
 use crate::routes::now_unix;
 
-/// The `POST /api/security/remote-images` body: the desired toggle state, and
+/// The body of a flag that loosens a policy: the desired toggle state, and
 /// the current 6-digit code when ENABLING (step-up, amendment E).
 #[derive(serde::Deserialize)]
-pub(crate) struct RemoteImagesForm {
+pub(crate) struct LoosenForm {
     pub(crate) enable: bool,
     pub(crate) code: Option<String>,
 }
 
-/// `POST /api/security/remote-images`: persist the operator's choice to let
-/// rendered markdown load images from other origins (amendment §F). The policy
-/// is rebuilt so the next response carries the new CSP; sessions stay, because
-/// no credential changed. Turning it ON loosens the CSP, so it costs a fresh
-/// code; turning it off stays free. An open page keeps the CSP it loaded with
-/// until it reloads.
-pub(crate) fn security_remote_images_route(
+/// A flag that loosens a content policy of the daemon.
+#[derive(Clone, Copy)]
+pub(crate) enum Loosening {
+    /// `POST /api/security/remote-images`: rendered markdown and HTML may load
+    /// images from other origins (amendment §F). An open page keeps the CSP
+    /// it loaded with until it reloads.
+    RemoteImages,
+    /// `POST /api/security/web-content`: an HTML file that runs its scripts
+    /// may load scripts, styles and fonts from the web (ADR-0089).
+    WebContent,
+}
+
+/// Persist the operator's choice for one loosening flag. The policy is
+/// rebuilt so the next response carries it; sessions stay, because no
+/// credential changed. Turning it ON loosens a policy, so it costs a fresh
+/// code; turning it off stays free.
+pub(crate) fn security_loosen_route(
     state: &auth::AuthState,
-    Form(form): Form<RemoteImagesForm>,
+    flag: Loosening,
+    Form(form): Form<LoosenForm>,
 ) -> Response {
     let dir = match auth::store_dir() {
         Ok(dir) => dir,
@@ -39,13 +50,17 @@ pub(crate) fn security_remote_images_route(
             return refused.into_response();
         }
     }
-    match auth::set_remote_images_in(&dir, form.enable) {
+    let written = match flag {
+        Loosening::RemoteImages => auth::set_remote_images_in(&dir, form.enable),
+        Loosening::WebContent => auth::set_web_content_in(&dir, form.enable),
+    };
+    match written {
         Ok(()) => {
             apply_auth_change(state, false);
             Json(serde_json::json!({ "ok": true })).into_response()
         }
         Err(e) => {
-            tracing::warn!(error = %e, "failed to write the remote-images flag");
+            tracing::warn!(error = %e, "failed to write a loosening flag");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "could not write the flag",
@@ -53,4 +68,15 @@ pub(crate) fn security_remote_images_route(
                 .into_response()
         }
     }
+}
+
+/// The `POST` route of one loosening flag.
+pub(super) fn loosen_route(
+    auth: &std::sync::Arc<auth::AuthState>,
+    flag: Loosening,
+) -> axum::routing::MethodRouter {
+    let auth = std::sync::Arc::clone(auth);
+    axum::routing::post(move |form: Form<LoosenForm>| {
+        std::future::ready(security_loosen_route(&auth, flag, form))
+    })
 }

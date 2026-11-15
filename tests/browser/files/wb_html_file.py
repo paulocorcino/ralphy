@@ -31,6 +31,9 @@ Scenario 10 Stop scripts and Reload each draw the file with no script again,
 Scenario 11 the script of `attack.html` reaches no data endpoint: its
             `fetch` is refused, and the daemon refuses the navigation of its
             frame with `403`; the page's own read of that endpoint works
+Scenario 12 a script from the web does not load, and is not asked for,
+            while web content is off; after the option is turned on, the
+            next Run scripts loads it
 
 Requires `playwright` (`pip install playwright`, then `playwright install`).
 
@@ -131,11 +134,13 @@ APP = """<!doctype html>
 <p id="inline">waiting</p>
 <p id="external">waiting</p>
 <p id="module">waiting</p>
+<p id="cdn">waiting</p>
 <div id="box" class="box"></div>
 <div id="slot"></div>
 <script>document.getElementById('inline').textContent = 'ran';</script>
 <script src="app/extra.js"></script>
 <script type="module" src="app/mod.mjs"></script>
+<script src="https://cdn.example/lib.js"></script>
 </body></html>
 """
 APP_CSS = (
@@ -148,6 +153,7 @@ APP_STATIC = (
     ("inline", "waiting"),
     ("external", "waiting"),
     ("module", "waiting"),
+    ("cdn", "waiting"),
     ("font", None),
     ("height", "0px"),
     ("background", False),
@@ -157,6 +163,7 @@ APP_LIVE = (
     ("inline", "ran"),
     ("external", "ran"),
     ("module", "ran"),
+    ("cdn", "waiting"),
     ("font", "loaded"),
     ("height", "40px"),
     ("background", True),
@@ -346,6 +353,43 @@ def scenario_remote(page, slug, engine, web_asked):
         set_remote_images(page, False)
 
 
+def set_web_content(page, on):
+    return page.evaluate(
+        """async (on) => (await fetch('/api/security/web-content', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'enable=' + on,
+        })).status""",
+        "true" if on else "false",
+    )
+
+
+def scenario_web_content(page, slug, engine, cdn_asked):
+    """Runs after the scripts scenario, which ran with the option off."""
+    off = len(cdn_asked)
+    status = set_web_content(page, True)
+    try:
+        open_path(page, slug, "docs/app.html")
+        sel = pane("docs/app.html")
+        frame_of(page, sel)
+        page.locator(f'{sel} [data-act="scripts"]').click()
+        frame = scripted_frame(page, sel)
+        frame.wait_for_function("() => document.getElementById('late') !== null", timeout=10000)
+        try:
+            frame.wait_for_function("() => document.getElementById('cdn').textContent === 'ran'", timeout=8000)
+        except Exception:
+            pass
+        cdn = frame.locator("#cdn").text_content()
+        check(
+            f"{engine}: a script from the web is asked for and runs only with web content on",
+            off == 0 and status == 200 and cdn == "ran" and len(cdn_asked) >= 1,
+            f"asked while off={off} status={status} cdn={cdn} asked after={len(cdn_asked)}",
+        )
+        page.locator(f'{sel} [data-act="scripts"]').click()
+    finally:
+        set_web_content(page, False)
+
+
 def scenario_report(page, slug, engine):
     open_path(page, slug, "docs/report.html")
     sel = pane("docs/report.html")
@@ -482,6 +526,7 @@ def app_facts(frame):
             inline: document.getElementById('inline').textContent,
             external: document.getElementById('external').textContent,
             module: document.getElementById('module').textContent,
+            cdn: document.getElementById('cdn').textContent,
             font: font ? font.status : null,
             height: box.height,
             background: box.backgroundImage.includes('/app/bg.png'),
@@ -601,6 +646,14 @@ def run_engine(pw, engine, slug):
         route.fulfill(status=200, content_type="image/png", body=png(WEB_WIDTH, 1))
 
     ctx.route("https://images.example/**", web_image)
+    cdn_asked = []
+
+    def web_script(route):
+        cdn_asked.append(route.request.url)
+        body = "document.getElementById('cdn').textContent = 'ran';"
+        route.fulfill(status=200, content_type="text/javascript", body=body)
+
+    ctx.route("https://cdn.example/**", web_script)
     page = ctx.new_page()
     page.on("pageerror", lambda e: print("pageerror:", e, flush=True))
     try:
@@ -610,6 +663,7 @@ def run_engine(pw, engine, slug):
         scenario_hostile(page, slug, engine, reached)
         scenario_scripts(page, slug, engine)
         scenario_attack(page, slug, engine, answered)
+        scenario_web_content(page, slug, engine, cdn_asked)
         # After the others: its closed window gives the tab back later, and
         # the page then shows that tab.
         scenario_detached(page, ctx, slug, engine)

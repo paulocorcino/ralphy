@@ -158,6 +158,7 @@ interface ApiRoutes {
       totp_enrolled: boolean;
       require_login: boolean;
       remote_images: boolean;
+      web_content: boolean;
     };
   };
   "POST /api/security/totp/enroll": { ok: { uri: string; newly_minted: boolean } };

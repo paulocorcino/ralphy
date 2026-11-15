@@ -279,6 +279,9 @@ export function connectionStore(deps: ConnectionStoreDeps) {
       // Opt-in: markdown may load images from other websites (the CSP
       // `img-src https:`, ADR-0032 amendment §F).
       remoteImages: false,
+      // Opt-in: an HTML file that runs its scripts may load scripts, styles
+      // and fonts from other websites (ADR-0089).
+      webContent: false,
       policy: "session", // overwritten by probeSession()
     },
     // The Security dialog (wb-security-dialog.ts) changes the security fact

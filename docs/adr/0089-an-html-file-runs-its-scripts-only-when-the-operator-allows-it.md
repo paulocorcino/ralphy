@@ -113,7 +113,8 @@ request: `X-Forwarded-Host` when a front sent it, else `Host`, and `https`
 when the front said so.
 
 **D5. No script comes from the web.** `script-src` names the route only. A
-library from a CDN does not load, with remote images on or off.
+library from a CDN does not load, with remote images on or off. The
+amendment of 2026-11-16 adds an option of the daemon that opens this.
 
 **D6. The document is shown in a frame, never in a window of its own.** The
 policy of the workbench page lets a frame go only to the daemon's own
@@ -195,7 +196,7 @@ Firefox 150 and WebKit 26.4. These are open:
   `file_preview_makes_a_token_for_the_repo_and_ends_it`. Not checked by
   code: the refusal for a project of a peer.
 - D4: checked by
-  `the_policy_names_only_the_route_and_takes_web_images_when_allowed`,
+  `the_policy_names_only_the_route_and_takes_from_the_web_what_the_daemon_allows`,
   `a_preview_file_is_served_to_its_token_with_its_own_policy` and
   `the_policy_names_the_host_and_scheme_of_the_front`.
 - D5: held by the test of D4.
@@ -241,6 +242,64 @@ loopback:
   loaded with no `crossorigin` attribute no base address. This is accepted.
 
 **Compliance.** `only_the_closed_list_of_file_kinds_is_read` (the fonts and
-the cap), `the_policy_names_only_the_route_and_takes_web_images_when_allowed`
+the cap),
+`the_policy_names_only_the_route_and_takes_from_the_web_what_the_daemon_allows`
 (`font-src`), `a_preview_file_is_served_to_its_token_with_its_own_policy`
 (the header), and the browser check in the three engines.
+
+## Amendment 2026-11-16 — D5: content from the web, as an option of the daemon
+
+Changes D5. D5 said that no script comes from the web. A page that uses a
+library from a CDN then stays broken, and the operator asked for a way to
+accept that risk.
+
+**The decision.** The daemon gains an option, **web content in HTML files**,
+off by default. With it on, the policy of D4 gains `https:` in `script-src`,
+`style-src` and `font-src`: an HTML file that runs its scripts may load
+scripts, styles and fonts from other websites. `img-src` still follows
+remote images (ADR-0032 amendment §F), and `connect-src` stays `'none'`:
+a script still cannot call an address with `fetch` or a socket.
+
+The option is a flag file of the store, `daemon-web-content`, as remote
+images is. `POST /api/security/web-content` sets it, and turning it on costs
+a fresh code once a TOTP seed is armed (ADR-0032 amendment E); turning it
+off is free. `GET /api/security/state` reports it. The Security dialog shows
+it with its risk in words. The next answer of the route carries the new
+policy, so a page needs no reload.
+
+**The risk the operator accepts.** With the CORS header of the amendment of
+2026-11-15, a script the operator allowed can read the style sheets, JSON
+files, modules and images of the checkout. With this option on, it can also
+send them: a request for a script or a style at an address of its choice
+carries what it wants in that address. The code of the other website also
+runs inside the document. So, with the option on, Run scripts on a file
+gives that file the readable files of its project. Three limits stay: the
+route serves only its closed list of kinds, the document has an opaque
+origin and cannot use the session, and the daemon refuses a frame that
+navigates to a data endpoint (D7).
+
+When the page is reached over `https`, `https:` also names the daemon's own
+origin, as it does for remote images. A script can then ask the daemon's
+own address for a script or a style: a GET, with the session cookie in
+WebKit. This case is not measured.
+
+By ADR-0072 D1 the stronger setting stays the default, and the weaker one
+is the operator's own act.
+
+**Rejected.**
+
+- *A permission per tab, on the Run scripts control.* The control already
+  asks one question. A second one beside it, with a larger risk, would be
+  answered the same way without a thought. The Security dialog is where the
+  other postures of the daemon are lowered.
+- *`connect-src https:` too.* It adds nothing an attacker needs, but it lets
+  a script call the daemon's own address with a body when the page is
+  reached over `https`. It is left closed.
+
+**Compliance.** Checked by
+`web_content_is_opt_in_and_costs_a_fresh_code_to_enable`
+(`crates/ralphy-daemon/tests/security_web_content.rs`),
+`the_policy_names_only_the_route_and_takes_from_the_web_what_the_daemon_allows`,
+`ui-tests/wb-security-dialog.test.mjs` (each switch posts to its own route),
+and in the three engines by the browser check (a script from the web is
+asked for and runs only with web content on).

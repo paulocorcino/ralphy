@@ -153,6 +153,21 @@
               Reload the page to apply this change.
             </p>
           </section>
+
+          <section class="sec-card">
+            <div class="sec-card-head">
+              <span class="sec-card-title"><i class="bi bi-globe2"></i> Web content in pages with scripts</span>
+              <span class="sec-badge" :class="securityBadgeClass($store.connection.security.webContent)"
+                    x-text="securityBadgeText($store.connection.security.webContent, 'active', 'off')"></span>
+              <label class="switch">
+                <input type="checkbox" :checked="$store.connection.security.webContent" @change="toggleWebContent($event)" />
+                <span class="switch-track"></span>
+              </label>
+            </div>
+            <p class="sec-note">
+              Let a page that runs its scripts load scripts, styles and fonts from other websites. Off by default: such a page can send the project files that it reads to those websites.
+            </p>
+          </section>
         </div>
         <div class="modal-foot">
 

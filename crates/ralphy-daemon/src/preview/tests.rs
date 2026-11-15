@@ -120,26 +120,27 @@ fn only_the_closed_list_of_file_kinds_is_read() {
 }
 
 #[test]
-fn the_policy_names_only_the_route_and_takes_web_images_when_allowed() {
-    let prefix = "http://127.0.0.1:7257/preview/abc/";
-    assert_eq!(
-        policy(prefix, false),
-        "sandbox allow-scripts; default-src 'none'; \
-         script-src 'unsafe-inline' 'unsafe-eval' http://127.0.0.1:7257/preview/abc/; \
-         style-src 'unsafe-inline' http://127.0.0.1:7257/preview/abc/; \
-         img-src data: http://127.0.0.1:7257/preview/abc/; \
-         font-src http://127.0.0.1:7257/preview/abc/; \
-         connect-src 'none'; form-action 'none'; base-uri 'none'; \
-         frame-ancestors 'self'"
-    );
-    assert_eq!(
-        policy(prefix, true),
-        "sandbox allow-scripts; default-src 'none'; \
-         script-src 'unsafe-inline' 'unsafe-eval' http://127.0.0.1:7257/preview/abc/; \
-         style-src 'unsafe-inline' http://127.0.0.1:7257/preview/abc/; \
-         img-src data: http://127.0.0.1:7257/preview/abc/ https:; \
-         font-src http://127.0.0.1:7257/preview/abc/; \
-         connect-src 'none'; form-action 'none'; base-uri 'none'; \
-         frame-ancestors 'self'"
-    );
+fn the_policy_names_only_the_route_and_takes_from_the_web_what_the_daemon_allows() {
+    let p = "http://127.0.0.1:7257/preview/abc/";
+    // [images from the web, content from the web, what the script, style and
+    //  font sources gain, what the image source gains]
+    let rows = [
+        (false, false, "", ""),
+        (true, false, "", " https:"),
+        (false, true, " https:", ""),
+        (true, true, " https:", " https:"),
+    ];
+    for (images, content, gained, image_gained) in rows {
+        assert_eq!(
+            policy(p, Web { images, content }),
+            format!(
+                "sandbox allow-scripts; default-src 'none'; \
+                 script-src 'unsafe-inline' 'unsafe-eval' {p}{gained}; \
+                 style-src 'unsafe-inline' {p}{gained}; img-src data: {p}{image_gained}; \
+                 font-src {p}{gained}; connect-src 'none'; form-action 'none'; \
+                 base-uri 'none'; frame-ancestors 'self'"
+            ),
+            "images={images} content={content}"
+        );
+    }
 }

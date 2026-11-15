@@ -416,12 +416,11 @@ pub(crate) fn security_routes(s: &RouterShared) -> Router {
         )
         .route(
             "/api/security/remote-images",
-            post({
-                let auth = std::sync::Arc::clone(auth);
-                move |form: Form<RemoteImagesForm>| {
-                    std::future::ready(security_remote_images_route(&auth, form))
-                }
-            }),
+            loosen_route(auth, Loosening::RemoteImages),
+        )
+        .route(
+            "/api/security/web-content",
+            loosen_route(auth, Loosening::WebContent),
         )
         .route(
             "/api/security/logins/revoke",

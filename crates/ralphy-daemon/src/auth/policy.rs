@@ -209,6 +209,24 @@ pub fn set_remote_images_in(dir: &Path, enable: bool) -> Result<()> {
     set_marker(&remote_images_path_in(dir), enable)
 }
 
+/// The `daemon-web-content` flag path inside `dir`. Its PRESENCE means the
+/// operator lets an HTML file that runs its scripts load scripts, styles and
+/// fonts from the web (ADR-0089, amendment of 2026-11-16).
+pub fn web_content_path_in(dir: &Path) -> PathBuf {
+    dir.join("daemon-web-content")
+}
+
+/// Whether the web-content flag is set under `dir` (the file exists).
+pub fn web_content_enabled_in(dir: &Path) -> bool {
+    web_content_path_in(dir).exists()
+}
+
+/// Set or clear the web-content flag under `dir`, with the same marker
+/// semantics as [`set_require_login_in`].
+pub fn set_web_content_in(dir: &Path, enable: bool) -> Result<()> {
+    set_marker(&web_content_path_in(dir), enable)
+}
+
 /// Write `path` owner-only (enable) or remove it idempotently (disable).
 fn set_marker(path: &Path, enable: bool) -> Result<()> {
     if enable {

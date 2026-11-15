@@ -78,7 +78,11 @@ async fn serve(
         "http"
     };
     let prefix = format!("{scheme}://{host}/preview/{token}/");
-    let policy = preview::policy(&prefix, auth.remote_images());
+    let web = preview::Web {
+        images: auth.remote_images(),
+        content: auth.web_content(),
+    };
+    let policy = preview::policy(&prefix, web);
     match blocking_read(move || preview::read(&root, &rel))
         .await
         .flatten()

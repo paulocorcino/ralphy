@@ -108,15 +108,26 @@ pub(crate) fn read(root: &Path, rel: &str) -> Option<(&'static str, Vec<u8>)> {
     Some((media_type, std::fs::read(&path).ok()?))
 }
 
+/// What a document may load from the web: each is an option of the daemon,
+/// off by default. Never a request a script makes (`connect-src`).
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Web {
+    /// Images (ADR-0032 amendment §F).
+    pub(crate) images: bool,
+    /// Scripts, styles and fonts (ADR-0089, amendment of 2026-11-16).
+    pub(crate) content: bool,
+}
+
 /// The policy of every answer of the route (D4). `prefix` is the address of
 /// the route with its token, as the browser names it.
-pub(crate) fn policy(prefix: &str, remote_images: bool) -> String {
-    let web = if remote_images { " https:" } else { "" };
+pub(crate) fn policy(prefix: &str, web: Web) -> String {
+    let images = if web.images { " https:" } else { "" };
+    let content = if web.content { " https:" } else { "" };
     format!(
         "sandbox allow-scripts; default-src 'none'; \
-         script-src 'unsafe-inline' 'unsafe-eval' {prefix}; \
-         style-src 'unsafe-inline' {prefix}; img-src data: {prefix}{web}; \
-         font-src {prefix}; connect-src 'none'; form-action 'none'; base-uri 'none'; \
+         script-src 'unsafe-inline' 'unsafe-eval' {prefix}{content}; \
+         style-src 'unsafe-inline' {prefix}{content}; img-src data: {prefix}{images}; \
+         font-src {prefix}{content}; connect-src 'none'; form-action 'none'; base-uri 'none'; \
          frame-ancestors 'self'"
     )
 }

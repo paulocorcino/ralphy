@@ -134,6 +134,7 @@ export function securityDialog() {
             totpEnrolled: s.totp_enrolled,
             requireLogin: s.require_login,
             remoteImages: s.remote_images,
+            webContent: s.web_content,
           });
         }
       } catch {}
@@ -426,36 +427,51 @@ export function securityDialog() {
       await afterRequireLogin(this, want);
     },
 
-    async toggleRemoteImages(ev?: CheckboxChange) {
-      // Turning it ON loosens the CSP, so that direction costs a fresh code
-      // once a seed is armed; turning it off stays free.
-      const want = !this.$store.connection.security.remoteImages;
-      const code = want ? await this.askFreshCode("show remote images") : "";
-      if (code === null) {
-        if (ev?.target) ev.target.checked = this.$store.connection.security.remoteImages;
-        return;
-      }
+    // One of the two switches that loosen a content policy. Turning it ON
+    // costs a fresh code once a seed is armed; turning it off stays free.
+    // True when the daemon took the change.
+    async loosen(flag: Loosening, ev?: CheckboxChange) {
+      const want = !this.$store.connection.security[flag];
+      const code = want ? await this.askFreshCode(LOOSENINGS[flag].act) : "";
       let ok = false;
-      try {
-        const r = await fetch("/api/security/remote-images", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: this.stepUpBody({ enable: String(want) }, code),
-        });
-        ok = r.ok;
-        if (!ok) this.noteStepUpRefusal(r);
-      } catch {
-        ok = false;
+      if (code !== null) {
+        try {
+          const r = await fetch(LOOSENINGS[flag].route, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: this.stepUpBody({ enable: String(want) }, code),
+          });
+          ok = r.ok;
+          if (!ok) this.noteStepUpRefusal(r);
+        } catch {
+          ok = false;
+        }
       }
-      if (ok) {
-        this.$store.connection.securityChanged({ remoteImages: want });
-        this.securityForm.remoteImagesReload = true;
-      }
+      if (ok) this.$store.connection.securityChanged({ [flag]: want });
       // `:checked` won't re-sync when the bound value did not change.
-      if (ev?.target) ev.target.checked = this.$store.connection.security.remoteImages;
+      if (ev?.target) ev.target.checked = this.$store.connection.security[flag];
+      return ok;
+    },
+
+    async toggleRemoteImages(ev?: CheckboxChange) {
+      // A page keeps the image policy it loaded with.
+      if (await this.loosen("remoteImages", ev)) this.securityForm.remoteImagesReload = true;
+    },
+
+    async toggleWebContent(ev?: CheckboxChange) {
+      await this.loosen("webContent", ev);
     },
   });
 }
+
+/** A switch of the dialog that loosens a content policy of the daemon. */
+type Loosening = "remoteImages" | "webContent";
+
+// The route of each switch, and the act the code prompt names.
+const LOOSENINGS: Record<Loosening, { route: string; act: string }> = {
+  remoteImages: { route: "/api/security/remote-images", act: "show remote images" },
+  webContent: { route: "/api/security/web-content", act: "load web content in pages with scripts" },
+};
 
 // `openFlag` is the path of the open flag that the dialog gives to `scrim()`.
 // Code outside the component asks the modal stack with it (`modalOpen`), and
