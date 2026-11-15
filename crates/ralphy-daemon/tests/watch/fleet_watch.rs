@@ -75,22 +75,40 @@ async fn send_watch(ws: &mut Channel, repo: &str) {
     .expect("send the frame");
 }
 
-async fn next_tree_dirty(ws: &mut Channel, repo: &str) -> serde_json::Value {
-    tokio::time::timeout(Duration::from_secs(10), async {
-        while let Some(message) = ws.next().await {
-            if let Message::Binary(bytes) = message.expect("read the next frame") {
-                if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
-                    if cmd.verb == "tree.dirty" && cmd.payload["repo"] == repo {
-                        return Some(cmd.payload);
-                    }
+async fn tree_dirty(ws: &mut Channel, repo: &str) -> Option<serde_json::Value> {
+    while let Some(message) = ws.next().await {
+        if let Message::Binary(bytes) = message.expect("read the next frame") {
+            if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
+                if cmd.verb == "tree.dirty"
+                    && cmd.payload.get("repo").and_then(serde_json::Value::as_str) == Some(repo)
+                {
+                    return Some(cmd.payload);
                 }
             }
         }
-        None
-    })
-    .await
-    .expect("tree dirty timed out")
-    .expect("tree channel closed without a matching dirty frame")
+    }
+    None
+}
+
+/// Writes `file` in `dir` until the watch of `repo` reports it. The watch
+/// starts after the `watch` frame, and under the load of the whole suite a
+/// single write can come before it (#950).
+async fn dirty_after_writes(
+    ws: &mut Channel,
+    repo: &str,
+    dir: &Path,
+    file: &str,
+) -> serde_json::Value {
+    let mut seen = None;
+    for round in 0..20 {
+        std::fs::write(dir.join(file), format!("{repo} {round}")).expect("write the file");
+        if let Ok(found) = tokio::time::timeout(Duration::from_secs(1), tree_dirty(ws, repo)).await
+        {
+            seen = Some(found.expect("tree channel closed without a matching dirty frame"));
+            break;
+        }
+    }
+    seen.expect("tree dirty timed out")
 }
 
 #[tokio::test]
@@ -140,16 +158,12 @@ async fn peer_and_local_creates_push_their_own_repo_identity() {
     let mut ws = page::tree(local_port).await;
     let peer_ref = format!("{B_ID}/{SLUG}");
     send_watch(&mut ws, &peer_ref).await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    std::fs::write(peer_repo.path().join("fresh.txt"), "peer").unwrap();
-    let peer_dirty = next_tree_dirty(&mut ws, &peer_ref).await;
+    let peer_dirty = dirty_after_writes(&mut ws, &peer_ref, peer_repo.path(), "fresh.txt").await;
     assert_eq!(peer_dirty["repo"], peer_ref);
     assert_eq!(peer_dirty["path"], "");
 
     send_watch(&mut ws, SLUG).await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    std::fs::write(local_repo.path().join("local.txt"), "local").unwrap();
-    let local_dirty = next_tree_dirty(&mut ws, SLUG).await;
+    let local_dirty = dirty_after_writes(&mut ws, SLUG, local_repo.path(), "local.txt").await;
     assert_eq!(local_dirty["repo"], SLUG);
     assert_eq!(local_dirty["path"], "");
 }

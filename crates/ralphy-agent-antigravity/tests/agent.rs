@@ -85,8 +85,10 @@ fn execute_with_a_fake_agy_returns_done_and_the_summed_usage() {
 #[test]
 fn a_missing_session_start_ends_execute_with_the_proof_error() {
     let setup = Setup::new("no_hook");
+    // The fake never writes `SessionStart`: a short window is enough to see it.
     let err = setup
         .agent(None)
+        .with_proof_window(Duration::from_millis(500))
         .execute(&plan(), &setup.ws())
         .expect_err("no proof, no task");
     assert!(err.chain().any(is_unproven), "{err:#}");
