@@ -9,7 +9,6 @@ import { createPlace } from "../assets/ui/wb-console-place.ts";
 import { createStageWindow } from "../assets/ui/wb-stage-window.ts";
 import { createDormancy } from "../assets/ui/wb-console-dormancy.ts";
 import { createStack } from "../assets/ui/wb-stage-stack.ts";
-import { wirePress } from "../assets/ui/wb-console-press.ts";
 import { idLookups } from "./fake-document.mjs";
 
 // The store reaches `WBViewer` as a bare global: each test puts the real one back.
@@ -66,7 +65,11 @@ test("the × of a console tab puts its window back on the stage", () => {
   tabs.openConsoleTab("w2", "claude");
   places.length = 0;
   tabs.closeTab("console:w2");
-  assert.deepEqual(places[0], [["w1"], null], "the window leaves the pane before the next tab shows");
+  assert.deepEqual(
+    places[0],
+    [["w1"], null],
+    "the window leaves the pane before the next tab shows",
+  );
   assert.deepEqual(last(), [["w1"], [["w1"]]]);
   // A tab in the background: no other tab shows, and its window still goes back.
   tabs.activate("consoles");
@@ -96,7 +99,11 @@ test("a console tab is stored per device and a tab whose console is gone is drop
     next.tabs.tabs.map((t) => t.id),
     ["consoles", "console:w1"],
   );
-  assert.equal(next.tabs.active, "console:w1", "the active tab that was dropped falls back to its neighbour");
+  assert.equal(
+    next.tabs.active,
+    "console:w1",
+    "the active tab that was dropped falls back to its neighbour",
+  );
   assert.deepEqual(next.last(), [["w1"], [["w1"]]], "the kept tab holds its window");
 });
 
@@ -142,7 +149,11 @@ test("the first console of the grid names a tab whose naming console left it", (
   tabs.openConsoleTab("w2", "two (codex)");
   tabs.setTabGrid("console:w2", [["w1"], ["w2", "w3"]]);
   tabs.leaveTab("w2");
-  assert.equal(tabs.tabOf("w1").title, "one (codex)", "Restore: the first console in reading order");
+  assert.equal(
+    tabs.tabOf("w1").title,
+    "one (codex)",
+    "Restore: the first console in reading order",
+  );
   tabs.setTabGrid("console:w2", [["w4"], ["w3"]]);
   assert.equal(tabs.tabOf("w4").title, "four (codex)", "Swap: the console that came in first");
   page.ids.delete("w4");
@@ -163,7 +174,10 @@ test("a console tab holds a grid: a console that leaves the page leaves the grid
   const { tabs, page, stored, last } = tabShell(["w1", "w2", "w3"]);
   tabs.openConsoleTab("w1", "codex");
   tabs.setTabGrid("console:w1", [["w1", "w2"], ["w3"]]);
-  assert.deepEqual(last(), [["w1", "w2", "w3"], [["w1", "w2"], ["w3"]]]);
+  assert.deepEqual(last(), [
+    ["w1", "w2", "w3"],
+    [["w1", "w2"], ["w3"]],
+  ]);
   assert.deepEqual(stored().consoleTabs[0].grid, [["w1", "w2"], ["w3"]]);
   assert.equal(tabs.tabOf("w3").id, "console:w1");
   page.ids.delete("w3");
@@ -257,7 +271,12 @@ function consoleWin(id, classes = []) {
   };
 }
 
-const rectOf = (w) => ({ left: w.style.left, top: w.style.top, width: w.style.width, height: w.style.height });
+const rectOf = (w) => ({
+  left: w.style.left,
+  top: w.style.top,
+  width: w.style.width,
+  height: w.style.height,
+});
 
 // The stage with the windows `ids`, and the pane of the console tabs.
 function placePage(ids, paneWidth = 1280) {
@@ -291,7 +310,11 @@ test("a console's window moves into the tab's pane and back, with its rect and i
   assert.ok(w1.classList.contains("in-tab") && w1.classList.contains("tab-shown"));
   assert.deepEqual(p.focused, ["w1"]);
   assert.deepEqual(p.moved, ["w1"]);
-  assert.deepEqual(p.sent, [["workbench:columns-leave", { ids: ["w1"] }]], "a column leaves the grid");
+  assert.deepEqual(
+    p.sent,
+    [["workbench:columns-leave", { ids: ["w1"] }]],
+    "a column leaves the grid",
+  );
 
   p.moved.length = 0;
   p.place.placeTabs([], null);
@@ -349,7 +372,8 @@ test("a click on a console's shadow shows that console's tab", () => {
   tabs.init();
   tabs.openConsoleTab("w1", "codex");
   tabs.activate("consoles");
-  const show = (id) => (listeners["workbench:console-tab-show"] || []).forEach((fn) => fn({ detail: { id } }));
+  const show = (id) =>
+    (listeners["workbench:console-tab-show"] || []).forEach((fn) => fn({ detail: { id } }));
   show("w1");
   assert.equal(tabs.active, "console:w1");
   tabs.activate("consoles");
@@ -387,7 +411,11 @@ test("a tab's grid gives each window its box, and a phone width paints only the 
     "--tab-row-index": "1",
     "--tab-row-count": "2",
   });
-  assert.ok([w1, w2, w3].every((w) => w.classList.contains("tab-shown") && w.classList.contains("tab-grid")));
+  assert.ok(
+    [w1, w2, w3].every(
+      (w) => w.classList.contains("tab-shown") && w.classList.contains("tab-grid"),
+    ),
+  );
   assert.deepEqual(p.focused, ["w1"], "the first console of the tab takes the focus mark");
 
   const phone = placePage(["w1", "w2"], 400);
@@ -395,11 +423,18 @@ test("a tab's grid gives each window its box, and a phone width paints only the 
   assert.ok(phone.byId.w1.classList.contains("tab-shown"));
   assert.equal(phone.byId.w2.classList.contains("tab-shown"), false);
   assert.equal(phone.byId.w1.vars["--tab-col-count"], "1");
-  assert.ok(phone.byId.w1.classList.contains("tab-grid"), "Restore still shows: the tab holds two consoles");
+  assert.ok(
+    phone.byId.w1.classList.contains("tab-grid"),
+    "Restore still shows: the tab holds two consoles",
+  );
 
   const lone = placePage(["w1"]);
   lone.place.placeTabs(["w1"], [["w1"]]);
-  assert.equal(lone.byId.w1.classList.contains("tab-grid"), false, "a tab of one console has no Restore");
+  assert.equal(
+    lone.byId.w1.classList.contains("tab-grid"),
+    false,
+    "a tab of one console has no Restore",
+  );
 });
 
 // A window that measures, with the classes `classes`.
@@ -425,7 +460,12 @@ test("the rect of a console in its tab is its stage rect, never the pane's box",
     heldByFence: () => false,
     refreshCover() {},
   });
-  assert.deepEqual(sw.restoreRect(measuredWin(["in-tab"])), { left: 40, top: 50, width: 600, height: 400 });
+  assert.deepEqual(sw.restoreRect(measuredWin(["in-tab"])), {
+    left: 40,
+    top: 50,
+    width: 600,
+    height: 400,
+  });
   assert.deepEqual(sw.restoreRect(measuredWin([])), { left: 0, top: 0, width: 1280, height: 700 });
 });
 
@@ -466,7 +506,11 @@ test("a console in its tab covers no window of the stage, and none covers it", (
     [["in-tab", "tab-shown", "maximized"], true],
     [[], true],
   ]);
-  assert.equal(alone.d.isCovered(alone.els[1]), false, "the tab's window covers nothing on the stage");
+  assert.equal(
+    alone.d.isCovered(alone.els[1]),
+    false,
+    "the tab's window covers nothing on the stage",
+  );
 });
 
 test("the console of the active tab stays awake though the stage's observer calls it outside", (t) => {
@@ -548,7 +592,11 @@ function surface() {
   const set = new Set(["session-window"]);
   return {
     style: { zIndex: "" },
-    classList: { add: (c) => set.add(c), remove: (c) => set.delete(c), contains: (c) => set.has(c) },
+    classList: {
+      add: (c) => set.add(c),
+      remove: (c) => set.delete(c),
+      contains: (c) => set.has(c),
+    },
   };
 }
 
@@ -565,12 +613,19 @@ test("one focus mark on the page: focusing a window clears the mark of a window 
 
 // The column list of a console in a tab works on the tab's grid.
 function sliceShell() {
-  const { scope: state, shell } = loadComponent("wbColumns", { magics: { $nextTick: () => {}, $refs: {} } });
+  const { scope: state, shell } = loadComponent("wbColumns", {
+    magics: { $nextTick: () => {}, $refs: {} },
+  });
   globalThis.WBViewer = { setActive() {}, width: () => 1280, close() {} };
   const tabs = shell.$store.tabs;
   const calls = [];
   const realConsole = globalThis.WBConsole;
-  const rows = ["w1", "w2", "w3", "w4"].map((id) => ({ id, agent: "codex", kind: "agent", name: null }));
+  const rows = ["w1", "w2", "w3", "w4"].map((id) => ({
+    id,
+    agent: "codex",
+    kind: "agent",
+    name: null,
+  }));
   globalThis.WBConsole = {
     ...realConsole,
     placeTabs: (held, grid) => calls.push(["place", grid]),
@@ -593,7 +648,9 @@ test("Slice in a tab opens and swaps in the tab's grid, and never paints the sta
     tabs.openConsoleTab("w4", "codex");
     tabs.activate("console:w1");
     state.toggleColumnMenu("w1");
-    const rows = Object.fromEntries(state.columnGroups.flatMap((g) => g.rows).map((r) => [r.id, r]));
+    const rows = Object.fromEntries(
+      state.columnGroups.flatMap((g) => g.rows).map((r) => [r.id, r]),
+    );
     assert.equal(rows.w2.enabled, true);
     assert.equal(rows.w4.enabled, false, "a console of another tab is not opened here");
     calls.length = 0;
@@ -603,7 +660,11 @@ test("Slice in a tab opens and swaps in the tab's grid, and never paints the sta
     state.swapColumn("w3");
     assert.deepEqual(tabs.tabOf("w3").grid, [["w1"], ["w3"]]);
     assert.equal(tabs.holds("w2"), false, "the console swapped out goes back to the stage");
-    assert.equal(calls.filter(([k]) => k === "stage").length, 0, "the stage's columns are not painted");
+    assert.equal(
+      calls.filter(([k]) => k === "stage").length,
+      0,
+      "the stage's columns are not painted",
+    );
     assert.deepEqual(state.columns, [], "the stage's grid does not change");
   } finally {
     restore();
@@ -624,24 +685,4 @@ test("Alt+Shift+arrows walk the grid of the active console tab", () => {
   } finally {
     restore();
   }
-});
-
-const keep = (selectorHit) => {
-  let handler = null;
-  wirePress({
-    term: { attachCustomKeyEventHandler: (h) => (handler = h) },
-    body: { closest: (sel) => (selectorHit(sel) ? {} : null), addEventListener() {} },
-    window: {},
-    writeClipboard() {},
-  });
-  return handler({ type: "keydown", altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, code: "ArrowLeft" });
-};
-
-// The terminal's key handler: it gives Alt+Shift+arrows to the page in a
-// column of the stage and in the grid of a console tab, and keeps them in a
-// lone window.
-test("a terminal in a tab's grid lets Alt+Shift+arrows go to the page", () => {
-  assert.equal(keep((sel) => sel.includes(".session-window.tab-grid")), false);
-  assert.equal(keep((sel) => sel.includes(".session-window.column")), false);
-  assert.equal(keep(() => false), true, "a lone window keeps the chord for its child");
 });

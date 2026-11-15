@@ -8,6 +8,7 @@
    `pressRoute` in `wb-console-input.ts`.
    --------------------------------------------------------------------------- */
 import * as WBConsoleInput from "./wb-console-input.ts";
+import { dispatchKey } from "./wb-commands.ts";
 
 const { dragThreshold, dragBegins, pressRoute, forceSelectionKeys, holdMoveReport } =
   WBConsoleInput;
@@ -16,8 +17,8 @@ const { dragThreshold, dragBegins, pressRoute, forceSelectionKeys, holdMoveRepor
 export type PressDeps = {
   term: XtermTerminal;
   body: HTMLElement;
-  // The page: `getShell` tells whether the shell's key listener exists.
-  window: Pick<Window, "getShell">;
+  // The page: its store `modals` says when the page shortcuts are blocked.
+  window: Pick<Window, "Alpine">;
   writeClipboard: (text: string, term: XtermTerminal) => void;
 };
 
@@ -26,32 +27,29 @@ function altShiftOnly(e: KeyboardEvent) {
   return e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey;
 }
 
-// Whether the page, not the child, takes this chord.
-function pageTakesChord(e: KeyboardEvent, body: HTMLElement, win: PressDeps["window"]) {
-  if (!altShiftOnly(e)) return false;
-  // Alt+Shift+arrows in a column walk the columns and their rows (ADR-0051
-  // §5), and so in the grid of a console tab (ADR-0037 §3d): xterm must not
-  // send them to the child, and the document listener of the columns
-  // (wb-consoles-tab.ts) takes them.
-  if (
-    /^Arrow(Left|Right|Up|Down)$/u.test(e.code) &&
-    body.closest(".session-window.column, .session-window.tab-grid") !== null
-  ) {
-    return true;
-  }
-  // Alt+Shift+R and Alt+Shift+<digit> open a console from inside a
-  // terminal too. Only where the console menus' document listener exists
-  // (wb-consoles-tab-menus.ts, on the page with a shell): a
-  // detached popup has none, so its terminal keeps the key.
-  return /^(?:Digit\d|KeyR)$/u.test(e.code) && typeof win.getShell === "function";
+// The page takes a chord only when its command can run now, and runs it
+// here, before xterm sends the key to the child (ADR-0087 D3). A page with
+// no list (a detached popup) binds no command, so its terminal keeps every
+// key. The release and the keypress of a taken chord stay out of xterm too.
+function chordTaker(win: PressDeps["window"]) {
+  const blocked = (fromTerminal: boolean) =>
+    win.Alpine.store("modals").consoleShortcutsBlocked(fromTerminal);
+  let taken = "";
+  return (e: KeyboardEvent) => {
+    if (!altShiftOnly(e)) return false;
+    if (e.type !== "keydown") return e.code === taken;
+    taken = dispatchKey(e, "terminal", blocked) ? e.code : "";
+    return taken !== "";
+  };
 }
 
 export function wirePress({ term, body, window, writeClipboard }: PressDeps) {
+  const pageTakesChord = chordTaker(window);
   // Ctrl+Insert copies the selection. NOT Ctrl+Shift+C: on Chrome/Edge that
   // is the DevTools accelerator and a page cannot take it back. Ctrl+C
   // belongs to the child.
   term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-    if (pageTakesChord(e, body, window)) return false;
+    if (pageTakesChord(e)) return false;
     if (e.type !== "keydown" || !e.ctrlKey || e.shiftKey || e.altKey) return true;
     if (e.key !== "Insert" || !term.hasSelection()) return true;
     writeClipboard(term.getSelection(), term);

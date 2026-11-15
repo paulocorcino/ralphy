@@ -77,20 +77,22 @@ test("a key is taken only when its command can run and does something", () => {
 
 test("a page command never runs from a terminal, and a blocked page runs none", () => {
   const runs = [];
-  bindCommand("fence.go", { can: () => true, run: (code) => runs.push(code) });
-  bindCommand("consoles.run", { can: () => true, run: () => runs.push("run") });
-  assert.equal(dispatchKey(chord("F2"), "terminal", free), false, "fences are a page command");
+  bindCommand("search.open", { can: () => true, run: () => void runs.push("search") });
+  bindCommand("consoles.run", { can: () => true, run: () => void runs.push("run") });
+  const slash = () => ({ ...chord(""), key: "/", altKey: false, shiftKey: false });
+  assert.equal(dispatchKey(slash(), "terminal", free), false, "the search is a page command");
   assert.equal(
     dispatchKey(chord("KeyR"), "terminal", free),
     true,
-    "the Consoles menu passes a terminal",
+    "the consoles menu passes a terminal",
   );
-  assert.equal(dispatchKey(chord("F2"), "page", pageBlocked), false);
+  assert.equal(dispatchKey(slash(), "page", pageBlocked), false);
   assert.equal(
     dispatchKey(chord("KeyR"), "page", () => true),
     false,
   );
-  assert.deepEqual(runs, ["run"]);
+  assert.equal(dispatchKey(slash(), "page", free), true);
+  assert.deepEqual(runs, ["run", "search"]);
 });
 
 test("a key a terminal ran is not run again by the document listener", () => {

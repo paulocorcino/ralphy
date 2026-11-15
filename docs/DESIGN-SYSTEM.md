@@ -261,8 +261,8 @@ Decided on 2026-11-14 in [ADR-0087](./adr/0087-the-workbench-keyboard-is-one-com
 Built so far: the list (`COMMANDS` in `wb-commands.ts`) and its one
 listener. Each page shortcut is a command of the list; a component binds
 its action with `bindCommand`, and the Code column below names that line.
-The rest of this list is not built yet; the tables below describe the code
-of today.
+A terminal asks the list before it gives a chord to the page. The rest of
+this list is not built yet; the tables below describe the code of today.
 
 - **No prefix key.** A page shortcut is one chord: Alt+Shift (⌥⇧ on a Mac)
   and one more key. Only `/`, `?` and Ctrl+Shift+F (Cmd+Shift+F) differ;
@@ -302,11 +302,11 @@ of today.
   is in an input, a textarea, an editable element or the code editor
   (`wb-modals-store.ts:229`). The helper input of a terminal is a textarea,
   so a terminal blocks them too, except where the next rule says otherwise.
-- A terminal gives some Alt+Shift chords to the page instead of to the child
-  program: Alt+Shift+0 to 9 and Alt+Shift+R on the page that has the shell,
-  and Alt+Shift+arrows in a column or in the grid of a console tab
-  (`pageTakesChord`, `wb-console-press.ts:31`). Every other key in a
-  terminal goes to xterm, and xterm sends it to the child program.
+- A terminal gives an Alt+Shift chord to the page only when a command of
+  the list can run now and does something; it runs the command before xterm
+  sees the key (`chordTaker`, `wb-console-press.ts:34`). The commands that
+  pass a terminal are the digits, R, F1 to F12 and the arrows. Every other
+  key in a terminal goes to xterm, and xterm sends it to the child program.
 - The dialogs built in TypeScript (`wb-messages.ts`, `wb-console-worktree.ts`,
   `wb-notes-menus.ts`) listen on the document in the capture phase and stop
   Escape and Enter, so a terminal does not take them first.
@@ -376,23 +376,14 @@ Conflicts 1 to 4 were then tried in Chromium on 2026-11-14, on a daemon
 with its own port and scratch store; each one happened as written. The
 diagram editor keys were tried the same way and work.
 
-1. **An Alt+Shift chord that the page takes from a terminal can be lost.**
-   `pageTakesChord` gives Alt+Shift+0 to 9 and Alt+Shift+R to the page
-   always, and Alt+Shift+arrows always in a column or a console tab grid.
-   xterm then does not send the key to the child program. When the page
-   then finds nothing to do (no row with that digit, a disabled row, one
-   console only, or a dialog that blocks shortcuts), the key does nothing at
-   all: neither the page nor the child program gets it. A child program
-   that binds these chords (Meta+Shift+arrows, Meta+Shift+digit) never gets
-   them. Code: `wb-console-press.ts:31`, `wb-consoles-tab-menus.ts:309`,
-   `wb-consoles-tab.ts:448`. Issue #953.
-2. **Alt+Shift+F1 to F12 do not work from a terminal.** They are not in
-   `pageTakesChord`, so xterm sends them to the child program (`ESC [1;4P`
-   and the like) and stops the event. The fence listener also refuses them
-   while a terminal has the focus. The digits, R and the arrows work from a
-   terminal; the fence keys do not. There is no conflict with the child
-   program, but the rule is not the same for all page shortcuts. Code:
-   `wb-consoles-tab-menus.ts:329`. Issue #954.
+1. **Fixed: an Alt+Shift chord that the page took from a terminal could be
+   lost.** The terminal gave Alt+Shift+0 to 9 and Alt+Shift+R to the page
+   always, also when the page then had nothing to do. Now the terminal asks
+   the list, and a chord whose command cannot run goes to the child program.
+   Code: `wb-console-press.ts:34`. Issue #953.
+2. **Fixed: Alt+Shift+F1 to F12 did not work from a terminal.** The fence
+   command now passes a terminal, as the digits, R and the arrows do. Code:
+   `wb-commands.ts` (`fence.go`). Issue #954.
 3. **Escape during a window drag goes to the child program.** The drag
    listens for Escape on the document, in the bubble phase. When a terminal
    has the focus, xterm sends Escape to the child program and stops the

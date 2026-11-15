@@ -78,7 +78,7 @@ export const COMMANDS: readonly Command[] = [
     group: "Consoles and fences",
     label: "Go to the fence with that number",
     keys: FENCE_KEYS,
-    scope: "page",
+    scope: "terminal",
   },
   {
     id: "stage.walk",

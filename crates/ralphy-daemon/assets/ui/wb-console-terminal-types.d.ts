@@ -14,9 +14,9 @@ import type { CloseReason } from "./wb-channels.ts";
 
 // What the terminal reads from the console, and nothing else.
 export type TerminalDeps = {
-  // The console's page: `WBDaemon` (the image paste) and `getShell` (whether
-  // the shell's key listener exists).
-  window: Pick<Window, "WBDaemon" | "getShell">;
+  // The console's page: `WBDaemon` (the image paste) and `Alpine` (whether
+  // the page shortcuts are blocked).
+  window: Pick<Window, "WBDaemon" | "Alpine">;
   // Opens the console's channel on the page socket (`WBDaemon.openConsole`).
   openConsole: WBDaemonApi["openConsole"];
   // The stored font size, read when a terminal is made.
