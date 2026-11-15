@@ -7,7 +7,7 @@
    Each step takes the store as `store`, and calls only its own methods, so
    the store stays the one writer of its tabs.
    --------------------------------------------------------------------------- */
-import { fileTabId } from "./wb-file-paths.ts";
+import { classify, fileTabId } from "./wb-file-paths.ts";
 import { WBSplit } from "./wb-split.ts";
 import type { StoredTab } from "./wb-client-view.ts";
 import type { CanvasTab, Slot, TabOpen } from "./wb-shell-types.d.ts";
@@ -98,7 +98,9 @@ export function restoreView(store: ViewTabs) {
         project: t.project,
         path: t.path,
         title: (t.title ?? "") || t.path,
-        ftype: t.kind,
+        // From the name, not the stored kind: a build that gives a file
+        // name a new viewer shows it in the tabs that were already open.
+        ftype: classify(t.path.split("/").pop() ?? t.path),
         checkout: t.checkout ?? null,
       });
     }
