@@ -79,6 +79,11 @@ pub(crate) async fn answer_one(ctx: &CommandCtx, cmd: &Command, who: &SocketAudi
     let reply = match fleet::route(repo_ref(cmd), daemon_id.unwrap_or(""), &descriptors) {
         fleet::Route::Local { slug } => local_reply(ctx, cmd, verb, slug).await,
         fleet::Route::UnknownDaemon { daemon_id } => unknown_daemon(daemon_id),
+        // The browser cannot reach the route of a peer: no token is made there.
+        fleet::Route::Peer { .. } if verb == dispatch::Verb::FilePreview => {
+            let failure = crate::DaemonFailure::ScriptsOnAPeer.failure(&[]);
+            serde_json::json!({ "status": "error", "failure": failure })
+        }
         fleet::Route::Peer { peer, slug } => relay_to_peer(peer, &for_peer(cmd, slug)).await,
     };
     who.record_upload(verb, cmd, &reply);
@@ -97,7 +102,10 @@ async fn local_reply(
         Err(reply) => return reply,
     };
     let daemon_id = ctx.daemon_id.as_deref();
-    // `None` only for an effect class no verb has today (`Native`).
+    if verb == dispatch::Verb::FilePreview {
+        return file_preview(cmd, &path).await;
+    }
+    // `None` only for the `Native` class, which is answered above.
     execute_oneshot(
         verb,
         cmd,
@@ -107,6 +115,22 @@ async fn local_reply(
     )
     .await
     .unwrap_or_else(|| serde_json::json!({ "status": "error", "message": "unknown verb" }))
+}
+
+/// `file.preview` (ADR-0089 D3): with `revoke`, end that token; else make a
+/// token for the files of the repo, or of the checkout the payload names.
+async fn file_preview(cmd: &Command, repo_path: &Path) -> serde_json::Value {
+    if let Some(token) = cmd.payload.get("revoke").and_then(|v| v.as_str()) {
+        crate::preview::PREVIEWS.close(token);
+        return serde_json::json!({ "status": "ok" });
+    }
+    let checkout = match checkout_of(cmd, repo_path).await {
+        Ok(checkout) => checkout,
+        Err(reply) => return reply,
+    };
+    let root = checkout.map_or_else(|| repo_path.to_path_buf(), |c| c.root().to_path_buf());
+    let token = crate::preview::PREVIEWS.open(root, std::time::Instant::now());
+    serde_json::json!({ "status": "ok", "token": token })
 }
 
 /// The checkout of the registered repo `slug`. `Err` is the one error reply.

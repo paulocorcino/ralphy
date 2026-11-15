@@ -15,6 +15,8 @@ Amended by ADR-0088 (proposed: D13, the undocumented call is the job freeze, and
 
 Amended 2026-11-07: D7, the page may send the Telegram token, write-only.
 
+Amended by ADR-0089 (D10: an HTML file runs its scripts when the operator allows it, from a route with a token; a frame cannot navigate to a data endpoint).
+
 ## Context
 
 Ralphy runs AI agents with shell access on the operator's machine, serves a
@@ -601,3 +603,90 @@ amendment of 2026-11-15 (both proposed). D13 stays: `unsafe` is for FFI only.
   leaves the console. The CLI refuses its verbs that act when it runs inside
   a console (`RALPHY_CONSOLE_ID`); this guards against a mistake, not against
   an agent that wants harm: the zone "the agent session" acts as the operator.
+
+## Amendment 2026-11-15 — D10: an HTML file of the repository, in a frame with no rights
+
+Changes D10. D10 stays: the workbench runs no script it did not ship. It
+gains one place that shows a document from outside: the file pane renders a
+`.html` or `.htm` file of the repository, as it renders markdown. Such a file
+is a whole document with its own style sheet, so it cannot go through
+DOMPurify into the page: its rules for `body` and `:root` would style the
+workbench.
+
+**The decision.** The page shows the file in an
+`<iframe sandbox srcdoc>`. Three rules hold together.
+
+1. **The `sandbox` attribute is empty.** The document gets an opaque origin
+   and none of the rights: no script, no form, no pop-up, no navigation of
+   the page. A right is never added to this frame. A document that needs
+   script is shown by the other frame of ADR-0089, from a route.
+2. **The page adds a policy to the document.** Its first element in `<head>`
+   is a `<meta http-equiv="Content-Security-Policy">` with
+   `default-src 'none'; style-src 'unsafe-inline'; img-src data:`. The
+   document keeps its inline style and its `data:` images, and it can send no
+   request. When the daemon has remote images on (ADR-0032 amendment §F),
+   `img-src` gains `https:`, as the policy of the page does for markdown. The
+   page asks the daemon (`GET /api/security/state`) each time it draws the
+   file, and no answer means off. The frame also inherits the policy of the
+   page, so the stricter of the two holds.
+3. **The page rewrites the links.** A link to a fragment (`#part`) becomes
+   `about:srcdoc#part`. Every other link loses its `href`.
+
+The page reads the file with the browser's own `DOMParser` before it builds
+the frame, so the parser that edits the document is the parser that shows
+it. The text comes through `file.read`, and no route serves it: the reasons
+of ADR-0049 §2 hold for HTML as they hold for an image. An `<img>` with a
+path inside the repository becomes a `data:` URL through `file.image`, as in
+markdown (ADR-0049 §5).
+
+**Measured facts.** Playwright Chromium 148, Firefox 150 and WebKit 26.4, on
+Windows, on loopback, with the policy of `routes/headers.rs`, 2026-11-15.
+
+- The frame draws the document with its style in the three engines. The
+  policy of the page does not block a `srcdoc` frame.
+- In the three engines the frame runs no `<script>` and no `onerror`, follows
+  no `meta refresh`, sends no form, opens no pop-up, does not navigate the
+  page, and loads nothing from another origin.
+- A click on `<a href="#part">` does not scroll. The frame leaves the
+  document, in the three engines: the link is resolved against the URL of
+  the page. `about:srcdoc#part` scrolls in the three. `<base>` cannot fix
+  it, because the frame inherits `base-uri 'none'`. A `blob:` URL cannot
+  either: the fragment link does nothing in Chromium and Firefox, and WebKit
+  does not draw the document.
+- Without rule 2, the document sends GET requests to the daemon's own origin
+  (an image, a style sheet, a nested frame). WebKit sends the session cookie
+  with them, though it is `SameSite=Strict`; Chromium and Firefox send no
+  cookie. With rule 2 none of these requests leaves, in the three engines.
+- Rule 2 does not stop a navigation. A click on a link to the daemon's
+  origin sends the GET, with the cookie in WebKit. Rule 3 is the control for
+  that.
+
+**Limits, accepted.** A script in the document does not run. A style sheet
+in another file and an image named in CSS do not load. An image from the web
+loads only with remote images on. With that option on, and the page reached
+over `https` (a tunnel), an image of the document can name the daemon's own
+origin, as an image in markdown always can; this case is not measured. The find bar and the heading index of the pane do not reach the
+document, so the pane does not show them for this kind; the browser's own
+find does reach it.
+
+**Rejected.**
+
+- *DOMPurify into the page, or into a shadow root.* A shadow root keeps the
+  style apart but shares the origin and the cookie, and the whole control
+  would be the sanitizer.
+- *A route that serves the file*, with a `sandbox` response header. It is
+  the route ADR-0049 §2 refused, and in Chromium and Firefox the frame sends
+  no cookie, so the route would need a token in the URL.
+- *A script added to the document.* It needs `allow-scripts`, which leaves
+  the policy as the only control on the document's own script.
+- *An HTML library in the daemon* that puts the images into the document.
+  The page already resolves the images of markdown, so this would be the
+  same rule written twice. It is the way to take when a document needs its
+  style sheets and CSS images; it then replaces the resolver of both panes.
+
+**Compliance.** Checked by `ui-tests/wb-viewer-html.test.mjs` (the policy is
+the first element of the head, a fragment link is rewritten, any other link
+has no `href`, the frame has an empty `sandbox`, the policy takes `https:`
+only when the daemon allows web images), and in the three engines
+by `tests/browser/files/wb_html_file.py`, which opens a hostile file in a
+real daemon and lists the requests of the frame that the daemon answers.

@@ -77,6 +77,25 @@ pub(crate) async fn require_auth(
     mut req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
+    // A file of a preview is asked for by a document with an opaque origin.
+    // It sends no cookie, and Firefox sends `Origin: null` on each request
+    // (docs/research/html-script-preview-probe-2026-11-15.md). The token in
+    // the path is the key, and the route checks it (ADR-0089 D3).
+    if is_preview_file(&req) {
+        let host = req
+            .headers()
+            .get(header::HOST)
+            .and_then(|v| v.to_str().ok());
+        if state.host_allowed(host) {
+            return next.run(req).await;
+        }
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    // A document in a frame can navigate that frame to any address of the
+    // daemon, and no policy of the document stops it (ADR-0089 D7).
+    if framed_navigation_to_data(&req) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
     // Cross-site first, BEFORE the policy: under `Localhost` the policy
     // authorizes everything, so a page the operator merely visits could otherwise
     // drive the whole surface — WS upgrades are not CORS-preflighted (RFC 6455
@@ -109,6 +128,26 @@ pub(crate) async fn require_auth(
         return next.run(req).await;
     }
     (StatusCode::UNAUTHORIZED, "login required").into_response()
+}
+
+/// The values of `Sec-Fetch-Dest` that a navigation inside a page sends.
+const FRAME_DESTINATIONS: &[&str] = &["iframe", "frame", "embed", "object", "fencedframe"];
+
+/// Whether a frame navigates to a data endpoint (`/api`, `/ws`). The page
+/// reads those with `fetch` and a socket, never by a navigation.
+fn framed_navigation_to_data(req: &axum::extract::Request) -> bool {
+    let path = req.uri().path();
+    (path.starts_with("/api") || path.starts_with("/ws"))
+        && req
+            .headers()
+            .get("sec-fetch-dest")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|dest| FRAME_DESTINATIONS.contains(&dest))
+}
+
+/// Whether the request reads a file of a preview: a GET under `/preview/`.
+fn is_preview_file(req: &axum::extract::Request) -> bool {
+    req.method() == axum::http::Method::GET && req.uri().path().starts_with("/preview/")
 }
 
 /// Whether the request comes from a page of another site, or names a host

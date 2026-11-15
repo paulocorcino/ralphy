@@ -12,7 +12,9 @@ use super::*;
 /// files (`api-telegram`, `api-telegram-main`) went away: 79. Settings →
 /// Telegram reads `GET /api/telegram` again, with its reply file: 78. Settings
 /// → Telegram sets the bot up instead: `api-telegram` loses its reader and
-/// its file, and the three setup routes come with theirs: 79.
+/// its file, and the three setup routes come with theirs: 79. The verb
+/// `file.preview` comes with its reply file, and its route `/preview/*` is
+/// not a type: it serves files.
 /// Counting rules are in [`message_types`]. A new type starts with a shared
 /// reply; a new reply file lowers this number.
 const UNSHARED_BASELINE: usize = 78;
@@ -76,7 +78,8 @@ fn message_type_scan_finds_verbs_routes_and_pushes() {
             "/api/x",
             put(y),
         )
-        .route("/api/peer/y", post(z))"#;
+        .route("/api/peer/y", post(z))
+        .route("/preview/{token}/{*path}", get(f))"#;
     let pushes = r#"send("tree.dirty"); send("tree.failed"); let n = "not.a.push";"#;
     let found: Vec<String> = message_types(dispatch, routes, pushes)
         .into_iter()
@@ -95,7 +98,8 @@ fn message_type_scan_finds_verbs_routes_and_pushes() {
 /// The message types the UI reads:
 /// - verbs: the string keys of `Verb::from_query` in `dispatch.rs`;
 /// - routes: the `.route("…")` paths of the router without `/api/peer/*`
-///   (daemon to daemon), one type per path, named without the leading `/` and
+///   (daemon to daemon) and `/preview/*` (the files of a document, which the
+///   UI does not read), one type per path, named without the leading `/` and
 ///   with `/` as `-`;
 /// - pushes: the `<word>.dirty`, `<word>.failed`, `session-open`,
 ///   `session-size` and `session-end` literals of the routes' production code.
@@ -126,7 +130,7 @@ fn ui_routes(routes: &str) -> BTreeSet<String> {
     route
         .captures_iter(routes)
         .map(|c| c[1].to_string())
-        .filter(|path| !path.starts_with("/api/peer/"))
+        .filter(|path| !path.starts_with("/api/peer/") && !path.starts_with("/preview/"))
         .map(|path| path.trim_start_matches('/').replace('/', "-"))
         .collect()
 }

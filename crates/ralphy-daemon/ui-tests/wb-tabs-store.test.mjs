@@ -63,6 +63,24 @@ test("persistView stores the pin and restoreView hands it back explicitly", () =
   );
 });
 
+test("restoreView gives a stored tab the viewer of its file name", () => {
+  const { state, window } = loadShell();
+  // Stored by a build that showed an HTML file as source code.
+  const stored = {
+    tabs: [
+      { project: "owner/repo", path: "docs/report.html", title: "report.html", kind: "code", checkout: null },
+      { project: "owner/repo", path: "src/main.rs", title: "main.rs", kind: "code", checkout: null },
+    ],
+  };
+  window.WBView = { patch() {}, read: () => stored };
+  window.Alpine.nextTick = () => {};
+  state.$store.tabs.restoreView();
+  assert.deepEqual(
+    state.$store.tabs.tabs.filter((t) => t.id.startsWith("file:")).map((t) => [t.path, t.kind]),
+    [["docs/report.html", "html"], ["src/main.rs", "code"]],
+  );
+});
+
 // --- the slot (ADR-0037 §3c) ----------------------------------------------
 // The store reaches `WBViewer` as a bare global; the real one needs a DOM, so
 // the fake records what the shell told it to paint and answers a wide canvas.

@@ -8,6 +8,22 @@ use zeroize::Zeroizing;
 
 use super::{ArgvError, Verb};
 
+impl Verb {
+    /// The host family: no repo, local only, composed by [`host_argv`].
+    pub fn is_host(self) -> bool {
+        matches!(
+            self,
+            Verb::HostAliases
+                | Verb::HostKey
+                | Verb::HostTrust
+                | Verb::HostCheck
+                | Verb::HostAdd
+                | Verb::HostInstall
+                | Verb::HostRemove
+        )
+    }
+}
+
 /// A destination or host name: an SSH config alias, `user@host` or
 /// `ssh://user@host:port`, or a daemon id.
 fn destination<'a>(

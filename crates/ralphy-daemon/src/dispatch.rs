@@ -145,6 +145,10 @@ pub enum Verb {
     /// Read a `.note` file's markdown out of its container (Observe: reads
     /// state, never spawns — ADR-0064 §5).
     NoteRead,
+    /// Make, or end, the token of an HTML file whose scripts the operator
+    /// allowed (Native: in-daemon, and only on the daemon the browser talks
+    /// to, because the route of the token is there — ADR-0089 D3).
+    FilePreview,
     /// List the repo's live runs from the snapshot directory (Observe: reads
     /// state, never spawns — ADR-0047 §9).
     RunsList,
@@ -290,6 +294,7 @@ impl Verb {
             "tree.size" => Some(Verb::TreeSize),
             "file.image" => Some(Verb::ImageRead),
             "note.read" => Some(Verb::NoteRead),
+            "file.preview" => Some(Verb::FilePreview),
             "runs.list" => Some(Verb::RunsList),
             "config.get" => Some(Verb::ConfigGet),
             "board.list" => Some(Verb::BoardList),
@@ -350,6 +355,7 @@ impl Verb {
         Verb::TreeSize,
         Verb::ImageRead,
         Verb::NoteRead,
+        Verb::FilePreview,
         Verb::RunsList,
         Verb::ConfigGet,
         Verb::BoardList,
@@ -399,6 +405,7 @@ impl Verb {
     /// CLI through [`spawn_argv`].
     pub fn effect_class(self) -> EffectClass {
         match self {
+            Verb::FilePreview => EffectClass::Native,
             Verb::TreeList
             | Verb::TreeFind
             | Verb::TreeGrep
@@ -454,20 +461,6 @@ impl Verb {
             | Verb::HostInstall
             | Verb::HostRemove => EffectClass::Spawn,
         }
-    }
-
-    /// The host family: no repo, local only, composed by [`host_argv`].
-    pub fn is_host(self) -> bool {
-        matches!(
-            self,
-            Verb::HostAliases
-                | Verb::HostKey
-                | Verb::HostTrust
-                | Verb::HostCheck
-                | Verb::HostAdd
-                | Verb::HostInstall
-                | Verb::HostRemove
-        )
     }
 
     /// The git-backed family (ADR-0063 §2, ADR-0036 `checkout`): a selected

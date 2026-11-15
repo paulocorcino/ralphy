@@ -12,6 +12,7 @@ test("isRendered names the kinds the rendered pane shows", () => {
     ["markdown", true],
     ["mermaid", true],
     ["dbml", true],
+    ["html", true],
     ["code", false],
     ["image", false],
     ["diff", false],

@@ -383,6 +383,7 @@ mod module_graph;
 mod page_wiring;
 mod peer_command;
 mod peer_session_query;
+mod preview_route;
 mod release_routes;
 mod root_routes;
 mod run_board;

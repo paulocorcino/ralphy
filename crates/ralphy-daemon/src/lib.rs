@@ -62,6 +62,7 @@ pub mod password;
 pub mod peer;
 pub mod pidfile;
 mod presence_board;
+mod preview;
 #[cfg(feature = "scroll-probe")]
 mod probe;
 pub mod protocol;

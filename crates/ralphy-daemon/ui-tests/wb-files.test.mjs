@@ -54,6 +54,8 @@ test("the path rules: the viewer of a name, the parent of a rel path, a tab id, 
     ["erd.mmd", "mermaid"],
     ["FLOW.MMD", "mermaid"],
     ["schema.dbml", "dbml"],
+    ["report.html", "html"],
+    ["OLD.HTM", "html"],
   ];
   for (const [name, want] of rows) assert.equal(classify(name), want, name);
   assert.deepEqual([parentRel("a/b/c.txt"), parentRel("top.txt")], ["a/b", ""]);
@@ -71,6 +73,7 @@ test("the tab icon of each file kind", () => {
     ["image", "bi bi-file-earmark-image"],
     ["mermaid", "bi bi-diagram-3"],
     ["dbml", "bi bi-table"],
+    ["html", "bi bi-filetype-html"],
     ["code", "bi bi-file-earmark-code"],
   ];
   for (const [kind, want] of rows) assert.equal(tabIcon(kind), want, kind);

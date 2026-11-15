@@ -15,6 +15,10 @@ const FLAT_REPLIES: &[(&str, &str)] = &[
     ("tree.size", "crates/ralphy-daemon/src/tree/size.rs"),
     ("dir.list", "crates/ralphy-daemon/src/dir_list.rs"),
     (
+        "file.preview",
+        "crates/ralphy-daemon/src/routes/ws_command.rs",
+    ),
+    (
         "file.upload",
         "crates/ralphy-daemon/src/routes/ws_command/oneshot/write.rs",
     ),

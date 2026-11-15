@@ -6,6 +6,11 @@
       "cause": "the ralphy command failed",
       "remedy": "The daemon log has the reason.",
       "note": "A ralphy command that the daemon ran failed, and no other failure in the catalog matches its error. The full error chain is in the detail cause and in the daemon log."
+    },
+    "scripts-on-a-peer": {
+      "cause": "the project is on another computer",
+      "remedy": "Open the workbench of that computer to run the scripts.",
+      "note": "The operator pressed Run scripts on an HTML file of a project that a peer daemon hosts. The file would come from a route of that peer, which this browser cannot reach."
     }
   },
   "retired": []

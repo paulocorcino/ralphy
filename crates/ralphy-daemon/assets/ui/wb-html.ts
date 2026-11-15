@@ -19,3 +19,9 @@ export function setSanitizedHtml(el: { innerHTML: string }, html: string): void 
 export function setSanitizedSvg(el: { innerHTML: string }, svg: string): void {
   write(el, svg);
 }
+
+/** Reads the markup of an element and of all that is inside it. */
+export function markupOf(el: { outerHTML: string }): string {
+  // oxlint-disable-next-line no-restricted-properties -- a read; the rule guards the writes
+  return el.outerHTML;
+}

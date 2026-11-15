@@ -7,11 +7,13 @@ import { inPane, isElement, need, needInput, required, targetClosest } from "./w
 import { decorateZoomable } from "./wb-zoom-overlay.ts";
 import { drawDiagram, slugOf } from "./wb-dbml-draw.ts";
 import { isRendered, renderBody } from "./wb-viewer-render.ts";
+import { frameDocument, frameSource, mountFrame, remoteImagesAllowed } from "./wb-viewer-html.ts";
 import { encodingBtnHtml } from "./wb-viewer-encoding.ts";
 import type { MermaidWindow } from "./wb-dbml-draw.ts";
 import type { BytesRecord, ViewerRecord } from "./wb-file-viewer.ts";
 import type { ViewerEncoding } from "./wb-viewer-encoding.ts";
 import type { ViewerFind } from "./wb-viewer-find.ts";
+import type { ViewerScripts } from "./wb-viewer-scripts.ts";
 import { wireFileButtons } from "./wb-viewer-save.ts";
 import type { ViewerSave } from "./wb-viewer-save.ts";
 import { codeEditor } from "./wb-file-viewer-records.ts";
@@ -102,6 +104,7 @@ export type ViewerMarkdownDeps = {
   saver: Pick<ViewerSave, "save" | "reloadFile" | "applyFresh" | "hideDiskBadge">;
   encoding: Pick<ViewerEncoding, "wireEncodingMenu">;
   find: Pick<ViewerFind, "mdSearch" | "mdSearchStep" | "mdSearchClose">;
+  scripts: ViewerScripts;
 };
 
 export type ViewerMarkdown = ReturnType<typeof createViewerMarkdown>;
@@ -142,6 +145,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   } = deps;
   const { wireEncodingMenu } = deps.encoding;
   const { mdSearch, mdSearchStep, mdSearchClose } = deps.find;
+  const { scripts } = deps;
 
   // --- a Markdown tab -----------------------------------------------------
   function buildMarkdown(rec: BytesRecord) {
@@ -160,6 +164,9 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
         <span class="spacer"></span>
         <button class="vbtn" data-act="find" title="Find" aria-label="Find">
           <i class="bi bi-search"></i><span class="vbtn-label">Find</span></button>
+        <button class="vbtn" data-act="scripts" title="Run scripts"
+          aria-label="Run scripts"><i class="bi bi-play-circle"></i>
+          <span class="vbtn-label">Run scripts</span></button>
         <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload">
           <i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
         <button class="vbtn" data-act="toggle" title="Edit" aria-label="Edit">
@@ -199,6 +206,9 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     // edit / preview toggle
     need(el, '[data-act="toggle"]').addEventListener("click", () => {
       toggleEdit(rec);
+    });
+    need(el, '[data-act="scripts"]').addEventListener("click", () => {
+      scripts.toggle(rec);
     });
     // The heading outline on a NARROW pane: the same <nav>, laid over the
     // article by CSS while `.md-split` carries `toc-open` (on a wide pane the
@@ -251,9 +261,15 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   function renderMarkdown(rec: BytesRecord) {
     if (!isRendered(rec.kind)) return;
     const article = inPane(rec, ".md-body");
+    if (rec.kind === "html") {
+      // Every new draw is without script: the file may have changed.
+      scripts.end(rec);
+      renderHtml(rec, article);
+      return;
+    }
     const file = { kind: rec.kind, content: rec.content, uid: rec.uid };
     rec.mermaidPending = renderBody(file, article, document);
-    resolveImages(rec, article);
+    resolveImages(rec, article).catch(() => {});
     decorateZoomable(article);
     buildOutline(rec, article);
     if (rec.visible) drawMermaid(rec);
@@ -267,24 +283,38 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   // loads, and `blockedImage` explains a refusal; a source that REFUSES is left alone
   // too — a broken image is an honest rendering of a broken link, and a
   // placeholder would fabricate.
-  function resolveImages(rec: ViewerRecord, article: Element) {
+  // The promise settles when every read has answered; it never rejects.
+  function resolveImages(rec: ViewerRecord, root: ParentNode): Promise<unknown> {
     // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test window has no WBDaemon
-    if (typeof window.WBDaemon?.readImage !== "function") return;
+    if (typeof window.WBDaemon?.readImage !== "function") return Promise.resolve();
     const dir = rec.path.includes("/") ? rec.path.slice(0, rec.path.lastIndexOf("/")) : "";
-    article.querySelectorAll<HTMLImageElement>("img[src]").forEach((img) => {
+    const reads = [...root.querySelectorAll<HTMLImageElement>("img[src]")].map((img) => {
       const src = img.getAttribute("src") ?? "";
       // Anything carrying a scheme (`data:`, `https:`) or rooted at `/` is not
       // ours to resolve.
-      if (/^[a-z][a-z0-9+.-]*:/iu.test(src) || src.startsWith("/")) return;
+      if (/^[a-z][a-z0-9+.-]*:/iu.test(src) || src.startsWith("/")) return Promise.resolve();
       const rel = repoRelative(dir, src);
-      if (rel === null) return;
-      WBDaemon.readImage(rec.project, rel, undefined, rec.checkout)
+      if (rel === null) return Promise.resolve();
+      return WBDaemon.readImage(rec.project, rel, undefined, rec.checkout)
         .then((url) => {
           if (url != null && url !== "") img.src = url;
           return null;
         })
         .catch(() => {});
     });
+    return Promise.all(reads);
+  }
+
+  // The frame gets its document once, with the images already in it: a new
+  // `srcdoc` loads the document again.
+  async function fillFrame(rec: BytesRecord, frame: HTMLIFrameElement) {
+    const parsed = frameDocument(rec.content, new DOMParser(), await remoteImagesAllowed());
+    await resolveImages(rec, parsed);
+    frame.srcdoc = frameSource(parsed);
+  }
+
+  function renderHtml(rec: BytesRecord, article: Element) {
+    fillFrame(rec, mountFrame(article, document, "")).catch(() => {});
   }
 
   // An image the page's CSP refused (a remote one, while remote images are
@@ -391,6 +421,8 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     const toggle = inPane(rec, '[data-act="toggle"]');
     rec.editing = !rec.editing;
     if (rec.editing) {
+      // The frame is hidden, not gone: its scripts must not go on running.
+      if (rec.scripts !== undefined) renderMarkdown(rec);
       split.classList.add("editing");
       split.classList.remove("toc-open");
       editor.style.display = "block";

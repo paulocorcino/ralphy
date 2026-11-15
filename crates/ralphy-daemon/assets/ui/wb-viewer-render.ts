@@ -12,15 +12,18 @@
 import { setMarkup, setSanitizedHtml } from "./wb-html.ts";
 import { filterDbml, renderDbmlGrid } from "./wb-dbml-view.ts";
 
-/** The file kinds the markdown pane shows as a rendered body. */
-export type RenderedKind = "markdown" | "mermaid" | "dbml";
+/** The file kinds `renderBody` draws into the article of the pane. */
+export type ArticleKind = "markdown" | "mermaid" | "dbml";
+
+/** The file kinds the markdown pane shows rendered. An HTML file is a frame, not an article. */
+export type RenderedKind = ArticleKind | "html";
 
 export function isRendered(kind: string): kind is RenderedKind {
-  return kind === "markdown" || kind === "mermaid" || kind === "dbml";
+  return kind === "markdown" || kind === "mermaid" || kind === "dbml" || kind === "html";
 }
 
 /** A file `renderBody` draws: its kind, its text, and the number that makes its ids unique. */
-export type RenderedFile = { kind: RenderedKind; content: string; uid: number };
+export type RenderedFile = { kind: ArticleKind; content: string; uid: number };
 
 /**
  * Fill `article` with the body of a file of `kind` whose text is `content`,
@@ -54,6 +57,7 @@ export function prepareFind(kind: string, article: Element, term: string): void 
   switch (kind) {
     case "markdown":
     case "mermaid":
+    case "html":
       return;
     case "dbml":
       filterDbml(article, term);
