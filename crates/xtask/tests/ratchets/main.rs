@@ -37,6 +37,10 @@
 //! Telegram and workbench sources that equal a status or outcome icon or
 //! fallback of `assets/wording/run.json`. Tests are not read (#684).
 //!
+//! The markup comment ratchet (#941) walks each `.html` file of the workbench
+//! with the tag reader of `ui-groups`: a comment other than a part marker alone
+//! on its line fails, and an attribute value or a script body is not read.
+//!
 //! The failure ratchets (#685) count what has not moved into the failure
 //! catalog yet: the `CAUSE` rows of the workbench, the collected verbs that
 //! still answer with CLI text, and the daemon replies with free error text.
@@ -57,6 +61,10 @@ use regex::Regex;
 #[path = "../../src/ui_copy/lex.rs"]
 mod lex;
 
+// The tag reader of `ui-groups`, which the markup ratchets walk.
+#[path = "../../src/html_tags.rs"]
+mod html_tags;
+
 // The step table of `xtask gate`, which the gate ratchet reads.
 #[expect(dead_code, reason = "the ratchet reads only the CI names of the steps")]
 #[path = "../../src/gate/steps.rs"]
@@ -75,6 +83,8 @@ mod ignore_lists;
 mod jscpd_markers;
 mod leftovers;
 mod lint_expects;
+mod markup;
+mod markup_comments;
 mod peer_reply_pin;
 mod rust_coupling;
 mod skipped_tests;
