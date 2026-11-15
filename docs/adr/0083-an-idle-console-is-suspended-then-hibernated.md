@@ -5,6 +5,8 @@ Kind: structural
 Protects: responsiveness, recoverability; constraints portability, security
 
 Amended by ADR-0085 (proposed: a `waiting` agent blocks hibernation, not suspension).
+Amended by ADR-0088 (proposed: the process registry, one container per console, replaces D4
+and the process part of D6). Amendment of 2026-11-15 below: hibernation first, as a policy over it.
 
 Amends ADR-0051 (a **workbench session** has a state besides live and gone),
 ADR-0050 (the page no longer relaunches a free console when it loads; the
@@ -279,3 +281,236 @@ Open before the build: the minimum handle right for the Windows state-change
 object; whether Gemini resumes a session by the id it was given; whether a launch gate per repo and agent
 makes finding the id after launch safe enough for OpenCode, Codex and Kimi;
 the CPU and I/O limits, from the observe-only slice.
+
+## Amendment 2026-11-15 — hibernation first, as a policy over the process registry
+
+Changes D2, D3, D4, D5, D6, D7, D8, D10, D11 and the list "Open before the
+build"; adds D14 to D18. The rules not named here stay. The research behind
+it:
+[supervision](../research/idle-console-supervision-research-2026-11-15.md),
+[Chromium](../research/chromium-process-management-research-2026-11-15.md),
+[checkpoint](../research/process-checkpoint-restore-research-2026-11-15.md).
+A review by the team on the same day moved Hibernated before Suspended.
+
+**The use case.** An operator keeps about 50 agent consoles in the
+workbench. They do not all start when the workbench opens; the operator
+reactivates each one when needed. Over a week, the consoles in use pile up,
+and many sit unused for days while they still hold memory. The machine has
+little memory. Today the only way to get memory back is to close a console,
+which loses it: the operator must create it again and find the conversation.
+So the operator needs to see every console's state, memory and processes
+(ADR-0088 D10); to make many consoles inactive at once, by hand, and to let
+the daemon do it when memory is short, never while a console works; and to
+reactivate one with a click, on the same conversation.
+
+**What was measured on 2026-11-15** (Windows 11, WSL2 with systemd 249):
+
+- On Windows, a trim of a frozen Node process took its working set from
+  839 MB to 0 in 65 ms, and its 822 MB of commit stayed charged. This machine
+  used 59 GB of a 76 GB commit limit. Only an ended process gives commit back.
+- On Linux, writing to `memory.reclaim` of a frozen user-owned cgroup moved
+  500 MB to swap in 0.5 s, with no privilege. The old sentence "an
+  unprivileged process cannot page out another one" holds only for
+  `process_madvise`.
+- No tool can save a running agent CLI and restore it. Windows has none for a
+  plain process. CRIU in WSL is stopped by the seccomp filter on every process
+  and by the `io_uring` ring that Node opens. DMTCP aborts at start for Node
+  22, Node 24 and Claude Code.
+
+**D2, changed: Hibernated comes first.** Hibernated needs no undocumented
+call, works the same on the three systems, gives back both memory and
+commit, and survives a daemon restart. Suspended keeps commit, needs an
+undocumented call on Windows and a delegated cgroup on Linux, and may break
+the agent's connections (D14). The work is cut in three slices:
+
+1. **Slice 1:** the process registry and its view (ADR-0088), and a manual
+   **Deactivate** of one or many consoles (D8). Deactivate hibernates.
+2. **Slice 2:** the memory trigger (D10). It hibernates.
+3. **Slice 3:** Suspended, built only if the measurements of slices 1 and 2
+   show that a fast return, or the agents that cannot hibernate, are worth its
+   risk. Until then, D5 and D14 describe a state that does not exist.
+
+There is no third state (D16).
+
+**D3, changed.** A console is idle when its activity clock passes the limit
+and no **idle blocker** holds. Activity is input written to the PTY, a
+process that entered or left the container, or the container's CPU or I/O
+over a limit in a minute (ADR-0088 D6). The blockers are one closed enum.
+Each console has two sets of them, one for suspension (slice 3) and one for
+hibernation:
+
+| Blocker | Blocks Suspended | Blocks Hibernated |
+| --- | --- | --- |
+| `always_on` | yes | yes |
+| `agent_working` (in a turn) | yes | yes |
+| `agent_waiting` (ADR-0085 D17) | no | yes |
+| `agent_state_unknown` (no turn source, D7) | yes | yes |
+| `recent_input` | yes | yes |
+| `tree_changed` | yes | yes |
+| `cpu_or_io_active` | yes | yes |
+| `socket_accepted` | yes | yes |
+| `work_process_running` (ADR-0088 D7) | yes | yes |
+| `no_container` (`process-group` mode) | yes | no |
+| `no_resume` (no known session id, D7) | no | yes |
+| `no_suspend_means` (the freeze call failed) | yes | no |
+| `feature_off` | yes | yes |
+
+The sets go to the console list, to `ralphy console show`, to the workbench
+(a short hint in the gear menu, such as "Not deactivated: `npm run dev` is
+still running"), and to the log line of each decision.
+
+**D4, replaced** by ADR-0088 D6: the evidence comes from the container's
+counters, read only while the feature is on.
+
+**D5, changed, for slice 3 only.** If Suspended is built, it exists only in
+`job` and `cgroup` modes:
+
+- Windows: the job freeze (`JobObjectFreezeInformation`, an undocumented
+  `ntdll` call) on the console's job, which has `KILL_ON_JOB_CLOSE`, so the
+  tree ends if the daemon dies. This holds if closing the job ends its frozen
+  members at once; if not, one process state-change object per process, with
+  `PROCESS_SET_INFORMATION | PROCESS_SUSPEND_RESUME`. Then a trim, which frees
+  memory but not commit.
+- Linux: `cgroup.freeze`, a wait for `frozen 1`, then `memory.reclaim` when
+  the system has swap.
+- `process-group` mode: no Suspended.
+
+If the call fails or is missing, that daemon turns Suspended off with
+`no_suspend_means`. No path can leave a process stopped.
+
+**D6, changed.** The custody record keeps, per console, the state, the agent
+session id with the repo, the checkout and the agent, and the saved screen
+beside it. PIDs are kept only in `process-group` mode (ADR-0088
+Consequences). The rest of D6 stays.
+
+**D7, changed.** Only a console whose agent session id Ralphy knows for
+certain can be Hibernated. Ralphy knows it when it chose the id at launch,
+or when the agent reported it from inside the console through Ralphy's hook
+or plugin (the `session_id` of the status line, ADR-0085 D8). The automatic
+trigger acts only on an agent with a turn source; without one, the console
+has `agent_state_unknown`, and only a manual Deactivate acts on it. Each
+capability is turned on only after a live check of the agent's interactive
+CLI. As of 2026-11-15:
+
+| Agent | Turn source | Session id | Hibernated |
+| --- | --- | --- | --- |
+| Claude Code | hooks | chosen (`--session-id`) | yes |
+| Copilot CLI | none | chosen (`--session-id`) | by hand only |
+| Cursor agent | none | chosen (`create-chat`) | by hand only |
+| Antigravity CLI | hooks | reported (ADR-0086 D18) | yes |
+| OpenCode | plugin | reported by the plugin | after a live check of `-s <id>` |
+| Codex CLI | hooks | reported by the hook | after a live check of `codex resume <id>` |
+| Kimi CLI | none | unknown | no |
+
+A launch gate that finds the id by listing sessions is not used. The Gemini
+CLI is gone (ADR-0086).
+
+**D8, changed: the operator deactivates consoles by hand, one or many.** The
+gear menu, the process view and `ralphy console deactivate` make an agent
+console Hibernated when D7 allows it. The process view sorts by idle time and
+by memory and allows a multiple selection with "Deactivate selected". The CLI
+takes one console or `--idle-for <duration>`, shows what it will do, and acts
+with `--yes`. A manual deactivate ignores the activity clock. For one
+console, another blocker is named and asks for confirmation. For many, a
+console with a blocker is skipped and listed. It is not offered on a free
+console. The CLI refuses the verbs that act when it runs inside a console
+(the launcher sets `RALPHY_CONSOLE_ID`, ADR-0088 D9). This guards against an
+agent's mistake, not against an agent that wants harm: an agent runs as the
+same user and can end processes by itself (ADR-0072). The rest of D8 stays.
+
+**D10, changed.** The feature stays opt-in per daemon, and Always on stays.
+The blockers always win.
+
+1. **The memory trigger (slice 2).** The daemon watches the system's memory:
+   on Windows both the physical-memory signal
+   (`CreateMemoryResourceNotification`) and the commit charge against its
+   limit; on Linux PSI `memory.pressure`. While a limit holds, it hibernates
+   idle consoles that D7 allows, the largest first and then the oldest. The
+   limits, and the amount the operator expects to get back, are set from the
+   observe-only data (D17) before slice 2 is built.
+2. **The idle-time trigger is off by default.** When the operator turns it on,
+   its limit is a setting, and choosing it is a choice. The break-even time
+   `T_BE = B / (ΔM · v)` (rent-or-buy, Karlin et al., 1988) explains why a
+   limit near it is reasonable, but `v`, the value of a gigabyte-hour, cannot
+   be measured, so it gives no default. `B` holds the operator's wait and the
+   risks: a resume that fails, text not sent, a broken connection.
+
+The setting "include free consoles" is removed.
+
+**D11, withdrawn.** The policy applies only to agent consoles. A free console
+is never Suspended or Hibernated. It still has a container and a place in the
+process view (ADR-0088), and Always on for it means only that the daemon
+starts it when the daemon starts (D13).
+
+**D14. After a resume from Suspended, the first network call may fail once**
+(slice 3). A frozen agent cannot answer an HTTP/2 PING, so its server may
+close an idle connection. Ralphy does not repair the agent's connections. An
+agent that needs a manual step after a freeze would skip Suspended.
+
+**D15. The idle-time limit can later follow measured idle periods.** When the
+observe-only data has weeks of idle periods per console, a later amendment
+may use the rule "act when the chance per hour that the operator returns
+falls below the cost ratio".
+
+**D16. Process checkpoint is not a state.** Ralphy does not save a running
+agent and restore it (see the measurements above).
+
+**D17. Measure before building.** Before slice 1 is built, an observe-only
+pass over the operator's consoles records: the mix of agents, the private
+memory and commit of each console, the share of consoles with long-lived
+children, and the idle periods. Slice 2 is planned from these numbers.
+
+**D18. A process that asks for breakaway leaves its console.** The console's
+job allows breakaway on request (ADR-0088 D2), so `ralphy daemon restart` run
+inside a console starts a daemon that outlives that console. Such a process
+is not in the registry and is not deactivated with the console.
+
+**Considered options, added.**
+
+- **Checkpoint and restore of the process (CRIU, DMTCP, a VM snapshot).**
+  Rejected by the measurements above. A whole VM per console is a new kind of
+  product, and a restored process comes back on a new terminal with dead
+  connections, which the agent's own resume handles better.
+- **Suspended first.** It holds all the technical risk (an undocumented call,
+  cgroup delegation, broken connections), it does not give commit back, and
+  its own gain is a fast return and three agents. Hibernated first gives most
+  of the memory with none of that risk.
+- **A launch gate per repo and agent.** It finds the id by listing sessions,
+  whose format changes between releases, and a mistake gives a console
+  another console's conversation.
+- **Fixed limits of 2 hours and 24 hours, or a default derived from
+  `T_BE`.** Both are choices; `v` cannot be measured. The idle-time trigger is
+  off by default instead.
+- **Free consoles under the policy.** The operator's case is long-idle agent
+  consoles; a WSL free console cannot be frozen from Windows at all.
+
+**Compliance, added.**
+
+- D2, 2026-11-15: not checked by code: manual, reviewed in the PR.
+- D3, 2026-11-15: not checked by code: behavior, pinned by the tests of the
+  blocker sets; the enum is matched exhaustively.
+- D5, 2026-11-15: not checked by code: the freeze entry point takes a
+  container (ADR-0088 D5), pinned by its test; the FFI module is reviewed in
+  the PR.
+- D7, 2026-11-15: not checked by code: needs a live agent CLI.
+- D8, 2026-11-15: not checked by code: behavior, pinned by the tests of the
+  selection and the refusal inside a console.
+- D10, 2026-11-15: not checked by code: behavior, pinned by the tests of the
+  trigger order.
+- D14 to D18: not checked by code: manual, reviewed in the PR.
+
+**Open before the build, replaced.** Measured on Windows 11 and WSL, and on
+macOS when a Mac is at hand:
+
+- for slice 1: the observe-only data of D17; a live check that OpenCode
+  resumes the `session_id` its plugin reports, and Codex the one its hook
+  reports; `ralphy daemon restart` run inside a console (D18); a shared daemon
+  (sccache, Gradle, tsserver) started by one console and used by another;
+- for slice 2: how often the memory signals fire with the usual load; the
+  memory and commit each hibernation gives back, per agent; the time from a
+  click to a usable prompt, per agent, and the share of resumes that fail;
+- for slice 3, only if it is planned: whether closing a frozen
+  `KILL_ON_JOB_CLOSE` job ends its members at once; the time from a click to
+  the first echoed key, with the pages already written to disk; what each
+  agent does with its first call after 10 minutes, 1 hour and 4 hours frozen;
+  the CPU and I/O limits of D3.
