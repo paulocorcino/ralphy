@@ -213,9 +213,11 @@ only those font files are vendored.
 
 Alpine is the ES module build (`dist/module.esm.js` of the npm package,
 vendored as `alpine.esm.js`). It does not start itself and sets no
-global: `main.ts` imports it, sets `window.Alpine`, and starts it. Do not
-take `dist/module.esm.min.js`: in the alpinejs 3.14.x tarballs it is built
-from 3.13.10. The test `vendored_alpine_is_the_manifest_version` compares
+global: `main.ts` imports it, sets `window.Alpine`, and starts it. The
+vendored version is 3.17.5, and it bundles `@vue/reactivity` 3.5. Take
+`dist/module.esm.js`, not `dist/module.esm.min.js`: in the alpinejs 3.14.x
+tarballs the minified file was built from 3.13.10, so read the version
+inside a new file before you vendor it. The test `vendored_alpine_is_the_manifest_version` compares
 the version inside the file with the manifest.
 `alpine.esm.d.ts` next to it is ours: the types `main.ts` imports with
 it. The build does not serve a `.d.ts` file, so the manifest does not list it.

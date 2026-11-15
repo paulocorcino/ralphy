@@ -12,8 +12,7 @@
 
    It reaches `shell()` only through the names in its `uses` (ADR-0073 D4),
    and the shell reaches it only through `workbench:*` events, which `init()`
-   hears. INVARIANT: `this` is Alpine's Proxy, so the tree is read and changed
-   only through `rawTree()`.
+   hears. The Wunderbaum tree lives in this closure, outside Alpine's data.
 
    `main.ts` registers it (ADR-0075 D5).
    --------------------------------------------------------------------------- */
@@ -50,6 +49,7 @@ import type { Hit } from "./wb-file-search.ts";
 import type { Group } from "./wb-fleet.ts";
 
 export function wbFiles() {
+  let tree: WunderbaumTree | null = null;
   // Every `shell()` member this component's code or markup reads or calls.
   return component(["checkoutChipClick"], {
     // The search button's title names its keys for the system (ADR-0087 D11).
@@ -198,7 +198,6 @@ export function wbFiles() {
     // The daemon could not keep watching this tree: the rows are right now,
     // but a change on disk will not show until the project is opened again.
     treeNotLive: "",
-    _tree: null as WunderbaumTree | null, // the live Wunderbaum instance, if any
 
     // --- the FILES search (ADR-0036 amendment 2026-09-15) -----------------
     // The daemon answers with the hits' rel paths, every hit's ancestors are
@@ -249,21 +248,19 @@ export function wbFiles() {
       return searchNow(this);
     },
 
-    // The Wunderbaum instance WITHOUT Alpine's Proxy. Every node reached
-    // through `this._tree` is a Proxy while the tree's own handlers hold raw
-    // objects, and the row painter compares by identity: a mixed paint leaves
-    // rows at stale offsets (MEASURED 2026-09-15/16). INVARIANT: everything
-    // that reads or mutates the tree goes through this; `this._tree` is only
-    // assigned, null-checked and destroyed.
-    rawTree() {
-      const t = this._tree;
-      return t && typeof window.Alpine.raw === "function" ? window.Alpine.raw(t) : t;
+    // A node reached through Alpine's Proxy is not the node Wunderbaum's painter
+    // compares by identity: rows at stale offsets (MEASURED 2026-09-15/16).
+    tree() {
+      return tree;
+    },
+    setTree(t: WunderbaumTree | null) {
+      tree = t;
     },
 
     // The rels of every expanded folder — the tree's current shape.
     expandedRels() {
       const rels: string[] = [];
-      this.rawTree()?.root.visit((n: WunderbaumNode) => {
+      this.tree()?.root.visit((n: WunderbaumNode) => {
         if (this.isFolder(n) && n.expanded) rels.push(this.relPath(n));
       });
       return rels;
@@ -339,7 +336,7 @@ export function wbFiles() {
     // The folder node whose rel path is `rel`, or `null` if none is mounted.
     findFolderByRel(rel: string) {
       return (
-        this.rawTree()?.findFirst(
+        this.tree()?.findFirst(
           (n: WunderbaumNode) => this.isFolder(n) && this.relPath(n) === rel,
         ) ?? null
       );
@@ -451,12 +448,12 @@ export function wbFiles() {
 
     // The Files-header buttons create relative to the tree's active node.
     createHere(kind: "file" | "folder") {
-      this.emitCreate(this.rawTree()?.getActiveNode() ?? null, kind);
+      this.emitCreate(this.tree()?.getActiveNode() ?? null, kind);
     },
 
     // The header buttons' tooltip: the directory a create lands in.
     createTitle(kind: string) {
-      return newEntryTitle(kind, this.createDir(this.rawTree()?.getActiveNode() ?? null));
+      return newEntryTitle(kind, this.createDir(this.tree()?.getActiveNode() ?? null));
     },
 
     // The fields every gesture on one node sends.

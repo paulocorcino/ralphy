@@ -28,6 +28,7 @@ import type { ProjectsStore } from "./wb-projects-store.ts";
 import type { ChangeEntry, Read, Subscription, Sync, Timer } from "./wb-shell-types.d.ts";
 
 export function wbChanges() {
+  let changesSub: Subscription | null = null; // the run-completion nudge socket (#310)
   // Every `shell()` member this component's code or markup reads or calls.
   return component(["sideOpen", "sideView", "checkoutChipClick"], {
     // The slow backstop: the `changes.dirty` nudge (#310) only reports what a RUN
@@ -207,15 +208,13 @@ export function wbChanges() {
       return syncPush(this, slug);
     },
 
-    // The run-completion nudge subscription for the open project (#310).
-    _changesSub: null as Subscription | null,
     // The run-completion subscription (#310, ADR-0036 amendment). The socket
     // carries EVERY repo's nudge, so the filter is here.
     mountChangesSub() {
       const slug = this.$store.projects.openSlug ?? "";
       // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test's daemon has none
       if (window.WBDaemon?.subscribeChanges === undefined || !slug) return;
-      this._changesSub = window.WBDaemon.subscribeChanges(slug, (frame) => {
+      changesSub = window.WBDaemon.subscribeChanges(slug, (frame) => {
         if (this.$store.connection.tabHidden()) return;
         if (WBChanges.shouldReload(frame, this.$store.projects.openSlug)) {
           void this.loadChanges(this.$store.projects.openSlug);
@@ -225,9 +224,9 @@ export function wbChanges() {
     },
     destroyChangesSub() {
       try {
-        this._changesSub?.close();
+        changesSub?.close();
       } catch {}
-      this._changesSub = null;
+      changesSub = null;
     },
     // On `workbench:project-changed`. Refusal notes name an act against the
     // project that WAS open, and an unsent commit message (#318) is dropped.

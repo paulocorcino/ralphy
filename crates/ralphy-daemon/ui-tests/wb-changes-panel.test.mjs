@@ -43,7 +43,7 @@ function page(opts = {}) {
   const changes = loadComponent("wbChanges", { from: loaded, magics: { $nextTick: (fn) => fn() } });
   const timers = initQuietly(changes.scope);
   const fire = (type, detail) => loaded.window.dispatchEvent({ type, detail });
-  return { loaded, shell: loaded.state, changes: changes.scope, window: loaded.window, fire, timers };
+  return { loaded, shell: loaded.state, changes: changes.scope, data: changes.data, window: loaded.window, fire, timers };
 }
 
 // A page whose `WBDaemon.observe` answers each call with the next reply.
@@ -208,6 +208,19 @@ test("opening a row remounts the run-completion subscription", () => {
   // The old socket closes before the new one opens, so a nudge for the
   // project that WAS open never reloads the new one.
   assert.deepEqual(calls, ["destroyChangesSub", "mountChangesSub"]);
+});
+
+test("the changes subscription stays out of the reactive data", () => {
+  const { shell, changes, window, data } = page();
+  shell.$store.projects.setOpen("o/r");
+  const handle = { closed: 0, close() { this.closed++; } };
+  window.WBDaemon.subscribeChanges = () => handle;
+  changes.mountChangesSub();
+  assert.equal(Object.values(data).includes(handle), false);
+  changes.destroyChangesSub();
+  assert.equal(handle.closed, 1);
+  changes.destroyChangesSub();
+  assert.equal(handle.closed, 1, "a second leave closes nothing");
 });
 
 test("the git part drops the refusal and the commit message of the project that was open", () => {

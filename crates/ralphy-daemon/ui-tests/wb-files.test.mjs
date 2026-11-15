@@ -486,7 +486,8 @@ function peerFilesShell(state) {
   loaded.state.$store.projects.fleetPeers = [{ daemon_id: FILES_PEER, name: "corcino-mac", environment: "macOS 15", tunnel: true, state, diagnosis: `diagnosis of ${state}` }];
   s.$store.projects.setOpen(FILES_REF);
   s.treeMem();
-  return { state: s, shell: loaded.state.$store.projects, window: loaded.window, document: loaded.document };
+  const { window, document } = loaded;
+  return { state: s, data: files.data, shell: loaded.state.$store.projects, window, document };
 }
 
 // The options `mountTree` gives Wunderbaum, from a stand-in that keeps them.
@@ -514,6 +515,47 @@ function mountedTreeOptions(s, window, document) {
 }
 
 function Wunderbaum() {}
+
+// Mounts the tree of `state` over a stand-in Wunderbaum and returns the instance.
+function mountStandIn(state, window, document) {
+  window.WBDaemon = {};
+  document.querySelector = (sel) => (sel === ".files-pane .wb-host" ? { addEventListener() {} } : null);
+  state.$store.projects.setProjects([{ key: FILES_REF, slug: "o/r", daemon: FILES_PEER, tree: [] }]);
+  state.useDaemonTree = () => true;
+  state.loadTreeLevel = () => Promise.resolve([]);
+  let made = null;
+  const realMar10 = globalThis.mar10;
+  globalThis.mar10 = {
+    Wunderbaum: function () {
+      made = { destroy() {} };
+      return made;
+    },
+  };
+  try {
+    state.mountTree();
+  } finally {
+    globalThis.mar10 = realMar10;
+  }
+  return made;
+}
+
+// Alpine wraps every field of the data in its Proxy; a node reached through it
+// is not the node Wunderbaum's painter compares by identity.
+test("the files tree stays out of the reactive data", () => {
+  const { state, data, window, document } = peerFilesShell("reachable");
+  const handle = mountStandIn(state, window, document);
+  assert.ok(handle, "the mount built a tree");
+  assert.equal(Object.values(data).includes(handle), false);
+});
+
+test("the files tree accessor returns the mounted instance, then null", () => {
+  const { state, window, document } = peerFilesShell("reachable");
+  assert.equal(state.tree(), null, "no tree before the mount");
+  const handle = mountStandIn(state, window, document);
+  assert.equal(state.tree(), handle);
+  state.destroyTree();
+  assert.equal(state.tree(), null);
+});
 
 // The one files host outlives every mount: a project switch, a checkout
 // change and a woken peer each mount the tree again on the same element.
@@ -587,12 +629,11 @@ test("FILES names the down peer from the fleet, and the read that calls it back 
   assert.equal(state.peerDownAction(down), "Try again");
   const reread = [];
   state.revalidateLevel = (rel) => reread.push(rel);
-  state._tree = {};
   const folders = [
     { rel: "src", expanded: true },
     { rel: "docs", expanded: false },
   ];
-  state.rawTree = () => ({ root: { visit: (fn) => folders.forEach((f) => fn(f)) } });
+  state.tree = () => ({ root: { visit: (fn) => folders.forEach((f) => fn(f)) } });
   state.isFolder = () => true;
   state.relPath = (n) => n.rel;
   state.treeStale = "Could not refresh the file list.";
@@ -675,7 +716,7 @@ function fakeTree(disk) {
 function reconcileFiles(tree, disk) {
   const s = loadComponent("wbFiles").scope;
   const calls = [];
-  s._tree = tree;
+  s.setTree(tree);
   s.fetchTreeLevel = (rel) => Promise.resolve(disk[rel]);
   s.revalidateBelow = (node, rel) => calls.push(["revalidateBelow", rel]);
   s.forgetValidatedBelow = (rel) => calls.push(["forgetValidatedBelow", rel]);

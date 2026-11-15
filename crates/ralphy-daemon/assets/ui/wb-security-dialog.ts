@@ -83,6 +83,8 @@ async function afterRequireLogin(dialog: LoginDialog, want: boolean) {
 }
 
 export function securityDialog() {
+  // Hands the step-up code back to the action that asked; out of Alpine's data.
+  let stepUpResolve: ((code: string | null) => void) | null = null;
   // Every `shell()` member this component's code or markup reads or calls.
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
   // type check fails on a name the code reads.
@@ -114,10 +116,8 @@ export function securityDialog() {
     // The step-up prompt (ADR-0032 amendment E): lowering the auth posture —
     // rotating the token, lifting the login gate, revoking TOTP — costs a
     // fresh authenticator code once a seed is armed. One prompt serves all
-    // three; `label` says which, `_stepUpResolve` hands the code back to the
-    // action that asked.
+    // three; `label` says which.
     stepUp: { open: false, code: "", label: "" },
-    _stepUpResolve: null as ((code: string | null) => void) | null,
 
     async openSecurity() {
       this.securityOpen = true;
@@ -167,20 +167,20 @@ export function securityDialog() {
       this.stepUp = { open: true, code: "", label };
       void this.$nextTick(() => document.querySelector<HTMLElement>(".step-up input")?.focus());
       return new Promise<string | null>((resolve) => {
-        this._stepUpResolve = resolve;
+        stepUpResolve = resolve;
       });
     },
     submitStepUp() {
       const code = this.stepUp.code.trim();
       if (code.length !== 6) return;
-      const resolve = this._stepUpResolve;
-      this._stepUpResolve = null;
+      const resolve = stepUpResolve;
+      stepUpResolve = null;
       this.stepUp = { open: false, code: "", label: "" };
       resolve?.(code);
     },
     cancelStepUp() {
-      const resolve = this._stepUpResolve;
-      this._stepUpResolve = null;
+      const resolve = stepUpResolve;
+      stepUpResolve = null;
       this.stepUp = { open: false, code: "", label: "" };
       resolve?.(null);
     },

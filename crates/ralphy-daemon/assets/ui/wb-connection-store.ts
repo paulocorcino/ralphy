@@ -66,6 +66,7 @@ function holdDesk(on: boolean) {
 // nothing itself (the notice and the login gate are markup).
 export function connectionStore(deps: ConnectionStoreDeps) {
   const { detached } = deps;
+  let presenceSub: Subscription | null = null; // the `/ws` presence subscription
   return {
     // The build this page was served with (`<meta name="ralphy-build">`);
     // "" with no such tag, and then the page never reloads for a build.
@@ -80,7 +81,6 @@ export function connectionStore(deps: ConnectionStoreDeps) {
     // binding. Writing the same boolean is inert under Alpine, so the steady
     // state costs one comparison a second.
     presenceStale: false,
-    _presenceSub: null as Subscription | null, // the `/ws` presence subscription
     _clockTick: null as Timer,
     LIVE_SETTLE_MS: 250,
     _liveTimer: null as ReturnType<typeof setTimeout> | null,
@@ -131,6 +131,10 @@ export function connectionStore(deps: ConnectionStoreDeps) {
       return window.WBDaemon.heartbeatStale();
     },
 
+    presenceSub() {
+      return presenceSub;
+    },
+
     // The `/ws` presence heartbeat (daemon mode). Each tick refreshes the
     // uptime and carries name/avatar once
     // baptized. It reads nothing: the shown facts are read again on the
@@ -138,7 +142,7 @@ export function connectionStore(deps: ConnectionStoreDeps) {
     subscribePresence() {
       // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test's daemon has none
       if (window.WBDaemon.subscribePresence === undefined) return;
-      this._presenceSub = window.WBDaemon.subscribePresence(
+      presenceSub = window.WBDaemon.subscribePresence(
         (p) => {
           this.uptimeText = "Running for " + this.fmtUptime(p.uptime_secs);
           const name = p.name ?? "";

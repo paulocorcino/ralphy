@@ -187,6 +187,15 @@ test("a presence frame reads nothing", async () => {
   assert.equal(store.uptimeText, "Running for 1s");
 });
 
+test("the presence subscription stays out of the reactive data", () => {
+  const { store, window } = connectedPage();
+  const handle = { resume() {}, close() {} };
+  window.WBDaemon.subscribePresence = () => handle;
+  store.subscribePresence();
+  assert.equal(Object.values(store).includes(handle), false);
+  assert.equal(store.presenceSub(), handle);
+});
+
 test("a hidden tab reads nothing on a push, and reads when it becomes visible", async () => {
   const { state, store, document } = connectedPage({ document: { visibilityState: "hidden", hasFocus: () => true } });
   // The column check after a desk read is not under test here.

@@ -14,12 +14,11 @@ import type { Group } from "./wb-fleet.ts";
 /** What a peer step reads, writes or calls on the files component. */
 type PeerFiles = {
   $store: AlpineMagics["$store"];
-  _tree: WunderbaumTree | null;
   _filesPeerDown: string | null;
   openPeerDown(): Group | null;
   treeFresh(): void;
   revalidateLevel(rel: string): Promise<void>;
-  rawTree(): WunderbaumTree | null;
+  tree(): WunderbaumTree | null;
   isFolder(node: WunderbaumNode | null | undefined): boolean;
   relPath(node: WunderbaumNode | null): string;
 };
@@ -48,11 +47,11 @@ export function followFleet(files: PeerFiles) {
     !down &&
     (files._filesPeerDown ?? "") !== "" &&
     files._filesPeerDown === files.$store.projects.openSlug &&
-    files._tree
+    files.tree()
   ) {
     files.treeFresh();
     void files.revalidateLevel("");
-    files.rawTree()?.root.visit((n: WunderbaumNode) => {
+    files.tree()?.root.visit((n: WunderbaumNode) => {
       if (files.isFolder(n) && n.expanded) void files.revalidateLevel(files.relPath(n));
     });
   }

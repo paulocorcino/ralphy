@@ -4,9 +4,8 @@
    the read of the daemon, the narrowing of the tree to the hits, and the
    fold back to what the operator had open.
 
-   Each step takes the files component as `files`. The tree is read and
-   changed only through `files.rawTree()`: `this` of the component is Alpine's
-   Proxy, and a change made through the Proxy leaves rows at stale offsets.
+   Each step takes the files component as `files` and reaches the tree only
+   through `files.tree()`, which keeps it out of Alpine's Proxy.
    The decisions (the floor, the verb, the hit map) are `WBFileSearch`'s.
    --------------------------------------------------------------------------- */
 import { WBFail } from "./wb-fail.ts";
@@ -30,7 +29,7 @@ type SearchFiles = {
   _fileHits: Map<string, number | true> | null;
   _restoringExpansion: boolean;
   $store: AlpineMagics["$store"];
-  rawTree(): WunderbaumTree | null;
+  tree(): WunderbaumTree | null;
   relPath(node: WunderbaumNode | null): string;
   isFolder(node: WunderbaumNode | null | undefined): boolean;
   expandedRels(): string[];
@@ -97,7 +96,7 @@ export async function applySearch(
   files.fileSearch.hits = hits;
   files.fileSearch.truncated = truncated;
   files.fileSearch.note = WBFileSearch.note({ hits, truncated });
-  const tree = files.rawTree();
+  const tree = files.tree();
   if (!tree) return;
   files.fileSearch.expandedBefore ??= files.expandedRels();
   // ONE paint, at the end: every lazy level repaints on its own, and one
@@ -121,7 +120,7 @@ export async function applySearch(
     files._restoringExpansion = false;
     // Set BEFORE the paint: the row window is computed from `scrollTop`,
     // and a leftover offset painted two rows at the bottom of a 52-row tree.
-    if (tree === files.rawTree()) {
+    if (tree === files.tree()) {
       tree.element.scrollTop = 0;
       // Re-enabling paints immediately and in full.
       tree.enableUpdate(true);
@@ -131,7 +130,7 @@ export async function applySearch(
 
 // A newer search, or a torn-down tree, owns the screen now.
 function searchIsStale(files: SearchFiles, tree: WunderbaumTree, seq: number): boolean {
-  return seq !== files.fileSearch.seq || tree !== files.rawTree();
+  return seq !== files.fileSearch.seq || tree !== files.tree();
 }
 
 // Open every ancestor level of the hits, shallow-first. False when the
@@ -159,7 +158,7 @@ export async function clearSearch(files: SearchFiles) {
   files.fileSearch.note = "";
   const before = files.fileSearch.expandedBefore;
   files.fileSearch.expandedBefore = null;
-  const tree = files.rawTree();
+  const tree = files.tree();
   if (!tree) return;
   // Same one-paint discipline as `applySearch`.
   files._restoringExpansion = true;
@@ -168,13 +167,13 @@ export async function clearSearch(files: SearchFiles) {
     if (tree.isFilterActive()) tree.clearFilter();
     const fold = WBFileSearch.toCollapse(before, files.expandedRels());
     for (const rel of fold) {
-      if (tree !== files.rawTree()) return;
+      if (tree !== files.tree()) return;
       const f = tree.findFirst((n: WunderbaumNode) => files.relPath(n) === rel);
       if (f && f.expanded) await f.setExpanded(false);
     }
   } finally {
     files._restoringExpansion = false;
-    if (tree === files.rawTree()) {
+    if (tree === files.tree()) {
       tree.element.scrollTop = 0;
       tree.enableUpdate(true);
     }

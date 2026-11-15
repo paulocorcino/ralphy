@@ -331,6 +331,23 @@ test("what is on the page at load is not new", async (t) => {
   assert.deepEqual(shown, []);
 });
 
+test("known request ids stay out of the reactive data", async (t) => {
+  const { data } = page(t);
+  const { shown } = notifications("granted");
+  await WBNotify.turn(true);
+  const row = waitingRow();
+  data.show([row]);
+  const held = Object.values(data).filter((v) => v instanceof Set);
+  assert.equal(
+    held.some((set) => set.has(row.id)),
+    false,
+    "no field of the data holds the ids",
+  );
+  document.hidden = true;
+  data.show([row]);
+  assert.deepEqual(shown, [], "a request seen once is not new again");
+});
+
 const inside = (record) => ({ closest: () => ({ _deskId: record }) });
 
 test("opening the console of a done request dismisses it", async (t) => {
