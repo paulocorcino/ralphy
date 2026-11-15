@@ -1,14 +1,48 @@
-//! The comments of an HTML document, found by the walk of `html_tags`: a
-//! tag's attribute values and the bodies of `script` and `style` are not
-//! markup, so a `<!--` there is text.
+//! The comments and the Alpine attributes of an HTML document, found by the
+//! walk of `html_tags`: a tag's attribute values and the bodies of `script`
+//! and `style` are not markup, so a `<!--` there is text.
 
-use crate::html_tags::{read_tag, skip_declaration, skip_past, starts};
+use crate::html_tags::{read_tag, skip_declaration, skip_past, starts, Attr};
 
 /// The start line of each comment. A line that holds only a part marker,
 /// `<!-- part: name.part.html -->`, is not a comment.
 pub(super) fn comments(html: &str) -> Vec<usize> {
+    walk(html).0
+}
+
+/// Every Alpine attribute (`x-*`, `@*`, `:*`) that holds an expression, with
+/// its expression and start line. `x-data`, `x-ref` and `x-transition*` hold
+/// none, and only the list of `x-for`, right of `in` or `of`, is one.
+pub(super) fn attributes(html: &str) -> Vec<(String, usize)> {
+    walk(html)
+        .1
+        .into_iter()
+        .filter_map(|a| expression(&a.name, a.value?).map(|e| (e, a.line)))
+        .collect()
+}
+
+fn expression(name: &str, value: String) -> Option<String> {
+    let alpine = name.starts_with("x-") || name.starts_with('@') || name.starts_with(':');
+    let holds_none = ["x-data", "x-ref", "x-transition"].iter().any(|n| {
+        name == *n || name.starts_with(&format!("{n}:")) || name.starts_with(&format!("{n}."))
+    });
+    if !alpine || holds_none {
+        return None;
+    }
+    if name != "x-for" {
+        return Some(value);
+    }
+    let list = [" in ", " of "]
+        .iter()
+        .find_map(|sep| value.split_once(sep));
+    list.map(|(_, list)| list.to_owned())
+}
+
+/// The comment lines and the attributes of every tag, in document order.
+fn walk(html: &str) -> (Vec<usize>, Vec<Attr>) {
     let cs: Vec<char> = html.chars().collect();
     let mut found = Vec::new();
+    let mut attrs = Vec::new();
     let mut line = 1;
     let mut i = 0;
     while i < cs.len() {
@@ -20,7 +54,8 @@ pub(super) fn comments(html: &str) -> Vec<usize> {
         } else if starts(&cs, i, "</") {
             i = skip_past(&cs, i, ">", &mut line);
         } else if cs[i] == '<' && cs.get(i + 1).is_some_and(char::is_ascii_alphabetic) {
-            let (tag, _, _, end) = read_tag(&cs, i + 1, &mut line);
+            let (tag, tag_attrs, _, end) = read_tag(&cs, i + 1, &mut line);
+            attrs.extend(tag_attrs);
             i = if tag == "script" || tag == "style" {
                 let body_end = skip_past(&cs, end, &format!("</{tag}"), &mut line);
                 skip_past(&cs, body_end, ">", &mut line)
@@ -34,7 +69,7 @@ pub(super) fn comments(html: &str) -> Vec<usize> {
             i += 1;
         }
     }
-    found
+    (found, attrs)
 }
 
 /// Whether the comment at `i` is a part marker with nothing else on its line.

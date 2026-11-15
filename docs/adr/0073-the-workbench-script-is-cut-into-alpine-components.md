@@ -828,3 +828,22 @@ Two ratchets hold the rules in
 `crates/xtask/tests/ratchets/`: `workbench_markup_has_no_comments` (zero, with
 no baseline) and `attribute_logic_matches_the_baseline` (a count per file,
 exact).
+
+Measures of `attribute_logic_matches_the_baseline` when it landed (#942):
+117 compound sites in 20 files. `wb-hosts-dialog.part.html` 17,
+`wb-board.part.html` 13, `wb-security-dialog.part.html` 11,
+`wb-settings-dialog.part.html` 11, `index.html` 9,
+`wb-consoles-tab-menus.part.html` 8, `wb-runs-panel.part.html` 8,
+`wb-changes-panel.part.html` 6, `wb-project-row.part.html` 6,
+`wb-consoles-tab-columns.part.html` 4, `wb-files.part.html` 4,
+`wb-release-dialogs.part.html` 4, `wb-console-tabs.part.html` 3,
+`wb-spend-panel.part.html` 3, and 2 or 1 in `wb-add-project-dialog`,
+`wb-branch-dialog`, `wb-confirm-dialog`, `wb-login`, `wb-move-dialog` and
+`wb-properties-dialog`. The ratchet reads each expression through the
+`ui-copy` lexer, so a `?` or a `,` inside a string is not counted, and a
+comma inside brackets (call arguments, arrow parameters, a `:class` object)
+is not the comma operator. `x-data`, `x-ref`, `x-transition*` and the left
+side of `x-for` hold no expression and are not read. The rule did not
+change. Two statements in one handler with no call on `$event`
+(`@click="menu = false; open()"`) are not one of the five shapes, so the
+ratchet does not count them.

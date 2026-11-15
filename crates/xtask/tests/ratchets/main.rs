@@ -40,6 +40,7 @@
 //! The markup comment ratchet (#941) walks each `.html` file of the workbench
 //! with the tag reader of `ui-groups`: a comment other than a part marker alone
 //! on its line fails, and an attribute value or a script body is not read.
+//! The attribute logic ratchet (#942) counts the compound Alpine attributes per file.
 //!
 //! The failure ratchets (#685) count what has not moved into the failure
 //! catalog yet: the `CAUSE` rows of the workbench, the collected verbs that
@@ -71,6 +72,7 @@ mod html_tags;
 mod gate_steps;
 
 mod ast_grep_ignores;
+mod attribute_logic;
 mod complexity_exceptions;
 mod core_dependencies;
 mod failure_cause_rows;
