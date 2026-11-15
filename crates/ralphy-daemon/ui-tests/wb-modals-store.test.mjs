@@ -161,6 +161,29 @@ test("typing in the prompt keeps the text and clears the refusal under it", () =
   assert.equal(store.promptModal.error, "", "the refusal goes once the operator types");
 });
 
+test("Enter confirms an open dialog unless a button has focus", async () => {
+  const store = loadShell().state.$store.modals;
+  const press = (target) => {
+    const event = { target, prevented: false, preventDefault() { this.prevented = true; } };
+    store.confirmEnter(event);
+    return event.prevented;
+  };
+  assert.equal(press(field("DIV")), false, "no dialog open: Enter is left alone");
+  const ask = store.askConfirm({ title: "t" });
+  assert.equal(press(field("BUTTON", { closest: (sel) => (sel === "button" ? {} : null) })), false);
+  assert.equal(store.confirmModal.open, true, "a focused button keeps its own Enter");
+  assert.equal(press(field("DIV")), true, "Enter is default-prevented");
+  assert.equal(await ask, true);
+});
+
+test("the confirm button is red for a danger and accented otherwise", () => {
+  const store = loadShell().state.$store.modals;
+  void store.askConfirm({ title: "t", danger: true });
+  assert.equal(store.confirmButtonClass(), "danger");
+  void store.askConfirm({ title: "t" });
+  assert.equal(store.confirmButtonClass(), "accent");
+});
+
 test("dialog resolvers stay out of the reactive data", async () => {
   const store = loadShell().state.$store.modals;
   const before = new Set(Object.values(store));

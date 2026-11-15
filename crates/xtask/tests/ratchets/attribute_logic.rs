@@ -9,15 +9,7 @@ use lex::{lex, Tok, Token};
 
 /// The compound sites of each markup file, as measured. A file with none is
 /// not listed.
-const COUNTED_SITES: &[(&str, usize)] = &[
-    ("wb-add-project-dialog.part.html", 2),
-    ("wb-branch-dialog.part.html", 2),
-    ("wb-confirm-dialog.part.html", 2),
-    ("wb-move-dialog.part.html", 1),
-    ("wb-properties-dialog.part.html", 1),
-    ("wb-release-dialogs.part.html", 4),
-    ("wb-security-dialog.part.html", 11),
-];
+const COUNTED_SITES: &[(&str, usize)] = &[];
 
 #[test]
 fn attribute_logic_matches_the_baseline() {

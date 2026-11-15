@@ -30,8 +30,8 @@
           <section class="sec-card">
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-key"></i> Access token</span>
-              <span class="sec-badge" :class="$store.connection.security.tokenSet ? 'on' : 'off'"
-                    x-text="$store.connection.security.tokenSet ? 'set' : 'not set'"></span>
+              <span class="sec-badge" :class="securityBadgeClass($store.connection.security.tokenSet)"
+                    x-text="securityBadgeText($store.connection.security.tokenSet, 'set', 'not set')"></span>
             </div>
             <p class="sec-note">
               Token for network access to the daemon. A new token logs out every session,
@@ -45,8 +45,8 @@
           <section class="sec-card">
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-asterisk"></i> Login password</span>
-              <span class="sec-badge" :class="$store.connection.security.passwordSet ? 'on' : 'off'"
-                    x-text="$store.connection.security.passwordSet ? 'set' : 'not set'"></span>
+              <span class="sec-badge" :class="securityBadgeClass($store.connection.security.passwordSet)"
+                    x-text="securityBadgeText($store.connection.security.passwordSet, 'set', 'not set')"></span>
             </div>
             <p class="sec-note">
               Optional password in addition to 2FA. Enter it twice to save.
@@ -66,7 +66,7 @@
                        x-model="securityForm.passwordConfirm" @keydown.enter="savePassword()" />
               </template>
               <button class="btn accent" @click="savePassword()"
-                      :disabled="!securityForm.passwordDraft.trim() || securityForm.passwordDraft !== securityForm.passwordConfirm || ($store.connection.security.passwordSet && !securityForm.passwordCurrent)">Save</button>
+                      :disabled="!canSavePassword()">Save</button>
               <button class="btn" @click="clearPassword()" x-show="$store.connection.security.passwordSet"
                       :disabled="!securityForm.passwordCurrent">Remove</button>
             </div>
@@ -79,8 +79,8 @@
           <section class="sec-card">
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-phone"></i> Two-factor (TOTP)</span>
-              <span class="sec-badge" :class="$store.connection.security.totpEnrolled ? 'on' : 'off'"
-                    x-text="$store.connection.security.totpEnrolled ? 'enrolled' : 'not enrolled'"></span>
+              <span class="sec-badge" :class="securityBadgeClass($store.connection.security.totpEnrolled)"
+                    x-text="securityBadgeText($store.connection.security.totpEnrolled, 'enrolled', 'not enrolled')"></span>
             </div>
             <p class="sec-note">
               Works with any authenticator app. Scan the QR code, then enter a code to finish.
@@ -119,8 +119,8 @@
           <section class="sec-card">
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-door-closed"></i> Require login</span>
-              <span class="sec-badge" :class="$store.connection.security.requireLogin ? 'on' : 'off'"
-                    x-text="$store.connection.security.requireLogin ? 'active' : 'off'"></span>
+              <span class="sec-badge" :class="securityBadgeClass($store.connection.security.requireLogin)"
+                    x-text="securityBadgeText($store.connection.security.requireLogin, 'active', 'off')"></span>
               <label class="switch">
                 <input type="checkbox" :checked="$store.connection.security.requireLogin" :disabled="!$store.connection.security.totpEnrolled" @change="toggleRequireLogin($event)" />
                 <span class="switch-track"></span>
@@ -139,8 +139,8 @@
           <section class="sec-card">
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-image"></i> Remote images</span>
-              <span class="sec-badge" :class="$store.connection.security.remoteImages ? 'on' : 'off'"
-                    x-text="$store.connection.security.remoteImages ? 'active' : 'off'"></span>
+              <span class="sec-badge" :class="securityBadgeClass($store.connection.security.remoteImages)"
+                    x-text="securityBadgeText($store.connection.security.remoteImages, 'active', 'off')"></span>
               <label class="switch">
                 <input type="checkbox" :checked="$store.connection.security.remoteImages" @change="toggleRemoteImages($event)" />
                 <span class="switch-track"></span>

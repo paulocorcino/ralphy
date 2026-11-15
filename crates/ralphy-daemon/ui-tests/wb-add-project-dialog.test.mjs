@@ -153,6 +153,24 @@ test("dialog: the places come from the fleet of the store projects", () => {
 
 const HTML = readFileSync(join(UI, "index.html"), "utf8");
 
+const row = (extra) => Object.assign({ name: "a", repo: true, added: false }, extra);
+
+test("dialog: a row is marked Repository only when it has no error and is not added", () => {
+  const { state } = dialog();
+  assert.equal(state.addProjectRowIsRepository(row({})), true);
+  assert.equal(state.addProjectRowIsRepository(row({ error: "denied" })), false);
+  assert.equal(state.addProjectRowIsRepository(row({ added: true })), false);
+  assert.equal(state.addProjectRowIsRepository(row({ repo: false })), false);
+});
+
+test("dialog: the hint names how many folders the list leaves out", () => {
+  const { state } = dialog();
+  assert.equal(state.addProjectMoreText(), "");
+  ready(state, "/dev/");
+  state.addProject.listing.more = 5;
+  assert.equal(state.addProjectMoreText(), "5 more. Type to filter.");
+});
+
 test("the Add a project button comes before Hosts, after refresh", () => {
   const refresh = HTML.indexOf('class="side-refresh"');
   const add = HTML.indexOf(`@click="$dispatch('workbench:add-project-open')"`);

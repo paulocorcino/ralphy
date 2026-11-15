@@ -33,13 +33,13 @@
             <template x-for="b in branchList()" :key="b">
               <li
                 class="branch-item"
-                :class="{ current: b === branchModal.current, held: branchHeldBy(b) }"
-                :aria-disabled="branchHeldBy(b) ? 'true' : null"
+                :class="{ current: branchIsCurrent(b), held: branchHeldBy(b) }"
+                :aria-disabled="branchAriaDisabled(b)"
                 @click="switchBranch(b)"
               >
-                <i class="bi" :class="b === branchModal.current ? 'bi-check2' : 'bi-git'"></i>
+                <i class="bi" :class="branchIcon(b)"></i>
                 <span class="branch-name" x-text="b"></span>
-                <span class="branch-tag" x-show="b === branchModal.current">current</span>
+                <span class="branch-tag" x-show="branchIsCurrent(b)">current</span>
                 <span class="branch-tag" x-show="branchHeldBy(b)" :title="branchHeldBy(b)" x-text="'Open in ' + branchHeldBy(b)"></span>
               </li>
             </template>

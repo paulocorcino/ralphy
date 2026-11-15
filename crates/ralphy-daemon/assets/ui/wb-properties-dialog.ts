@@ -213,6 +213,10 @@ export function wbPropertiesDialog() {
         : "";
     },
 
+    propsCopyLabel() {
+      return this.props.copied ? "Copied" : "Copy";
+    },
+
     propsBusy() {
       return this.props.statPending || this.props.sizePending;
     },

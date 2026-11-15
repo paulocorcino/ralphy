@@ -311,11 +311,23 @@ export function securityDialog() {
       }
       return p.toString();
     },
+    // A matching confirmation is required before the value ever leaves the field.
+    canSavePassword() {
+      const form = this.securityForm;
+      const passwordSet = this.$store.connection.security.passwordSet;
+      const needsCurrent = passwordSet && form.passwordCurrent === "";
+      const confirmed = form.passwordDraft === form.passwordConfirm;
+      return form.passwordDraft.trim() !== "" && confirmed && !needsCurrent;
+    },
+    securityBadgeClass(on: boolean) {
+      return on ? "on" : "off";
+    },
+    securityBadgeText(on: boolean, whenOn: string, whenOff: string) {
+      return on ? whenOn : whenOff;
+    },
     async savePassword() {
+      if (!this.canSavePassword()) return;
       const pw = this.securityForm.passwordDraft.trim();
-      // Require a matching confirmation before the value ever leaves the field.
-      if (!pw || this.securityForm.passwordDraft !== this.securityForm.passwordConfirm) return;
-      if (this.$store.connection.security.passwordSet && !this.securityForm.passwordCurrent) return;
       this.securityForm.stepUpError = "";
       try {
         const r = await apiFetch("POST /api/security/password", {

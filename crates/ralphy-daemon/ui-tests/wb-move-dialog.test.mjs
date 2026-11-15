@@ -105,6 +105,20 @@ test("Move here sends workbench:move-confirmed with the source and the destinati
   );
 });
 
+test("No folders here shows for an empty list that is not busy and has no error", () => {
+  const { state } = picker({});
+  state.movePick = { open: true, from: "a", isFolder: false, dir: "", entries: [], busy: false, error: "" };
+  assert.equal(state.moveFolderIsEmpty(), true);
+  state.movePick.busy = true;
+  assert.equal(state.moveFolderIsEmpty(), false);
+  state.movePick.busy = false;
+  state.movePick.error = "no";
+  assert.equal(state.moveFolderIsEmpty(), false);
+  state.movePick.error = "";
+  state.movePick.entries = [{ name: "x", dir: true }];
+  assert.equal(state.moveFolderIsEmpty(), false);
+});
+
 test("a refused listing is a reason, not an empty folder", async () => {
   const { state } = picker({});
   state.openMove("a/b.txt");

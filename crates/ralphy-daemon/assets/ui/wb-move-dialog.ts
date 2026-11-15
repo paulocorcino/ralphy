@@ -41,6 +41,10 @@ export function wbMoveDialog() {
     // The destination is PICKED, never typed: the picker browses real
     // directories through `tree.list`. On `workbench:move-open`, which the
     // files send with the full rel path of the row.
+    moveFolderIsEmpty() {
+      const pick = this.movePick;
+      return !pick.busy && !pick.error && pick.entries.length === 0;
+    },
     openMove(from: string) {
       this.movePick = {
         open: true,

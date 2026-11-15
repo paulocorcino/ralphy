@@ -69,6 +69,15 @@ export function releaseDialogs() {
       this.releaseCmdCopied = true;
       setTimeout(() => (this.releaseCmdCopied = false), 2000);
     },
+    releaseCmdLabel() {
+      return this.releaseCmdCopied ? "Copied" : "Copy the command";
+    },
+    releaseCmdIcon() {
+      return this.releaseCmdCopied ? "bi-check2" : "bi-copy";
+    },
+    aboutReleasesUrl() {
+      return this.about.repository ? this.about.repository + "/releases" : null;
+    },
     openWhatsNew() {
       this.whatsNewOpen = true;
       this.$store.release.markReleaseSeen();

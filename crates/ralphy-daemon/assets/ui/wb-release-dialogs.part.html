@@ -93,9 +93,9 @@
             <span class="rel-cmd">
               <code>ralphy update</code>
               <button class="modal-x" @click="copyReleaseCommand()"
-                      :title="releaseCmdCopied ? 'Copied' : 'Copy the command'"
-                      :aria-label="releaseCmdCopied ? 'Copied' : 'Copy the command'">
-                <i class="bi" :class="releaseCmdCopied ? 'bi-check2' : 'bi-copy'"></i>
+                      :title="releaseCmdLabel()"
+                      :aria-label="releaseCmdLabel()">
+                <i class="bi" :class="releaseCmdIcon()"></i>
               </button>
             </span>
             <label class="rel-watch">
@@ -128,7 +128,7 @@
             <div class="about-headline">
               <div class="about-name" x-text="about.name || 'Ralphy'"></div>
               <a class="about-version" x-show="about.version"
-                 :href="about.repository ? about.repository + '/releases' : null"
+                 :href="aboutReleasesUrl()"
                  target="_blank" rel="noopener"
                  x-text="about.version" title="Version"></a>
             </div>

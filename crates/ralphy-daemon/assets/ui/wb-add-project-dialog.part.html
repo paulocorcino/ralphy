@@ -36,13 +36,13 @@
                 <span class="add-project-mark" x-show="e.up" x-text="'Up one folder'"></span>
                 <span class="add-project-mark" x-show="e.error" x-text="'No access'"></span>
                 <span class="add-project-mark" x-show="!e.error && e.added" x-text="'Added'"></span>
-                <span class="add-project-mark" x-show="!e.error && !e.added && e.repo" x-text="'Repository'"></span>
+                <span class="add-project-mark" x-show="addProjectRowIsRepository(e)" x-text="'Repository'"></span>
               </li>
             </template>
           </ul>
           <p class="run-help" x-show="addProject.loading" x-text="'Loading…'"></p>
           <p class="run-help" x-show="addProject.listing && addProject.listing.more > 0"
-             x-text="addProject.listing ? addProject.listing.more + ' more. Type to filter.' : ''"></p>
+             x-text="addProjectMoreText()"></p>
         </div>
         <div class="modal-foot">
           <span class="host-foot">

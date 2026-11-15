@@ -121,6 +121,16 @@ test("a branch held by another worktree is named by its path, never the current 
   assert.equal(dialog.branchHeldBy("main"), "");
 });
 
+test("a row shows the check mark for the current branch and is disabled when held", async () => {
+  const { dialog } = await heldPicker();
+  assert.equal(dialog.branchIsCurrent("main"), true);
+  assert.equal(dialog.branchIsCurrent("free"), false);
+  assert.equal(dialog.branchIcon("main"), "bi-check2");
+  assert.equal(dialog.branchIcon("free"), "bi-git");
+  assert.equal(dialog.branchAriaDisabled("feat-a"), "true");
+  assert.equal(dialog.branchAriaDisabled("free"), null);
+});
+
 test("a held branch is still listed, and switching to it sends nothing", async () => {
   const { dialog, verbs } = await heldPicker();
   assert.deepEqual(dialog.branchList(), ["main", "feat-a", "free"]);
