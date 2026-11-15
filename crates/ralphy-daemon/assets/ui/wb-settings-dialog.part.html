@@ -33,16 +33,16 @@
               </button>
             </template>
             <div class="settings-navgroup project">
-              <i class="bi" :class="$store.projects.openSlug ? 'bi-folder2-open' : 'bi-folder2'"></i>
-              <span x-text="$store.projects.openSlug ? ('Project · ' + $store.projects.projectLabel($store.projects.openSlug)) : 'Project · none open'"></span>
+              <i class="bi" :class="projectIcon()"></i>
+              <span x-text="projectScopeLabel()"></span>
             </div>
             <template x-for="sec in SETTINGS.filter((s) => s.scope === 'project')" :key="sec.id">
               <button
                 class="settings-navitem"
                 :class="{ active: settingsSection === sec.id }"
                 @click="settingsSection = sec.id"
-                :disabled="!$store.projects.openSlug"
-                :title="!$store.projects.openSlug ? 'Open a project to edit its settings' : ''"
+                :disabled="!projectOpen()"
+                :title="projectSectionHint()"
               >
                 <i class="bi" :class="sec.icon"></i><span x-text="sec.title"></span>
               </button>
@@ -55,9 +55,7 @@
                 <div class="settings-h2row">
                   <h2 class="settings-h2" x-text="sec.title"></h2>
                   <span class="scope-chip" :class="sec.scope"
-                        x-text="sec.scope === 'client' ? 'This browser only'
-                                : sec.scope === 'daemon' ? 'Daemon · all projects'
-                                : ($store.projects.openSlug ? ('Project · ' + $store.projects.projectLabel($store.projects.openSlug)) : 'Project · none open')"></span>
+                        x-text="scopeLabel(sec)"></span>
                 </div>
                 <p class="settings-blurb" x-text="sec.blurb"></p>
                 <p class="settings-noproject" x-show="sec.scope === 'project' && !$store.projects.openSlug">
@@ -78,23 +76,23 @@
                       <template x-if="it.type === 'tristate'">
                         <select class="set-input" @change="saveSetting(it.key, $event.target.value)">
                           <template x-for="o in TRISTATE" :key="o">
-                            <option :value="o" :selected="settings[it.key] === o" x-text="o === 'unset' ? 'Default (not set)' : o"></option>
+                            <option :value="o" :selected="settings[it.key] === o" x-text="tristateLabel(o)"></option>
                           </template>
                         </select>
                       </template>
                       <template x-if="it.type === 'text'">
                         <input class="set-input" type="text" :placeholder="it.placeholder || ''"
-                               :disabled="it.readonly === true" :title="it.readonly === true ? 'Read-only. See the note below.' : ''"
+                               :disabled="it.readonly === true" :title="readonlyHint(it)"
                                :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
                       <template x-if="settingsOpen && it.type === 'password'">
                         <input class="set-input" type="password" :placeholder="it.placeholder || '••••••••'"
-                               :disabled="it.readonly === true" :title="it.readonly === true ? 'Read-only. See the note below.' : ''"
+                               :disabled="it.readonly === true" :title="readonlyHint(it)"
                                :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
                       <template x-if="it.type === 'toggle'">
                         <input class="set-check" type="checkbox"
-                               :disabled="it.readonly === true" :title="it.readonly === true ? 'Read-only. See the note below.' : ''"
+                               :disabled="it.readonly === true" :title="readonlyHint(it)"
                                :checked="settings[it.key] === true"
                                @change="saveSetting(it.key, $event.target.checked)" />
                       </template>
@@ -148,7 +146,7 @@
                     <p class="sec-note" x-show="notifyTestNote" x-text="notifyTestNote"></p>
                   </div>
                 </template>
-                <template x-if="sec.id === 'telegram' && settingsOpen && settingsSection === 'telegram'">
+                <template x-if="sectionShown(sec.id, 'telegram')">
                   <div class="telegram-setup" x-data="wbTelegramSetup">
                     <p class="sec-note devices-error" x-show="error" x-text="error"></p>
                     <div class="set-row">
@@ -187,7 +185,7 @@
                     <p class="sec-note" x-show="note" x-text="note"></p>
                   </div>
                 </template>
-                <template x-if="sec.id === 'devices' && settingsOpen && settingsSection === 'devices'">
+                <template x-if="sectionShown(sec.id, 'devices')">
                   <div class="devices" x-data="wbDevices">
                     <div class="sec-actions">
                       <button class="btn" @click="load()" title="Read the list again from the daemon">
@@ -201,7 +199,7 @@
                         <div class="set-main">
                           <span class="set-label" x-text="d.name"></span>
                           <span class="device-this" x-show="d.this">This device</span>
-                          <button class="btn" @click="toggle(d)" x-text="open === d.device ? 'Hide activity' : 'Show activity'"></button>
+                          <button class="btn" @click="toggle(d)" x-text="activityLabel(d)"></button>
                         </div>
                         <p class="set-help" x-text="d.detail"></p>
                         <template x-if="open === d.device">

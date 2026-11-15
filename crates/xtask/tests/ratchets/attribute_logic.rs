@@ -13,12 +13,10 @@ const COUNTED_SITES: &[(&str, usize)] = &[
     ("wb-add-project-dialog.part.html", 2),
     ("wb-branch-dialog.part.html", 2),
     ("wb-confirm-dialog.part.html", 2),
-    ("wb-hosts-dialog.part.html", 17),
     ("wb-move-dialog.part.html", 1),
     ("wb-properties-dialog.part.html", 1),
     ("wb-release-dialogs.part.html", 4),
     ("wb-security-dialog.part.html", 11),
-    ("wb-settings-dialog.part.html", 11),
 ];
 
 #[test]

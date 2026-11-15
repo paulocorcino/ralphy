@@ -322,7 +322,7 @@ test("dialog: Back from the checks keeps the fields; it waits while a command ru
   const html = readFileSync(join(UI, PART), "utf8");
   assert.match(html, /@click="addHostBack\(\)"[^>]*>Back</u);
   assert.match(html, /@click="addHostNext\(\)"[^>]*>Connect</u);
-  assert.match(html, /'Save' : 'Add host'/u);
+  assert.match(html, /x-text="hostSubmitLabel\(\)"/u);
   assert.match(html, /@click="closeAddHost\(\)">Done</u);
 });
 
@@ -437,6 +437,38 @@ test("dialog: a host row's tooltip holds the state, not the name the row prints"
   const closed = { name: "vps", state: "tunnel-closed", diagnosis: "The tunnel to vps is closed. The daemon is opening it again." };
   assert.equal(state.hostRowTitle(closed), closed.diagnosis);
   assert.equal(state.hostRowTitle({ name: "vps", state: "tunnel-silent" }), "not answering");
+});
+
+test("dialog: the host dialog title says Edit with the host name, or Add a host", () => {
+  const { state } = dialog();
+  assert.equal(state.hostFormTabLabel(), "Add a host");
+  assert.equal(state.hostSubmitLabel(), "Add host");
+  state.addHostEdit({ daemon_id: VPS_ID, name: "vps", destination: "me@vps" });
+  assert.equal(state.hostFormTabLabel(), "Edit vps");
+  assert.equal(state.hostSubmitLabel(), "Save");
+});
+
+test("dialog: a blocker with a command to run shows it, unless an install or a name comes first", () => {
+  const { state } = dialog();
+  assert.equal(state.hostCommandBlocks(), false, "no checks, no blocker");
+  state.addHost.checks = [{ id: "agent", status: "copy", text: "Do this.", command: "ssh-keygen" }];
+  assert.equal(state.hostBlockerCommand(), state.hostView().blocker?.command ?? "");
+  assert.equal(state.hostCommandBlocks(), state.hostBlockerCommand() !== "" && !state.hostNeedsInstall() && !state.hostNeedsName());
+});
+
+test("dialog: the password field and its eye button say what a click does", () => {
+  const { state } = dialog();
+  assert.equal(state.hostSecretLabel(), "Show password");
+  assert.equal(state.hostSecretPressed(), "false");
+  assert.equal(state.hostSecretIcon(), "bi-eye");
+  state.hostSecretShown = true;
+  assert.equal(state.hostSecretLabel(), "Hide password");
+  assert.equal(state.hostSecretPressed(), "true");
+  assert.equal(state.hostSecretIcon(), "bi-eye-slash");
+  assert.equal(state.hostOtherSignIn(), "key");
+  state.addHostType("signIn", "key");
+  assert.equal(state.hostOtherSignIn(), "config");
+  assert.equal(state.hostSignInSwitchText(), "Use a password");
 });
 
 // ---- the component's contract with shell() and the page ----
