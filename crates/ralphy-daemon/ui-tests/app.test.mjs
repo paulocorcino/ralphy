@@ -534,3 +534,40 @@ test("a worktree-created action re-reads the worktree list and flashes its messa
   assert.equal(flashed.length, 1, "no message, no flash");
   assert.equal(reads.length, 2);
 });
+
+test("a fleet group's header buttons name the wake and the update that run", () => {
+  const { state } = loadShell();
+  const g = { daemon: "01KY", state: "asleep" };
+  assert.equal(state.wakeLabel(g), "asleep");
+  assert.equal(state.updateLabel(g), "Update Ralphy");
+  assert.deepEqual(state.updateClass(g), ["asleep", "fault", ""]);
+  state.$store.projects.waking["01KY"] = true;
+  state.$store.projects.updating["01KY"] = true;
+  assert.equal(state.wakeLabel(g), "waking");
+  assert.equal(state.updateLabel(g), "Updating Ralphy");
+  assert.deepEqual(state.wakeClass(g).slice(2), ["waking"]);
+  assert.deepEqual(state.updateClass(g), ["asleep", "fault", "waking"]);
+});
+
+test("a middle click closes a tab only when the tab can be closed", () => {
+  const { state } = loadShell();
+  const closed = [];
+  state.$store.tabs.closeTab = (id) => closed.push(id);
+  state.closeTabOnMiddleClick({ id: "a", closable: true }, { button: 0 });
+  state.closeTabOnMiddleClick({ id: "b", closable: false }, { button: 1 });
+  assert.deepEqual(closed, []);
+  state.closeTabOnMiddleClick({ id: "c", closable: true }, { button: 1 });
+  assert.deepEqual(closed, ["c"]);
+});
+
+test("a project row names its remote and tabs to its chip only when it is open", () => {
+  const { state } = loadShell();
+  const a = { slug: "owner/a", remote: "github", branch: "main" };
+  assert.equal(state.remoteIcon(a), "bi bi-github");
+  assert.equal(state.remoteTitle(a), "On GitHub");
+  assert.equal(state.remoteTitle({ slug: "x", remote: "local" }), "Local only");
+  assert.equal(state.chipTabindex(a), -1);
+  state.$store.projects.setProjects([a]);
+  state.$store.projects.setOpen(state.$store.projects.repoRef(a));
+  assert.equal(state.chipTabindex(a), 0);
+});

@@ -167,7 +167,7 @@ test("the Add a project button comes before Hosts, after refresh", () => {
 test("the empty state offers Add a project", () => {
   const at = HTML.indexOf('class="side-empty projects-empty"');
   const block = HTML.slice(at, HTML.indexOf("</div>", at));
-  assert.match(block, /x-show="!\$store\.projects\.projects\.length && !\$store\.projects\.reposError && !\$store\.projects\.reposLoading"/u);
+  assert.match(block, /x-show="\$store\.projects\.noProjectNotice\(\)"/u);
   assert.match(block, /No projects yet/u);
   assert.match(block, /@click="\$dispatch\('workbench:add-project-open'\)"/u);
 });

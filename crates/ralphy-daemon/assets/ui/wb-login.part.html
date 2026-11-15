@@ -7,8 +7,8 @@
             <template x-for="i in 6" :key="i">
               <input class="login-input login-otp-box" type="text" inputmode="numeric"
                      pattern="[0-9]*" required :autofocus="i === 1"
-                     :name="i === 1 ? 'one-time-code' : null"
-                     :autocomplete="i === 1 ? 'one-time-code' : 'off'"
+                     :name="otpName(i)"
+                     :autocomplete="otpAutocomplete(i)"
                      :value="login.digits[i - 1]"
                      @input="otpInput(i - 1, $event)"
                      @keydown="otpKeydown(i - 1, $event)"

@@ -340,7 +340,7 @@ test("every group header shows its system's icon and the group label, and has no
   assert.ok(head.includes('<use href="#os-linux">'), "the penguin");
   assert.ok(html.includes('<symbol id="os-linux"'), "the penguin's symbol");
   const label = html.slice(labelAt, html.indexOf("</span></span>", labelAt));
-  assert.ok(label.includes('x-text="$store.projects.groupHost(g) ?'), label);
+  assert.ok(label.includes('x-text="$store.projects.groupHostPrefix(g)"'), label);
   assert.ok(label.includes('x-text="$store.projects.groupLabel(g)"'), label);
   const header = html.slice(start, html.indexOf('<template x-for="p in g.rows"', start));
   assert.doesNotMatch(header, /group-menu|contextmenu|showGroupMenu/u);

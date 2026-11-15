@@ -130,3 +130,11 @@ test("login reads the board, the runs and the tree again", () => {
   }
   assert.equal(state.$store.projects.reposError, "");
 });
+
+test("only the first digit box carries one-time-code", () => {
+  const { gate } = page();
+  assert.equal(gate.otpName(1), "one-time-code");
+  assert.equal(gate.otpName(2), null);
+  assert.equal(gate.otpAutocomplete(1), "one-time-code");
+  assert.equal(gate.otpAutocomplete(6), "off");
+});

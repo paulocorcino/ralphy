@@ -76,6 +76,14 @@ export function wbLogin() {
     // One input per digit; a paste or OTP autofill landing all 6 in the first
     // box is spread. `login.code` is the joined string.
 
+    // Only the first box carries `one-time-code`, so the browser fills all six digits there.
+    otpName(i: number) {
+      return i === 1 ? "one-time-code" : null;
+    },
+    otpAutocomplete(i: number) {
+      return i === 1 ? "one-time-code" : "off";
+    },
+
     _otpBoxes(el: HTMLElement) {
       return required(el.closest(".login-otp"), "the code boxes").querySelectorAll("input");
     },

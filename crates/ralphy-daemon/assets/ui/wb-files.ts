@@ -145,6 +145,23 @@ export function wbFiles() {
     openPeerDown() {
       return peerDownGroup(this);
     },
+    // The checkout chip of the Files bar: the open project's checkout, else the primary.
+    checkoutChipTitle() {
+      const open = this.$store.projects.openProject();
+      return open === null ? "" : this.$store.checkouts.checkoutTitle(open);
+    },
+    checkoutChipIcon() {
+      const checkout = this.$store.checkouts.checkoutOf(this.$store.projects.openSlug);
+      return checkout === null ? "bi-house-door" : "bi-folder2";
+    },
+    // The stale-list note shows while the tree has rows and no peer is down.
+    treeStaleShown() {
+      return this.treeError === "" && this.treeStale !== "" && this.openPeerDown() === null;
+    },
+    // An upload that has not finished can be cancelled.
+    uploadCancellable(u: { state: string }) {
+      return u.state === "sending" || u.state === "waiting" || u.state === "failed";
+    },
     peerDownText(g: Group) {
       return `${WBFleet.peerName(g)} is not connected. The list shown is the last one read.`;
     },

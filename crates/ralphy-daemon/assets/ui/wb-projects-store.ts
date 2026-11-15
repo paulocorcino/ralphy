@@ -374,6 +374,14 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     groupHost(g: Group) {
       return WBFleet.groupHost(g);
     },
+    groupHostPrefix(g: Group) {
+      const host = this.groupHost(g);
+      return host === "" ? "" : `${host} · `;
+    },
+    // The sidebar tells there is no project only once the list has loaded without a failure.
+    noProjectNotice() {
+      return this.projects.length === 0 && this.reposError === "" && !this.reposLoading;
+    },
     // `x` is a fleet group or a peer of `/api/fleet`: both carry `os` and
     // `environment`.
     osOf(x: { os?: string; environment?: string } | null | undefined) {

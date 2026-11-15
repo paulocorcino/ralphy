@@ -10,17 +10,13 @@ use lex::{lex, Tok, Token};
 /// The compound sites of each markup file, as measured. A file with none is
 /// not listed.
 const COUNTED_SITES: &[(&str, usize)] = &[
-    ("index.html", 9),
     ("wb-add-project-dialog.part.html", 2),
     ("wb-board.part.html", 13),
     ("wb-branch-dialog.part.html", 2),
     ("wb-changes-panel.part.html", 6),
     ("wb-confirm-dialog.part.html", 2),
-    ("wb-files.part.html", 4),
     ("wb-hosts-dialog.part.html", 17),
-    ("wb-login.part.html", 2),
     ("wb-move-dialog.part.html", 1),
-    ("wb-project-row.part.html", 6),
     ("wb-properties-dialog.part.html", 1),
     ("wb-release-dialogs.part.html", 4),
     ("wb-runs-panel.part.html", 8),

@@ -56,11 +56,16 @@ fn the_peer_wake_is_wired_through_the_ui_assets() {
     // meant to set never applies. Measured in the browser, since no unit test
     // in this tree renders Alpine.
     assert!(
-        html.contains(concat!(
-            r#":class="[g.state, $store.projects.peerFault(g) ? 'fault' : '', "#,
-            r#"$store.projects.waking[g.daemon] ? 'waking' : '']""#
+        html.contains(r#":class="wakeClass(g)""#),
+        "the wake glyph must bind its classes through `wakeClass`"
+    );
+    let shell = include_str!("../../assets/ui/app.ts");
+    assert!(
+        shell.contains(concat!(
+            r#"return [g.state, fault, "#,
+            r#"this.$store.projects.waking[g.daemon] === true ? "waking" : ""];"#
         )),
-        "the wake glyph's :class must bind plain strings, never a nested object"
+        "`wakeClass` must return plain strings, never a nested object"
     );
     // `asleep` is the ordinary course of a day, not a fault. The rule is in
     // `stateFault` (driven by ui-tests/wb-fleet.test.mjs); the CSS only
@@ -348,7 +353,7 @@ fn the_branch_chip_carries_the_change_count_on_the_project_row() {
         );
     }
     assert!(
-        row.contains("rowTitle(p)"),
+        row.contains("projectHeadTitle(p, g)"),
         "a collapsed row shows no branch while `filteredProjects` still \
          matches on branch, so it must name the branch in its title; \
          found: {row:?}"

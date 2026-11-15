@@ -73,7 +73,7 @@
       <div class="side-error" x-show="$store.projects.reposError" x-text="$store.projects.reposError" x-cloak></div>
       <div class="side-error" x-show="$store.projects.fleetError" x-text="$store.projects.fleetError" x-cloak></div>
       <div class="side-error" x-show="$store.projects.fleetRejectNote" x-text="$store.projects.fleetRejectNote" x-cloak></div>
-      <div class="side-empty projects-empty" x-show="!$store.projects.projects.length && !$store.projects.reposError && !$store.projects.reposLoading" x-cloak>
+      <div class="side-empty projects-empty" x-show="$store.projects.noProjectNotice()" x-cloak>
         <p>No projects yet</p>
         <button class="btn accent" @click="$dispatch('workbench:add-project-open')"><svg x-icon="'folder-plus'"></svg> Add a project</button>
       </div>
@@ -100,30 +100,30 @@
                 <svg x-show="$store.projects.osOf(g) === 'linux'"><use href="#os-linux"></use></svg>
                 <span x-show="$store.projects.osOf(g) === 'other'"><svg x-icon="'monitor'"></svg></span>
               </span>
-              <span class="env-label"><span class="env-host" x-text="$store.projects.groupHost(g) ? $store.projects.groupHost(g) + ' · ' : ''"></span><span class="env-os" x-text="$store.projects.groupLabel(g)"></span></span>
+              <span class="env-label"><span class="env-host" x-text="$store.projects.groupHostPrefix(g)"></span><span class="env-os" x-text="$store.projects.groupLabel(g)"></span></span>
               <span class="env-daemon" x-show="g.showName" x-text="g.name"></span>
               <button
                 class="peer-state wake"
                 x-show="$store.projects.peerWakeable(g)"
-                :class="[g.state, $store.projects.peerFault(g) ? 'fault' : '', $store.projects.waking[g.daemon] ? 'waking' : '']"
+                :class="wakeClass(g)"
                 :disabled="!!$store.projects.waking[g.daemon]"
                 :title="wakeTitle(g)"
-                :aria-label="$store.projects.waking[g.daemon] ? 'waking' : peerStateWord(g.state)"
+                :aria-label="wakeLabel(g)"
                 @click.stop="$store.projects.wakePeer(g.daemon)"
               ><svg x-icon="'unplug'"></svg></button>
               <button
                 class="peer-state wake"
                 x-show="$store.projects.peerUpdatable(g)"
-                :class="[g.state, 'fault', $store.projects.updating[g.daemon] ? 'waking' : '']"
+                :class="updateClass(g)"
                 :disabled="!!$store.projects.updating[g.daemon]"
                 :title="updateTitle(g)"
-                :aria-label="$store.projects.updating[g.daemon] ? 'Updating Ralphy' : 'Update Ralphy'"
+                :aria-label="updateLabel(g)"
                 @click.stop="$store.projects.updatePeer(g.daemon)"
               ><svg x-icon="'unplug'"></svg></button>
               <span
                 class="peer-state"
-                x-show="!$store.projects.peerWakeable(g) && !$store.projects.peerUpdatable(g) && $store.projects.peerIcon(g)"
-                :class="[g.state, $store.projects.peerFault(g) ? 'fault' : '']"
+                x-show="peerIconShown(g)"
+                :class="peerClass(g)"
                 role="img"
                 :aria-label="peerStateWord(g.state)"
               >
@@ -151,7 +151,7 @@
               class="tab" role="tab" tabindex="0" :aria-selected="$store.tabs.active === t.id"
               :class="{ active: $store.tabs.active === t.id, pinned: $store.tabs.slot?.kind === 'pin' && $store.tabs.slot.id === t.id, fixed: !t.closable }"
               @click="$store.tabs.activate(t.id)" @keydown.enter.self.prevent="$store.tabs.activate(t.id)" @keydown.space.self.prevent="$store.tabs.activate(t.id)"
-              @auxclick.prevent="$event.button === 1 && t.closable && $store.tabs.closeTab(t.id)"
+              @auxclick.prevent="closeTabOnMiddleClick(t, $event)"
               @contextmenu.prevent="$store.tabs.showTabMenu($event.clientX, $event.clientY, t)"
               :title="t.path || t.title"
             >
