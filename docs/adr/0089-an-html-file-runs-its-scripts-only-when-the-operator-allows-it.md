@@ -322,3 +322,26 @@ origin.
 `the_policy_names_only_the_route_and_takes_from_the_web_what_the_daemon_allows`
 (the directive), and the browser check in the three engines (a worker from a
 blob answers the page).
+
+## Amendment 2026-11-16 — a check by hand through dev tunnels
+
+Changes the list under "Not measured". No rule changes.
+
+The operator checked the build by hand on 2026-11-15, on an iPad that
+reached the daemon through dev tunnels over `https`. Run scripts worked on
+the test page of the probe. With web content on, the library from a CDN
+loaded and drew (canvas-confetti, which needs the worker of the amendment
+above). The version of the system and of the browser was not recorded.
+
+This closes one open point: behind dev tunnels, which rewrites `Host`, the
+`<prefix>` of D4 names the address the browser uses. The files of the
+document would not load otherwise.
+
+These stay open:
+
+- the route behind ngrok;
+- whether Safari sends `Sec-Fetch-Dest` on the navigation of a frame (D7).
+  A page that works does not show it: only a file that tries the navigation
+  does;
+- with web content on and the page reached over `https`, a script that asks
+  the daemon's own address for a script or a style.
