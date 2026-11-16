@@ -237,6 +237,8 @@ body.side-collapsed {
 .tabbar {
   -webkit-user-select: none;
   user-select: none;
+  /* A held finger opens our menu (wb-context-menu-touch.ts), not Safari's. */
+  -webkit-touch-callout: none;
 }
 :is(.rail, .side, .tabbar) :is(input, textarea, [contenteditable="true"]) {
   -webkit-user-select: text;
