@@ -49,7 +49,12 @@ Contrast, measured: a row passes (8.5:1). A danger row is 4.52:1 since `--danger
 | Disabled              | `opacity: 0.4`, cursor `not-allowed`                                                                                   |
 | Empty, error, loading | Not used                                                                                                               |
 
-A click anywhere or a scroll hides it (`hideContextMenu` in `wb-wire.ts`).
+A click anywhere or a scroll hides it (`wireContextMenu` in
+`wb-context-menu-touch.ts`).
+
+On a touch screen, a finger held still for 500 ms on a tab or a file row
+opens the menu, as a right click does. iOS fires no `contextmenu` on a hold,
+so the page sends one; Android fires its own, and the page then sends none.
 
 The row is the same rule as the [Dropdown menu](./dropdown.md) row
 (`.menu-item`), in `styles/05-workspace.css`.
@@ -57,7 +62,7 @@ The row is the same rule as the [Dropdown menu](./dropdown.md) row
 ## Files
 
 - `styles/04-canvas.css`: `.ctxmenu`, `.ctx-item`, `.ctx-sep`
-- `wb-wire.ts`, `wb-tabs-store-menu.ts`
+- `wb-context-menu-touch.ts`, `wb-tabs-store-menu.ts`
 
 ## Keyboard
 

@@ -9,6 +9,7 @@ import { WBSplit } from "./wb-split.ts";
 import { isFilePopupMessage } from "./wb-detached.ts";
 import type { FilePopupMessage } from "./wb-detached.ts";
 import { bindCommand } from "./wb-commands.ts";
+import { wireContextMenu } from "./wb-context-menu-touch.ts";
 import { createEmitter, forwardAction, sendWindow } from "./wb-events.ts";
 import type { SavePayload, WireDeps } from "./wb-shell-types.d.ts";
 
@@ -435,13 +436,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     });
   })();
 
-  // Dismiss the context menu on any outside interaction.
-  const hideContextMenu = () => {
-    const menu = document.querySelector<HTMLElement>("#ctxmenu");
-    if (menu) menu.style.display = "none";
-  };
-  document.addEventListener("click", hideContextMenu);
-  document.addEventListener("scroll", hideContextMenu, true);
+  wireContextMenu(window, document);
 
   // `/` → the search on screen: FILES while a project is open, projects
   // otherwise.
