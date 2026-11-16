@@ -114,6 +114,9 @@ export function securityDialog() {
       stepUpError: "",
       // Why the login switch did not change, shown under it.
       requireLoginError: "",
+      // Why each switch that loosens a policy did not change, shown under it.
+      remoteImagesError: "",
+      webContentError: "",
     },
     // The step-up prompt (ADR-0032 amendment E): lowering the auth posture —
     // rotating the token, lifting the login gate, revoking TOTP — costs a
@@ -198,15 +201,7 @@ export function securityDialog() {
     // Turn a step-up refusal into the line under the card. `Retry-After` is
     // the throttle (amendment §D) — the same brake the login has.
     noteStepUpRefusal(r: Response) {
-      if (r.status === 429) {
-        const wait = (r.headers.get("Retry-After") ?? "") || "a few";
-        this.securityForm.stepUpError = `Too many attempts — wait ${wait} s and try again.`;
-      } else if (r.status === 401) {
-        this.securityForm.stepUpError =
-          "Code rejected. Enter the current code from your authenticator app.";
-      } else {
-        this.securityForm.stepUpError = `The daemon refused (${r.status}).`;
-      }
+      this.securityForm.stepUpError = stepUpRefusal(r);
     },
 
     async enrollTotp() {
@@ -432,19 +427,22 @@ export function securityDialog() {
     // True when the daemon took the change.
     async loosen(flag: Loosening, ev?: CheckboxChange) {
       const want = !this.$store.connection.security[flag];
-      const code = want ? await this.askFreshCode(LOOSENINGS[flag].act) : "";
+      const { route, act, error } = LOOSENINGS[flag];
+      this.securityForm[error] = "";
+      const code = want ? await this.askFreshCode(act) : "";
       let ok = false;
       if (code !== null) {
         try {
-          const r = await fetch(LOOSENINGS[flag].route, {
+          const r = await fetch(route, {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
             body: this.stepUpBody({ enable: String(want) }, code),
           });
           ok = r.ok;
+          if (!ok) this.securityForm[error] = stepUpRefusal(r);
           if (!ok) this.noteStepUpRefusal(r);
         } catch {
-          ok = false;
+          this.securityForm[error] = "The daemon did not answer. Try again.";
         }
       }
       if (ok) this.$store.connection.securityChanged({ [flag]: want });
@@ -467,11 +465,33 @@ export function securityDialog() {
 /** A switch of the dialog that loosens a content policy of the daemon. */
 type Loosening = "remoteImages" | "webContent";
 
-// The route of each switch, and the act the code prompt names.
-const LOOSENINGS: Record<Loosening, { route: string; act: string }> = {
-  remoteImages: { route: "/api/security/remote-images", act: "show remote images" },
-  webContent: { route: "/api/security/web-content", act: "load web content in pages with scripts" },
+// Per switch: its route, the act the code prompt names, its refusal field.
+type LoosenError = "remoteImagesError" | "webContentError";
+const LOOSENINGS: Record<Loosening, { route: string; act: string; error: LoosenError }> = {
+  remoteImages: {
+    route: "/api/security/remote-images",
+    act: "show remote images",
+    error: "remoteImagesError",
+  },
+  webContent: {
+    route: "/api/security/web-content",
+    act: "load web content in pages with scripts",
+    error: "webContentError",
+  },
 };
+
+// The words for a step-up refusal. `Retry-After` is the throttle (amendment
+// §D), the same brake the login has.
+function stepUpRefusal(r: Response): string {
+  if (r.status === 429) {
+    const wait = (r.headers.get("Retry-After") ?? "") || "a few";
+    return `Too many attempts — wait ${wait} s and try again.`;
+  }
+  if (r.status === 401) {
+    return "Code rejected. Enter the current code from your authenticator app.";
+  }
+  return `The daemon refused (${r.status}).`;
+}
 
 // `openFlag` is the path of the open flag that the dialog gives to `scrim()`.
 // Code outside the component asks the modal stack with it (`modalOpen`), and

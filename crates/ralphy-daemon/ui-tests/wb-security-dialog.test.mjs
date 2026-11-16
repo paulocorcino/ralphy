@@ -217,12 +217,13 @@ test("the dialog changes the security fact only through securityChanged", async 
 });
 
 test("each switch that loosens a policy posts to its own route and changes its own fact", async () => {
-  // [the method, its route, its fact, whether the dialog then asks for a reload]
+  // [the method, its route, its fact, whether the dialog then asks for a
+  //  reload, the note under the other switch]
   const rows = [
-    ["toggleRemoteImages", "/api/security/remote-images", "remoteImages", true],
-    ["toggleWebContent", "/api/security/web-content", "webContent", false],
+    ["toggleRemoteImages", "/api/security/remote-images", "remoteImages", true, "webContentError"],
+    ["toggleWebContent", "/api/security/web-content", "webContent", false, "remoteImagesError"],
   ];
-  for (const [method, route, fact, reload] of rows) {
+  for (const [method, route, fact, reload, other] of rows) {
     const { state, shell } = dialog();
     const box = { target: { checked: true } };
     await withFetch({ [route]: { body: fixture("api-security-web-content") } }, async (asked) => {
@@ -239,6 +240,27 @@ test("each switch that loosens a policy posts to its own route and changes its o
     });
     assert.equal(refused.shell.$store.connection.security[fact], false, method);
     assert.equal(box.target.checked, false, method);
+    // The reason is under the switch that was clicked, and only there.
+    const form = refused.state.securityForm;
+    const rejected = "Code rejected. Enter the current code from your authenticator app.";
+    assert.equal(form[`${fact}Error`], rejected, method);
+    assert.equal(form[other], "", method);
+    // The next change that the daemon takes removes it.
+    await withFetch({ [route]: { body: fixture("api-security-web-content") } }, async () => {
+      await refused.state[method](box);
+    });
+    assert.equal(form[`${fact}Error`], "", method);
+
+    // No answer at all is said there too.
+    const silent = dialog();
+    const real = globalThis.fetch;
+    globalThis.fetch = () => Promise.reject(new TypeError("no network"));
+    try {
+      await silent.state[method](box);
+    } finally {
+      globalThis.fetch = real;
+    }
+    assert.equal(silent.state.securityForm[`${fact}Error`], "The daemon did not answer. Try again.", method);
   }
 });
 

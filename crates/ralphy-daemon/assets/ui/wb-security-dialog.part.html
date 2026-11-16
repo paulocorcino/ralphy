@@ -152,6 +152,8 @@
             <p class="sec-note" style="margin:0.4rem 0 0" x-show="securityForm.remoteImagesReload">
               Reload the page to apply this change.
             </p>
+            <p class="sec-note" style="margin:0.4rem 0 0;color:var(--danger)" x-show="securityForm.remoteImagesError"
+               x-text="securityForm.remoteImagesError"></p>
           </section>
 
           <section class="sec-card">
@@ -167,6 +169,8 @@
             <p class="sec-note">
               Let a page that runs its scripts load scripts, styles and fonts from other websites. Off by default: such a page can send the project files that it reads to those websites.
             </p>
+            <p class="sec-note" style="margin:0.4rem 0 0;color:var(--danger)" x-show="securityForm.webContentError"
+               x-text="securityForm.webContentError"></p>
           </section>
         </div>
         <div class="modal-foot">
