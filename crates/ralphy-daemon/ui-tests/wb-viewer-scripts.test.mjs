@@ -6,6 +6,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createViewerScripts, previewUrl } from "../assets/ui/wb-viewer-scripts.ts";
 
+// `pane` puts a fake `fetch` on the page and takes its daemon client away.
+// Each test that calls it gives both back when it ends.
+const REAL = { fetch: globalThis.fetch, daemon: globalThis.WBDaemon };
+function restoreGlobals() {
+  globalThis.fetch = REAL.fetch;
+  if (REAL.daemon === undefined) delete globalThis.WBDaemon;
+  else globalThis.WBDaemon = REAL.daemon;
+}
+
 // The reply the daemon writes, shared with the daemon's own tests.
 function fixture(name) {
   return JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), "utf8"));
@@ -18,10 +27,11 @@ function element(tag) {
   return { tag, className: "", title: "", src: "", setAttribute: (k, v) => { held[k] = v; }, held };
 }
 
-// One pane, a fake daemon that answers `file.preview` with `reply`, and what
-// the control did.
+// One pane, a fake command route that answers `file.preview` with `reply`,
+// and what the control did. The page has no daemon client, as the detached
+// file window has none.
 function pane(reply, over = {}) {
-  const log = { asked: [], flashed: [], drawn: 0, captions: [], frames: [] };
+  const log = { asked: [], routes: [], flashed: [], drawn: 0, captions: [], frames: [] };
   const button = { classList: { toggle: (name, on) => log.captions.push([name, on]) } };
   const article = {
     innerHTML: "<p>static</p>",
@@ -37,12 +47,13 @@ function pane(reply, over = {}) {
     el: { querySelector: (sel) => (sel === ".md-body" ? article : button) },
     ...over,
   };
-  globalThis.WBDaemon = {
-    withCheckout: (payload, checkout) => (checkout ? { ...payload, checkout } : payload),
-    observe: (verb, payload) => {
-      log.asked.push([verb, payload]);
-      return Promise.resolve("revoke" in payload ? { status: "ok" } : reply);
-    },
+  delete globalThis.WBDaemon;
+  globalThis.fetch = (url, init) => {
+    const { verb, payload } = JSON.parse(init.body);
+    log.asked.push([verb, payload]);
+    log.routes.push([init.method, url]);
+    const answer = "revoke" in payload ? { status: "ok" } : reply;
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(answer) });
   };
   const scripts = createViewerScripts({
     document: { createElement: element },
@@ -67,13 +78,15 @@ test("the address of a preview file keeps the folders and encodes each name", ()
   for (const [path, want] of rows) assert.equal(previewUrl("t0", path), want, path);
 });
 
-test("Run scripts asks the daemon for a token and shows the file from its route", async () => {
+test("Run scripts asks the daemon for a token and shows the file from its route", async (t) => {
+  t.after(restoreGlobals);
   const reply = { ...fixture("file.preview"), token: "t0" };
   assert.deepEqual(Object.keys(reply).toSorted(), ["status", "token"]);
   const { scripts, rec, log } = pane(reply, { checkout: "wt-a" });
   scripts.toggle(rec);
   await settle();
   assert.deepEqual(log.asked, [["file.preview", { repo: "o/r", checkout: "wt-a" }]]);
+  assert.deepEqual(log.routes, [["POST", "/api/command"]]);
   assert.equal(rec.scripts, "t0");
   assert.equal(log.frames.length, 1);
   assert.deepEqual(log.frames[0].held, { sandbox: "allow-scripts" });
@@ -82,7 +95,8 @@ test("Run scripts asks the daemon for a token and shows the file from its route"
   assert.deepEqual(log.flashed, []);
 });
 
-test("a second click ends the token and draws the file with no script", async () => {
+test("a second click ends the token and draws the file with no script", async (t) => {
+  t.after(restoreGlobals);
   const { scripts, rec, log } = pane({ status: "ok", token: "t0" });
   scripts.toggle(rec);
   await settle();
@@ -98,7 +112,8 @@ test("a second click ends the token and draws the file with no script", async ()
   assert.equal(log.asked.length, asked);
 });
 
-test("no script runs for unsaved text, a refusal, or a pane that went away", async () => {
+test("no script runs for unsaved text, a refusal, or a pane that went away", async (t) => {
+  t.after(restoreGlobals);
   // [the reply of the daemon, the pane, what the operator is told, what the daemon is asked]
   const text = { cause: "the project is on another computer", remedy: "Open that workbench." };
   const peer = { status: "error", failure: { domain: "daemon", code: "scripts-on-a-peer", text } };

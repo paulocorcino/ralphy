@@ -17,7 +17,8 @@ Scenario 5  Edit shows the file text in the editor; Preview draws it again
 Scenario 6  `hostile.html` runs no script, its links have no target, and
             none of its requests reaches the daemon; a request of the page
             itself does (the control)
-Scenario 7  the detached file window draws the frame
+Scenario 7  the detached file window draws the frame, and Run scripts works
+            there too
 Scenario 8  an image from the web is not asked for while remote images are
             off, and is drawn after the option is turned on and the page is
             loaded again
@@ -634,6 +635,25 @@ def scenario_detached(page, ctx, slug, engine):
     except Exception as exc:
         title = f"<{str(exc).splitlines()[0][:80]}>"
     check(f"{engine}: the detached window draws the frame", title == "The report", f"h1={title!r}")
+    detached.close()
+
+    # Run scripts in a detached window: that page has no daemon client.
+    sel = pane("docs/app.html")
+    open_path(page, slug, "docs/app.html")
+    frame_of(page, sel)
+    with ctx.expect_page() as popup:
+        page.locator(f'{sel} [data-act="detach"]').click()
+    detached = popup.value
+    detached.on("pageerror", lambda e: print("detached pageerror:", e, flush=True))
+    try:
+        frame_of(detached, ".viewer")
+        detached.locator('.viewer [data-act="scripts"]').click()
+        frame = scripted_frame(detached, ".viewer")
+        frame.wait_for_function("() => document.getElementById('external').textContent === 'ran'", timeout=10000)
+        ran = [frame.locator("#inline").text_content(), frame.locator("#external").text_content()]
+    except Exception as exc:
+        ran = f"<{str(exc).splitlines()[0][:120]}>"
+    check(f"{engine}: Run scripts works in the detached window", ran == ["ran", "ran"], f"got={ran}")
     detached.close()
 
 

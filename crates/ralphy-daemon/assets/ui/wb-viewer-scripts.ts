@@ -1,6 +1,7 @@
 // The "Run scripts" control of an HTML file pane (ADR-0089): the operator
 // allows the scripts of one tab, and the file then comes from a route of the
 // daemon with a token. Any new draw of the pane ends the permission.
+import { apiFetch, commandReply } from "./wb-api.ts";
 import { inPane } from "./wb-dom-need.ts";
 import { WBFail } from "./wb-fail.ts";
 import { mountFrame } from "./wb-viewer-html.ts";
@@ -19,6 +20,18 @@ export type ViewerScriptsDeps = {
 };
 
 export type ViewerScripts = ReturnType<typeof createViewerScripts>;
+
+// `file.preview`, sent on the command route itself and not through the
+// daemon client of the page: the detached file window has no such client.
+async function preview(payload: CommandPayload): Promise<ReplyOf<"file.preview">> {
+  const res = await apiFetch("POST /api/command", {
+    body: JSON.stringify({ id: 1, verb: "file.preview", payload }),
+    headers: { "content-type": "application/json" },
+    what: "file.preview",
+  });
+  if (!res.ok) throw new Error(`the command answered HTTP ${res.status}`);
+  return commandReply<"file.preview">(res);
+}
 
 /** The address of a file of a preview, under its token (ADR-0089 D3). */
 export function previewUrl(token: string, path: string): string {
@@ -48,19 +61,20 @@ export function createViewerScripts(deps: ViewerScriptsDeps) {
     rec.scripts = undefined;
     paint(rec);
     // The token also ends by itself, after a time with no request.
-    WBDaemon.observe("file.preview", { repo: rec.project, revoke: token }).catch(() => {});
+    preview({ repo: rec.project, revoke: token }).catch(() => {});
   }
 
   async function allow(rec: BytesRecord) {
-    const scope = WBDaemon.withCheckout({ repo: rec.project }, rec.checkout);
-    const reply = await WBDaemon.observe("file.preview", scope);
+    const scope: CommandPayload = { repo: rec.project };
+    if (rec.checkout !== null && rec.checkout !== "") scope.checkout = rec.checkout;
+    const reply = await preview(scope);
     const token = reply.token ?? "";
     if (WBFail.isError(reply) || token === "") {
       messages.flash(WBFail.failed(reply, "Could not run the scripts: the daemon gave no reason."));
       return;
     }
     if (!alive(rec) || rec.editing) {
-      WBDaemon.observe("file.preview", { repo: rec.project, revoke: token }).catch(() => {});
+      preview({ repo: rec.project, revoke: token }).catch(() => {});
       return;
     }
     rec.scripts = token;
