@@ -1,6 +1,106 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.44",
+      "date": "2026-11-16",
+      "announce": true,
+      "entries": [
+        {
+          "id": "785",
+          "kind": "breaking",
+          "text": "The Gemini CLI agent is removed; use `--agent antigravity`, and move any `gemini` settings to `antigravity`.",
+          "headline": "Gemini agent removed"
+        },
+        {
+          "id": "919",
+          "kind": "security",
+          "text": "The file viewer shows the encoding name from a peer as text, never as page markup."
+        },
+        {
+          "id": "sqlite-rustsec-2026-0459",
+          "kind": "security",
+          "text": "The SQLite built into Ralphy is updated to a release that fixes CVE-2026-119375."
+        },
+        {
+          "id": "784",
+          "kind": "feature",
+          "text": "Run issues with the Antigravity CLI (`--agent antigravity`).",
+          "headline": "Antigravity agent"
+        },
+        {
+          "id": "close-tabs-right",
+          "kind": "feature",
+          "text": "The menu of a tab has \"Close to the right\"."
+        },
+        {
+          "id": "command-palette",
+          "kind": "feature",
+          "text": "Alt+Shift+P opens a command palette and ? shows the shortcuts; a terminal keeps every key the page does not use, and Escape closes menus.",
+          "headline": "⌨️ **Command palette** — Alt+Shift+P runs a workbench command, and ? lists every shortcut"
+        },
+        {
+          "id": "html-file-preview",
+          "kind": "feature",
+          "text": "The file pane shows an HTML file as a rendered page. Run scripts lets the file run its scripts, for that tab only."
+        },
+        {
+          "id": "telegram-setup-page",
+          "kind": "feature",
+          "text": "Settings, Telegram sets up the bot of the main daemon: paste the token, find your chat, and send a test message."
+        },
+        {
+          "id": "684",
+          "kind": "fix",
+          "text": "The run statuses now use the same words and icons in the terminal, in Telegram and in the workbench."
+        },
+        {
+          "id": "685",
+          "kind": "fix",
+          "text": "A failed commit with nothing staged now shows the same message in the terminal and in the workbench."
+        },
+        {
+          "id": "904",
+          "kind": "fix",
+          "text": "A console window no longer disappears when it is restarted while its peer is down."
+        },
+        {
+          "id": "925",
+          "kind": "fix",
+          "text": "A console placeholder's Launch or Attach no longer loses its window when another window fails while the stage is laid out."
+        },
+        {
+          "id": "928",
+          "kind": "fix",
+          "text": "A `ralphy run` that gets Ctrl+C, SIGTERM or a closed console now stops its agent and reports the stop, as `ralphy stop` does."
+        },
+        {
+          "id": "949",
+          "kind": "fix",
+          "text": "The detached fence window shows its tool bar again."
+        },
+        {
+          "id": "crepe-7.23",
+          "kind": "fix",
+          "text": "The note editor is updated to Milkdown Crepe 7.23.0."
+        },
+        {
+          "id": "design-system",
+          "kind": "fix",
+          "text": "Workbench dialogs keep Tab inside, every control shows focus, arrow keys move in menus, and Settings fits a phone."
+        },
+        {
+          "id": "phone-menu-silent-request",
+          "kind": "fix",
+          "text": "On a phone, the Consoles menu is no longer cut at the left, and a click on a silent console's request ends it."
+        },
+        {
+          "id": "security-refusal-under-switch",
+          "kind": "fix",
+          "text": "In Security, a switch that the daemon refuses to change now says why under the switch."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.43",
       "date": "2026-11-06",
       "announce": true,
