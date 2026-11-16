@@ -137,8 +137,8 @@ fn the_policy_names_only_the_route_and_takes_from_the_web_what_the_daemon_allows
                 "sandbox allow-scripts; default-src 'none'; \
                  script-src 'unsafe-inline' 'unsafe-eval' {p}{gained}; \
                  style-src 'unsafe-inline' {p}{gained}; img-src data: {p}{image_gained}; \
-                 font-src {p}{gained}; connect-src 'none'; form-action 'none'; \
-                 base-uri 'none'; frame-ancestors 'self'"
+                 font-src {p}{gained}; connect-src 'none'; worker-src blob:; \
+                 form-action 'none'; base-uri 'none'; frame-ancestors 'self'"
             ),
             "images={images} content={content}"
         );

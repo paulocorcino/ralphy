@@ -303,3 +303,22 @@ is the operator's own act.
 `ui-tests/wb-security-dialog.test.mjs` (each switch posts to its own route),
 and in the three engines by the browser check (a script from the web is
 asked for and runs only with web content on).
+
+## Amendment 2026-11-16 — D4: a worker from a blob
+
+Changes D4. The policy gains `worker-src blob:`. A library that draws on a
+canvas from a Web Worker builds the worker from a `blob:` of its own code.
+Without the directive the worker is refused, and in Chromium the library
+then draws nothing (measured with canvas-confetti 1.9.3: the canvas is made
+and stays empty).
+
+The worker is code the document's own script wrote, and that script already
+runs. A worker from a `blob:` inherits the policy of the document, so
+`connect-src 'none'` holds inside it. A worker from a file of the route is
+not possible: a document with an opaque origin has no address of its own
+origin.
+
+**Compliance.**
+`the_policy_names_only_the_route_and_takes_from_the_web_what_the_daemon_allows`
+(the directive), and the browser check in the three engines (a worker from a
+blob answers the page).

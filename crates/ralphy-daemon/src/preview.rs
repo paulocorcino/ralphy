@@ -127,7 +127,8 @@ pub(crate) fn policy(prefix: &str, web: Web) -> String {
         "sandbox allow-scripts; default-src 'none'; \
          script-src 'unsafe-inline' 'unsafe-eval' {prefix}{content}; \
          style-src 'unsafe-inline' {prefix}{content}; img-src data: {prefix}{images}; \
-         font-src {prefix}{content}; connect-src 'none'; form-action 'none'; base-uri 'none'; \
+         font-src {prefix}{content}; connect-src 'none'; worker-src blob:; \
+         form-action 'none'; base-uri 'none'; \
          frame-ancestors 'self'"
     )
 }

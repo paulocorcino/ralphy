@@ -135,6 +135,7 @@ APP = """<!doctype html>
 <p id="external">waiting</p>
 <p id="module">waiting</p>
 <p id="cdn">waiting</p>
+<p id="worker">waiting</p>
 <div id="box" class="box"></div>
 <div id="slot"></div>
 <script>document.getElementById('inline').textContent = 'ran';</script>
@@ -154,6 +155,7 @@ APP_STATIC = (
     ("external", "waiting"),
     ("module", "waiting"),
     ("cdn", "waiting"),
+    ("worker", "waiting"),
     ("font", None),
     ("height", "0px"),
     ("background", False),
@@ -164,6 +166,7 @@ APP_LIVE = (
     ("external", "ran"),
     ("module", "ran"),
     ("cdn", "waiting"),
+    ("worker", "ran"),
     ("font", "loaded"),
     ("height", "40px"),
     ("background", True),
@@ -178,6 +181,9 @@ var late = document.createElement('img');
 late.id = 'late';
 late.src = 'pic.png';
 document.getElementById('slot').appendChild(late);
+var code = new Blob(["postMessage('ran')"], { type: 'text/javascript' });
+var worker = new Worker(URL.createObjectURL(code));
+worker.onmessage = function (event) { document.getElementById('worker').textContent = event.data; };
 """
 ATTACK = """<!doctype html>
 <html><head><meta charset="utf-8"><title>Attack</title></head><body>
@@ -527,6 +533,7 @@ def app_facts(frame):
             external: document.getElementById('external').textContent,
             module: document.getElementById('module').textContent,
             cdn: document.getElementById('cdn').textContent,
+            worker: document.getElementById('worker').textContent,
             font: font ? font.status : null,
             height: box.height,
             background: box.backgroundImage.includes('/app/bg.png'),
@@ -544,6 +551,10 @@ def scenario_scripts(page, slug, engine):
     page.locator(f'{sel} [data-act="scripts"]').click()
     frame = scripted_frame(page, sel)
     frame.wait_for_function("() => document.getElementById('late') !== null", timeout=10000)
+    try:
+        frame.wait_for_function("() => document.getElementById('worker').textContent === 'ran'", timeout=5000)
+    except Exception:
+        pass
     live = app_facts(frame)
     after = frame_state(page, sel)
     check(
