@@ -6,7 +6,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, runIn as evalIn, withoutComments } from "./harness.mjs";
+import { readFileSync } from "node:fs";
 import { WBSecurityDialog } from "../assets/ui/wb-security-dialog.ts";
+
+// The reply the daemon writes, shared with the daemon's own tests.
+function fixture(name) {
+  return JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), "utf8"));
+}
 
 // The part that holds the dialog's markup.
 const PART = "wb-security-dialog.part.html";
@@ -174,7 +180,7 @@ test("the dialog changes the security fact only through securityChanged", async 
   await withFetch(
     {
       "/api/security/state": {
-        body: { token_set: false, password_set: false, totp_enrolled: false, require_login: false, remote_images: true },
+        body: { token_set: false, password_set: false, totp_enrolled: false, require_login: false, remote_images: true, web_content: true },
       },
       "/api/security/password": { body: { password_set: true } },
       "/api/security/totp/confirm": { body: { confirmed: true } },
@@ -197,10 +203,43 @@ test("the dialog changes the security fact only through securityChanged", async 
     },
   );
   assert.deepEqual(patches, [
-    { tokenSet: false, passwordSet: false, totpEnrolled: false, requireLogin: false, remoteImages: true },
+    {
+      tokenSet: false,
+      passwordSet: false,
+      totpEnrolled: false,
+      requireLogin: false,
+      remoteImages: true,
+      webContent: true,
+    },
     { passwordSet: true },
     { totpEnrolled: true },
   ]);
+});
+
+test("each switch that loosens a policy posts to its own route and changes its own fact", async () => {
+  // [the method, its route, its fact, whether the dialog then asks for a reload]
+  const rows = [
+    ["toggleRemoteImages", "/api/security/remote-images", "remoteImages", true],
+    ["toggleWebContent", "/api/security/web-content", "webContent", false],
+  ];
+  for (const [method, route, fact, reload] of rows) {
+    const { state, shell } = dialog();
+    const box = { target: { checked: true } };
+    await withFetch({ [route]: { body: fixture("api-security-web-content") } }, async (asked) => {
+      await state[method](box);
+      assert.deepEqual(asked, [[route, "enable=true"]], method);
+    });
+    assert.equal(shell.$store.connection.security[fact], true, method);
+    assert.equal(state.securityForm.remoteImagesReload, reload, method);
+
+    // A refusal leaves the fact, and the switch goes back to it.
+    const refused = dialog();
+    await withFetch({ [route]: { ok: false, status: 401 } }, async () => {
+      await refused.state[method](box);
+    });
+    assert.equal(refused.shell.$store.connection.security[fact], false, method);
+    assert.equal(box.target.checked, false, method);
+  }
 });
 
 test("the dialog lists at most 12 shell() names, and shell() has each one", () => {
@@ -220,6 +259,7 @@ test("the dialog lists at most 12 shell() names, and shell() has each one", () =
     "requireLogin",
     "tokenSet",
     "totpEnrolled",
+    "webContent",
   ]);
 });
 

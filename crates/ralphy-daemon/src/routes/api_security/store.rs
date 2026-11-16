@@ -26,6 +26,8 @@ pub(crate) struct SecurityState {
     pub(crate) require_login: bool,
     /// The persisted `daemon-remote-images` flag (ADR-0032 amendment §F).
     pub(crate) remote_images: bool,
+    /// The persisted `daemon-web-content` flag (ADR-0089).
+    pub(crate) web_content: bool,
 }
 
 /// Read the real store FILES under `dir` and report enrolment. Path-explicit (no
@@ -48,6 +50,7 @@ pub(crate) fn security_state_at(dir: &Path) -> SecurityState {
         totp_enrolled,
         require_login: auth::require_login_enabled_in(dir),
         remote_images: auth::remote_images_enabled_in(dir),
+        web_content: auth::web_content_enabled_in(dir),
     }
 }
 

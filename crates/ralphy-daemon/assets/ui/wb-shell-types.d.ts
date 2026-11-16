@@ -96,6 +96,7 @@ export type SecurityFact = {
   totpEnrolled: boolean;
   requireLogin: boolean;
   remoteImages: boolean;
+  webContent: boolean;
   policy: string;
 };
 

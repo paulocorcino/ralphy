@@ -69,14 +69,24 @@ impl Previews {
     }
 }
 
-/// The media type of a text file the route serves, by its extension. HTML
-/// has no `charset`: the document names its own.
-fn text_type(extension: &str) -> Option<&'static str> {
+/// The cap of one text or font file of the route (ADR-0072 D11). It is
+/// larger than [`tree::MAX_READ_BYTES`], the cap of a file an editor opens: a
+/// vendored library is one file (measured: `mermaid.min.js` 11.x is 3.5 MB).
+/// The file goes out as the body of its own answer, never inside a command.
+pub(crate) const MAX_PREVIEW_BYTES: u64 = 16 * 1024 * 1024;
+
+/// The media type of a text or font file the route serves, by its extension.
+/// HTML has no `charset`: the document names its own.
+fn plain_type(extension: &str) -> Option<&'static str> {
     match extension {
         "html" | "htm" => Some("text/html"),
         "css" => Some("text/css; charset=utf-8"),
         "js" | "mjs" => Some("text/javascript; charset=utf-8"),
         "json" => Some("application/json"),
+        "woff" => Some("font/woff"),
+        "woff2" => Some("font/woff2"),
+        "ttf" => Some("font/ttf"),
+        "otf" => Some("font/otf"),
         _ => None,
     }
 }
@@ -86,27 +96,39 @@ fn text_type(extension: &str) -> Option<&'static str> {
 /// its cap, or no file.
 pub(crate) fn read(root: &Path, rel: &str) -> Option<(&'static str, Vec<u8>)> {
     let extension = Path::new(rel).extension()?.to_str()?.to_ascii_lowercase();
-    let Some(media_type) = text_type(&extension) else {
+    let Some(media_type) = plain_type(&extension) else {
         let image = tree::read_image(root, rel).ok()?;
         return Some((image.media_type, image.bytes));
     };
     let path = confine::confine(root, rel).ok()?;
     let size = std::fs::metadata(&path).ok()?.len();
-    if size > tree::MAX_READ_BYTES {
+    if size > MAX_PREVIEW_BYTES {
         return None;
     }
     Some((media_type, std::fs::read(&path).ok()?))
 }
 
+/// What a document may load from the web: each is an option of the daemon,
+/// off by default. Never a request a script makes (`connect-src`).
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Web {
+    /// Images (ADR-0032 amendment §F).
+    pub(crate) images: bool,
+    /// Scripts, styles and fonts (ADR-0089, amendment of 2026-11-16).
+    pub(crate) content: bool,
+}
+
 /// The policy of every answer of the route (D4). `prefix` is the address of
 /// the route with its token, as the browser names it.
-pub(crate) fn policy(prefix: &str, remote_images: bool) -> String {
-    let web = if remote_images { " https:" } else { "" };
+pub(crate) fn policy(prefix: &str, web: Web) -> String {
+    let images = if web.images { " https:" } else { "" };
+    let content = if web.content { " https:" } else { "" };
     format!(
         "sandbox allow-scripts; default-src 'none'; \
-         script-src 'unsafe-inline' 'unsafe-eval' {prefix}; \
-         style-src 'unsafe-inline' {prefix}; img-src data: {prefix}{web}; \
-         connect-src 'none'; form-action 'none'; base-uri 'none'; \
+         script-src 'unsafe-inline' 'unsafe-eval' {prefix}{content}; \
+         style-src 'unsafe-inline' {prefix}{content}; img-src data: {prefix}{images}; \
+         font-src {prefix}{content}; connect-src 'none'; worker-src blob:; \
+         form-action 'none'; base-uri 'none'; \
          frame-ancestors 'self'"
     )
 }

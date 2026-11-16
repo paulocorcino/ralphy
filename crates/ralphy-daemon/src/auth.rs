@@ -38,8 +38,9 @@ use host::{allowed_host_set, declared_host_set, host_eq, origin_host};
 pub use policy::{
     compute_policy, remote_images_enabled_in, remote_images_path_in, require_login_enabled_in,
     require_login_path_in, require_token_enabled_in, require_token_path_in, set_remote_images_in,
-    set_require_login_in, set_require_token_in, upgrade_with_session, AuthPolicy, Credentials,
-    LoginOutcome, Requirements,
+    set_require_login_in, set_require_token_in, set_web_content_in, upgrade_with_session,
+    web_content_enabled_in, web_content_path_in, AuthPolicy, Credentials, LoginOutcome,
+    Requirements,
 };
 pub use revoked::{revoked_logins_path_in, RevokedLogins};
 pub use session::{LoginAttempt, SessionAuth};
@@ -98,10 +99,16 @@ pub struct AuthState {
     /// port this listener never sees — [`AuthState::same_origin`] relaxes those two
     /// for declared hosts only, never for the derived ones.
     declared_hosts: Vec<String>,
-    /// The remote-images flag as last read from disk by [`AuthState::rebuild`],
-    /// so the response-header layer picks its CSP without a disk read per
-    /// response. Independent data: `Relaxed` is enough.
+    loosened: Loosened,
+}
+
+/// The flags that loosen a content policy, as last read from disk by
+/// [`AuthState::rebuild`], so a response picks its policy without a disk read.
+/// Independent data: `Relaxed` is enough.
+#[derive(Default)]
+struct Loosened {
     remote_images: AtomicBool,
+    web_content: AtomicBool,
 }
 
 /// Prints only the addresses: the policy and the boot token hold secrets.
@@ -138,7 +145,7 @@ impl AuthState {
             throttle: Mutex::new(LoginThrottle::new()),
             allowed_hosts: allowed_host_set(bound_addr.ip(), declared_hosts),
             declared_hosts: declared_host_set(declared_hosts),
-            remote_images: AtomicBool::new(false),
+            loosened: Loosened::default(),
         };
         state.rebuild()?;
         Ok(Arc::new(state))
@@ -161,7 +168,7 @@ impl AuthState {
             throttle: Mutex::new(LoginThrottle::new()),
             allowed_hosts: allowed_host_set(bind_ip, &[]),
             declared_hosts: Vec::new(),
-            remote_images: AtomicBool::new(false),
+            loosened: Loosened::default(),
         })
     }
 
@@ -189,7 +196,7 @@ impl AuthState {
             throttle: Mutex::new(LoginThrottle::new()),
             allowed_hosts: allowed_host_set(bind_ip, &[]),
             declared_hosts: Vec::new(),
-            remote_images: AtomicBool::new(false),
+            loosened: Loosened::default(),
         })
     }
 
@@ -335,8 +342,12 @@ impl AuthState {
             },
         )?;
         *self.policy.write().expect("auth policy lock poisoned") = next;
-        self.remote_images
-            .store(remote_images_enabled_in(&dir), Ordering::Relaxed);
+        let Loosened {
+            remote_images,
+            web_content,
+        } = &self.loosened;
+        remote_images.store(remote_images_enabled_in(&dir), Ordering::Relaxed);
+        web_content.store(web_content_enabled_in(&dir), Ordering::Relaxed);
         Ok(())
     }
 
@@ -352,7 +363,12 @@ impl AuthState {
 
     /// Whether the operator opted into remote images (the CSP `img-src https:`).
     pub fn remote_images(&self) -> bool {
-        self.remote_images.load(Ordering::Relaxed)
+        self.loosened.remote_images.load(Ordering::Relaxed)
+    }
+
+    /// Whether an HTML file that runs its scripts may load from the web.
+    pub fn web_content(&self) -> bool {
+        self.loosened.web_content.load(Ordering::Relaxed)
     }
 
     /// Revoke one login: put `login` on the revoked-login list until no cookie

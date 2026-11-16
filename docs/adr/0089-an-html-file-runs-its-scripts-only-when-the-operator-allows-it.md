@@ -85,9 +85,8 @@ reach the route of a peer.
 The route serves a closed list of file kinds: HTML, CSS, JavaScript, JSON
 and the image kinds of ADR-0049 §3. Every other file is not found. The path
 is confined to the checkout as `file.read` confines it, and each kind keeps
-the size cap it has today. A font is not served yet: a document with an
-opaque origin loads a font and a module only with a CORS header, which the
-route does not send.
+the size cap it has today. The amendment of 2026-11-15 adds fonts, a CORS
+header and a cap of the route.
 
 **D4. Every answer of the route carries this policy.** `<prefix>` is the
 address of the route with its token.
@@ -114,7 +113,8 @@ request: `X-Forwarded-Host` when a front sent it, else `Host`, and `https`
 when the front said so.
 
 **D5. No script comes from the web.** `script-src` names the route only. A
-library from a CDN does not load, with remote images on or off.
+library from a CDN does not load, with remote images on or off. The
+amendment of 2026-11-16 adds an option of the daemon that opens this.
 
 **D6. The document is shown in a frame, never in a window of its own.** The
 policy of the workbench page lets a frame go only to the daemon's own
@@ -174,8 +174,7 @@ Firefox 150 and WebKit 26.4. These are open:
 - the route when the page is reached over `https` through ngrok and through
   dev tunnels: whether `<prefix>` of D4 names the address the browser uses;
 - Safari on an iPhone: whether it sends `Sec-Fetch-Dest` on the navigation
-  of a frame (D7). A browser that does not send it is not refused;
-- `import()` of a module and a font, with a CORS header on the route.
+  of a frame (D7). A browser that does not send it is not refused.
 
 ## Compliance
 
@@ -197,7 +196,7 @@ Firefox 150 and WebKit 26.4. These are open:
   `file_preview_makes_a_token_for_the_repo_and_ends_it`. Not checked by
   code: the refusal for a project of a peer.
 - D4: checked by
-  `the_policy_names_only_the_route_and_takes_web_images_when_allowed`,
+  `the_policy_names_only_the_route_and_takes_from_the_web_what_the_daemon_allows`,
   `a_preview_file_is_served_to_its_token_with_its_own_policy` and
   `the_policy_names_the_host_and_scheme_of_the_front`.
 - D5: held by the test of D4.
@@ -205,3 +204,121 @@ Firefox 150 and WebKit 26.4. These are open:
 - D7: checked by `a_frame_that_navigates_to_a_data_endpoint_is_refused`, and
   in the three engines by the browser check (a script reaches no data
   endpoint).
+
+## Amendment 2026-11-15 — D3, D4: fonts, a CORS header, and a cap of the route
+
+Changes D3 and D4. A mock of the workbench (`mocks/workbench-shell/`) showed
+what the first build could not load: its icon fonts, and a vendored library
+of 3.5 MB.
+
+- **The route serves fonts.** The closed list of D3 gains `woff`, `woff2`,
+  `ttf` and `otf`, and the policy of D4 gains `font-src <prefix>`.
+- **Every answer of the route says `Access-Control-Allow-Origin: *`.** A
+  document with an opaque origin loads a font and a module only with a CORS
+  header. The token stays the only key: the header gives nothing to a page
+  that does not hold the address with its token.
+- **A text or font file of the route has its own cap, 16 MiB**
+  (`MAX_PREVIEW_BYTES`, ADR-0072 D11). The cap of `file.read`, 2 MiB, is the
+  size an editor opens; a vendored library is one larger file. The file is
+  the body of its own answer and never rides inside a command, so the
+  transport cap of D11 does not apply. An image keeps the cap of ADR-0049.
+
+**What the header costs.** With it, a script the operator allowed can read
+the text of the style sheets, the JSON files, the modules and the images of
+the checkout, not only use them. It still has no way to send them: D4 keeps
+`connect-src 'none'`, and no script or image comes from the web (D5). A
+later decision that lets a document load from the web opens that way, and
+must weigh this.
+
+**Measured**, in Playwright Chromium 148, Firefox 150 and WebKit 26.4, on
+loopback:
+
+- without the header, the icon font fails in Chromium and Firefox; with it,
+  the font loads in the three;
+- with the header, `<script type="module">` runs in the three
+  (`tests/browser/files/wb_html_file.py`);
+- with the header, `import()` called from a classic script runs in Firefox
+  and WebKit and still fails in Chromium, which gives a classic script
+  loaded with no `crossorigin` attribute no base address. This is accepted.
+
+**Compliance.** `only_the_closed_list_of_file_kinds_is_read` (the fonts and
+the cap),
+`the_policy_names_only_the_route_and_takes_from_the_web_what_the_daemon_allows`
+(`font-src`), `a_preview_file_is_served_to_its_token_with_its_own_policy`
+(the header), and the browser check in the three engines.
+
+## Amendment 2026-11-16 — D5: content from the web, as an option of the daemon
+
+Changes D5. D5 said that no script comes from the web. A page that uses a
+library from a CDN then stays broken, and the operator asked for a way to
+accept that risk.
+
+**The decision.** The daemon gains an option, **web content in HTML files**,
+off by default. With it on, the policy of D4 gains `https:` in `script-src`,
+`style-src` and `font-src`: an HTML file that runs its scripts may load
+scripts, styles and fonts from other websites. `img-src` still follows
+remote images (ADR-0032 amendment §F), and `connect-src` stays `'none'`:
+a script still cannot call an address with `fetch` or a socket.
+
+The option is a flag file of the store, `daemon-web-content`, as remote
+images is. `POST /api/security/web-content` sets it, and turning it on costs
+a fresh code once a TOTP seed is armed (ADR-0032 amendment E); turning it
+off is free. `GET /api/security/state` reports it. The Security dialog shows
+it with its risk in words. The next answer of the route carries the new
+policy, so a page needs no reload.
+
+**The risk the operator accepts.** With the CORS header of the amendment of
+2026-11-15, a script the operator allowed can read the style sheets, JSON
+files, modules and images of the checkout. With this option on, it can also
+send them: a request for a script or a style at an address of its choice
+carries what it wants in that address. The code of the other website also
+runs inside the document. So, with the option on, Run scripts on a file
+gives that file the readable files of its project. Three limits stay: the
+route serves only its closed list of kinds, the document has an opaque
+origin and cannot use the session, and the daemon refuses a frame that
+navigates to a data endpoint (D7).
+
+When the page is reached over `https`, `https:` also names the daemon's own
+origin, as it does for remote images. A script can then ask the daemon's
+own address for a script or a style: a GET, with the session cookie in
+WebKit. This case is not measured.
+
+By ADR-0072 D1 the stronger setting stays the default, and the weaker one
+is the operator's own act.
+
+**Rejected.**
+
+- *A permission per tab, on the Run scripts control.* The control already
+  asks one question. A second one beside it, with a larger risk, would be
+  answered the same way without a thought. The Security dialog is where the
+  other postures of the daemon are lowered.
+- *`connect-src https:` too.* It adds nothing an attacker needs, but it lets
+  a script call the daemon's own address with a body when the page is
+  reached over `https`. It is left closed.
+
+**Compliance.** Checked by
+`web_content_is_opt_in_and_costs_a_fresh_code_to_enable`
+(`crates/ralphy-daemon/tests/security_web_content.rs`),
+`the_policy_names_only_the_route_and_takes_from_the_web_what_the_daemon_allows`,
+`ui-tests/wb-security-dialog.test.mjs` (each switch posts to its own route),
+and in the three engines by the browser check (a script from the web is
+asked for and runs only with web content on).
+
+## Amendment 2026-11-16 — D4: a worker from a blob
+
+Changes D4. The policy gains `worker-src blob:`. A library that draws on a
+canvas from a Web Worker builds the worker from a `blob:` of its own code.
+Without the directive the worker is refused, and in Chromium the library
+then draws nothing (measured with canvas-confetti 1.9.3: the canvas is made
+and stays empty).
+
+The worker is code the document's own script wrote, and that script already
+runs. A worker from a `blob:` inherits the policy of the document, so
+`connect-src 'none'` holds inside it. A worker from a file of the route is
+not possible: a document with an opaque origin has no address of its own
+origin.
+
+**Compliance.**
+`the_policy_names_only_the_route_and_takes_from_the_web_what_the_daemon_allows`
+(the directive), and the browser check in the three engines (a worker from a
+blob answers the page).

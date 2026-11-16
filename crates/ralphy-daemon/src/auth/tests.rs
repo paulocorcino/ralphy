@@ -18,7 +18,7 @@ fn state_for(bind: IpAddr, port: u16, declared: &[&str]) -> AuthState {
         throttle: Mutex::new(LoginThrottle::new()),
         allowed_hosts: allowed_host_set(bind, &declared),
         declared_hosts: declared_host_set(&declared),
-        remote_images: AtomicBool::new(false),
+        loosened: Loosened::default(),
     }
 }
 
