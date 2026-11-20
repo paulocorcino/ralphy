@@ -168,6 +168,31 @@ every `media-*` element. Imported as a module, its one top-level name
 again after a bump. Its last line names a source map that is not vendored, so
 the browser's developer tools show one missing file.
 
+### pdf.js (`pdfjs-dist` 6.5.438)
+
+The PDF viewer. `vendor/pdfjs/` holds these parts of the npm tarball, byte for
+byte: `build/pdf.min.mjs` (the core), `build/pdf.worker.min.mjs` (the worker),
+`web/pdf_viewer.mjs`, `web/pdf_viewer.css` and `web/images/` (pages, the text
+layer and the search; the CSS names each image, and the link check follows
+it), `standard_fonts/` with its two font licenses, `wasm/openjpeg.wasm`,
+`wasm/jbig2.wasm` and `wasm/qcms_bg.wasm` with their licenses, and
+`LICENSE`.
+
+Left out, and why:
+
+- `build/pdf.sandbox.*`, `wasm/quickjs-eval.*`: the PDF script engine. The
+  viewer runs with `enableScripting: false` (ADR-0091 D9).
+- `cmaps/`: 1.5 MB for old CJK fonts that a PDF does not embed.
+- `iccs/`, `image_decoders/`, `legacy/`, the source maps, and the plain
+  (not minified) core and worker.
+- `wasm/*_nowasm_fallback.js`: the browsers of the workbench run wasm.
+
+The worker and the wasm files are not imported: pdf.js reads them from URLs
+that the viewer gives it (`workerSrc`, `wasmUrl`, `standardFontDataUrl`), so
+the asset graph test does not see them as imports. `pdf_viewer.mjs` reads the
+core from `globalThis.pdfjsLib`, which the core sets when it loads: import the
+core first.
+
 ### Monaco (pinned `0.56.0`)
 
 Monaco is the one editor engine of the workbench. `vendor/monaco/vs/` is the
