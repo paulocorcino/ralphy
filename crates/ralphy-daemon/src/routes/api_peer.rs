@@ -307,6 +307,15 @@ pub(crate) fn peer_routes(s: &RouterShared) -> Router {
             )),
         )
         .route(
+            "/api/peer/file/bytes",
+            get({
+                let registry = s.registry_path.clone();
+                move |q: Query<super::BytesQuery>, headers: axum::http::HeaderMap| {
+                    super::serve_for_peer(registry.clone(), q.0, headers)
+                }
+            }),
+        )
+        .route(
             "/api/peer/tree/poll",
             post({
                 let registry = s.registry_path.clone();

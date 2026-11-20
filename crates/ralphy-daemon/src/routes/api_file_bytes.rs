@@ -10,7 +10,9 @@ use axum::routing::get;
 use axum::Router;
 use serde::Deserialize;
 
-use super::{blocking_read, RouterShared};
+use super::{blocking_read, encode_query_value, RouterShared};
+use crate::peer::client::{self, StreamDeadlines, STREAM_DEADLINES};
+use crate::peer::{self, PeerDescriptor};
 use crate::{checkout, confine, fleet, registry, tree};
 
 /// The query: the repo, the path and the checkout, as `file.read` takes them.
@@ -44,10 +46,11 @@ fn parse_range(headers: &HeaderMap) -> Option<tree::ByteRange> {
     Some(tree::ByteRange { start, end })
 }
 
-/// Where the route reads: the registry and this daemon's id.
+/// Where the route reads: the registry, the peer store and this daemon's id.
 #[derive(Clone)]
 struct Local {
     registry_path: PathBuf,
+    peers_dir: PathBuf,
     daemon_id: String,
 }
 
@@ -129,20 +132,117 @@ async fn serve(local: Local, query: BytesQuery, headers: HeaderMap) -> Response 
     if destination_refused(&headers) {
         return with_answer_headers(StatusCode::FORBIDDEN.into_response());
     }
-    let range = parse_range(&headers).unwrap_or(tree::ByteRange {
+    let answer = match target(&local, &query.repo).await {
+        Target::Local => read_off_reactor(local, query, &headers).await,
+        Target::Peer(peer, slug) => {
+            from_peer(&peer, &slug, &query, &headers, STREAM_DEADLINES).await
+        }
+        Target::Unknown => StatusCode::NOT_FOUND.into_response(),
+    };
+    with_answer_headers(answer)
+}
+
+async fn read_off_reactor(local: Local, query: BytesQuery, headers: &HeaderMap) -> Response {
+    let range = parse_range(headers).unwrap_or(tree::ByteRange {
         start: 0,
         end: None,
     });
-    let answer = blocking_read(move || read(&local, &query, range))
+    blocking_read(move || read(&local, &query, range))
         .await
-        .unwrap_or_else(|| StatusCode::SERVICE_UNAVAILABLE.into_response());
-    with_answer_headers(answer)
+        .unwrap_or_else(|| StatusCode::SERVICE_UNAVAILABLE.into_response())
+}
+
+/// Where a repo ref is read.
+enum Target {
+    Local,
+    Peer(Box<PeerDescriptor>, String),
+    Unknown,
+}
+
+/// The peer store is read only for a ref this daemon does not own.
+async fn target(local: &Local, repo: &str) -> Target {
+    if !matches!(
+        fleet::route(repo, &local.daemon_id, &[]),
+        fleet::Route::UnknownDaemon { .. }
+    ) {
+        return Target::Local;
+    }
+    let (peers, _) = peer::read_peer_store(local.peers_dir.clone()).await;
+    match fleet::route(repo, &local.daemon_id, &peers) {
+        fleet::Route::Peer { peer, slug } => Target::Peer(Box::new(peer.clone()), slug.to_owned()),
+        fleet::Route::Local { .. } | fleet::Route::UnknownDaemon { .. } => Target::Unknown,
+    }
+}
+
+/// The peer's answer to the same request: its `Range`, then its status, its
+/// headers of the content and its body as it arrives (D6).
+async fn from_peer(
+    peer: &PeerDescriptor,
+    slug: &str,
+    query: &BytesQuery,
+    headers: &HeaderMap,
+    deadlines: StreamDeadlines,
+) -> Response {
+    let mut path = format!(
+        "/api/peer/file/bytes?repo={}&path={}",
+        encode_query_value(slug),
+        encode_query_value(&query.path)
+    );
+    if let Some(name) = &query.checkout {
+        path.push_str("&checkout=");
+        path.push_str(&encode_query_value(name));
+    }
+    let mut forwarded = HeaderMap::new();
+    if let Some(range) = headers.get(header::RANGE) {
+        forwarded.insert(header::RANGE, range.clone());
+    }
+    match client::get_stream(peer, &path, forwarded, deadlines).await {
+        Ok(resp) => passed_on(resp),
+        Err(e) => {
+            let why = client::transport_failed(peer, format!("{e:#}")).await;
+            tracing::warn!(peer = %peer.daemon_id, %why, "the peer did not serve file bytes");
+            StatusCode::BAD_GATEWAY.into_response()
+        }
+    }
+}
+
+/// The headers of the content a peer sent, on the peer's status and body.
+fn passed_on(resp: Response) -> Response {
+    let (parts, body) = resp.into_parts();
+    let mut out = (parts.status, body).into_response();
+    for name in [
+        header::CONTENT_TYPE,
+        header::CONTENT_LENGTH,
+        header::CONTENT_RANGE,
+        header::ACCEPT_RANGES,
+    ] {
+        if let Some(value) = parts.headers.get(&name) {
+            out.headers_mut().insert(name, value.clone());
+        }
+    }
+    out
+}
+
+/// `/api/peer/file/bytes`: a peer asks for the bytes of a repo of this
+/// daemon's own registry, by its bare slug, so a request never routes again.
+pub(crate) async fn serve_for_peer(
+    registry_path: PathBuf,
+    query: BytesQuery,
+    headers: HeaderMap,
+) -> Response {
+    let local = Local {
+        registry_path,
+        peers_dir: PathBuf::new(),
+        daemon_id: String::new(),
+    };
+    with_answer_headers(read_off_reactor(local, query, &headers).await)
 }
 
 /// `/api/file/bytes`, behind the auth guard like every `/api` route.
 pub(crate) fn file_bytes_routes(s: &RouterShared) -> Router {
     let local = Local {
         registry_path: s.registry_path.clone(),
+        peers_dir: s.peers_dir.clone(),
         daemon_id: s.daemon_id.clone().unwrap_or_default(),
     };
     Router::new().route(
@@ -153,5 +253,7 @@ pub(crate) fn file_bytes_routes(s: &RouterShared) -> Router {
     )
 }
 
+#[cfg(test)]
+mod peer_tests;
 #[cfg(test)]
 mod tests;
