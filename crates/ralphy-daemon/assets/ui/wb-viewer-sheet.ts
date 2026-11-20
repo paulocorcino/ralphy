@@ -355,14 +355,22 @@ export function mountSheetSwitch(host: SheetSwitchHost, load = loadVendor): HTML
     const rows = textRows(kit, host.text(), host.path.toLowerCase().endsWith(".tsv"));
     view.show([{ name: host.path, rows }]);
   };
+  // A second click while the library loads would build a second grid.
+  let loading = false;
   button.addEventListener("click", () => {
     if (open) {
       toText(open);
       return;
     }
-    toGrid().catch((err: unknown) => {
-      devError("[workbench] the grid of the text failed", err);
-    });
+    if (loading) return;
+    loading = true;
+    toGrid()
+      .catch((err: unknown) => {
+        devError("[workbench] the grid of the text failed", err);
+      })
+      .finally(() => {
+        loading = false;
+      });
   });
   return button;
 }

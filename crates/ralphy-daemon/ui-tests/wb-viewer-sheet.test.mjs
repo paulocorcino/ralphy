@@ -235,6 +235,22 @@ test("a csv opens in the editor and the switch shows a grid and back, text uncha
   assert.equal(editor.text, before);
 });
 
+test("two clicks while the grid library loads build one grid", async () => {
+  const { module, grids } = fakeKit();
+  const holder = element("viewer");
+  const body = element("editor");
+  holder.append(body);
+  const button = mountSheetSwitch(
+    { document: fakeDocument(), toolbar: element("toolbar"), body, text: () => "a,b", path: "a.csv" },
+    () => Promise.resolve({ ok: true, module }),
+  );
+  button.fire("click");
+  button.fire("click");
+  await settle();
+  assert.equal(grids.length, 1);
+  assert.equal(holder.children.length, 2);
+});
+
 test("a too large answer shows the message and starts no reader", async () => {
   const started = [];
   const { pane } = sheetPane("big.ods", {
