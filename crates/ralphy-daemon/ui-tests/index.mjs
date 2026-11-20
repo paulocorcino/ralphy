@@ -125,6 +125,7 @@ import "./wb-viewer-panes.test.mjs";
 import "./wb-window-state.test.mjs";
 import "./wb-diagram-zoom.test.mjs";
 import "./wb-zoom-overlay.test.mjs";
+import "./wb-zoom-surface.test.mjs";
 import "./wb-stall.test.mjs";
 import "./opencode-state-plugin.test.mjs";
 import "./wb-hosts-progress.test.mjs";
