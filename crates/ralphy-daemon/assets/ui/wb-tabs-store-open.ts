@@ -1,7 +1,7 @@
 /* ---------------------------------------------------------------------------
    Opening a file into a tab, for the Alpine store `tabs` (`fetchContent`,
-   `openLink` and `openTab` of wb-tabs-store.ts): the `file.read` or
-   `file.image` read and its refusals, a markdown link to another repo file,
+   `openLink` and `openTab` of wb-tabs-store.ts): the `file.read` read and
+   its refusals, a markdown link to another repo file,
    and the tab a file opens into.
 
    Each step takes the store as `store`, and calls only its own methods, so
@@ -9,6 +9,7 @@
    --------------------------------------------------------------------------- */
 import { WBFail } from "./wb-fail.ts";
 import { classify, fileTabId, tabIcon } from "./wb-file-paths.ts";
+import { viewerOf } from "./wb-viewers.ts";
 import type { CanvasTab, TabBody, TabOpen } from "./wb-shell-types.d.ts";
 
 /** What opening a file reads or calls on the store `tabs`. */
@@ -56,20 +57,8 @@ export function fetchContent(store: OpenTabs, file: FileToRead): Promise<TabBody
     }
     return { refused: reason };
   };
-  // An image is `file.image` (ADR-0049): a `data:` URL. Same refusal shape.
-  if (ftype === "image") {
-    let refusal: TabBody = null;
-    return WBDaemon.readImage(
-      project,
-      path,
-      (reason) => {
-        refusal = refuse(reason);
-      },
-      checkout,
-    )
-      .then((url) => (url == null ? refusal : { content: url }))
-      .catch(() => refuse(WBFail.transport));
-  }
+  // A viewer's kind reads the file bytes route itself (ADR-0091 D1): no verb.
+  if (viewerOf(ftype)) return Promise.resolve({ content: "" });
   return WBDaemon.observe("file.read", WBDaemon.withCheckout({ repo: project, path }, checkout))
     .then((reply) => {
       if (reply.status === "ok") {

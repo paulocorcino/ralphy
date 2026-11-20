@@ -74,6 +74,7 @@ import "./wb-window-title.test.mjs";
 import "./wb-fail.test.mjs";
 import "./wb-file-search.test.mjs";
 import "./wb-files.test.mjs";
+import "./wb-viewers.test.mjs";
 import "./wb-fleet.test.mjs";
 import "./wb-geometry.test.mjs";
 import "./wb-hosts.test.mjs";
