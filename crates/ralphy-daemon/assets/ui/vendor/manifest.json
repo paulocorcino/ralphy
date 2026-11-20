@@ -615,6 +615,28 @@
       ]
     },
     {
+      "name": "Tabulator",
+      "npm": "tabulator-tables",
+      "version": "6.7.1",
+      "source": "https://registry.npmjs.org/tabulator-tables/-/tabulator-tables-6.7.1.tgz",
+      "files": [
+        {
+          "path": "tabulator/LICENSE",
+          "sha256": "191a2ee554684e1064c897b432f0e1bc6dfa714ca045d3f6ea2cf692cbd398b7"
+        },
+        {
+          "path": "tabulator/tabulator.min.css",
+          "sha256": "ff598d8e961398e09a8e52ab21740e5ed952c84feebbdacec8f8a362dd3f73db",
+          "note": "dist/css/tabulator.min.css, byte for byte. Its last line names a source map that is not vendored"
+        },
+        {
+          "path": "tabulator/tabulator_esm.min.mjs",
+          "sha256": "fcdb1d07908faec99956296b782b7be011e5076290c7dc15ad769fb582fccba4",
+          "note": "dist/js/tabulator_esm.min.mjs, byte for byte: the ESM build the package names for import. Its last line names a source map that is not vendored. Only the filter, import and column modules are registered (ADR-0091 D11)"
+        }
+      ]
+    },
+    {
       "name": "QR Code Generator",
       "npm": "qrcode-generator",
       "version": "1.5.2",
