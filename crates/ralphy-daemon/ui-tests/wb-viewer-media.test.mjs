@@ -83,6 +83,7 @@ test("the media element's src is the route address and it has no controls", () =
   assert.equal(url.searchParams.get("path"), "clips/a b.mp4");
   assert.equal(url.searchParams.get("checkout"), "feat x");
   assert.equal("controls" in media.attrs, false);
+  assert.equal("disablepictureinpicture" in media.attrs, true);
   assert.equal(media.tag, "video");
   assert.equal(pane("song.mp3", loaded).media.tag, "audio");
 });

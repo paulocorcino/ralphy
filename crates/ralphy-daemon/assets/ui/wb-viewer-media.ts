@@ -58,6 +58,7 @@ function mediaElement(document: Document, url: string, video: boolean) {
     src: url,
     preload: "metadata",
     controlslist: "nodownload noremoteplayback",
+    disablepictureinpicture: "",
   });
   media.addEventListener("contextmenu", (ev: Event) => {
     ev.preventDefault();
