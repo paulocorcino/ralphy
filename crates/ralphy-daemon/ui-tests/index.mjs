@@ -136,3 +136,4 @@ import "./wb-consoles-tab-paint.test.mjs";
 import "./wb-desk-restore.test.mjs";
 import "./wb-wording.test.mjs";
 import "./wb-viewer-media.test.mjs";
+import "./wb-viewer-font.test.mjs";
