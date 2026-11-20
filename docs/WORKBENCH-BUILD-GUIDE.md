@@ -158,6 +158,19 @@ shows `text` in its pane; the next open tries again. To add such a library:
 3. Pass the path to `loadVendor` as a string. The build leaves a dynamic
    `import()` as it is, so the path is the served path.
 
+### anydoc-wasm (pinned `@firecrawl/anydoc-wasm` `0.2.5`)
+
+The reader of docx, odt, xlsx and ods files. `vendor/anydoc/` holds
+`anydoc_wasm.js`, `anydoc_wasm_bg.wasm`, `anydoc_wasm.d.ts` and `LICENSE` of
+the npm tarball, byte for byte. The `.d.ts` file gives the model types to
+the modules and is not served, so the manifest does not list it. Only
+`wb-anydoc-worker.ts` imports the glue, inside a module worker that
+`wb-anydoc.ts` starts on the first read and ends when it is idle. The glue
+fetches the `.wasm` file next to itself; the daemon serves it gzipped
+(6.7 MB, 2.9 MB after gzip). WebAssembly compiles under the page policy
+through `'unsafe-eval'`. The glue has no `eval` and no `new Function`; check
+this again after a bump.
+
 ### media-chrome (pinned `4.19.5`)
 
 The controls of the media viewer. `vendor/media-chrome/media-chrome.mjs` is

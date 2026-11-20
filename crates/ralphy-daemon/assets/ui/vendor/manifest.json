@@ -14,6 +14,28 @@
       ]
     },
     {
+      "name": "anydoc-wasm",
+      "npm": "@firecrawl/anydoc-wasm",
+      "version": "0.2.5",
+      "source": "https://registry.npmjs.org/@firecrawl/anydoc-wasm/-/anydoc-wasm-0.2.5.tgz",
+      "files": [
+        {
+          "path": "anydoc/LICENSE",
+          "sha256": "03a9e7657aac6536fb6458bd220347c4e7f85bd0a51d8d9e8528530b7a682ade"
+        },
+        {
+          "path": "anydoc/anydoc_wasm.js",
+          "sha256": "4860ad4c02c523593a5dae7698e186e8d7cf75a0e0bf3c2c294373de58eaee74",
+          "note": "the wasm-bindgen glue, byte for byte. Only the document worker imports it"
+        },
+        {
+          "path": "anydoc/anydoc_wasm_bg.wasm",
+          "sha256": "09c5390769f65236a186d1d39a12b61a66cc6a1b6fd3c5961baef24a7c6e9b62",
+          "note": "byte for byte; the glue fetches it next to itself"
+        }
+      ]
+    },
+    {
       "name": "Bootstrap Icons",
       "npm": "bootstrap-icons",
       "version": "1.11.3",
