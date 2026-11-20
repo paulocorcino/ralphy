@@ -313,3 +313,20 @@ not.
 `ImportModule` (`importFormat: "csv"`), which is registered beside the
 filter and column modules. An xlsx or ods file over 2 MiB shows that it is
 too large to show, and no reader starts.
+
+## Amendment 2026-11-20 — D8, D12: the media player is media-chrome
+
+The operator chose `media-chrome` (MIT, version 4.19.5, 176 KB as its IIFE
+build, no `eval` and no `new Function`) for audio and video, over the
+browser's own controls. It draws its controls around the native `<video>`
+or `<audio>`, which still reads the file bytes in ranges. `howler.js` was
+looked at and left out: it plays audio from code and draws no player.
+
+**D8, changed.** `media-chrome` is a vendored library of the media viewer.
+
+**D12, changed.** A media file shows the controls of `media-chrome`, with no
+download control among them, the same in every engine. Its keys are turned
+off (`nohotkeys`), so no key of the player escapes the keyboard command list
+(ADR-0087). The media element has no `controls` attribute; it keeps
+`disablePictureInPicture`, and the browser's own context menu is off on the
+player.
