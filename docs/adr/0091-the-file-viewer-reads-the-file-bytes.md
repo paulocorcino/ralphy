@@ -72,7 +72,7 @@ the extension.** The extension proposes the kind and the first bytes decide
 | Image | png jpg jpeg gif webp bmp ico svg avif | as `tree::ImageType` today; `ftyp avif` | 32 MiB |
 | PDF | pdf | `%PDF-` | none |
 | Document | docx odt | ZIP; for odt, the `mimetype` entry | 32 MiB |
-| Sheet | xlsx ods | ZIP; for ods, the `mimetype` entry | 32 MiB |
+| Sheet | xlsx ods | ZIP; for ods, the `mimetype` entry | 32 MiB (2 MiB since the amendment of 2026-11-20) |
 | Text table | csv tsv | text, by the binary check of `file.read` | 32 MiB |
 | Media | mp4 m4a webm mp3 wav ogg oga ogv | `ftyp`, EBML, `ID3` or an MPEG frame, `RIFF`…`WAVE`, `OggS` | none |
 | Font | ttf otf woff woff2 | `00 01 00 00` or `true`, `OTTO`, `wOFF`, `wOF2` | 16 MiB |
@@ -247,3 +247,69 @@ named.
 - D13: checked by `jscpd` on a pull request, which fails a second copy of the
   gestures.
 - D14: not checked by code: manual, reviewed in the PR.
+
+## Spike results (2026-11-20)
+
+Issue #981. Playwright 1.60.0 for Python, its Chromium, Firefox and WebKit
+builds on Windows 11. A local server sent the workbench page policy of
+`routes/headers.rs` (without the script hashes). Libraries:
+`@firecrawl/anydoc-wasm` 0.2.5 and `tabulator-tables` 6.7.1. Files: written
+for the spike (a docx, an odt, an xlsx of three sheets, an ods of two sheets,
+xlsx files of 5,000 to 50,000 rows, a CSV of 25 MiB and 400,000 rows), and
+three docx and three xlsx files of the operator's computer, read locally;
+only counts were kept.
+
+- **The model.** An xlsx gives one heading (the sheet name) and one table per
+  sheet; an xlsx with one sheet gives only the table. A formula cell holds
+  its stored value (`A2*2` gives `42`). An ods gives the same shape. The
+  embedded image of a docx and of an odt is in `assets`, with its media type.
+  A real docx gave headings, lists and its 10 images.
+- **WebAssembly under the page policy.** The module compiles and runs in a
+  module worker in the three engines, through `'unsafe-eval'`, with no policy
+  error in the console. First load: 57 to 109 ms.
+- **Size.** `anydoc_wasm_bg.wasm` is 6.7 MB, 2.9 MB after gzip at the
+  daemon's level (`Compression::default()`).
+- **Time of `toDocument`, in a worker.**
+
+  | File | Chromium | Firefox | WebKit |
+  | --- | --- | --- | --- |
+  | xlsx, 5,000 rows (0.2 MB) | 0.1 s | 0.6 s | 0.1 s |
+  | xlsx, 20,000 rows (0.7 MB) | 0.4 s | 2.3 s | 0.4 s |
+  | xlsx, 50,000 rows (1.8 MB) | 1.0 s | 5.7 s | 1.0 s |
+  | CSV, 4 MiB (66,290 rows) | 1.0 s | 1.9 s | 22.8 s |
+  | CSV, 8 MiB (130,614 rows) | 1.9 s | 4.1 s | 76.6 s |
+
+  In Node 22, `toDocument` on the CSV of 25 MiB took 16.9 s and about 1 GB
+  of heap. A 32 MiB sheet cannot be read this way.
+- **Tabulator.** The ESM build with only `FilterModule`,
+  `ResizeColumnsModule` and `ImportModule` registered has no `download`
+  function. 500,000 rows of 5 columns: built in 0.2 to 0.4 s, the last row
+  reached by scrolling, 47 row elements, a scroll height of 12,000,001 px,
+  under the element height limit of each engine. A filter over the 500,000
+  rows: 50 to 124 ms.
+- **CSV by Tabulator itself.** `importFormat: "csv"` read the 8 MiB CSV
+  (130,613 rows) in 0.27 s in Chromium, 0.47 s in Firefox and 0.31 s in
+  WebKit.
+- **`Sec-Fetch-Dest`.** Chromium and Firefox send `image`, `video` and
+  `audio` for those elements and `empty` for a fetch. The WebKit build sends
+  `image` and `empty`, and **no** `Sec-Fetch-Dest` on the requests of
+  `<video>` and `<audio>`. D5 serves a request with no header, so media plays
+  there. Safari on macOS and iOS was not measured: the WebKit build of
+  Playwright on Windows is not Safari.
+
+## Amendment 2026-11-20 — D3, D10, D11: a sheet by its kind, after the spike
+
+The spike above measured that `toDocument` cannot read a large sheet in
+time. The operator approved these changes on 2026-11-20.
+
+**D3, changed.** The cap of an xlsx or an ods file is 2 MiB, not 32 MiB. An
+xlsx of 1.8 MB (50,000 rows) took up to 5.7 s (Firefox). csv and tsv keep
+32 MiB.
+
+**D10, changed.** docx, odt, xlsx and ods go to anydoc-wasm. csv and tsv do
+not.
+
+**D11, changed.** Tabulator reads a csv or tsv file itself, with its
+`ImportModule` (`importFormat: "csv"`), which is registered beside the
+filter and column modules. An xlsx or ods file over 2 MiB shows that it is
+too large to show, and no reader starts.
