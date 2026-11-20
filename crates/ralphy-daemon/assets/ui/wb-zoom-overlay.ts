@@ -13,20 +13,10 @@
    Importing this module does nothing: the entry module of a page calls
    `wireDiagramZoom` once.
 --------------------------------------------------------------------------- */
-import { dragBegins, dragThreshold } from "./wb-console-input.ts";
-import {
-  clampPan,
-  fitScale,
-  fitView,
-  minScale,
-  panBy,
-  pinchView,
-  wheelFactor,
-  zoomAt,
-  ZOOM_STEP,
-} from "./wb-diagram-zoom.ts";
-import type { Pair, Point, Size, View } from "./wb-diagram-zoom.ts";
+import { ZOOM_STEP } from "./wb-diagram-zoom.ts";
+import type { Point, Size } from "./wb-diagram-zoom.ts";
 import { targetClosest } from "./wb-dom-need.ts";
+import { attachZoomSurface } from "./wb-zoom-surface.ts";
 
 type Picture = HTMLImageElement | SVGSVGElement;
 
@@ -36,9 +26,6 @@ const MIN_PICTURE_WIDTH = 120;
 /** A raster image is not drawn above its own pixels when the view opens; a vector is. */
 const RASTER_CAP = 1;
 const VECTOR_CAP = 4;
-
-/** Two taps closer than this are a double tap. */
-const DOUBLE_TAP_MS = 300;
 
 const ENLARGE = "Enlarge";
 
@@ -179,143 +166,6 @@ function buildOverlay(doc: Document, content: Element, size: Size) {
   return { overlay, surface, stage, bar };
 }
 
-type Controller = {
-  fit(): void;
-  zoom(factor: number, at: Point): void;
-  actual(at: Point): void;
-  toggle(at: Point): void;
-  pan(dx: number, dy: number): void;
-  pinch(prev: Pair, next: Pair): void;
-  resize(): void;
-};
-
-// The view's state. `fitted` stays true until the operator zooms or pans, so a
-// window resize keeps a fitted picture fitted and leaves a zoomed one alone.
-function createController(
-  surface: HTMLElement,
-  stage: HTMLElement,
-  size: Size,
-  cap: number,
-): Controller {
-  let view: View = { scale: 1, x: 0, y: 0 };
-  let fitted = true;
-  const box = (): Size => ({ w: surface.clientWidth, h: surface.clientHeight });
-  const fitNow = () => fitScale(size, box(), cap);
-  const show = (next: View) => {
-    view = clampPan(next, size, box());
-    stage.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
-  };
-  const change = (next: View) => {
-    fitted = false;
-    show(next);
-  };
-  const fit = () => {
-    fitted = true;
-    show(fitView(size, box(), cap));
-  };
-  const zoom = (factor: number, at: Point) => {
-    change(zoomAt(view, factor, at, minScale(fitNow())));
-  };
-  return {
-    fit,
-    zoom,
-    actual: (at) => {
-      zoom(1 / view.scale, at);
-    },
-    toggle: (at) => {
-      if (Math.abs(view.scale - fitNow()) < 1e-6) zoom(1 / view.scale, at);
-      else fit();
-    },
-    pan: (dx, dy) => {
-      change(panBy(view, dx, dy));
-    },
-    pinch: (prev, next) => {
-      change(pinchView(view, prev, next, minScale(fitNow())));
-    },
-    resize: () => {
-      if (fitted) fit();
-      else show(view);
-    },
-  };
-}
-
-// One finger drags, two fingers pinch, a tap on the empty ground closes, and
-// two quick taps switch between the fit and the actual size. A press becomes
-// a drag only past the drag threshold, and the first drag move covers the
-// whole distance from where the press began (WORKBENCH-BUILD-GUIDE, Touch).
-function attachGestures(
-  surface: HTMLElement,
-  ctl: Controller,
-  local: (ev: MouseEvent) => Point,
-  close: () => void,
-) {
-  const points = new Map<number, Point>();
-  let start: Point = { x: 0, y: 0 };
-  let last: Point = start;
-  let moved = false;
-  let tapAt = -Infinity;
-  // Pointer capture makes the `pointerup` target the surface whatever was
-  // under the finger, so the target of the press is the one that is read.
-  let onGround = false;
-  const pair = (): Pair | null => {
-    const [a, b] = [...points.values()];
-    return a && b ? [a, b] : null;
-  };
-  const tap = (ev: PointerEvent) => {
-    if (onGround) {
-      close();
-      return;
-    }
-    if (ev.timeStamp - tapAt < DOUBLE_TAP_MS) ctl.toggle(local(ev));
-    tapAt = ev.timeStamp;
-  };
-  surface.addEventListener("pointerdown", (ev) => {
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test's surface has none
-    surface.setPointerCapture?.(ev.pointerId);
-    points.set(ev.pointerId, local(ev));
-    if (points.size === 1) {
-      start = last = local(ev);
-      moved = false;
-      onGround = ev.target === surface;
-    } else moved = true;
-  });
-  surface.addEventListener("pointermove", (ev) => {
-    if (!points.has(ev.pointerId)) return;
-    const now = local(ev);
-    if (points.size === 2) {
-      const prev = pair();
-      points.set(ev.pointerId, now);
-      const next = pair();
-      if (prev && next) ctl.pinch(prev, next);
-      return;
-    }
-    points.set(ev.pointerId, now);
-    if (!moved && !dragBegins(start, now, dragThreshold(ev.pointerType))) return;
-    moved = true;
-    ctl.pan(now.x - last.x, now.y - last.y);
-    last = now;
-  });
-  const release = (ev: PointerEvent) => {
-    if (!points.delete(ev.pointerId)) return;
-    // A finger that stays down after a pinch drags from where it is, and never taps.
-    const remaining = [...points.values()][0];
-    if (remaining) {
-      last = remaining;
-      moved = true;
-    } else if (!moved && ev.type === "pointerup") tap(ev);
-  };
-  surface.addEventListener("pointerup", release);
-  surface.addEventListener("pointercancel", release);
-  surface.addEventListener(
-    "wheel",
-    (ev) => {
-      ev.preventDefault();
-      ctl.zoom(wheelFactor(ev), local(ev));
-    },
-    { passive: false },
-  );
-}
-
 // The keys act inside the view and stop there, so an Escape that closes the
 // view does not also close a dialog under it. Tab stays inside the bar.
 function trapTab(ev: KeyboardEvent, overlay: HTMLElement, bar: HTMLElement) {
@@ -362,11 +212,10 @@ export function openZoom(win: Window, doc: Document, src: Picture, opener: HTMLE
   if (doc.querySelector(".zoom-overlay") || size.w <= 0 || size.h <= 0) return null;
   const { overlay, surface, stage, bar } = buildOverlay(doc, copyOf(doc, src, size), size);
   doc.body.append(overlay);
-  const ctl = createController(surface, stage, size, isRaster(src) ? RASTER_CAP : VECTOR_CAP);
-  const local = (ev: MouseEvent): Point => {
-    const rect = surface.getBoundingClientRect();
-    return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
-  };
+  const cap = isRaster(src) ? RASTER_CAP : VECTOR_CAP;
+  const ctl = attachZoomSurface(surface, { stage, size, cap }, () => {
+    close();
+  });
   const middle = (): Point => ({ x: surface.clientWidth / 2, y: surface.clientHeight / 2 });
   const onResize = () => {
     ctl.resize();
@@ -395,7 +244,6 @@ export function openZoom(win: Window, doc: Document, src: Picture, opener: HTMLE
     const act = targetClosest(ev, "[data-zoom]")?.dataset["zoom"];
     if (act !== undefined && act !== "") actions[act]?.();
   });
-  attachGestures(surface, ctl, local, close);
   attachKeys(overlay, bar, actions);
   win.addEventListener("resize", onResize);
   ctl.fit();

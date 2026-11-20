@@ -241,6 +241,7 @@ outline shows focus with `outline: 1px solid var(--focus-ring)` and
 | [Touch key strip](./design-system/touch-keys.md)          | `.session-keys`, `.session-key` | Code     |
 | [Command palette](./design-system/command-palette.md)     | `.palette-modal`                | 1 part   |
 | [Help screen](./design-system/help-screen.md)             | `.help-modal`                   | 1 part   |
+| Zoom bar (`wb-zoom-bar.ts`)                               | `.zoom-bar`, `.zoom-bar-btn`    | Code     |
 
 The count is the number of `*.part.html` files and pages that use the
 class, measured on 2026-11-14 with `grep -l`. "Code" means the element is
@@ -365,7 +366,8 @@ A terminal asks the list before it gives a chord to the page. The
 | Apply the diagram; cancel                                                              | Ctrl+Enter (Cmd+Enter); Escape         | Diagram editor in a note    | `crates/ralphy-daemon/vendor-build/crepe/entry.js:666` |
 | Save the file                                                                          | Ctrl+S (Cmd+S)                         | Code editor                 | `wb-file-viewer-code.ts:77`                            |
 | Next match; the match before; close                                                    | Enter; Shift+Enter; Escape             | Markdown search             | `wb-viewer-markdown.ts:229`                            |
-| Zoom in; zoom out; fit; close; keep the focus inside                                   | `+` or `=`; `-`; `0`; Escape; Tab      | Zoom overlay                | `wb-zoom-overlay.ts:341`                               |
+| Zoom in; zoom out; fit; close; keep the focus inside                                   | `+` or `=`; `-`; `0`; Escape; Tab      | Zoom overlay                | `wb-zoom-overlay.ts:183`                               |
+| Zoom in; zoom out; fit, in a pane that zooms an image                                  | `+` or `=`; `-`; `0`                   | Zoom bar                    | `wb-zoom-bar.ts:118`                                   |
 | Rename                                                                                 | F2 (Enter on macOS)                    | Files tree                  | `wb-files-mount.ts:153`                                |
 | Show the properties                                                                    | Alt+Enter                              | Files tree                  | `wb-files-mount.ts:178`                                |
 
