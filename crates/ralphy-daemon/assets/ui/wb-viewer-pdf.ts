@@ -231,7 +231,6 @@ function buildShell(host: ViewerReadOnlyDeps, rec: BytesRecord): Pane {
   body.style.position = "absolute";
   body.style.inset = "var(--viewer-toolbar-h, 2.25rem) 0 0 0";
   body.style.overflow = "auto";
-  el.style.position = "relative";
   return { el, body, pages: need(el, ".pdf-pages"), meta: need(el, ".pdf-meta") };
 }
 

@@ -161,6 +161,7 @@ test("scripting: the viewer runs with enableScripting false and no eval", async 
   const { seen } = await opened();
   assert.equal(seen.viewerOptions.enableScripting, false);
   assert.equal(seen.documentOptions.isEvalSupported, false);
+  assert.equal(seen.documentOptions.enableXfa, false, "XFA forms stay off");
 });
 
 test("editor: the annotation editor mode is the core's DISABLE", async () => {
