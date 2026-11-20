@@ -72,7 +72,7 @@ const NOT_PEER_REPLIES: &[(&str, &str, &str)] = &[
 /// verbs, which ride a channel of the peer's page socket (#830). The new verb
 /// `file.preview` keeps version 5 (ADR-0089 D3): its `token` is optional in the
 /// page type, and the verb is never relayed, so no peer answers it.
-const PEER_REPLY_PIN: (u32, u64) = (5, 0x4a61_1984_d833_4f76);
+const PEER_REPLY_PIN: (u32, u64) = (5, 0xfa62_f65a_5e9c_f659);
 
 /// Where `PEER_PROTOCOL_VERSION` is, from the repo root.
 const PEER_RS: &str = "crates/ralphy-daemon/src/peer.rs";
