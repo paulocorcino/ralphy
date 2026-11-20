@@ -62,7 +62,8 @@ pub(crate) fn content_type(path: &str) -> &'static str {
     match path.rsplit('.').next() {
         Some("html") => "text/html; charset=utf-8",
         Some("css") => "text/css; charset=utf-8",
-        Some("js") => "text/javascript; charset=utf-8",
+        Some("js" | "mjs") => "text/javascript; charset=utf-8",
+        Some("wasm") => "application/wasm",
         Some("svg") => "image/svg+xml",
         Some("png") => "image/png",
         Some("ico") => "image/x-icon",
@@ -76,5 +77,20 @@ pub(crate) fn content_type(path: &str) -> &'static str {
         // never offers a standalone launch.
         Some("webmanifest") => "application/manifest+json",
         _ => "application/octet-stream",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::content_type;
+
+    #[test]
+    fn vendor_modules_have_their_types() {
+        // A module script served with another type is refused by the browser.
+        assert_eq!(
+            content_type("vendor/media-chrome/media-chrome.mjs"),
+            "text/javascript; charset=utf-8"
+        );
+        assert_eq!(content_type("vendor/lib/core.wasm"), "application/wasm");
     }
 }

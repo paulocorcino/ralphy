@@ -216,13 +216,14 @@ pub(crate) fn embedded_path(path: &str) -> Option<&str> {
 }
 
 /// Whether an asset of this content type is worth deflating: text of every
-/// kind, JS, JSON, SVG and the manifest. Fonts, PNGs and ICOs are stored
+/// kind, JS, JSON, SVG, wasm and the manifest. Fonts, PNGs and ICOs are stored
 /// compressed already and would only cost the round trip.
 pub fn compressible(content_type: &str) -> bool {
     content_type.starts_with("text/")
         || content_type.starts_with("application/json")
         || content_type.starts_with("application/manifest+json")
         || content_type.starts_with("image/svg+xml")
+        || content_type.starts_with("application/wasm")
 }
 
 /// Whether the request's `Accept-Encoding` admits gzip. A `gzip;q=0` is an
@@ -285,6 +286,12 @@ mod tests {
         assert!(!compressible("image/png"));
         assert!(!compressible("font/woff2"));
         assert!(!compressible("application/octet-stream"));
+    }
+
+    #[test]
+    fn wasm_is_gzipped() {
+        let wasm_type = crate::content_type("vendor/lib/core.wasm");
+        assert!(compressible(wasm_type), "{wasm_type} is deflated");
     }
 
     #[test]

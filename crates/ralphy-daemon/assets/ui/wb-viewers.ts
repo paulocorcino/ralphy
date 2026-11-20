@@ -2,6 +2,7 @@
 // how its pane is built. A viewer reads the file bytes route, never a verb,
 // so a new viewer is its own module plus one entry here.
 import { buildImage } from "./wb-file-viewer-read-only.ts";
+import { buildMedia } from "./wb-viewer-media.ts";
 import type { ViewerReadOnlyDeps } from "./wb-file-viewer-read-only.ts";
 import type { BytesRecord } from "./wb-file-viewer-records.ts";
 
@@ -15,6 +16,10 @@ export const VIEWERS: Record<string, ViewerEntry> = {
   image: {
     extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif"],
     build: buildImage,
+  },
+  media: {
+    extensions: ["mp4", "m4a", "webm", "mp3", "wav", "ogg", "oga", "ogv"],
+    build: buildMedia,
   },
 };
 
