@@ -20,13 +20,40 @@ fn args(list: &[&str]) -> Vec<String> {
 }
 
 #[test]
-fn the_only_flag_is_fast() {
-    assert_eq!(parse_args(&[]).unwrap(), Options { fast: false });
+fn the_flags_are_fast_and_all() {
+    let none = Options {
+        fast: false,
+        all: false,
+    };
+    assert_eq!(parse_args(&[]).unwrap(), none);
     assert_eq!(
-        parse_args(&args(&["--fast"])).unwrap(),
-        Options { fast: true }
+        parse_args(&args(&["--fast", "--all"])).unwrap(),
+        Options {
+            fast: true,
+            all: true
+        }
     );
     assert!(parse_args(&args(&["--only"])).is_err());
+}
+
+#[test]
+fn a_docs_only_change_skips_the_code_steps_and_runs_the_others() {
+    let root = tempfile::tempdir().unwrap();
+    let steps = [
+        Step {
+            program: NO_SUCH_TOOL,
+            ..cargo_step("doc", &[])
+        },
+        cargo_step("markdownlint", &["--version"]),
+    ];
+    let options = Options {
+        fast: false,
+        all: false,
+    };
+    let docs = Scope::DocsOnly(vec!["docs/a.md".to_owned()]);
+    let outcomes = run_all(root.path(), &steps, &options, &docs, Path::new("unused")).unwrap();
+    assert_eq!(outcomes, [Outcome::DocsOnly, Outcome::Passed]);
+    assert!(!Outcome::DocsOnly.is_bad());
 }
 
 #[test]
@@ -39,7 +66,11 @@ fn a_failed_step_does_not_stop_the_gate() {
     let outcomes = run_all(
         root.path(),
         &steps,
-        &Options { fast: false },
+        &Options {
+            fast: false,
+            all: false,
+        },
+        &Scope::Everything,
         Path::new("unused"),
     )
     .unwrap();
@@ -100,7 +131,11 @@ fn fast_skips_the_full_only_steps_and_runs_the_fast_only_ones() {
     let fast = run_all(
         root.path(),
         &steps,
-        &Options { fast: true },
+        &Options {
+            fast: true,
+            all: false,
+        },
+        &Scope::Everything,
         Path::new("unused"),
     )
     .unwrap();
@@ -109,7 +144,11 @@ fn fast_skips_the_full_only_steps_and_runs_the_fast_only_ones() {
     let full = run_all(
         root.path(),
         &steps,
-        &Options { fast: false },
+        &Options {
+            fast: false,
+            all: false,
+        },
+        &Scope::Everything,
         Path::new("unused"),
     )
     .unwrap();
@@ -127,7 +166,11 @@ fn the_log_holds_the_command_and_its_output() {
     run_all(
         root.path(),
         &[step],
-        &Options { fast: false },
+        &Options {
+            fast: false,
+            all: false,
+        },
+        &Scope::Everything,
         Path::new("unused"),
     )
     .unwrap();

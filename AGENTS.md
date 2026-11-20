@@ -85,7 +85,11 @@ ubiquitous language, and each crate is roughly one bounded context.
   a step is in `target/gate/<step>.log`; its first line is the command that
   runs the step alone. `--fast` skips the workspace tests and the doctests,
   for the loop while you work, but runs the daemon's pins on its own source
-  (`source-pins`); a change is done after a full run. A new
+  (`source-pins`); a change is done after a full run. When every file the
+  branch changes since `main` (commits, working tree, new files) is Markdown
+  outside `assets/` and `crates/`, the gate skips the code steps listed in
+  `crates/xtask/src/gate/scope.rs`: their rows say `skipped (docs)`, and
+  that is a pass. `--all` runs them anyway. A new
   check in CI gets its step in `steps.rs`: the ratchet
   `the_gate_mirrors_every_ci_step` fails until it has one. When the `oxfmt`
   step fails, its command without `--check` writes the format.

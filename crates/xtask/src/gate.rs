@@ -3,6 +3,7 @@
 //! of each step to `target/gate/<step>.log`, and prints one row per step. A
 //! tool that is not installed is `MISSING`, never a pass.
 
+mod scope;
 mod steps;
 
 use std::fs::File;
@@ -13,6 +14,7 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 
+use scope::Scope;
 use steps::{Step, STEPS};
 
 /// What one step came to.
@@ -25,6 +27,8 @@ enum Outcome {
     Missing,
     /// `--fast` left it out.
     Skipped,
+    /// A code step, and the change edits only Markdown that no code reads.
+    DocsOnly,
 }
 
 impl Outcome {
@@ -35,6 +39,7 @@ impl Outcome {
             Outcome::Failed(None) => "FAILED (signal)".to_owned(),
             Outcome::Missing => "MISSING".to_owned(),
             Outcome::Skipped => "skipped".to_owned(),
+            Outcome::DocsOnly => "skipped (docs)".to_owned(),
         }
     }
 
@@ -47,13 +52,19 @@ impl Outcome {
 #[derive(Debug, PartialEq, Eq)]
 struct Options {
     fast: bool,
+    /// Run the code steps for a change of Markdown only too.
+    all: bool,
 }
 
 fn parse_args(args: &[String]) -> Result<Options> {
-    let mut options = Options { fast: false };
+    let mut options = Options {
+        fast: false,
+        all: false,
+    };
     for arg in args {
         match arg.as_str() {
             "--fast" => options.fast = true,
+            "--all" => options.all = true,
             other => anyhow::bail!("unknown argument: {other}"),
         }
     }
@@ -158,9 +169,26 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// The outcome of a step that does not run, or `None` when it runs.
+fn left_out(step: &Step, options: &Options, scope: &Scope) -> Option<Outcome> {
+    if !step.runs.in_gate(options.fast) {
+        Some(Outcome::Skipped)
+    } else if !scope::runs_for(scope, step.name) {
+        Some(Outcome::DocsOnly)
+    } else {
+        None
+    }
+}
+
 /// Run every step of `steps` in `root` and print one row for each. Returns
 /// the outcomes in order.
-fn run_all(root: &Path, steps: &[Step], options: &Options, xtask: &Path) -> Result<Vec<Outcome>> {
+fn run_all(
+    root: &Path,
+    steps: &[Step],
+    options: &Options,
+    scope: &Scope,
+    xtask: &Path,
+) -> Result<Vec<Outcome>> {
     let dir = log_dir(root);
     std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     let mut outcomes = Vec::with_capacity(steps.len());
@@ -170,10 +198,9 @@ fn run_all(root: &Path, steps: &[Step], options: &Options, xtask: &Path) -> Resu
         out.flush().context("writing the gate table")?;
         let start = Instant::now();
         let log = dir.join(format!("{}.log", step.name));
-        let outcome = if step.runs.in_gate(options.fast) {
-            run_step(root, step, xtask, &log)?
-        } else {
-            Outcome::Skipped
+        let outcome = match left_out(step, options, scope) {
+            Some(outcome) => outcome,
+            None => run_step(root, step, xtask, &log)?,
         };
         let secs = start.elapsed().as_secs_f64();
         writeln!(out, "{:<18}{secs:>7.1}s", outcome.label()).context("writing the gate table")?;
@@ -188,13 +215,25 @@ pub(crate) fn gate_cmd(args: &[String]) -> Result<()> {
     let dir = log_dir(&root);
     std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     let xtask = own_program(&dir)?;
-    let outcomes = run_all(&root, STEPS, &options, &xtask)?;
+    let scope = if options.all {
+        Scope::Everything
+    } else {
+        scope::detect(&root)
+    };
+    let outcomes = run_all(&root, STEPS, &options, &scope, &xtask)?;
     let bad: Vec<&str> = STEPS
         .iter()
         .zip(&outcomes)
         .filter(|(_, o)| o.is_bad())
         .map(|(s, _)| s.name)
         .collect();
+    if let Scope::DocsOnly(paths) = &scope {
+        println!(
+            "docs only: {} changed file(s) are Markdown outside assets/ and crates/; \
+             the code steps did not run (--all runs them)",
+            paths.len()
+        );
+    }
     if options.fast {
         println!("--fast: the workspace tests did not run; the gate is not done");
     }
