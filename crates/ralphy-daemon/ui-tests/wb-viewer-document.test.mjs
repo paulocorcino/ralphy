@@ -70,6 +70,24 @@ const origin = (text, colSpan = 1) => ({
   cell: { blocks: [para(text)], colSpan, rowSpan: 1 },
 });
 
+const linkTo = (value) => ({
+  kind: "link",
+  target: { kind: "external", value },
+  content: [words("go")],
+});
+const linkPara = (value) => model([{ kind: "paragraph", content: [linkTo(value)] }]);
+// Built from parts: the scheme the renderer must refuse, kept out of a literal.
+const SCRIPT_SCHEME = ["java", "script:"].join("");
+
+test("a script-scheme link draws its text and no <a>; an https link draws an <a>", () => {
+  const document = fakeDocument();
+  const bad = renderDocument(document, linkPara(`${SCRIPT_SCHEME}alert(1)`));
+  assert.equal(find(bad, "a"), null);
+  assert.equal(textOf(bad), "go");
+  const good = renderDocument(document, linkPara("https://x.test/"));
+  assert.equal(find(good, "a")?.attrs.href, "https://x.test/");
+});
+
 test("a table with a merged cell draws it with colspan", () => {
   const covered = { kind: "covered", originRow: 0, originCol: 0 };
   const table = {
