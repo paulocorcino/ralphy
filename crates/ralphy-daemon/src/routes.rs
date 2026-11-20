@@ -20,6 +20,7 @@ mod api_attention;
 mod api_audit;
 mod api_command;
 mod api_desk;
+mod api_file_bytes;
 mod api_fleet;
 mod api_peer;
 mod api_read;
@@ -44,6 +45,7 @@ pub(crate) use api_attention::*;
 pub(crate) use api_audit::*;
 pub(crate) use api_command::*;
 pub(crate) use api_desk::*;
+pub(crate) use api_file_bytes::*;
 pub(crate) use api_fleet::*;
 pub(crate) use api_peer::*;
 pub(crate) use api_read::*;
@@ -244,6 +246,7 @@ pub(crate) fn router_with_roster(
     };
     Router::new()
         .merge(read_routes(&shared))
+        .merge(file_bytes_routes(&shared))
         .merge(usage_routes(&shared))
         .merge(release_routes(&shared))
         .merge(peer_routes(&shared))

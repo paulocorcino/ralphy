@@ -14,7 +14,8 @@ use super::*;
 /// → Telegram sets the bot up instead: `api-telegram` loses its reader and
 /// its file, and the three setup routes come with theirs: 79. The verb
 /// `file.preview` comes with its reply file, and its route `/preview/*` is
-/// not a type: it serves files.
+/// not a type: it serves files. `/api/file/bytes` is not a type either: it
+/// serves the bytes of a file.
 /// Counting rules are in [`message_types`]. A new type starts with a shared
 /// reply; a new reply file lowers this number.
 const UNSHARED_BASELINE: usize = 78;
@@ -98,9 +99,9 @@ fn message_type_scan_finds_verbs_routes_and_pushes() {
 /// The message types the UI reads:
 /// - verbs: the string keys of `Verb::from_query` in `dispatch.rs`;
 /// - routes: the `.route("…")` paths of the router without `/api/peer/*`
-///   (daemon to daemon) and `/preview/*` (the files of a document, which the
-///   UI does not read), one type per path, named without the leading `/` and
-///   with `/` as `-`;
+///   (daemon to daemon), `/preview/*` (the files of a document, which the
+///   UI does not read) and `/api/file/bytes` (raw bytes, not a reply), one
+///   type per path, named without the leading `/` and with `/` as `-`;
 /// - pushes: the `<word>.dirty`, `<word>.failed`, `session-open`,
 ///   `session-size` and `session-end` literals of the routes' production code.
 fn message_types(dispatch: &str, routes: &str, pushes: &str) -> BTreeSet<String> {
@@ -130,7 +131,11 @@ fn ui_routes(routes: &str) -> BTreeSet<String> {
     route
         .captures_iter(routes)
         .map(|c| c[1].to_string())
-        .filter(|path| !path.starts_with("/api/peer/") && !path.starts_with("/preview/"))
+        .filter(|path| {
+            !path.starts_with("/api/peer/")
+                && !path.starts_with("/preview/")
+                && path != "/api/file/bytes"
+        })
         .map(|path| path.trim_start_matches('/').replace('/', "-"))
         .collect()
 }
