@@ -72,6 +72,9 @@ const NOT_PEER_REPLIES: &[(&str, &str, &str)] = &[
 /// verbs, which ride a channel of the peer's page socket (#830). The new verb
 /// `file.preview` keeps version 5 (ADR-0089 D3): its `token` is optional in the
 /// page type, and the verb is never relayed, so no peer answers it.
+/// The new verb `file.entries` keeps version 5 (ADR-0091 D7): every field of
+/// its reply is optional in the page type, and an older peer answers it
+/// `unknown verb`, which the archive viewer shows as a failed listing.
 const PEER_REPLY_PIN: (u32, u64) = (5, 0xfa62_f65a_5e9c_f659);
 
 /// Where `PEER_PROTOCOL_VERSION` is, from the repo root.
