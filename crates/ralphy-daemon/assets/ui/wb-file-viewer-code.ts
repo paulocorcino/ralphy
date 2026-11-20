@@ -13,6 +13,7 @@ import { wireFileButtons } from "./wb-viewer-save.ts";
 import type { ViewerSave } from "./wb-viewer-save.ts";
 import type { MermaidWindow } from "./wb-dbml-draw.ts";
 import { devError, devWarn } from "./wb-log.ts";
+import { mountSheetSwitch } from "./wb-viewer-sheet.ts";
 
 /** What `createViewer` hands the code pane. */
 export type ViewerCodeDeps = {
@@ -203,6 +204,19 @@ export function createViewerCode(deps: ViewerCodeDeps) {
     rec.saveBtn = saveBtn;
     rec.mirrorBtn = mirrorBtn;
     void mountEditor(rec, need(el, ".viewer-body"), {});
+    mountTableSwitch(rec, el);
+  }
+
+  // A csv or tsv stays in the editor; a toolbar button shows its text as a grid.
+  function mountTableSwitch(rec: BytesRecord, el: HTMLElement) {
+    if (!/\.(csv|tsv)$/iu.test(rec.path)) return;
+    mountSheetSwitch({
+      document,
+      toolbar: need(el, ".viewer-toolbar"),
+      body: need(el, ".viewer-body"),
+      text: () => codeEditor(rec.ed)?.getValue() ?? "",
+      path: rec.path,
+    });
   }
 
   return { isNarrow, watchNarrow, bindSave, mountEditor, buildCode };

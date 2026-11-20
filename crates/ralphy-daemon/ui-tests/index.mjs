@@ -139,3 +139,4 @@ import "./wb-viewer-media.test.mjs";
 import "./wb-viewer-font.test.mjs";
 import "./wb-anydoc.test.mjs";
 import "./wb-viewer-document.test.mjs";
+import "./wb-viewer-sheet.test.mjs";

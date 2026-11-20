@@ -5,6 +5,7 @@ import { buildImage } from "./wb-file-viewer-read-only.ts";
 import { buildDocument } from "./wb-viewer-document.ts";
 import { buildFont } from "./wb-viewer-font.ts";
 import { buildMedia } from "./wb-viewer-media.ts";
+import { buildSheet } from "./wb-viewer-sheet.ts";
 import type { ViewerReadOnlyDeps } from "./wb-file-viewer-read-only.ts";
 import type { BytesRecord } from "./wb-file-viewer-records.ts";
 
@@ -30,6 +31,10 @@ export const VIEWERS: Record<string, ViewerEntry> = {
   document: {
     extensions: ["docx", "odt"],
     build: buildDocument,
+  },
+  sheet: {
+    extensions: ["xlsx", "ods"],
+    build: buildSheet,
   },
 };
 
