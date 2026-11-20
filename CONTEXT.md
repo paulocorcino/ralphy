@@ -385,6 +385,17 @@ other encoding is one a file already had. (ADR-0036)
 _Avoid_: charset (the HTTP word), code page (one kind of encoding),
 auto-detect (rejected).
 
+**File viewer**:
+The read-only pane of a canvas tab that shows a file it does not edit: an
+image, a PDF, a document, a sheet, a media file, a font or an archive. It
+reads the **file bytes**; the editor reads the decoded text. (ADR-0091)
+_Avoid_: preview (the HTML document with scripts, ADR-0089), player, reader.
+
+**File bytes**:
+The raw bytes of one file of a checkout, or one range of them, as the daemon
+stores them on disk, with no decoding and no save state. (ADR-0091)
+_Avoid_: blob (a git object), download, raw read.
+
 **Unencodable**:
 A save the daemon refuses because a character in the text cannot be written in
 the encoding the save named. (ADR-0036)
