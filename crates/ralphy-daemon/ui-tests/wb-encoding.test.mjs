@@ -210,6 +210,7 @@ function fakeNode() {
       node.children.push(k);
     },
     remove() {},
+    setAttribute() {},
     querySelector: (sel) => found.get(sel) ?? found.set(sel, fakeNode()).get(sel),
     querySelectorAll: () => [],
     addEventListener(type, fn) {

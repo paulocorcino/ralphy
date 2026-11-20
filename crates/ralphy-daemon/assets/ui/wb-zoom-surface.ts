@@ -29,6 +29,7 @@ export type Controller = {
   pan(dx: number, dy: number): void;
   pinch(prev: Pair, next: Pair): void;
   resize(): void;
+  scale(): number;
 };
 
 // The view's state. `fitted` stays true until the operator zooms or pans, so a
@@ -74,6 +75,7 @@ function createController(
     pinch: (prev, next) => {
       change(pinchView(view, prev, next, minScale(fitNow())));
     },
+    scale: () => view.scale,
     resize: () => {
       if (fitted) fit();
       else show(view);
