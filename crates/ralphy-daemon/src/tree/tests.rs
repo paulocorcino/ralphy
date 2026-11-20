@@ -33,6 +33,7 @@ fn magic(kind: ImageType) -> Vec<u8> {
         ImageType::Bmp => b"BM\x00\x00".to_vec(),
         ImageType::Icon => b"\x00\x00\x01\x00".to_vec(),
         ImageType::Svg => b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>".to_vec(),
+        ImageType::Avif => b"\x00\x00\x00\x1cftypavif".to_vec(),
     }
 }
 

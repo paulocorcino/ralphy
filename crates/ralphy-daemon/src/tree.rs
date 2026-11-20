@@ -19,10 +19,12 @@ use encoding_rs::Encoding;
 use crate::confine::{self, ConfineError};
 use crate::textcodec::{self, Decoded};
 
+mod bytes;
 mod ignored;
 pub mod search;
 pub mod size;
 pub mod stat;
+pub use bytes::{read_range, ByteRange, Bytes, BytesError};
 pub use search::{find, grep, grep_with, FindHit, GrepHit, SearchBudget, SearchReply};
 pub use size::{size, Size, SizeBudget, SizeError};
 pub use stat::{stat, Stat};
@@ -189,6 +191,7 @@ pub enum ImageType {
     Bmp,
     Icon,
     Svg,
+    Avif,
 }
 
 impl ImageType {
@@ -202,6 +205,7 @@ impl ImageType {
             ImageType::Bmp => "image/bmp",
             ImageType::Icon => "image/x-icon",
             ImageType::Svg => "image/svg+xml",
+            ImageType::Avif => "image/avif",
         }
     }
 
@@ -217,6 +221,7 @@ impl ImageType {
             ImageType::Bmp => "bmp",
             ImageType::Icon => "ico",
             ImageType::Svg => "svg",
+            ImageType::Avif => "avif",
         }
     }
 
@@ -238,7 +243,7 @@ impl ImageType {
 
     /// The type an extension CLAIMS, case-insensitively. This only proposes;
     /// [`ImageType::matches`] disposes.
-    fn from_extension(ext: &str) -> Option<ImageType> {
+    pub(super) fn from_extension(ext: &str) -> Option<ImageType> {
         match ext.to_ascii_lowercase().as_str() {
             "png" => Some(ImageType::Png),
             "jpg" | "jpeg" => Some(ImageType::Jpeg),
@@ -247,6 +252,7 @@ impl ImageType {
             "bmp" => Some(ImageType::Bmp),
             "ico" => Some(ImageType::Icon),
             "svg" => Some(ImageType::Svg),
+            "avif" => Some(ImageType::Avif),
             _ => None,
         }
     }
@@ -254,7 +260,7 @@ impl ImageType {
     /// Do `bytes` actually carry this type? The daemon must never label bytes
     /// with a media type it did not verify (ADR-0049 §3) — `notes.png` full of
     /// HTML is refused, not served as `image/png` on the extension's say-so.
-    fn matches(self, bytes: &[u8]) -> bool {
+    pub(super) fn matches(self, bytes: &[u8]) -> bool {
         match self {
             ImageType::Png => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
             ImageType::Jpeg => bytes.starts_with(b"\xff\xd8\xff"),
@@ -268,6 +274,8 @@ impl ImageType {
             ImageType::Icon => bytes.starts_with(b"\x00\x00\x01\x00"),
             // SVG is text, so it has no magic number — it is checked structurally.
             ImageType::Svg => std::str::from_utf8(bytes).is_ok_and(svg_root_element),
+            // ISO base media file: `ftyp` box at byte 4, the `avif` brand right after.
+            ImageType::Avif => bytes.get(4..12) == Some(b"ftypavif".as_slice()),
         }
     }
 }
