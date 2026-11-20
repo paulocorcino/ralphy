@@ -7,6 +7,7 @@ Protects: responsiveness, recoverability; constraints portability, security
 Amended by ADR-0085 (proposed: a `waiting` agent blocks hibernation, not suspension).
 Amended by ADR-0088 (proposed: the process registry, one container per console, replaces D4
 and the process part of D6). Amendment of 2026-11-15 below: hibernation first, as a policy over it.
+Amendment of 2026-11-16 below: a state that is not known blocks; hibernation is an operation with steps.
 
 Amends ADR-0051 (a **workbench session** has a state besides live and gone),
 ADR-0050 (the page no longer relaunches a free console when it loads; the
@@ -514,3 +515,169 @@ macOS when a Mac is at hand:
   the first echoed key, with the pages already written to disk; what each
   agent does with its first call after 10 minutes, 1 hour and 4 hours frozen;
   the CPU and I/O limits of D3.
+
+## Amendment 2026-11-16 — a state that is not known blocks, and hibernation is an operation with steps
+
+Changes D3, D6, D7, D8, D10 and D18 and two sentences of the amendment of
+2026-11-15; adds D19 and D20. It comes from two independent reviews of
+2026-11-16 and from ADR-0088's amendment of the same day. The rules not
+named here stay.
+
+**Two sentences, corrected.**
+
+- "Only an ended process gives commit back" is too strong. A process can
+  give back its own commit. No supervisor can do that for another process,
+  so ending the tree is the means the daemon has.
+- "No tool can save a running agent CLI" is more than was measured. In WSL,
+  CRIU was stopped before it made an image, and DMTCP aborted. The research
+  also records a report of CRIU restoring Node.js 24 on Fedora. D16 stays:
+  no means was shown that is supported and works for the agents and the
+  systems tested.
+
+**D3, changed.**
+
+- Until slice 3 is planned, a console has one set of blockers, the one for
+  hibernation. The second set, `no_container` and `no_suspend_means` come
+  with slice 3.
+- `socket_accepted` is removed. The registry reads no socket (ADR-0088). A
+  server that an agent left running is a work process.
+- `agent_state_unknown` holds whenever the daemon cannot say what the agent
+  does: the console has no turn source, the source is silent, no state has
+  arrived yet, or the state is `unknown` because a `working` state grew old
+  (ADR-0085). It always blocks the trigger. So a Claude console that the
+  operator interrupted is not deactivated by the trigger; the operator
+  deactivates it by hand. The survey counts these consoles.
+- A state counts only for the run of the console that reported it.
+- Three blockers are conditions that a confirmation cannot pass.
+  `no_resume`: ending a console that cannot resume is End, not Deactivate.
+  `always_on`: the operator turns Always on off first. A state of
+  Deactivating or Starting (D19).
+- `feature_off` turns off the triggers only. A manual Deactivate does not
+  need the feature.
+- The CPU and I/O limits are needed by slice 2, so they are measured before
+  it, not with slice 3.
+
+**D6, changed.** The sentence "an entry whose process is gone is dropped"
+is about the process, not the console. The record of a console stays until
+the operator ends the console.
+
+**D7, changed.**
+
+- The session id that Ralphy keeps is the *current* one. An operator can
+  change the conversation inside the agent (`/clear`, `/resume`), and the
+  turn source then reports a new lead session. The daemon writes the lead
+  session's id to the custody record each time it changes.
+- With no turn source (Copilot, Cursor), Ralphy knows only the id it chose
+  at launch. If the operator changed the conversation inside the agent, a
+  reactivation opens the one of the launch. The hint of Deactivate says so.
+- On a reactivation the daemon gives the agent state the id from the custody
+  record. An agent may not report it again: `agy` sends no `SessionStart`
+  for a resumed conversation.
+- The capability belongs to the console, not to the agent. A Codex console
+  in a project with its own hooks has no turn source.
+- `agy` reports no wait for a permission. Its state stays `working` and then
+  becomes `unknown`; both block, so the trigger does not end it while it
+  waits.
+- "Kimi: no" means that Ralphy does not learn Kimi's session id. Kimi can
+  resume a session by id.
+- Before OpenCode is turned on: whether its consoles share one server
+  process, in the version installed. If they do, a console's tree is not the
+  conversation's only process.
+
+**D8, changed.** After a reactivation, the veil goes away when the agent has
+drawn visible text, not at the first bytes from the PTY. If the agent ends
+before that, D19 applies. The key that reactivated a Hibernated console is
+not sent to the new agent.
+
+**D10, changed: the memory trigger is a controller with limits.**
+
+- It watches the resource that is short and orders the consoles by what
+  each gives back of that resource: private commit when commit is short,
+  memory in use when memory is short.
+- On Linux the signal is the available memory and the free swap. PSI
+  `memory.pressure` is a second signal only: it measures the time tasks
+  wait, and it reads zero while idle consoles fill the memory.
+- It deactivates one console, waits, and measures again. It starts above
+  one limit and stops below a lower one. A console that the operator
+  reactivated is not deactivated again for a time. The limits, the wait and
+  that time come from the survey (D17).
+- When no console can be deactivated, it does nothing and says so in the log
+  and in the workbench.
+- A WSL peer cannot see the memory of the Windows host. When the Windows
+  daemon is over its limit, it asks its local WSL peer to run one round. The
+  peer still decides and acts on its own consoles (D1). How much of that
+  memory goes back to Windows is measured.
+- macOS has no trigger yet. Deactivate is by hand there.
+- The trigger first ships as a record only: it logs what it would
+  deactivate, and the operator compares that with what happened.
+- `T_BE` is no longer part of the decision. It was an analogy: its bound
+  holds only when the costs have one unit, and here they do not. The
+  idle-time trigger stays off by default, and its limit is a plain setting.
+
+**D18, changed: a restart asked from inside a console is done from outside
+it.** `ralphy daemon restart` stops the old daemon before it starts the new
+one (`crates/ralphy-cli/src/daemon/restart.rs`). Inside a console, the
+command ends with the old daemon, before it starts anything, so breakaway
+alone does not help. The command first starts a coordinator outside the
+console's container: with breakaway on Windows, in its own session in
+`process-group` mode. The coordinator stops the old daemon and starts the
+new one. Where systemd or launchd owns the daemon, it does the restart. The
+command inside the console ends with its console, and the operator reads
+the result from the daemon. A process that breaks away still leaves its
+console.
+
+**D19. Hibernation is an operation with steps, and it can fail.**
+
+1. The daemon marks the console Deactivating in the custody record and
+   takes no more input for it.
+2. It reads the members again and checks the blockers again. A change stops
+   the operation.
+3. It saves the screen and the current session id.
+4. It ends the container.
+5. It waits until the container is empty. If the wait ends first, the
+   console shows an error and is not Hibernated.
+6. It marks the console Hibernated.
+
+A daemon that starts and finds a console Deactivating finishes the
+operation: Hibernated when the screen and the id were saved, a placeholder
+when not. When a resume fails (the agent ends before it draws), the console
+stays Hibernated and shows the error. The daemon never opens a new
+conversation in its place.
+
+**D20. Whether the agent is asked to exit before step 4 is measured, per
+agent.** Ending the container is a kill. The measure is whether the
+conversation resumes, with its last turn, after a kill. An agent that loses
+data gets its own exit step, with a time limit, before the kill.
+
+**Considered options, added.**
+
+- **Let the trigger act on an old `unknown` state when CPU and I/O are
+  zero.** It would free the consoles that the operator interrupted. It would
+  also end an agent that waits for the network with no CPU. The survey
+  counts the consoles first.
+- **Make `agy` manual only.** The rule for `unknown` already keeps the
+  trigger away while `agy` waits.
+- **A grace period for every agent.** The agents' stores are made to
+  survive a crash. D20 measures before it adds a wait to every Deactivate.
+
+**Compliance, added.**
+
+- D3, D7, 2026-11-16: not checked by code: behavior, pinned by the tests of
+  the blocker set and of the session id in the custody record.
+- D10, 2026-11-16: not checked by code: behavior, pinned by the tests of the
+  controller's rounds.
+- D18, 2026-11-16: not checked by code: needs a live daemon.
+- D19: not checked by code: behavior, pinned by the tests of each step's
+  failure and of the start-up pass.
+- D20: not checked by code: needs a live agent CLI.
+
+**Open before the build, added.**
+
+- for slice 1: the conversation after a kill, per agent (D20); a restart
+  from inside a console in each container mode (D18); a change of
+  conversation inside each agent, and the id the turn source reports (D7);
+  whether OpenCode consoles share a server; a reactivation while a hidden
+  browser tab holds the writer slot (D9);
+- for slice 2: the CPU and I/O limits of D3; the consoles in
+  `agent_state_unknown`, per agent; the memory the Windows host gets back
+  when the WSL peer deactivates a console.

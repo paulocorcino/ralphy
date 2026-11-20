@@ -690,3 +690,12 @@ has no `href`, the frame has an empty `sandbox`, the policy takes `https:`
 only when the daemon allows web images), and in the three engines
 by `tests/browser/files/wb_html_file.py`, which opens a hostile file in a
 real daemon and lists the requests of the frame that the daemon answers.
+
+## Amendment 2026-11-16 — D13: a restart from inside a console
+
+Changes one sentence of the amendment of 2026-11-15 to D13, by the ADR-0083
+amendment of 2026-11-16 (proposed). Breakaway on request does not by itself
+keep `ralphy daemon restart` working inside a console: the command ends with
+the old daemon. A coordinator started outside the console's container does
+the restart (ADR-0083 D18). The job handle of a console lives only in the
+daemon (ADR-0088 D2).
