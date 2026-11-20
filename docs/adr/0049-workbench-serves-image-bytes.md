@@ -4,6 +4,8 @@ Status: accepted (2026-07-26).
 
 Amended by ADR-0089 (§2: one route, with a token as its only key, serves the files of an HTML document whose scripts the operator allowed).
 
+Amended by ADR-0091 (§2, proposed: an image opened in a tab is read from the file bytes route; the images of a rendered Markdown article stay on this verb).
+
 The workbench refuses to open an image. A `.png` in the tree carries an image
 icon, and clicking it flashes `binary` and closes the tab it just opened — the
 refusal is enforced twice, client-side (`BINARY_EXT` in `app.js`) and
