@@ -6,6 +6,7 @@ Protects: observability and cost, recoverability; constraints portability, secur
 
 Amends ADR-0083 (proposed): its D4 and the process part of its D6 move here,
 and its suspend means act on the container this ADR creates.
+Amendment of 2026-11-16 below: what each container mode can tell.
 
 ## Context
 
@@ -249,3 +250,121 @@ Open before the build, each measured on Windows 11 and WSL:
   breakaway);
 - a shared daemon (sccache, Gradle, tsserver) started by one console and used
   by another (tells how often it blocks a console or is ended under another).
+
+## Amendment 2026-11-16 — what each container mode can tell, and the job handle
+
+Changes D2, D3, D6, D7 and D8, corrects one sentence of the Context, and adds
+D12. It comes from two independent reviews of 2026-11-16. The rules not named
+here stay.
+
+**Context, corrected.** Chromium has two models of processes, not one. Its
+Performance Manager serves the freeze and discard policies, and its Task
+Manager is a separate, older system (the Chromium research, finding 5). The
+comparison supports one thing only: the fact is kept apart from the policy.
+
+**D2, changed.**
+
+- `job`: the job handle lives only in the daemon. After the agent starts, no
+  other process holds one, because `KILL_ON_JOB_CLOSE` acts when the *last*
+  handle closes. A console whose process could not be put in the job is not
+  started.
+- `cgroup`: the order is fixed. The daemon makes the leaf `daemon`, moves its
+  own PID there, writes `+memory +pids` to `cgroup.subtree_control` of the
+  unit cgroup, and then makes the `console-<id>` leaves. Without that write a
+  console leaf has no `memory.*` file. A controller that the user manager
+  does not delegate is not there: on the WSL peer (measured) it delegates
+  `memory` and `pids`, so a console leaf has no `io.stat`. If a step fails,
+  the daemon runs in `process-group` mode and says so.
+- `KillMode=control-group` ends the consoles when the unit stops. It is a
+  rule of the unit, so it is checked on the installed unit, not assumed.
+- `PR_SET_CHILD_SUBREAPER` brings an orphan back to the daemon. It does not
+  hold a child that calls `setsid`.
+
+**D3, changed: on Windows the means is chosen by a spike that builds both.**
+The two are the launcher, and Ralphy's own ConPTY spawn with
+`PROC_THREAD_ATTRIBUTE_JOB_LIST`, which needs no launcher process. D3 did not
+say how the launcher gets the job handle; a handle that a second console
+inherits breaks D2. The one that is built must show all of these:
+
+- no process but the daemon holds the job handle after the agent starts;
+- a failed assignment ends the launch;
+- Ctrl+C reaches the agent and does not end the console;
+- the refusal of an unsafe batch command line (`batch_refusal` in
+  `ralphy-pty`) still runs on the agent's command line;
+- the processes and the memory it adds per console, measured.
+
+On Linux the launcher stays: it `exec`s the agent and leaves no process.
+
+**D6, changed: only a job reports each process.**
+
+| Container mode | Event | A child born and ended between two resyncs |
+| --- | --- | --- |
+| `job` | each process that enters or leaves | has a row |
+| `cgroup` | `populated`: the container became empty or not empty | has no row; its CPU is in the total |
+| `process-group` | the root ended | has no row |
+
+So in `cgroup` and `process-group` modes the member list comes from the
+resync. A resync of one console also runs when its agent's turn starts and
+when it ends. In `cgroup` mode the CPU total comes from `cpu.stat`, which
+needs no controller, and the I/O is the sum of `/proc/<pid>/io` over the
+members alive at the sample; the I/O of a process that already ended is not
+counted there. A fact that could not be read is unknown, never zero. CPU
+needs two samples; after the first one it is unknown. The summary says how
+old each fact is.
+
+**D7, changed: the kind comes from the creation time.** The registry compares
+the creation time the operating system gives for a process with the turns the
+agent state recorded. This needs no event per process. A process whose turn
+is not known is a work process. An agent's own helper that starts on first
+use (a language server, an MCP server) is born in a turn and is a work
+process by this rule. No rule exempts it yet: how often it happens, per
+agent, is measured first.
+
+**D8, changed.**
+
+- The revision travels with the id of the daemon's run. A new run forces a
+  full read, because a daemon that starts again counts its revisions from
+  the start.
+- A field that a peer does not send means unknown. It never means that a
+  console can be deactivated.
+- A remote observer has a lease. The 30-second read renews it. A peer stops
+  the 2-second sampling by itself when the lease ends, so a socket that is
+  dead but not closed does not keep it running.
+
+**D12. The registry says what it can tell for each console.** Beside the
+container mode, the summary holds: whether the tree is complete, whether
+each process is reported, and which totals exist (CPU, I/O, memory). The
+ADR-0083 policy reads these, and treats a missing one as unknown.
+
+**Left open.** Ending one work process and not the whole console. D5 forbids
+it. A handle or a pidfd, opened and then checked against the container and
+the creation time, would make it safe. It is decided when the process view
+is built.
+
+**Considered options, added.**
+
+- **Exempt known helpers from the work-process rule now.** A list of names,
+  or "no listening socket and no CPU", is a guess about agents Ralphy does
+  not control. The survey gives the numbers first.
+- **Decide for the own ConPTY spawn without a spike.** It removes the
+  launcher's three problems on Windows, but it rewrites the spawn that
+  `portable-pty` does today, in `unsafe` FFI (ADR-0072 D13). Its cost is not
+  measured.
+
+**Compliance, added.**
+
+- D2, 2026-11-16: not checked by code: needs each platform; the order of the
+  cgroup steps is pinned by a test of the function that makes a leaf.
+- D3, 2026-11-16: not checked by code: needs a live ConPTY.
+- D6, D7, 2026-11-16: not checked by code: behavior, pinned by the tests of
+  the registry rows and of the process kind.
+- D8, 2026-11-16: not checked by code: behavior, pinned by the peer protocol
+  tests.
+- D12: not checked by code: behavior, pinned by a test that a missing fact
+  reads as unknown.
+
+**Open before the build, added.**
+
+- the two Windows means of D3, against its five points;
+- the files a `console-<id>` leaf has on the WSL peer after the steps of D2;
+- the share of consoles, per agent, whose helper is a work process by D7.
