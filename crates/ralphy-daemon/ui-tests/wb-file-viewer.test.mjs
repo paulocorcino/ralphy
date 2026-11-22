@@ -462,6 +462,24 @@ test("a file descriptor and an open request from another window are read only in
   }
 });
 
+test("a csv code pane gets the grid switch button; a js pane does not", async () => {
+  const { viewer, document } = loadWithDom();
+  const made = [];
+  const make = document.createElement;
+  document.createElement = (tag) => {
+    const el = make(tag);
+    made.push(el);
+    return el;
+  };
+  const switches = () => made.filter((el) => String(el.className).includes("sheet-switch"));
+  openCode(viewer, "j", "a.js");
+  await settle();
+  assert.equal(switches().length, 0);
+  openCode(viewer, "c", "data.csv");
+  await settle();
+  assert.equal(switches().length, 1);
+});
+
 // --- the image pane: the zoom surface and its bar ------------------------
 // A small DOM: the markup is not parsed, so `parts` answers each selector the
 // pane reads, and every part keeps its listeners.
