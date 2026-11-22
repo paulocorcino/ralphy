@@ -93,6 +93,7 @@ fn verb_effect_classes() {
     // the registry file. Neither is a host verb: both are relayed to a peer.
     for (query, verb, class) in [
         ("dir.list", Verb::DirList, EffectClass::Observe),
+        ("file.entries", Verb::FileEntries, EffectClass::Observe),
         ("project.add", Verb::ProjectAdd, EffectClass::Mutate),
     ] {
         assert_eq!(Verb::from_query(query), Some(verb));
@@ -101,8 +102,8 @@ fn verb_effect_classes() {
     }
     assert_eq!(
         Verb::ALL.len(),
-        55,
-        "the registry holds exactly fifty-five verbs"
+        56,
+        "the registry holds exactly fifty-six verbs"
     );
 }
 
@@ -320,7 +321,7 @@ fn takes_checkout_cwd_is_exactly_the_git_backed_family() {
         }
     }
     assert_eq!(count, 13, "the family is the 13 git-backed verbs");
-    assert_eq!(Verb::ALL.len(), 55, "Verb::ALL grew — revisit the family");
+    assert_eq!(Verb::ALL.len(), 56, "Verb::ALL grew — revisit the family");
 
     for &v in Verb::ALL {
         if matches!(

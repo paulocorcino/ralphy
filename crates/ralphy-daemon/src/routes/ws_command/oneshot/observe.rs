@@ -11,6 +11,11 @@ fn unavailable() -> serde_json::Value {
     serde_json::json!({ "status": "error", "reason": "unavailable" })
 }
 
+/// A refusal of a read, named by its wire reason.
+fn refusal(reason: &str) -> serde_json::Value {
+    serde_json::json!({ "status": "error", "reason": reason })
+}
+
 /// A string key of the payload, or the empty string when it is absent.
 fn payload_str<'a>(cmd: &'a protocol::Command, key: &str) -> &'a str {
     cmd.payload.get(key).and_then(|v| v.as_str()).unwrap_or("")
@@ -47,6 +52,7 @@ pub(super) async fn observe(
         dispatch::Verb::FileStat => file_stat(repo_path, checkout.as_ref(), asked).await,
         dispatch::Verb::TreeSize => tree_size(repo_path, checkout.as_ref(), asked).await,
         dispatch::Verb::ImageRead => image_read(repo_path, &rel).await,
+        dispatch::Verb::FileEntries => file_entries(repo_path, &rel).await,
         dispatch::Verb::NoteRead => note_read(repo_path, &rel).await,
         dispatch::Verb::RunsList => runs_list(repo_path),
         _ => serde_json::json!({ "status": "error", "reason": "refused" }),
@@ -138,7 +144,7 @@ async fn file_stat(
     .await;
     match read {
         Some(Ok(stat)) => ok_reply(&stat),
-        Some(Err(e)) => serde_json::json!({ "status": "error", "reason": e.reason() }),
+        Some(Err(e)) => refusal(e.reason()),
         None => unavailable(),
     }
 }
@@ -157,7 +163,7 @@ async fn tree_size(
     .await;
     match sized {
         Some(Ok(size)) => ok_reply(&size),
-        Some(Err(e)) => serde_json::json!({ "status": "error", "reason": e.reason() }),
+        Some(Err(e)) => refusal(e.reason()),
         None => unavailable(),
     }
 }
@@ -194,7 +200,7 @@ async fn file_read(cmd: &protocol::Command, repo_path: &Path, rel: &str) -> serd
             "encoding": decoded.encoding.name(),
             "bom": decoded.bom,
         }),
-        Some(Err(e)) => serde_json::json!({ "status": "error", "reason": e.reason() }),
+        Some(Err(e)) => refusal(e.reason()),
         None => unavailable(),
     }
 }
@@ -207,7 +213,17 @@ async fn image_read(repo_path: &Path, rel: &str) -> serde_json::Value {
             "mediaType": image.media_type,
             "base64": data_encoding::BASE64.encode(&image.bytes),
         }),
-        Some(Err(e)) => serde_json::json!({ "status": "error", "reason": e.reason() }),
+        Some(Err(e)) => refusal(e.reason()),
+        None => unavailable(),
+    }
+}
+
+/// `file.entries`: the entries of an archive, at most the caps of the listing.
+async fn file_entries(repo_path: &Path, rel: &str) -> serde_json::Value {
+    let (root, path) = (repo_path.to_path_buf(), rel.to_owned());
+    match blocking_read(move || tree::entries(&root, &path)).await {
+        Some(Ok(listing)) => ok_reply(&listing),
+        Some(Err(e)) => refusal(e.reason()),
         None => unavailable(),
     }
 }
@@ -225,7 +241,7 @@ async fn note_read(repo_path: &Path, rel: &str) -> serde_json::Value {
         Some(Ok((markdown, modified))) => {
             serde_json::json!({ "status": "ok", "markdown": markdown, "modified": modified })
         }
-        Some(Err(e)) => serde_json::json!({ "status": "error", "reason": e.reason() }),
+        Some(Err(e)) => refusal(e.reason()),
         None => unavailable(),
     }
 }
