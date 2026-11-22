@@ -407,3 +407,11 @@ fn the_catalog_import_is_rewritten_to_the_served_path() {
         squeeze(r#"import run from "./wording/run.json" with { type: "json" };"#)
     );
 }
+
+/// A module the page reaches only as the script of a worker is loaded too.
+#[test]
+fn a_worker_script_counts_as_a_module_reference() {
+    let js = "export const read = () =>\n  \
+              new Worker(new URL(\"./wb-x-worker.js\", import.meta.url), { type: \"module\" });\n";
+    assert_eq!(module_references(js), ["./wb-x-worker.js"]);
+}

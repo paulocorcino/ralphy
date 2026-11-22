@@ -236,7 +236,8 @@ fn swept_ui_assets() -> Vec<String> {
     out
 }
 
-/// `refs` and every module they reach through static imports. Only a file
+/// `refs` and every module they reach through static imports or a worker
+/// URL. Only a file
 /// whose source is `.ts` is read for imports: it is an ES module (ADR-0075
 /// D2), and a classic script has none.
 fn with_module_imports(refs: Vec<String>) -> Vec<String> {
@@ -256,7 +257,7 @@ fn with_module_imports(refs: Vec<String>) -> Vec<String> {
             .get_file(&path)
             .and_then(|f| f.contents_utf8())
             .unwrap_or_else(|| panic!("{path} is embedded UTF-8"));
-        for import in static_imports(text) {
+        for import in module_references(text) {
             let Some(name) = import.strip_prefix("./") else {
                 panic!("{path} imports {import}: a module imports its siblings by `./`")
             };
@@ -266,6 +267,23 @@ fn with_module_imports(refs: Vec<String>) -> Vec<String> {
         }
     }
     out
+}
+
+/// The modules a module makes the browser fetch: its static imports, and
+/// the script of each worker it starts.
+fn module_references(js: &str) -> Vec<&str> {
+    let mut out = static_imports(js);
+    out.extend(worker_urls(js));
+    out
+}
+
+/// The path of each `new Worker(new URL("<path>", import.meta.url)` in a module.
+fn worker_urls(js: &str) -> Vec<&str> {
+    const OPEN: &str = "new Worker(new URL(\"";
+    js.split(OPEN)
+        .skip(1)
+        .filter_map(|rest| rest.split_once('"').map(|(path, _)| path))
+        .collect()
 }
 
 /// The paths of the static `import`/`export … from` lines of a module. The
