@@ -4,6 +4,8 @@
 // plus one entry here.
 import { buildImage } from "./wb-file-viewer-read-only.ts";
 import { buildArchive } from "./wb-viewer-archive.ts";
+import { buildFont } from "./wb-viewer-font.ts";
+import { buildMedia } from "./wb-viewer-media.ts";
 import type { ViewerReadOnlyDeps } from "./wb-file-viewer-read-only.ts";
 import type { BytesRecord } from "./wb-file-viewer-records.ts";
 
@@ -21,6 +23,14 @@ export const VIEWERS: Record<string, ViewerEntry> = {
   archive: {
     extensions: ["zip", "tar", "tar.gz", "tgz"],
     build: buildArchive,
+  },
+  media: {
+    extensions: ["mp4", "m4a", "webm", "mp3", "wav", "ogg", "oga", "ogv"],
+    build: buildMedia,
+  },
+  font: {
+    extensions: ["ttf", "otf", "woff", "woff2"],
+    build: buildFont,
   },
 };
 

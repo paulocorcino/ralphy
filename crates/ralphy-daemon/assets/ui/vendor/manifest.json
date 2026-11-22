@@ -104,6 +104,23 @@
       ]
     },
     {
+      "name": "Media Chrome",
+      "npm": "media-chrome",
+      "version": "4.19.5",
+      "source": "https://registry.npmjs.org/media-chrome/-/media-chrome-4.19.5.tgz",
+      "files": [
+        {
+          "path": "media-chrome/LICENSE",
+          "sha256": "13faec6cc4820429b213665a1fff88e1bcfad5a3aff10956f90dea08bf45e808"
+        },
+        {
+          "path": "media-chrome/media-chrome.mjs",
+          "sha256": "dd149fa9af87f910a62008033615f043360b4c22b377e3164f03b489429c46bc",
+          "note": "dist/iife/index.js, byte for byte: one file that defines every element. A dynamic import() runs it as a module; its one top-level name stays local"
+        }
+      ]
+    },
+    {
       "name": "Mermaid",
       "npm": "mermaid",
       "version": "11.17.2",

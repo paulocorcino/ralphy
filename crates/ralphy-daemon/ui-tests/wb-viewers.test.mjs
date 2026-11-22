@@ -7,6 +7,7 @@ import { VIEWERS } from "../assets/ui/wb-viewers.ts";
 import { classify } from "../assets/ui/wb-file-paths.ts";
 import { fetchContent } from "../assets/ui/wb-tabs-store-open.ts";
 import { createViewer } from "../assets/ui/wb-file-viewer.ts";
+import { createVendorLoader, VENDOR_FAILURE_TEXT } from "../assets/ui/wb-vendor-load.ts";
 import { idLookups } from "./fake-document.mjs";
 
 // An element that remembers one child per selector, so a test reads back the
@@ -108,7 +109,7 @@ test("a new kind in the table opens with its own builder and reads no verb", asy
 });
 
 test("an extension outside the table and the code kinds is still refused as binary", () => {
-  for (const name of ["a.7z", "b.exe", "c.woff2", "d.MKV"]) {
+  for (const name of ["a.7z", "b.exe", "c.rar", "d.MKV"]) {
     assert.equal(classify(name), "binary", name);
   }
   assert.equal(classify("main.rs"), "code");
@@ -117,4 +118,30 @@ test("an extension outside the table and the code kinds is still refused as bina
 test("an avif file classifies as image", () => {
   assert.equal(classify("photo.avif"), "image");
   assert.equal(classify("PHOTO.AVIF"), "image");
+});
+
+test("loadVendor imports a path once: a second load of it returns the same promise", async () => {
+  const asked = [];
+  const load = createVendorLoader((path) => {
+    asked.push(path);
+    return Promise.resolve({ path });
+  });
+  const first = load("./vendor/lib/a.mjs");
+  assert.equal(load("./vendor/lib/a.mjs"), first);
+  assert.deepEqual(await first, { ok: true, module: { path: "./vendor/lib/a.mjs" } });
+  assert.equal(load("./vendor/lib/a.mjs"), first, "a finished load is shared too");
+  load("./vendor/lib/b.mjs");
+  assert.deepEqual(asked, ["./vendor/lib/a.mjs", "./vendor/lib/b.mjs"]);
+});
+
+test("loadVendor turns a failed import into the viewer's failure text, not a throw", async () => {
+  let calls = 0;
+  const load = createVendorLoader(() => {
+    calls += 1;
+    return Promise.reject(new Error("404"));
+  });
+  const outcome = await load("./vendor/lib/missing.mjs");
+  assert.deepEqual(outcome, { ok: false, text: VENDOR_FAILURE_TEXT });
+  await load("./vendor/lib/missing.mjs");
+  assert.equal(calls, 2, "after a failure, the next open tries again");
 });

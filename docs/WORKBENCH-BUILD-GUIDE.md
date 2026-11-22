@@ -144,6 +144,30 @@ checkout never changes the line endings of a hashed file.
 DOMPurify, mermaid, Wunderbaum, xterm and its addons). Otherwise they register
 as anonymous AMD modules and never set their globals.
 
+**A library that loads on first use.** A library of a file viewer is never
+named by `index.html` (ADR-0091 D8). The viewer calls
+`loadVendor("./vendor/<lib>/<file>.mjs")` from `wb-vendor-load.ts` the first
+time a file of its kind opens. It imports each path once and shares the
+promise. A failed import resolves to `{ ok: false, text }`, and the viewer
+shows `text` in its pane; the next open tries again. To add such a library:
+
+1. Put its files in `vendor/<lib>/` with its `LICENSE`, and give the module
+   file the `.mjs` extension. The daemon serves `.mjs` as `text/javascript`
+   and `.wasm` as `application/wasm`, both gzipped.
+2. Record each file in the manifest, and give the library a section below.
+3. Pass the path to `loadVendor` as a string. The build leaves a dynamic
+   `import()` as it is, so the path is the served path.
+
+### media-chrome (pinned `4.19.5`)
+
+The controls of the media viewer. `vendor/media-chrome/media-chrome.mjs` is
+`dist/iife/index.js` of the npm tarball, byte for byte: one file that defines
+every `media-*` element. Imported as a module, its one top-level name
+(`MediaChrome`) stays local, and the elements register on
+`customElements`. The file has no `eval` and no `new Function`; check this
+again after a bump. Its last line names a source map that is not vendored, so
+the browser's developer tools show one missing file.
+
 ### Monaco (pinned `0.56.0`)
 
 Monaco is the one editor engine of the workbench. `vendor/monaco/vs/` is the
