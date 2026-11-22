@@ -1,7 +1,9 @@
 // The file viewers, by kind (ADR-0091 D1): which extensions open in each and
-// how its pane is built. A viewer reads the file bytes route, never a verb,
-// so a new viewer is its own module plus one entry here.
+// how its pane is built. A viewer reads the file bytes route, or the one
+// verb its kind needs (`file.entries`), so a new viewer is its own module
+// plus one entry here.
 import { buildImage } from "./wb-file-viewer-read-only.ts";
+import { buildArchive } from "./wb-viewer-archive.ts";
 import { buildFont } from "./wb-viewer-font.ts";
 import { buildMedia } from "./wb-viewer-media.ts";
 import type { ViewerReadOnlyDeps } from "./wb-file-viewer-read-only.ts";
@@ -17,6 +19,10 @@ export const VIEWERS: Record<string, ViewerEntry> = {
   image: {
     extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif"],
     build: buildImage,
+  },
+  archive: {
+    extensions: ["zip", "tar", "tar.gz", "tgz"],
+    build: buildArchive,
   },
   media: {
     extensions: ["mp4", "m4a", "webm", "mp3", "wav", "ogg", "oga", "ogv"],

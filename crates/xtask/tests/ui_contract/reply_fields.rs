@@ -13,6 +13,7 @@ use super::{fixture_names, read, workspace_root, FIXTURES};
 const FLAT_REPLIES: &[(&str, &str)] = &[
     ("file.stat", "crates/ralphy-daemon/src/tree/stat.rs"),
     ("tree.size", "crates/ralphy-daemon/src/tree/size.rs"),
+    ("file.entries", "crates/ralphy-daemon/src/tree/entries.rs"),
     ("dir.list", "crates/ralphy-daemon/src/dir_list.rs"),
     (
         "file.preview",

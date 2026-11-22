@@ -1,0 +1,20 @@
+{
+  "entries": [
+    {
+      "compressedSize": 120,
+      "folder": false,
+      "modified": 1700000000000,
+      "path": "docs/readme.txt",
+      "size": 940
+    },
+    {
+      "compressedSize": 0,
+      "folder": true,
+      "modified": 1700000000000,
+      "path": "docs/",
+      "size": 0
+    }
+  ],
+  "status": "ok",
+  "truncated": false
+}
