@@ -13,7 +13,7 @@
 use super::*;
 
 /// The sites found, measured at the integrated tip of #685.
-const FREE_TEXT_SITES: usize = 186;
+const FREE_TEXT_SITES: usize = 182;
 
 fn is_test_file(path: &Path) -> bool {
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");

@@ -43,6 +43,11 @@ const BINARY_EXT = new Set([
   "otf",
 ]);
 
+// A viewer may claim a two-part suffix that `extOf` cuts to its last part.
+function viewerExtOf(name: string, ext: string) {
+  return name.toLowerCase().endsWith(".tar.gz") ? "tar.gz" : ext;
+}
+
 function extOf(name: string) {
   const n = name.toLowerCase();
   return n.includes(".") ? (n.split(".").pop() ?? "") : "";
@@ -143,7 +148,7 @@ export function classify(name: string) {
   if (ext === "mmd") return "mermaid";
   if (ext === "dbml") return "dbml";
   if (ext === "html" || ext === "htm") return "html";
-  const viewer = viewerKindOf(ext);
+  const viewer = viewerKindOf(viewerExtOf(name, ext));
   if (viewer !== null) return viewer;
   if (BINARY_EXT.has(ext)) return "binary";
   return "code";

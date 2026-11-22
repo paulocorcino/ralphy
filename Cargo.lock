@@ -2316,6 +2316,7 @@ dependencies = [
  "swc_ecma_ast",
  "swc_ecma_parser",
  "swc_ts_fast_strip",
+ "tar",
  "tempfile",
  "terminal_size",
  "thiserror 2.0.21",
@@ -2328,6 +2329,7 @@ dependencies = [
  "ulid",
  "windows-sys 0.61.2",
  "zeroize",
+ "zip",
 ]
 
 [[package]]

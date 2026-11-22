@@ -77,6 +77,18 @@ interface DaemonReplies {
     truncated?: boolean;
   };
   "file.image": DaemonReply & { mediaType?: string; base64?: string };
+  /** The entries of an archive. `compressedSize` comes for a zip only, `modified`
+   * in Unix milliseconds. With `truncated` the list is partial. */
+  "file.entries": DaemonReply & {
+    entries?: {
+      path: string;
+      size: number;
+      compressedSize?: number;
+      folder: boolean;
+      modified: number | null;
+    }[];
+    truncated?: boolean;
+  };
   /** The token of the route that serves an HTML file with its scripts. */
   "file.preview": DaemonReply & { token?: string };
   "file.write": WriteReply;

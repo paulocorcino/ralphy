@@ -89,6 +89,9 @@ sha2 = "0.10"
 # The embedded UI's gzip body (`assets.rs`); the `ETag` reuses `sha2` above.
 # Also the `.note` container's raw deflate (`note.rs`, ADR-0064 §3).
 flate2.workspace = true
+# The listing of a zip, a tar or a tar.gz (`tree/entries.rs`, ADR-0091 D7).
+zip.workspace = true
+tar.workspace = true
 # Never-descend-noise tree listing for the Observe read path (ADR-0036 §4);
 # ripgrep's walker, with every standard filter (gitignore, hidden) turned OFF —
 # see the 2026-07-26 amendment.
