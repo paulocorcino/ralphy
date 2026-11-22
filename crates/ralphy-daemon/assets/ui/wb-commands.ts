@@ -78,6 +78,30 @@ export const COMMANDS: readonly Command[] = [
     scope: "terminal",
   },
   {
+    id: "zoom.in",
+    group: "Page",
+    label: "Zoom in",
+    keys: [
+      { kind: "typed", key: "+" },
+      { kind: "typed", key: "=" },
+    ],
+    scope: "page",
+  },
+  {
+    id: "zoom.out",
+    group: "Page",
+    label: "Zoom out",
+    keys: [{ kind: "typed", key: "-" }],
+    scope: "page",
+  },
+  {
+    id: "zoom.fit",
+    group: "Page",
+    label: "Fit to window",
+    keys: [{ kind: "typed", key: "0" }],
+    scope: "page",
+  },
+  {
     id: "settings.open",
     group: "Page",
     label: "Open settings",
@@ -116,7 +140,7 @@ export const COMMANDS: readonly Command[] = [
 ];
 
 /** The only typed keys and Ctrl+Shift keys the list may hold. */
-const TYPED_ALLOWED = new Set(["/", "?"]);
+const TYPED_ALLOWED = new Set(["/", "?", "+", "=", "-", "0"]);
 const MOD_SHIFT_ALLOWED = new Set(["f"]);
 /** Alt+Shift with these is the system's or the browser's. */
 const CHORD_REFUSED = new Set(["Tab", "Escape", "Space"]);
@@ -130,7 +154,7 @@ function refusedReason(k: Keys) {
     case "chord":
       return CHORD_REFUSED.has(k.code) ? "a chord the system keeps" : "";
     case "typed":
-      return TYPED_ALLOWED.has(k.key) ? "" : "a typed key other than / and ?";
+      return TYPED_ALLOWED.has(k.key) ? "" : "a typed key other than / ? + = - 0";
     case "modShift":
       return MOD_SHIFT_ALLOWED.has(k.key) ? "" : "a Ctrl or Cmd key other than Ctrl+Shift+F";
     default: {
