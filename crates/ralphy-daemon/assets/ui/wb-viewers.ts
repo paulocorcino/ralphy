@@ -6,6 +6,7 @@ import { buildImage } from "./wb-file-viewer-read-only.ts";
 import { buildArchive } from "./wb-viewer-archive.ts";
 import { buildFont } from "./wb-viewer-font.ts";
 import { buildMedia } from "./wb-viewer-media.ts";
+import { buildPdf } from "./wb-viewer-pdf.ts";
 import type { ViewerReadOnlyDeps } from "./wb-file-viewer-read-only.ts";
 import type { BytesRecord } from "./wb-file-viewer-records.ts";
 
@@ -31,6 +32,10 @@ export const VIEWERS: Record<string, ViewerEntry> = {
   font: {
     extensions: ["ttf", "otf", "woff", "woff2"],
     build: buildFont,
+  },
+  pdf: {
+    extensions: ["pdf"],
+    build: buildPdf,
   },
 };
 

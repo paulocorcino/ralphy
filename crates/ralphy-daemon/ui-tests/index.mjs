@@ -140,3 +140,4 @@ import "./wb-desk-restore.test.mjs";
 import "./wb-wording.test.mjs";
 import "./wb-viewer-media.test.mjs";
 import "./wb-viewer-font.test.mjs";
+import "./wb-viewer-pdf.test.mjs";
