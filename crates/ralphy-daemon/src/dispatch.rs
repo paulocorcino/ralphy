@@ -142,6 +142,9 @@ pub enum Verb {
     /// Read a repo file's bytes as an allowlisted image (Observe: reads state,
     /// never spawns — ADR-0049).
     ImageRead,
+    /// List the entries of a zip, tar or tar.gz file (Observe: reads state,
+    /// never spawns, never writes an entry — ADR-0091 D7).
+    FileEntries,
     /// Read a `.note` file's markdown out of its container (Observe: reads
     /// state, never spawns — ADR-0064 §5).
     NoteRead,
@@ -293,6 +296,7 @@ impl Verb {
             "file.stat" => Some(Verb::FileStat),
             "tree.size" => Some(Verb::TreeSize),
             "file.image" => Some(Verb::ImageRead),
+            "file.entries" => Some(Verb::FileEntries),
             "note.read" => Some(Verb::NoteRead),
             "file.preview" => Some(Verb::FilePreview),
             "runs.list" => Some(Verb::RunsList),
@@ -354,6 +358,7 @@ impl Verb {
         Verb::FileStat,
         Verb::TreeSize,
         Verb::ImageRead,
+        Verb::FileEntries,
         Verb::NoteRead,
         Verb::FilePreview,
         Verb::RunsList,
@@ -413,6 +418,7 @@ impl Verb {
             | Verb::FileStat
             | Verb::TreeSize
             | Verb::ImageRead
+            | Verb::FileEntries
             | Verb::NoteRead
             | Verb::RunsList
             | Verb::DirList => EffectClass::Observe,

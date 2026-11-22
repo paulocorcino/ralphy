@@ -20,11 +20,13 @@ use crate::confine::{self, ConfineError};
 use crate::textcodec::{self, Decoded};
 
 mod bytes;
+mod entries;
 mod ignored;
 pub mod search;
 pub mod size;
 pub mod stat;
 pub use bytes::{read_range, ByteRange, Bytes, BytesError};
+pub use entries::{entries, ArchiveEntry, EntriesError, Listing};
 pub use search::{find, grep, grep_with, FindHit, GrepHit, SearchBudget, SearchReply};
 pub use size::{size, Size, SizeBudget, SizeError};
 pub use stat::{stat, Stat};
