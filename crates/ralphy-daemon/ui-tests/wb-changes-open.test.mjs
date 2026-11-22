@@ -98,7 +98,7 @@ test("a deleted image is refused and opens no tab", async () => {
 test("another binary is refused before a tab exists", async () => {
   const { state, observed, emitted, flashed } = shell();
   const before = state.$store.tabs.tabs.length;
-  state.$store.tabs.openDiff(P, { path: "doc.pdf", originalPath: null, status: "modified" });
+  state.$store.tabs.openDiff(P, { path: "doc.rar", originalPath: null, status: "modified" });
   await tick();
   assert.equal(state.$store.tabs.tabs.length, before, "no tab");
   assert.deepEqual(observed, []);

@@ -109,7 +109,7 @@ test("a new kind in the table opens with its own builder and reads no verb", asy
 });
 
 test("an extension outside the table and the code kinds is still refused as binary", () => {
-  for (const name of ["a.zip", "b.exe", "c.rar", "d.MKV"]) {
+  for (const name of ["a.7z", "b.exe", "c.rar", "d.MKV"]) {
     assert.equal(classify(name), "binary", name);
   }
   assert.equal(classify("main.rs"), "code");

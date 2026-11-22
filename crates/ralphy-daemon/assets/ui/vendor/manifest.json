@@ -615,6 +615,470 @@
       ]
     },
     {
+      "name": "pdf.js",
+      "npm": "pdfjs-dist",
+      "version": "6.5.438",
+      "source": "https://registry.npmjs.org/pdfjs-dist/-/pdfjs-dist-6.5.438.tgz",
+      "files": [
+        {
+          "path": "pdfjs/LICENSE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+        },
+        {
+          "path": "pdfjs/images/altText_add.svg",
+          "sha256": "1a9591a23999e1924438b948a9f9671147f04e01e5be724391a3a8a2b58289d9"
+        },
+        {
+          "path": "pdfjs/images/altText_disclaimer.svg",
+          "sha256": "5d19067a6b51e5bcc2d61325033a8450d301535505a97c50f4141f4cd9e2cf05"
+        },
+        {
+          "path": "pdfjs/images/altText_done.svg",
+          "sha256": "5b40360d098d1a93227a0a5cdb110f6e5ff3a3eb4af97b61e856c49e17141621"
+        },
+        {
+          "path": "pdfjs/images/altText_spinner.svg",
+          "sha256": "4089182e21627182ed1d4020978b597d984fb8de4cf547e9f4ac2aec9af13179"
+        },
+        {
+          "path": "pdfjs/images/altText_warning.svg",
+          "sha256": "07264f4de78a45a4177ddefb48837217aa69b51462ef5b35d3fb9f90000c9ead"
+        },
+        {
+          "path": "pdfjs/images/annotation-check.svg",
+          "sha256": "9a680f1212888ede7dcae6bfc8cafc447babf4ce531271c8d07277b0aedade96"
+        },
+        {
+          "path": "pdfjs/images/annotation-comment.svg",
+          "sha256": "c58b385b4a0be6de822a3262b8191073d1730f6420368bd9c6d80db7312327ff"
+        },
+        {
+          "path": "pdfjs/images/annotation-help.svg",
+          "sha256": "74d9bba0814d12f5ae2715189e1747b7edf5ff6d82c4ca75bae86d717319b6eb"
+        },
+        {
+          "path": "pdfjs/images/annotation-insert.svg",
+          "sha256": "b2153e2c88c62179029ea9876d463216529ecf581b77d52c971a2cdf3d3166c6"
+        },
+        {
+          "path": "pdfjs/images/annotation-key.svg",
+          "sha256": "5772b8dd158b0f02bb2be689bb680f4903d84e202cb29a3dc0560af53134c6ba"
+        },
+        {
+          "path": "pdfjs/images/annotation-newparagraph.svg",
+          "sha256": "a583cca122263d94c3eebfefe83c965a1b305b9c84e5aa3c5ba10527941db7db"
+        },
+        {
+          "path": "pdfjs/images/annotation-noicon.svg",
+          "sha256": "76399e70d311834d11ab2d6239118b36847d79a78d7655b1f839d51c811304cf"
+        },
+        {
+          "path": "pdfjs/images/annotation-note.svg",
+          "sha256": "11a75c9f233dd3e5e3500edcdd733358394f28395337616e8b0430694bf0dba1"
+        },
+        {
+          "path": "pdfjs/images/annotation-paperclip.svg",
+          "sha256": "0213c8baed4f8c497881ffed0e49abb309291d51725aaf1a0a757174b4999368"
+        },
+        {
+          "path": "pdfjs/images/annotation-paragraph.svg",
+          "sha256": "efbcd2a6cfb4581dad74a1c09ad43cf2b8245611e5b19c966317da948f2bcb7c"
+        },
+        {
+          "path": "pdfjs/images/annotation-pushpin.svg",
+          "sha256": "22197186d18445959e5fe5577d8e34440b31d87c811daf47318078310c0c5530"
+        },
+        {
+          "path": "pdfjs/images/checkmark.svg",
+          "sha256": "424df6b8515df22424c9505a9e87d35d87d3fd59962d56692fcc4d17613f2165"
+        },
+        {
+          "path": "pdfjs/images/comment-actionsButton.svg",
+          "sha256": "281b2348ed747ea3ee74763a01d56441d8c570b3e68f11556dc4084a14484d1f"
+        },
+        {
+          "path": "pdfjs/images/comment-closeButton.svg",
+          "sha256": "fdb819984e10758952bc35b5be3220538b21a787656794b1071fecd3d2648930"
+        },
+        {
+          "path": "pdfjs/images/comment-editButton.svg",
+          "sha256": "e79c41bf53a89ced9a3ad364a49943813189d06fd96174952e5fb2636938b70f"
+        },
+        {
+          "path": "pdfjs/images/comment-popup-editButton.svg",
+          "sha256": "857c0198bc536885f2b486353d5719d0c1bb91d69325474f7d787ce5b43cfe1e"
+        },
+        {
+          "path": "pdfjs/images/cursor-editorFreeHighlight.svg",
+          "sha256": "90b04428328a67e184fe1b1a1f28cb0d62bf6e298614ca241b6564fb24cb9e7e"
+        },
+        {
+          "path": "pdfjs/images/cursor-editorFreeText.svg",
+          "sha256": "fedb05ee0dd510514ed9edb24b3b4da2707931279a0bf48e2a1deb3a1f4cf581"
+        },
+        {
+          "path": "pdfjs/images/cursor-editorInk.svg",
+          "sha256": "0ae889debe01269b49b89d8845995281223b8ae289405758631076b763da3efe"
+        },
+        {
+          "path": "pdfjs/images/cursor-editorTextHighlight.svg",
+          "sha256": "c6252b0edcb68dac87557a027180fcbdbd93466841aa34792530f7cce54cec5d"
+        },
+        {
+          "path": "pdfjs/images/editor-toolbar-delete.svg",
+          "sha256": "f1f47a2cb479a87807f9bd61bd5813c1fe857dbbcb4fb35ae7a77ca39114f920"
+        },
+        {
+          "path": "pdfjs/images/editor-toolbar-edit.svg",
+          "sha256": "c6eacc709e4dd30a57120b6531856c003a4c931c46656c3625e2fd5886cf4ce6"
+        },
+        {
+          "path": "pdfjs/images/findbarButton-next.svg",
+          "sha256": "3029879b7e1060d54c4edcfe0c93c8c3b8c1756fb794e5d4add64028b5f99fab"
+        },
+        {
+          "path": "pdfjs/images/findbarButton-previous.svg",
+          "sha256": "766d12bb08b9f13c753d289f3c029f5ca202eda3a8be52afc9e31697335f4a80"
+        },
+        {
+          "path": "pdfjs/images/gv-editor-toolbar-close.svg",
+          "sha256": "b904127af663e7c7d1413f7a920a6220c330e9a856493744304ef943aa66868a"
+        },
+        {
+          "path": "pdfjs/images/gv-toolbarButton-download.svg",
+          "sha256": "010d9d77a425e80eb666a196f500cdd8b15758af69a19ad7f11279b78c29e3f5"
+        },
+        {
+          "path": "pdfjs/images/loading-icon.gif",
+          "sha256": "483c4a0396691993a641ec409c44b8b7e1daab0ae7e2b2944c4bc59520bb7655"
+        },
+        {
+          "path": "pdfjs/images/loading.svg",
+          "sha256": "7d6e14cf6226c74c26e2141180eadc944ef4ce8565e9b6dd2670ec202417a764"
+        },
+        {
+          "path": "pdfjs/images/messageBar_closingButton.svg",
+          "sha256": "7393c7791916243eca6bbdda8bf137d36600fffc76d7a55d33a77bd4e7778193"
+        },
+        {
+          "path": "pdfjs/images/messageBar_info.svg",
+          "sha256": "050e838b982b1b3e993e06bd666f8693ea98e89fb568c39c4af32e128477aeef"
+        },
+        {
+          "path": "pdfjs/images/messageBar_warning.svg",
+          "sha256": "888a4bf2ad5150028663dde01fe71599336c87ca12697180e51bd8a13b88084f"
+        },
+        {
+          "path": "pdfjs/images/pages_closeButton.svg",
+          "sha256": "03577a1fc1fc16be0331c65d45accc4d57c269381999e00b2bec9005225a7643"
+        },
+        {
+          "path": "pdfjs/images/pages_selected.svg",
+          "sha256": "a66ae84122fc40cc1282c68205909387e05a80061b9a7268a54b4bd0c9e7e2fc"
+        },
+        {
+          "path": "pdfjs/images/pages_viewArrow.svg",
+          "sha256": "409d9a306df6e86bc433365f961be50c9b4256b7a89b741f2f858af5b456b2ce"
+        },
+        {
+          "path": "pdfjs/images/pages_viewButton.svg",
+          "sha256": "f49c2ddd994c602dcaceb3c6b1445ef37bfd6ca8e2cb468d894741368c3344af"
+        },
+        {
+          "path": "pdfjs/images/secondaryToolbarButton-documentProperties.svg",
+          "sha256": "735a4bc556610bc6dedaa40a36ccf444c31032be02ad20df5ac4c66ebaa5bbc3"
+        },
+        {
+          "path": "pdfjs/images/secondaryToolbarButton-firstPage.svg",
+          "sha256": "d46a7b0760fbc043a98f9b328f6b4ee56df8de140a2a290f0e2a915ff772e287"
+        },
+        {
+          "path": "pdfjs/images/secondaryToolbarButton-handTool.svg",
+          "sha256": "e968339ba921e68d4d83e6ec7a4321f1791c86f4eff552f28cf4c81c6f88155b"
+        },
+        {
+          "path": "pdfjs/images/secondaryToolbarButton-lastPage.svg",
+          "sha256": "4cc4b92888b776ea3a09d5e86b17d7bb50a8f3e6d09854d4c2e3f050c34dc9f8"
+        },
+        {
+          "path": "pdfjs/images/secondaryToolbarButton-rotateCcw.svg",
+          "sha256": "7eb24492df9f42c8ab053cbead5d985b0daaccced649392d1fbfde4931459451"
+        },
+        {
+          "path": "pdfjs/images/secondaryToolbarButton-rotateCw.svg",
+          "sha256": "03d2e7bad2fc95895334e43edf34309a64223f32504304034eb1f6b163954898"
+        },
+        {
+          "path": "pdfjs/images/secondaryToolbarButton-scrollHorizontal.svg",
+          "sha256": "c61fb184d5311255b627a9943c156bb1f00f835282d832241e01a7d82a22b678"
+        },
+        {
+          "path": "pdfjs/images/secondaryToolbarButton-scrollPage.svg",
+          "sha256": "e60ae21987a2e6e5352ac3171363352cac9d2cae36bf828d1729cbfa286e085d"
+        },
+        {
+          "path": "pdfjs/images/secondaryToolbarButton-scrollVertical.svg",
+          "sha256": "79871e2329cbb4dc2b6df94aae5f3074b3fdebffba46fe7d3ade9aff5726bfb0"
+        },
+        {
+          "path": "pdfjs/images/secondaryToolbarButton-scrollWrapped.svg",
+          "sha256": "8734aa2747f6fff9e8fd09f6e9509db43ec1b63935c8f6b8291e9347bc7e2706"
+        },
+        {
+          "path": "pdfjs/images/secondaryToolbarButton-selectTool.svg",
+          "sha256": "332e08979379ff2f8a7bfd336e8ca6348546c78ce2a6bf464cd31dc2c64004ac"
+        },
+        {
+          "path": "pdfjs/images/secondaryToolbarButton-spreadEven.svg",
+          "sha256": "ac385199d448c0d5ae5d4c06d2c76db0a31bb5db54d0fbd727f3dc889e73271b"
+        },
+        {
+          "path": "pdfjs/images/secondaryToolbarButton-spreadNone.svg",
+          "sha256": "649934c2f447d7a239d6ffce8f8e0804b50dfe1d9421a1d16e9543c0aee9b03e"
+        },
+        {
+          "path": "pdfjs/images/secondaryToolbarButton-spreadOdd.svg",
+          "sha256": "43b6862d35f86dbe5fec6b16e2cb59ca22c490bdf0787e4590c1ceb494d05244"
+        },
+        {
+          "path": "pdfjs/images/signature-properties-row-check.svg",
+          "sha256": "3fe9e7e5869e80c04e560ec79e8960ed0f3e918195b6de2b039bd33fb23ecf0f"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-bookmark.svg",
+          "sha256": "f2a335bc963e95344d26d61157b1511f5f78d705b38579004971d51a3c62401c"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-currentOutlineItem.svg",
+          "sha256": "5f6505f05dbc728301942b37de22d490f09276e6c9a6561b1894afa91f34439c"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-download.svg",
+          "sha256": "afa286c8ea1941eaec589ed6a2103c5a845f3ff76a7423ba985f449465005163"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-editorFreeText.svg",
+          "sha256": "9ec2202e18ba668ee1753179afead4e1786eac82da2cc82afc5a09584c242c43"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-editorHighlight.svg",
+          "sha256": "df0aac50621777fb63da60b38c71c5bbbde746c4dd55c30dd141621cb30b7cc4"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-editorInk.svg",
+          "sha256": "081bf99d3c2390036a2d9c7e9485316bcd049f90a74e982f1eebcfd4d9b178e3"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-editorSignature.svg",
+          "sha256": "32e07998fd55a7ed40ec2b542fe324ec097d9023fc4c59d6debe33becdf215c2"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-editorStamp.svg",
+          "sha256": "18294793f2399a8a44ee246d63b20cd46cb3cd38a1bb72f00b826e7f756c5f52"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-menuArrow.svg",
+          "sha256": "2db41f97615a8c912f676a62c88b12e2b8715f4ed188df325737423501aa4a8a"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-menuArrowNova.svg",
+          "sha256": "8677b09af730ba49dde7be6f16d08a0b4eb594ed3402f9693e298223d3e9efff"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-openFile.svg",
+          "sha256": "7acb9e9964dd618bfcb657d8d18db2c55ef8f168c37f3873c06d72c63e1b11ec"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-pageDown.svg",
+          "sha256": "09a14cbd902aad9fe40f2351db2ac5593ad897aed8810b9c6aeb0e56389ff100"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-pageUp.svg",
+          "sha256": "bac79138cb730c6bfa63bef02d7e5906aee727bb54df15878823426822badaaa"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-presentationMode.svg",
+          "sha256": "2a08e4277e39a9faef69520570744650bb017c2e90fe7c15224144d6b4abfbe7"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-print.svg",
+          "sha256": "267745d6c176afe038630c3f7c0fcda78141fc7634f73898ffc6cbb1262c77ab"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-search.svg",
+          "sha256": "32889acafd84edeec513db6131252fa97ffff00fee6272d05e35e2d95216e30f"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-secondaryToolbarToggle.svg",
+          "sha256": "ff717321d89309f51bcccc28f347e6a888e73570527845d6560a84f5d70cb3a0"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-signaturePropertiesError.svg",
+          "sha256": "957d6ce5e6c4a62f88ad0e79c50b6ccd94358524a7450d3b04eb318146a46351"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-signaturePropertiesVerified.svg",
+          "sha256": "ae9f3a3e7e8e16900e6b2dbaa7acea0111763b72125246e55b572f4e9e66bc16"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-viewAttachments.svg",
+          "sha256": "e07fbf17b3c7ca2cda9c4e54cdd66cb0aa63d368232cbb2c9aed5559720bf96c"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-viewLayers.svg",
+          "sha256": "e0b8a59c272dc9a1d9a07d461363f96c3b3bd3df2db778f8f99743dfffd51d78"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-viewOutline.svg",
+          "sha256": "eeb6cd0ce94dcfea6bd2aca222da7b1583d74800ea9c94640ff8fa06c13fb044"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-viewThumbnail.svg",
+          "sha256": "5fa35769db66b33d6408f378e8aa68fa060331f0cc9dd6ad41fb7366082aad34"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-viewsManagerToggle.svg",
+          "sha256": "88098d3e47fd921122c5263dce50ee67c662c9cb65908be0481891dfe521a6c5"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-zoomIn.svg",
+          "sha256": "722dfe315686a5841d0a0d00f34df8f706d2c6e24551d46a5ebe971fe4af62d2"
+        },
+        {
+          "path": "pdfjs/images/toolbarButton-zoomOut.svg",
+          "sha256": "366a40c3627e67f97164976d5ff38b5484716e834d08fefe252a6ea37feda895"
+        },
+        {
+          "path": "pdfjs/images/treeitem-collapsed.svg",
+          "sha256": "37c96d0dc2f626c541303a76067184ac09614f2390a8430e973a84e5184e2646"
+        },
+        {
+          "path": "pdfjs/images/treeitem-expanded.svg",
+          "sha256": "df4a149c4eaed4573620621087f7bab816f049e3e341574654fab598435db086"
+        },
+        {
+          "path": "pdfjs/pdf.min.mjs",
+          "sha256": "3a88402882cfa3e7e72c2c9b5149f52f0f88baf1c5b62aa11a41abdbc2072440",
+          "note": "build/pdf.min.mjs, byte for byte: the core"
+        },
+        {
+          "path": "pdfjs/pdf.worker.min.mjs",
+          "sha256": "1e64c8240e54735ec5913b37acd5134747799cb8c6bb3777c70adbc01232d2aa",
+          "note": "build/pdf.worker.min.mjs, byte for byte: the worker, started from its URL (workerSrc)"
+        },
+        {
+          "path": "pdfjs/pdf_viewer.css",
+          "sha256": "d341eac2069f7f3c1f68d1edc297b665fd8a0e2a593e145b85200729823df2a2",
+          "note": "web/pdf_viewer.css, byte for byte. Its images/ folder is vendored beside it, so each url() in it resolves"
+        },
+        {
+          "path": "pdfjs/pdf_viewer.mjs",
+          "sha256": "3b9c62a10b271b64d7e508adefa3ca1b03ac5887ddceb755293e7a8f6dfc2cac",
+          "note": "web/pdf_viewer.mjs, byte for byte: pages, the text layer and the search. Its source map is not vendored"
+        },
+        {
+          "path": "pdfjs/standard_fonts/FoxitDingbats.pfb",
+          "sha256": "845c752392b6c914fb989c75a08b7792b88f542d2499042ef2889f8c814a16ed"
+        },
+        {
+          "path": "pdfjs/standard_fonts/FoxitFixed.pfb",
+          "sha256": "b6c8fe53f134b8b6d4578cd2d544df4cee9624c4efa8d51a560fb40ea296101b"
+        },
+        {
+          "path": "pdfjs/standard_fonts/FoxitFixedBold.pfb",
+          "sha256": "f1b7159702973f54fc86254ea38bcf3712b2a736eb3a0995751e9f4bb45ad603"
+        },
+        {
+          "path": "pdfjs/standard_fonts/FoxitFixedBoldItalic.pfb",
+          "sha256": "8a000945843bd31add06aee63bf9fd41b7578b4f3242a4b7cd46349ad9d24d4d"
+        },
+        {
+          "path": "pdfjs/standard_fonts/FoxitFixedItalic.pfb",
+          "sha256": "5007faf8320fa1fcc08b8894b356ad976f60b992ba29ee5272578bbdebaf3876"
+        },
+        {
+          "path": "pdfjs/standard_fonts/FoxitSerif.pfb",
+          "sha256": "4f57d2b9d884af8f907bf22df6019b52d86cbf6214fdbd02b1ae05472a543f35"
+        },
+        {
+          "path": "pdfjs/standard_fonts/FoxitSerifBold.pfb",
+          "sha256": "0bdf4b04e964139818d51eda03d566ba999fc3ba2421b1c6c51f9dc969022e80"
+        },
+        {
+          "path": "pdfjs/standard_fonts/FoxitSerifBoldItalic.pfb",
+          "sha256": "a406cac82583bf98175cb62c87ed5e95c45fbb34eece63a10b0a13e793cb2e10"
+        },
+        {
+          "path": "pdfjs/standard_fonts/FoxitSerifItalic.pfb",
+          "sha256": "610ae0687198045c4db5d1a6650fd5e92536631706382eb8b72e38df578d0ae9"
+        },
+        {
+          "path": "pdfjs/standard_fonts/FoxitSymbol.pfb",
+          "sha256": "47967d055530e7357088a08403115425643ec2cdfd6201ba8af0fbd7116c1539"
+        },
+        {
+          "path": "pdfjs/standard_fonts/LICENSE_FOXIT",
+          "sha256": "b578cdd2345840ada550bd12519533812320d5f1d21cf4c1c7e1b1b0a31c98b7"
+        },
+        {
+          "path": "pdfjs/standard_fonts/LICENSE_LIBERATION",
+          "sha256": "d2c4d5b3e115a519cb58eb691aa64538397e2611f9ebe801392cf9667997e7dc"
+        },
+        {
+          "path": "pdfjs/standard_fonts/LiberationSans-Bold.ttf",
+          "sha256": "361c61b82d575c5c35fd9157fda8b0194bcfcd0d88ea8521a4fb5dd53d33dddc"
+        },
+        {
+          "path": "pdfjs/standard_fonts/LiberationSans-BoldItalic.ttf",
+          "sha256": "a224075ac17495ad0a3af3bc0a419ac0704a8b3fd1095456201fb9b095fc281d"
+        },
+        {
+          "path": "pdfjs/standard_fonts/LiberationSans-Italic.ttf",
+          "sha256": "832b4406dbef23628800d3aaad21048534ac84d7e3ad955be83b8172ed8ef512"
+        },
+        {
+          "path": "pdfjs/standard_fonts/LiberationSans-Regular.ttf",
+          "sha256": "f8ace1f892b2bd9dc1792ba7f097fa7588f84fed48321480e04de5390828221f"
+        },
+        {
+          "path": "pdfjs/wasm/LICENSE_JBIG2",
+          "sha256": "9e66b7f1b934a28b37f3bc4dac97915de1674271e79a0a88182a18ed9731b4d1"
+        },
+        {
+          "path": "pdfjs/wasm/LICENSE_OPENJPEG",
+          "sha256": "a6af136f3e15038a666b61f376612a07d9a4e48cb7c01adbf3e33b3f14ab49b6"
+        },
+        {
+          "path": "pdfjs/wasm/LICENSE_PDFJS_JBIG2",
+          "sha256": "aad3cce09842e00e9e11ad5e8fef8cc02fbc3a3768fe2f007443b9cee37aaee5"
+        },
+        {
+          "path": "pdfjs/wasm/LICENSE_PDFJS_OPENJPEG",
+          "sha256": "717fc62da03292dbb4dd0c8280bd4ce7bb8550dcf31d772bc93455fb50313425"
+        },
+        {
+          "path": "pdfjs/wasm/LICENSE_PDFJS_QCMS",
+          "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1"
+        },
+        {
+          "path": "pdfjs/wasm/LICENSE_QCMS",
+          "sha256": "36d847ae882f6574ebc72f56a4f354e4f104fde4a584373496482e97d52d31bc"
+        },
+        {
+          "path": "pdfjs/wasm/jbig2.wasm",
+          "sha256": "466f45c2a61a698152fb5400c27e56ff2ceb73dcb71fde3fc366a502308eaab0"
+        },
+        {
+          "path": "pdfjs/wasm/openjpeg.wasm",
+          "sha256": "7ea4b2b04613370ad4e9c1162da750cc88b4b176eac0d0c164b3caff23fc0a46"
+        },
+        {
+          "path": "pdfjs/wasm/qcms_bg.wasm",
+          "sha256": "663d86126d5f5fcb1c61490f94353e2a8375660b8c5498ab3ebab5a34b08800e"
+        }
+      ]
+    },
+    {
       "name": "Tabulator",
       "npm": "tabulator-tables",
       "version": "6.7.1",

@@ -168,16 +168,12 @@
 }
 
 /* --- image viewer (ADR-0049) ----------------------------------------------
-   Two states, toggled by `.actual-size` on the pane: fit-to-pane (default,
-   scaled DOWN only — a 16px favicon is not blown up to fill the window) and 1:1
-   with scrollbars. The checkerboard is what makes a transparent PNG's alpha
-   legible instead of blending into the dark surface. */
+   The pane body holds the zoom surface and the zoom bar. The checkerboard is
+   what makes a transparent PNG's alpha legible instead of blending into the
+   dark surface. */
 .img-scroll {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: auto;
-  padding: var(--space-8);
+  position: relative;
+  overflow: hidden;
   background-color: var(--log-bg);
   background-image:
     linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
@@ -187,21 +183,9 @@
   background-size: 16px 16px;
   background-position: 0 0, 0 8px, 8px -8px, -8px 0;
 }
-.img-canvas {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-.image-viewer.actual-size .img-scroll {
-  align-items: flex-start;
-  justify-content: flex-start;
-}
-.image-viewer.actual-size .img-canvas {
-  max-width: none;
-  max-height: none;
-  /* A pixel-art asset (a favicon, a 16px glyph) reads as mush under bilinear
-     smoothing at 1:1 — the whole point of this state is seeing the pixels. */
-  image-rendering: pixelated;
+.image-viewer .zoom-surface:focus-visible {
+  outline: 1px solid var(--focus-ring);
+  outline-offset: -1px;
 }
 /* The intrinsic size, next to the path: metadata, not a control. */
 .img-meta {
@@ -966,6 +950,13 @@
   background: var(--chrome);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+}
+.zoom-bar-percent {
+  align-self: center;
+  min-width: 3.5ch;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  text-align: right;
 }
 .zoom-bar-btn {
   font: inherit;

@@ -514,6 +514,23 @@ but it is not secret. (ADR-0064)
 _Avoid_: sticky or post-it (that is the **card**'s look), memo, review note
 (an annotation on a diff, ADR-0061), secret or encrypted.
 
+**Vault**:
+One encrypted file, `.ralphy.vault` at the root of a **checkout**, that keeps
+copies of files that do not go into git. Ralphy writes it; the operator
+commits it.
+_Avoid_: secret store, keychain, backup, safe.
+
+**Vault entry**:
+One file kept in a **vault**: its path on the daemon's host (relative to the
+checkout, or absolute when outside it), its current content and a few
+earlier versions.
+_Avoid_: secret, item, record.
+
+**Vault secret**:
+A name and a value the operator keeps in a **vault** with no file on disk. The
+operator reads and copies it; no agent or console receives it.
+_Avoid_: password, credential, key (the vault's own key).
+
 **Card**:
 A **note** shown on the **stage**. The card is its place in the **desk
 layout**; the content stays in the note's file. (ADR-0064)

@@ -4,7 +4,7 @@
 import { setMarkup } from "./wb-html.ts";
 import { WBMonaco } from "./wb-monaco.ts";
 import { WBFail } from "./wb-fail.ts";
-import { canFocus, isElement, need, required } from "./wb-dom-need.ts";
+import { need, required } from "./wb-dom-need.ts";
 import type { MonacoDiffEditor, MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { BytesRecord, RefusedRecord, ViewerRecord } from "./wb-file-viewer.ts";
@@ -12,6 +12,10 @@ import type { MermaidWindow } from "./wb-dbml-draw.ts";
 import { diffEditor } from "./wb-file-viewer-records.ts";
 import { devError } from "./wb-log.ts";
 import { fileBytesUrl } from "./wb-file-bytes.ts";
+import { attachZoomSurface } from "./wb-zoom-surface.ts";
+import { bindZoomKeys, buildZoomBar } from "./wb-zoom-bar.ts";
+import type { ZoomBar } from "./wb-zoom-bar.ts";
+import type { Size } from "./wb-diagram-zoom.ts";
 
 /** What `createViewer` hands the read-only panes. */
 export type ViewerReadOnlyDeps = {
@@ -175,7 +179,24 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
 
 // --- an image tab (read-only) ---------------------------------------------
 // `<img src>` reads the file bytes route (ADR-0091 D1), whose verified media
-// type decides what the bytes are. Read-only: no Save, no Edit.
+// type decides what the bytes are. Read-only: no Save, no Edit. The picture
+// opens at Fit and zooms by the bar, the wheel, a pinch and the keys; it is
+// never drawn larger than its own pixels at Fit.
+const RASTER_CAP = 1;
+
+// The bar of each image surface, read by the zoom keys of the surface in focus.
+const barsBySurface = new WeakMap<Element, ZoomBar>();
+let keysBound = false;
+
+function bindImageKeys(doc: Document) {
+  if (keysBound) return;
+  keysBound = true;
+  bindZoomKeys(() => {
+    const focused = doc.activeElement;
+    return (focused && barsBySurface.get(focused)) ?? null;
+  });
+}
+
 export function buildImage(host: ViewerReadOnlyDeps, rec: BytesRecord) {
   const { document, setPathLabel, detachBtnHtml } = host;
   const el = document.createElement("div");
@@ -189,14 +210,13 @@ export function buildImage(host: ViewerReadOnlyDeps, rec: BytesRecord) {
       <span class="viewer-path"></span>
       <span class="img-meta"></span>
       <span class="spacer"></span>
-      <button class="vbtn" data-act="zoom" title="Actual size" aria-label="Actual size"
-        ><i class="bi bi-arrows-angle-expand"></i
-        ><span class="vbtn-label">Actual size</span></button>
       <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"
         ><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
       ${detachBtnHtml(rec)}
     </div>
-    <div class="viewer-body img-scroll"><img class="img-canvas" alt="" /></div>`,
+    <div class="viewer-body img-scroll"><div class="zoom-surface" tabindex="0"
+      ><div class="zoom-stage"
+        ><img class="img-canvas" alt="" draggable="false" /></div></div></div>`,
   );
   setPathLabel(el, rec);
   required(host.viewers, "the element that holds the panes").append(el);
@@ -207,8 +227,10 @@ export function buildImage(host: ViewerReadOnlyDeps, rec: BytesRecord) {
   );
   const meta = need(el, ".img-meta");
   const url = fileBytesUrl(rec.project, rec.path, rec.checkout);
+  const fit = mountZoom(document, el);
   img.addEventListener("load", () => {
     meta.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
+    fit(img.naturalWidth, img.naturalHeight);
   });
   img.addEventListener("error", () => {
     void imageFailure(url).then((text) => {
@@ -216,9 +238,50 @@ export function buildImage(host: ViewerReadOnlyDeps, rec: BytesRecord) {
       return null;
     });
   });
+  // The browser's own menu on the picture offers to save or open it: not here.
+  img.addEventListener("contextmenu", (ev: Event) => {
+    ev.preventDefault();
+  });
   img.src = url;
   wireImageButtons(host, el, rec, { img, url });
   rec.el = el;
+}
+
+// The surface and the bar of one image pane. Returns what a loaded picture
+// calls with its own size: the view fits it again.
+function mountZoom(doc: Document, el: HTMLElement) {
+  const surface = need(el, ".zoom-surface");
+  const size: Size = { w: 0, h: 0 };
+  const ctl = attachZoomSurface(
+    surface,
+    { stage: need(el, ".zoom-stage"), size, cap: RASTER_CAP },
+    () => {
+      // A tap on the ground has nothing to close here.
+    },
+  );
+  const bar = buildZoomBar(doc, ctl, surface);
+  need(el, ".viewer-body").append(bar.el);
+  barsBySurface.set(surface, bar);
+  bindImageKeys(doc);
+  // A wheel, a pinch or a double tap changes the scale without the bar.
+  for (const type of ["wheel", "pointermove", "pointerup"]) {
+    surface.addEventListener(type, () => {
+      bar.refresh();
+    });
+  }
+  // A hidden pane has no size: it fits when it is shown, and again when it resizes.
+  if (typeof ResizeObserver !== "undefined") {
+    new ResizeObserver(() => {
+      ctl.resize();
+      bar.refresh();
+    }).observe(surface);
+  }
+  return (w: number, h: number) => {
+    size.w = w;
+    size.h = h;
+    ctl.fit();
+    bar.refresh();
+  };
 }
 
 // An `<img>` error carries no status: one byte asked again names the cause.
@@ -240,17 +303,6 @@ function wireImageButtons(
   rec: BytesRecord,
   { img, url }: { img: HTMLImageElement; url: string },
 ) {
-  need(el, '[data-act="zoom"]').addEventListener("click", (ev: MouseEvent) => {
-    // Two states only: fit-to-pane (default) and 1:1 with scrollbars.
-    const actual = el.classList.toggle("actual-size");
-    const btn = ev.currentTarget;
-    if (!isElement(btn) || !canFocus(btn)) return;
-    host.setCaption(
-      btn,
-      actual ? "bi-arrows-angle-contract" : "bi-arrows-angle-expand",
-      actual ? "Fit" : "Actual size",
-    );
-  });
   // A new address, so the browser reads the bytes again.
   let reloads = 0;
   need(el, '[data-act="reload"]').addEventListener("click", () => {
