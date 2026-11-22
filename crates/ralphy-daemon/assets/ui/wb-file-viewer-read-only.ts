@@ -11,6 +11,7 @@ import type { BytesRecord, RefusedRecord, ViewerRecord } from "./wb-file-viewer.
 import type { MermaidWindow } from "./wb-dbml-draw.ts";
 import { diffEditor } from "./wb-file-viewer-records.ts";
 import { devError } from "./wb-log.ts";
+import { fileBytesUrl } from "./wb-file-bytes.ts";
 
 /** What `createViewer` hands the read-only panes. */
 export type ViewerReadOnlyDeps = {
@@ -34,8 +35,8 @@ export type ViewerReadOnlyDeps = {
 };
 
 export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
-  const { window, document, viewers, messages, alive, setPathLabel, setCaption } = deps;
-  const { detachBtnHtml, detachClick, reloadFile, isNarrow, watchNarrow } = deps;
+  const { window, document, viewers, messages, alive, setPathLabel } = deps;
+  const { reloadFile, isNarrow, watchNarrow } = deps;
 
   const holder = () => required(viewers, "the element that holds the panes");
 
@@ -112,71 +113,6 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
     void mountDiff(rec, need(el, ".viewer-body"));
   }
 
-  // --- an image tab (read-only) -------------------------------------------
-  // `rec.content` is a `data:` URL the daemon's verified media type built
-  // (ADR-0049 §2), so this pane never decides what bytes are. Read-only: no
-  // Save, no Edit — the Write class is untouched by images.
-  function buildImage(rec: BytesRecord) {
-    const el = document.createElement("div");
-    el.className = "viewer image-viewer";
-    el.dataset["tabId"] = rec.id;
-    el.style.display = "none";
-    setMarkup(
-      el,
-      `
-      <div class="viewer-toolbar">
-        <span class="viewer-path"></span>
-        <span class="img-meta"></span>
-        <span class="spacer"></span>
-        <button class="vbtn" data-act="zoom" title="Actual size" aria-label="Actual size"
-          ><i class="bi bi-arrows-angle-expand"></i
-          ><span class="vbtn-label">Actual size</span></button>
-        <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"
-          ><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
-        ${detachBtnHtml(rec)}
-      </div>
-      <div class="viewer-body img-scroll"><img class="img-canvas" alt="" /></div>`,
-    );
-    setPathLabel(el, rec);
-    holder().append(el);
-
-    const img = required(
-      el.querySelector<HTMLImageElement>(".img-canvas"),
-      "the element .img-canvas",
-    );
-    const meta = need(el, ".img-meta");
-    // The intrinsic size is only known once the bytes decode, and a decode
-    // failure is worth saying out loud: the daemon verified the type, so a
-    // browser that still cannot paint it means an unsupported/corrupt file.
-    img.addEventListener("load", () => {
-      meta.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
-    });
-    img.addEventListener("error", () => {
-      meta.textContent = "Image could not be displayed.";
-    });
-    img.src = rec.content;
-
-    need(el, '[data-act="zoom"]').addEventListener("click", (ev: MouseEvent) => {
-      // Two states only: fit-to-pane (default) and 1:1 with scrollbars. A zoom
-      // slider is a feature this pane does not need to read a screenshot.
-      const actual = el.classList.toggle("actual-size");
-      const btn = ev.currentTarget;
-      if (!isElement(btn) || !canFocus(btn)) return;
-      setCaption(
-        btn,
-        actual ? "bi-arrows-angle-contract" : "bi-arrows-angle-expand",
-        actual ? "Fit" : "Actual size",
-      );
-    });
-    need(el, '[data-act="reload"]').addEventListener("click", () => {
-      reloadFile(rec);
-    });
-    need(el, '[data-act="detach"]').addEventListener("click", () => {
-      detachClick(rec);
-    });
-    rec.el = el;
-  }
-
   // --- a refused file: the tab stays and says why -------------------------
   // What the daemon would not serve as text (`binary`, `too large`, an
   // encoding it cannot name) used to close the tab under the click with a
@@ -234,5 +170,94 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
     rec.el = el;
   }
 
-  return { buildDiff, buildImage, buildRefused };
+  return { buildDiff, buildRefused };
+}
+
+// --- an image tab (read-only) ---------------------------------------------
+// `<img src>` reads the file bytes route (ADR-0091 D1), whose verified media
+// type decides what the bytes are. Read-only: no Save, no Edit.
+export function buildImage(host: ViewerReadOnlyDeps, rec: BytesRecord) {
+  const { document, setPathLabel, detachBtnHtml } = host;
+  const el = document.createElement("div");
+  el.className = "viewer image-viewer";
+  el.dataset["tabId"] = rec.id;
+  el.style.display = "none";
+  setMarkup(
+    el,
+    `
+    <div class="viewer-toolbar">
+      <span class="viewer-path"></span>
+      <span class="img-meta"></span>
+      <span class="spacer"></span>
+      <button class="vbtn" data-act="zoom" title="Actual size" aria-label="Actual size"
+        ><i class="bi bi-arrows-angle-expand"></i
+        ><span class="vbtn-label">Actual size</span></button>
+      <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"
+        ><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
+      ${detachBtnHtml(rec)}
+    </div>
+    <div class="viewer-body img-scroll"><img class="img-canvas" alt="" /></div>`,
+  );
+  setPathLabel(el, rec);
+  required(host.viewers, "the element that holds the panes").append(el);
+
+  const img = required(
+    el.querySelector<HTMLImageElement>(".img-canvas"),
+    "the element .img-canvas",
+  );
+  const meta = need(el, ".img-meta");
+  const url = fileBytesUrl(rec.project, rec.path, rec.checkout);
+  img.addEventListener("load", () => {
+    meta.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
+  });
+  img.addEventListener("error", () => {
+    void imageFailure(url).then((text) => {
+      meta.textContent = text;
+      return null;
+    });
+  });
+  img.src = url;
+  wireImageButtons(host, el, rec, { img, url });
+  rec.el = el;
+}
+
+// An `<img>` error carries no status: one byte asked again names the cause.
+async function imageFailure(url: string) {
+  const fallback = "Image could not be displayed.";
+  try {
+    const reply = await fetch(url, { headers: { Range: "bytes=0-0" } });
+    if (reply.status === 413) return "This image is too large to show.";
+    if (reply.status === 404) return "This file is not an image the workbench can display.";
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function wireImageButtons(
+  host: ViewerReadOnlyDeps,
+  el: HTMLElement,
+  rec: BytesRecord,
+  { img, url }: { img: HTMLImageElement; url: string },
+) {
+  need(el, '[data-act="zoom"]').addEventListener("click", (ev: MouseEvent) => {
+    // Two states only: fit-to-pane (default) and 1:1 with scrollbars.
+    const actual = el.classList.toggle("actual-size");
+    const btn = ev.currentTarget;
+    if (!isElement(btn) || !canFocus(btn)) return;
+    host.setCaption(
+      btn,
+      actual ? "bi-arrows-angle-contract" : "bi-arrows-angle-expand",
+      actual ? "Fit" : "Actual size",
+    );
+  });
+  // A new address, so the browser reads the bytes again.
+  let reloads = 0;
+  need(el, '[data-act="reload"]').addEventListener("click", () => {
+    reloads += 1;
+    img.src = `${url}&reload=${reloads}`;
+  });
+  need(el, '[data-act="detach"]').addEventListener("click", () => {
+    host.detachClick(rec);
+  });
 }

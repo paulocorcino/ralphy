@@ -9,11 +9,9 @@
    seam), `wb-files.ts` (the FILES tree) and `wb-move-dialog.ts` (the move
    picker) each import the rules they apply, so each rule is written once.
    --------------------------------------------------------------------------- */
-// Images the daemon serves as bytes (ADR-0049). The daemon holds the
-// authoritative allowlist; this set only decides which VERB a click sends.
-const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg"]);
+import { viewerKindOf } from "./wb-viewers.ts";
 
-// Neither renderable source nor image: refused.
+// Neither renderable source nor a viewer's kind: refused.
 const BINARY_EXT = new Set([
   "pdf",
   "zip",
@@ -133,7 +131,8 @@ export function fileTabId(project: string, path: string, checkout: string | null
 }
 
 // Which viewer a file gets: markdown, a Mermaid diagram (`.mmd`), a
-// database markup file (`.dbml`) and an HTML file → rendered pane, image → image pane,
+// database markup file (`.dbml`) and an HTML file → rendered pane, a kind of
+// the viewer table (`wb-viewers.ts`) → its viewer,
 // a note → its CARD on the consoles stage (ADR-0064 §11, never a tab: two
 // editors over one file is the thing that decision exists to prevent), other
 // binaries refused, everything else source code.
@@ -144,7 +143,8 @@ export function classify(name: string) {
   if (ext === "mmd") return "mermaid";
   if (ext === "dbml") return "dbml";
   if (ext === "html" || ext === "htm") return "html";
-  if (IMAGE_EXT.has(ext)) return "image";
+  const viewer = viewerKindOf(ext);
+  if (viewer !== null) return viewer;
   if (BINARY_EXT.has(ext)) return "binary";
   return "code";
 }

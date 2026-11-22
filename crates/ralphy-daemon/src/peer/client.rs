@@ -28,9 +28,11 @@ use super::PeerDescriptor;
 mod channel;
 mod handshake;
 mod status;
+mod stream;
 
 pub use channel::{open_channel, PeerChannel, PeerEvent};
 pub use status::PeerStatus;
+pub use stream::{get_stream, StreamDeadlines, STREAM_DEADLINES};
 
 /// An authenticated WebSocket to another daemon in the local fleet.
 pub type PeerSocket =

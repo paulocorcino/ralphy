@@ -64,7 +64,7 @@ for (const status of ["modified", "untracked", "added"]) {
       fileTabs(state).map((t) => [t.id, t.kind]),
       [["file:owner/repo:img/logo.png", "image"]],
     );
-    assert.deepEqual(images.map((i) => i.path), ["img/logo.png"]);
+    assert.deepEqual(images, [], "the pane reads the bytes route, not file.image");
     assert.deepEqual(observed, [], "no text read");
     assert.equal(opened.length, 1);
     assert.equal(opened[0].ftype, "image");
@@ -121,7 +121,7 @@ test("an image under a selected worktree is pinned to it", async () => {
   state.$store.tabs.openDiff(P, { path: "a.png", originalPath: null, status: "modified" });
   await tick();
   assert.deepEqual(fileTabs(state).map((t) => [t.id, t.checkout]), [["file:owner/repo@wt-a:a.png", "wt-a"]]);
-  assert.equal(images[0].checkout, "wt-a");
+  assert.deepEqual(images, [], "the pane reads the bytes route, not file.image");
 });
 
 test("a new folder row opens no diff and says why", () => {

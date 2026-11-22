@@ -9,8 +9,8 @@
        an in-page find, and an edit/preview toggle over the raw source. A
        Mermaid file (`.mmd`) uses the same pane, drawn as one diagram
        (`wb-viewer-render.ts` fills the body by kind).
-     • image     — an allowlisted image the daemon verified and served as a
-       `data:` URL (ADR-0049), fit to the pane or shown 1:1. Read-only.
+     • a viewer  — a kind of the table in `wb-viewers.ts` (an image today),
+       read from the file bytes route (ADR-0091 D1). Read-only.
      • diff      — HEAD against the working tree, side by side. Read-only.
 
    Editing is allowed but never touches disk: a Save emits a `save` intent on the
@@ -38,6 +38,8 @@ import { createViewerMarkdown, linkTarget, remoteImageNotice } from "./wb-viewer
 import { createViewerSave } from "./wb-viewer-save.ts";
 import { createViewerSlot } from "./wb-file-viewer-slot.ts";
 import { createViewerReadOnly } from "./wb-file-viewer-read-only.ts";
+import type { ViewerReadOnlyDeps } from "./wb-file-viewer-read-only.ts";
+import { viewerOf } from "./wb-viewers.ts";
 import { createViewerCode } from "./wb-file-viewer-code.ts";
 import type { ViewerMarkdown } from "./wb-viewer-markdown.ts";
 import type { ReopenBytes } from "./wb-viewer-save.ts";
@@ -208,7 +210,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     watchNarrow,
     bindSave,
   });
-  const { buildDiff, buildImage, buildRefused } = createViewerReadOnly({
+  const viewerHost: ViewerReadOnlyDeps = {
     window,
     document,
     viewers,
@@ -221,7 +223,8 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     reloadFile,
     isNarrow,
     watchNarrow,
-  });
+  };
+  const { buildDiff, buildRefused } = createViewerReadOnly(viewerHost);
 
   function disposeEditor(rec: ViewerRecord) {
     // The mirror sits over THIS pane's model: its editor goes before the model
@@ -325,9 +328,10 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
       }
       const rec: BytesRecord = { ...pane, content: spec.content, refused: null };
       map.set(id, rec);
-      if (isRendered(ftype)) buildMarkdown(rec);
+      const viewer = viewerOf(ftype);
+      if (viewer) viewer.build(viewerHost, rec);
+      else if (isRendered(ftype)) buildMarkdown(rec);
       else if (ftype === "diff") buildDiff(rec);
-      else if (ftype === "image") buildImage(rec);
       else buildCode(rec);
     },
 
