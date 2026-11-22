@@ -7,6 +7,7 @@ import { buildArchive } from "./wb-viewer-archive.ts";
 import { buildDocument } from "./wb-viewer-document.ts";
 import { buildFont } from "./wb-viewer-font.ts";
 import { buildMedia } from "./wb-viewer-media.ts";
+import { buildPdf } from "./wb-viewer-pdf.ts";
 import type { ViewerReadOnlyDeps } from "./wb-file-viewer-read-only.ts";
 import type { BytesRecord } from "./wb-file-viewer-records.ts";
 
@@ -36,6 +37,10 @@ export const VIEWERS: Record<string, ViewerEntry> = {
   document: {
     extensions: ["docx", "odt"],
     build: buildDocument,
+  },
+  pdf: {
+    extensions: ["pdf"],
+    build: buildPdf,
   },
 };
 
