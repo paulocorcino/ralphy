@@ -580,21 +580,25 @@
 }
 /* The titlebar is the EXIT. On a tablet there is no Esc to fall back on, so the
    controls have to be a real touch target (~44px, Apple's HIG floor) instead of
-   the 22px chrome that is fine under a mouse. Only while fullscreen: at rest the
-   quiet chrome is the right call. */
-.session-window.fullscreen .session-actions button {
-  width: 44px;
-  height: 44px;
-  font-size: 1.05rem;
+   the 22px chrome that is fine under a mouse. Only while fullscreen and only
+   on a coarse pointer: under a mouse the quiet chrome stays. */
+@media (any-pointer: coarse) {
+  .session-window.fullscreen .session-actions button {
+    width: 44px;
+    height: 44px;
+    font-size: 1.05rem;
+  }
+  .session-window.fullscreen .session-titlebar {
+    /* The 44px buttons do not fit `--row-h`. */
+    height: auto;
+    padding: var(--space-2) var(--space-5);
+    padding-top: env(safe-area-inset-top, 0px);
+  }
 }
+/* A dragged titlebar means nothing while the window IS the screen, and on a
+   touch device the drag would just eat the tap that is trying to leave. */
 .session-window.fullscreen .session-titlebar {
-  /* The 44px buttons do not fit `--row-h`, and the sidebar is not on screen. */
-  height: auto;
-  padding: var(--space-2) var(--space-5);
-  /* A dragged titlebar means nothing while the window IS the screen, and on a
-     touch device the drag would just eat the tap that is trying to leave. */
   cursor: default;
-  padding-top: env(safe-area-inset-top, 0px);
 }
 /* close tints red on hover, matching the danger accent */
 .session-actions .session-close:hover {

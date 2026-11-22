@@ -105,10 +105,15 @@ fn a_fullscreen_console_fits_a_tablet() {
             .to_owned()
     };
     // The touch target IS the exit on a tablet. 44px is Apple's HIG floor;
-    // the 22px resting chrome is a mouse-only size.
+    // the 22px resting chrome is a mouse-only size, so the 44px sits under
+    // the touch query and a desktop keeps its quiet titlebar.
+    let touch_target = concat!(
+        "@media (any-pointer: coarse) {\n",
+        "  .session-window.fullscreen .session-actions button {"
+    );
     assert!(
-        rule("\n.session-window.fullscreen .session-actions button {").contains("width: 44px"),
-        "the fullscreen titlebar must offer a 44px touch target — a tablet has no Esc"
+        rule(touch_target).contains("width: 44px"),
+        "the fullscreen titlebar must offer a 44px touch target on a touch screen"
     );
     // The home indicator overlays the bottom of a fullscreen element.
     assert!(
