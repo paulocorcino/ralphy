@@ -7,11 +7,10 @@ all-features = true
 
 [advisories]
 # Every RustSec advisory fails the check, including `unmaintained` and
-# `unsound`. An exception needs an entry here with the reason.
+# `unsound`. An exception needs an entry here with the reason. An entry that
+# matches no crate in Cargo.lock fails the check too: delete it.
+unused-ignored-advisory = "deny"
 ignore = [
-    # number_prefix is unmaintained, with no known vulnerability. It comes only
-    # from indicatif 0.17 (the CLI progress bar); indicatif 0.18 drops it.
-    { id = "RUSTSEC-2025-0119", reason = "unmaintained only; removed by the indicatif 0.18 upgrade" },
     # chrono is unmaintained (advisory of 2026-11), with no known vulnerability
     # and no safe upgrade. Ten crates and tracing-subscriber use it; leaving it
     # for jiff or time is its own change.
