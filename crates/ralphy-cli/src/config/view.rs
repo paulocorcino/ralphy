@@ -109,6 +109,10 @@ pub(crate) fn get(ws: &Workspace, json: bool) -> Result<()> {
         "antigravity.run_without_guard_proof_i_understand_the_risk = {}",
         agy.run_without_guard_proof_i_understand_the_risk
     );
+    outln!(
+        "antigravity.console_agent_workflow_i_understand_the_risk = {}",
+        agy.console_agent_workflow_i_understand_the_risk
+    );
     // The CloudEvents sink knobs come from the global per-repo store, printed for
     // the current repo's slug (the token masked).
     let slug = git::project_slug(ws.repo_root());
@@ -181,6 +185,8 @@ pub(super) fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
         "antigravity.exec_effort": agy.exec_effort,
         "antigravity.run_without_guard_proof_i_understand_the_risk":
             agy.run_without_guard_proof_i_understand_the_risk,
+        "antigravity.console_agent_workflow_i_understand_the_risk":
+            agy.console_agent_workflow_i_understand_the_risk,
     }))
 }
 

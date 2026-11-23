@@ -341,6 +341,7 @@ fn config_json_prints_the_antigravity_keys() {
         "antigravity.plan_effort",
         "antigravity.exec_effort",
         "antigravity.run_without_guard_proof_i_understand_the_risk",
+        "antigravity.console_agent_workflow_i_understand_the_risk",
     ] {
         assert!(j.get(key).is_some(), "{key} missing from config --json");
     }

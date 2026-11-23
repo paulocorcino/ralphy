@@ -126,6 +126,7 @@ const SUPPORTED_KEYS: &[&str] = &[
     "antigravity.plan_effort",
     "antigravity.exec_effort",
     "antigravity.run_without_guard_proof_i_understand_the_risk",
+    "antigravity.console_agent_workflow_i_understand_the_risk",
 ];
 
 /// The trailing parenthetical the key list carries in `--help`-style docs and the
@@ -172,7 +173,10 @@ each phase, as one word such as gemini-3.8-flash; antigravity.plan_effort and \
 antigravity.exec_effort set its effort. \
 antigravity.run_without_guard_proof_i_understand_the_risk=true lets an Antigravity \
 session go on when Ralphy cannot prove that its hooks run, so the guard may not run. \
-Only `ralphy config set` on this machine can turn it on.)";
+Only `ralphy config set` on this machine can turn it on. \
+antigravity.console_agent_workflow_i_understand_the_risk=true lets the agent in an \
+Antigravity console of the workbench switch branches, push and write pull requests. \
+A run never allows it. Only `ralphy config set` on this machine can turn it on.)";
 
 /// Human-readable list of every supported `config` key, derived from
 /// [`SUPPORTED_KEYS`] so it never drifts from the validated set. Reused in the

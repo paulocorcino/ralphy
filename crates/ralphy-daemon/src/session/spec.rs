@@ -224,7 +224,7 @@ pub fn spec_with_status(
         Agent::Claude => add_claude_launch(&mut spec, root, repo_slug, console, status),
         Agent::Codex => add_codex_launch(&mut spec, status),
         Agent::OpenCode => add_opencode_launch(&mut spec, status),
-        Agent::Antigravity => add_antigravity_launch(&mut spec, status),
+        Agent::Antigravity => add_antigravity_launch(&mut spec, root, status),
         Agent::Copilot | Agent::Cursor | Agent::Kimi => {}
     }
     spec
@@ -235,7 +235,11 @@ pub fn spec_with_status(
 /// for the status hook the root already holds (D9). The route refuses the
 /// launch before this when the root cannot be resolved; if it still cannot,
 /// the program is cleared so the spawn fails and `agy` never runs elsewhere.
-fn add_antigravity_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::StatusFiles>) {
+fn add_antigravity_launch(
+    spec: &mut SessionSpec,
+    repo_root: &Path,
+    status: Option<crate::agent_state::StatusFiles>,
+) {
     match ralphy_proc_util::antigravity::owned_root() {
         Ok(root) => {
             let mut flag = OsString::from("--gemini_dir=");
@@ -247,6 +251,12 @@ fn add_antigravity_launch(spec: &mut SessionSpec, status: Option<crate::agent_st
             spec.program = OsString::new();
             return;
         }
+    }
+    if antigravity_console_agent_workflow(repo_root) {
+        spec.env.push((
+            OsString::from(ralphy_proc_util::GUARD_CONSOLE_ENV),
+            OsString::from("1"),
+        ));
     }
     let Some(files) = status else {
         return;
@@ -417,16 +427,35 @@ fn claude_console_classic_screen(repo_root: &Path) -> bool {
     claude_opt_in(repo_root, "console_classic_screen")
 }
 
+/// Whether the operator lets the agent of this repo's Antigravity consoles
+/// run the guard's workflow rules, read from
+/// `["antigravity"]["console_agent_workflow_i_understand_the_risk"]` with the
+/// same reparse and the same invariant as [`claude_console_named`].
+// ADR-0093 D2, D3.
+fn antigravity_console_agent_workflow(repo_root: &Path) -> bool {
+    section_opt_in(
+        repo_root,
+        "antigravity",
+        "console_agent_workflow_i_understand_the_risk",
+    )
+}
+
 /// A `bool` opt-in of the `claude` section of `<repo_root>/.ralphy/settings.json`.
 /// Every failure path yields `false`.
 fn claude_opt_in(repo_root: &Path, key: &str) -> bool {
+    section_opt_in(repo_root, "claude", key)
+}
+
+/// A `bool` opt-in of `section` in `<repo_root>/.ralphy/settings.json`.
+/// Every failure path yields `false`.
+fn section_opt_in(repo_root: &Path, section: &str, key: &str) -> bool {
     let path = repo_root.join(".ralphy").join("settings.json");
     let Ok(text) = std::fs::read_to_string(path) else {
         return false;
     };
     serde_json::from_str::<serde_json::Value>(&text)
         .ok()
-        .and_then(|v| v.get("claude")?.get(key)?.as_bool())
+        .and_then(|v| v.get(section)?.get(key)?.as_bool())
         .unwrap_or(false)
 }
 

@@ -141,6 +141,7 @@ mod tests {
             plan_effort: Some("low".into()),
             exec_effort: Some("low".into()),
             run_without_guard_proof_i_understand_the_risk: true,
+            console_agent_workflow_i_understand_the_risk: false,
         };
         let flags = ResolvedEffort {
             plan: Some(Effort::High),

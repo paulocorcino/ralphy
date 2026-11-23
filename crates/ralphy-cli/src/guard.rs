@@ -27,85 +27,24 @@
 //! [`evaluate_guard`] is pure over the tool call and a [`GuardContext`].
 
 use std::process::ExitCode;
-use std::sync::LazyLock;
 
-use regex::Regex;
 use serde_json::Value;
 
 use crate::cli::GuardVendor;
 
 mod antigravity;
 mod delete;
+mod rules;
 mod wrappers;
 
 use delete::{classify_delete, dotnet_delete_target, first_disallowed_target};
+use rules::denied_by_rules;
+pub(crate) use rules::WorkflowRules;
 use wrappers::{Runs, Shell};
 
 /// How many shells inside shells (`bash -c "bash -c …"`) the guard reads.
 /// A deeper script is denied: it is not something an agent needs.
 const MAX_NESTING: usize = 3;
-
-/// The Bash deny-list: each `(regex, why)` pair blocks a destructive command.
-/// Every rule is case-insensitive (`(?i)`), as PowerShell is. Recursive deletes
-/// are not here: [`first_disallowed_target`] judges them by their paths.
-static BASH_DENY_RULES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
-    [
-        (
-            r"(?i)\bgit\s+push\b",
-            "pushing is the orchestrator's job, not the agent's",
-        ),
-        (
-            r"(?i)\bgit\s+reset\s+--hard\b",
-            "hard reset can destroy uncommitted work",
-        ),
-        (r"(?i)\bgit\s+clean\b", "git clean deletes untracked files"),
-        (
-            r"(?i)\bgit\s+rebase\b",
-            "history rewrite is not allowed in the loop",
-        ),
-        (
-            r"(?i)\bgit\s+(checkout|switch)\b",
-            "the agent must stay on the run branch the orchestrator created",
-        ),
-        (
-            r"(?i)\bgit\s+worktree\b",
-            "worktrees are the orchestrator's business, not the agent's",
-        ),
-        (
-            // Global flags (`-R o/r`, `--repo=o/r`) may sit between `gh` and `pr`.
-            concat!(
-                r"(?i)\bgh(?:\s+-\S+(?:\s+[^-\s]\S*)?)*\s+pr\s+",
-                r"(create|edit|ready|reopen|review|comment|merge|close)\b",
-            ),
-            "writing to a pull request is the operator's job",
-        ),
-        (
-            r"(?i)\bgh\s+(release|repo|workflow|secret|auth)\b",
-            "repo/release/workflow/secret/auth ops are out of scope",
-        ),
-        (
-            r"(?i)\bcargo\s+publish\b",
-            "publishing crates is out of scope",
-        ),
-        (
-            // `format` only as a command name (start of command or after a
-            // separator) — `--format json` / `--format=%H` flags are benign.
-            r"(?i)(?:^|[;&|]\s*)format(?:\.com)?\s|(?i)\b(?:mkfs|diskpart)\b",
-            "disk-level command is blocked",
-        ),
-        (
-            r"(?i)\bcurl\b.*\|\s*(sh|bash|pwsh|powershell)",
-            "piping a download into a shell is blocked",
-        ),
-        (
-            r"(?i)iwr\b.*\|\s*iex|(?i)Invoke-Expression\b",
-            "remote code execution is blocked",
-        ),
-    ]
-    .into_iter()
-    .map(|(rx, why)| (Regex::new(rx).expect("valid guard regex"), why))
-    .collect()
-});
 
 /// The decision returned by [`evaluate_guard`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,6 +64,28 @@ pub(crate) struct GuardContext {
     pub cwd: String,
     /// The system temp directory. Recursive deletes under it are allowed.
     pub temp_dir: String,
+    /// Whether the workflow rules apply to this session.
+    pub workflow: WorkflowRules,
+}
+
+/// What the hook process knows before it reads the payload, in the
+/// [`GuardContext`] form.
+pub(crate) struct HookEnv {
+    pub tool_dir: String,
+    pub temp_dir: String,
+    pub workflow: WorkflowRules,
+}
+
+impl HookEnv {
+    /// The context of a payload whose worktree is `cwd`.
+    fn context(self, cwd: String) -> GuardContext {
+        GuardContext {
+            tool_dir: self.tool_dir,
+            cwd,
+            temp_dir: self.temp_dir,
+            workflow: self.workflow,
+        }
+    }
 }
 
 /// Evaluate whether a `PreToolUse` call should be allowed or denied.
@@ -179,7 +140,7 @@ fn evaluate_tool_command(tool_input: &Value, ctx: &GuardContext, shell: Shell) -
 /// Judge one command line: the deny rules over its whole text, then each of
 /// its segments.
 fn evaluate_command(cmd: &str, judge: Judge<'_>) -> GuardDecision {
-    if let Some(why) = denied_by_rules(cmd) {
+    if let Some(why) = denied_by_rules(cmd, judge.ctx.workflow) {
         return GuardDecision::Deny(why);
     }
     if let Some(tok) = dotnet_delete_target(cmd, judge.ctx) {
@@ -194,14 +155,6 @@ fn evaluate_command(cmd: &str, judge: Judge<'_>) -> GuardDecision {
         }
     }
     GuardDecision::Allow
-}
-
-/// The reason of the first deny rule `text` matches.
-fn denied_by_rules(text: &str) -> Option<String> {
-    BASH_DENY_RULES
-        .iter()
-        .find(|(re, _)| re.is_match(text))
-        .map(|(_, why)| (*why).to_owned())
 }
 
 /// Judge one segment by what it runs once its wrapper words are skipped.
@@ -241,7 +194,7 @@ fn evaluate_from_input(args: &[String], shell: Shell) -> GuardDecision {
 /// `format` rule looks only at the start of a command.
 fn evaluate_words(words: &[String], segment_len: usize, judge: Judge<'_>) -> GuardDecision {
     if words.len() < segment_len {
-        if let Some(why) = denied_by_rules(&words.join(" ")) {
+        if let Some(why) = denied_by_rules(&words.join(" "), judge.ctx.workflow) {
             return GuardDecision::Deny(why);
         }
     }
@@ -343,14 +296,12 @@ fn normalise_path(dir: &std::path::Path) -> String {
 /// fails closed. A readable payload is judged by the rules, so a tool the
 /// guard does not know is allowed.
 ///
-/// `fallback_cwd` stands in for a payload without `cwd`; `tool_dir` and
-/// `temp_dir` are already in the [`GuardContext`] form.
+/// `fallback_cwd` stands in for a payload without `cwd`.
 // ADR-0072 D6.
 pub(crate) fn decide_hook_input(
     raw: &str,
     fallback_cwd: Option<&std::path::Path>,
-    tool_dir: String,
-    temp_dir: String,
+    env: HookEnv,
 ) -> GuardDecision {
     let Some(payload) = read_payload(raw) else {
         let what = if raw.trim().is_empty() {
@@ -372,11 +323,7 @@ pub(crate) fn decide_hook_input(
         .map(|s| normalise_path(std::path::Path::new(s)))
         .or_else(|| fallback_cwd.map(normalise_path))
         .unwrap_or_default();
-    let ctx = GuardContext {
-        tool_dir,
-        cwd,
-        temp_dir,
-    };
+    let ctx = env.context(cwd);
     evaluate_guard(tool_name, tool_input, &ctx)
 }
 
@@ -433,12 +380,16 @@ pub(crate) fn run_guard_hook(vendor: GuardVendor, cost_gate: bool) -> ExitCode {
         .and_then(|p| p.parent().map(normalise_path))
         .unwrap_or_default();
     let process_cwd = std::env::current_dir().ok();
-    let temp_dir = normalise_path(&std::env::temp_dir());
+    let env = HookEnv {
+        tool_dir,
+        temp_dir: normalise_path(&std::env::temp_dir()),
+        workflow: workflow_rules_of_this_session(),
+    };
     if vendor == GuardVendor::Antigravity {
-        return antigravity::answer(&raw, process_cwd.as_deref(), tool_dir, temp_dir);
+        return antigravity::answer(&raw, process_cwd.as_deref(), env);
     }
 
-    let reason = match decide_hook_input(&raw, process_cwd.as_deref(), tool_dir, temp_dir) {
+    let reason = match decide_hook_input(&raw, process_cwd.as_deref(), env) {
         GuardDecision::Allow if cost_gate => cost_gate_reason(&raw),
         GuardDecision::Allow => None,
         GuardDecision::Deny(reason) => Some(reason),
@@ -449,6 +400,21 @@ pub(crate) fn run_guard_hook(vendor: GuardVendor, cost_gate: bool) -> ExitCode {
             ExitCode::from(2)
         }
         None => ExitCode::SUCCESS,
+    }
+}
+
+/// The workflow rules are skipped only in a console the daemon marked.
+// ADR-0093 D3: the hook inherits the vendor CLI's environment, which a tool
+// call cannot change.
+fn workflow_rules_of_this_session() -> WorkflowRules {
+    workflow_rules_for(std::env::var_os(ralphy_proc_util::GUARD_CONSOLE_ENV).as_deref())
+}
+
+/// [`workflow_rules_of_this_session`] over the variable's value.
+fn workflow_rules_for(value: Option<&std::ffi::OsStr>) -> WorkflowRules {
+    match value {
+        Some(v) if v == "1" => WorkflowRules::Skip,
+        _ => WorkflowRules::Apply,
     }
 }
 

@@ -2,6 +2,7 @@ use super::*;
 use serde_json::json;
 
 mod powershell;
+mod workflow;
 mod wrappers;
 
 fn bash(cmd: &str) -> Value {
@@ -21,6 +22,7 @@ fn ctx() -> GuardContext {
         tool_dir: TOOL_DIR.into(),
         cwd: "/repo".into(),
         temp_dir: "c:/users/x/appdata/local/temp".into(),
+        workflow: WorkflowRules::Apply,
     }
 }
 
@@ -244,8 +246,11 @@ fn decide(raw: &str) -> GuardDecision {
     decide_hook_input(
         raw,
         Some(std::path::Path::new("/repo")),
-        TOOL_DIR.into(),
-        "c:/users/x/appdata/local/temp".into(),
+        HookEnv {
+            tool_dir: TOOL_DIR.into(),
+            temp_dir: "c:/users/x/appdata/local/temp".into(),
+            workflow: WorkflowRules::Apply,
+        },
     )
 }
 

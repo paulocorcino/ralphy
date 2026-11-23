@@ -39,11 +39,14 @@ to Ralphy's tool directory, a download piped into a shell, disk commands,
 `gh release|repo|workflow|secret|auth` and `cargo publish`. A new rule is a
 safety rule unless this ADR is amended.
 
-**D2. The setting is local-only and off by default.** The key is
-`console.allow_agent_workflow`. It sends data off the machine (a push), so
-by ADR-0072 D1 it goes in `LOCAL_ONLY_KEYS`
-(`crates/ralphy-daemon/src/dispatch/argv/config.rs`). The workbench shows it
-read-only, and `ralphy config set` changes it. A run never reads it.
+**D2. The setting is local-only, per repo, and off by default.** The key is
+`antigravity.console_agent_workflow_i_understand_the_risk`, because only an
+Antigravity console runs the guard. A key in a vendor-neutral section waits
+for a second vendor. The key sends data off the machine (a push), so by
+ADR-0072 D1 it is in `LOCAL_ONLY_KEYS`
+(`crates/ralphy-daemon/src/dispatch/argv/config.rs`): only
+`ralphy config set` on this machine changes it. The daemon reads it when it
+spawns a console. A run never reads it.
 
 **D3. Ralphy tells the guard the kind of session; the agent cannot.** When
 the setting is on, the daemon adds `RALPHY_GUARD_CONSOLE=1` to the
@@ -55,15 +58,16 @@ reads. This is a claim to measure before the status becomes accepted: in a
 console with the setting off, `export RALPHY_GUARD_CONSOLE=1; git push` is
 still denied.
 
-**D4. A run never inherits the console's permission.** Every spawn of a run
-session that writes the guard (Claude plan, execute and task sessions, and
-Antigravity) removes `RALPHY_GUARD_CONSOLE` from the child's environment.
-An agent in a console that starts `ralphy run` therefore starts a run with
-every rule.
+**D4. A run never inherits the console's permission.** Every `ralphy`
+command except `hook guard` removes `RALPHY_GUARD_CONSOLE` from its own
+environment when it starts, before any thread. An agent in a console that
+starts `ralphy run` therefore starts a run with every rule, whatever the
+vendor of the run.
 
 **D5. The console says so.** When the setting is on, the console shows one
 line when it starts: "The agent may switch branches, push and write pull
-requests in this console." With the setting off, it shows nothing new.
+requests in this console." With the setting off, it shows nothing new. This
+rule is not built yet; it is a separate change to the workbench.
 
 **D6. No.** This ADR does not turn the guard off, does not change a run, and
 does not move a safety rule. It does not add the guard to Claude or Codex
@@ -77,6 +81,10 @@ consoles.
   kind comes from the environment, not from the hook command.
 - ADR-0072 D6 gains one setting that lowers the posture of a console. It is
   local-only, by D1 of that ADR.
+- The key lives in `.ralphy/settings.json`, which the agent can write, as it
+  can write any file of the operator (ADR-0072 D6). An agent that turns the
+  key on changes the next console the operator opens, not its own session.
+  This is the same exposure as every other local-only key in that file.
 
 ## Considered options
 
@@ -92,12 +100,12 @@ consoles.
 
 ## Compliance
 
-- D1: checked by `crates/ralphy-cli/src/guard/tests.rs` (a test lists the
-  workflow rules by name; a new rule in that group fails it).
-- D2: checked by the existing test that every `LOCAL_ONLY_KEYS` entry is
-  `readonly` in the settings schema.
+- D1: checked by `crates/ralphy-cli/src/guard/rules.rs`
+  (`the_workflow_rules_are_the_four_the_adr_names`).
+- D2: checked by `crates/ralphy-daemon/src/dispatch/argv/tests/git.rs`, which
+  refuses every `LOCAL_ONLY_KEYS` entry at the daemon.
 - D3: not checked by code: needs a live vendor CLI; measured once and
   written here.
-- D4: checked by a test in each run adapter: a parent environment with the
-  variable gives a child without it.
+- D4: checked by `crates/ralphy-cli/src/main.rs`
+  (`only_the_guard_hook_keeps_the_console_mark`).
 - D5: not checked by code: manual, reviewed in the PR.
