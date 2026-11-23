@@ -5,7 +5,9 @@ Over a REAL daemon with a scratch store:
   1. a PDF pane shows the loading note, then drops it once the pages draw;
   2. its zoom bar stays in place while the pages scroll;
   3. the page field goes to a typed page;
-  4. an xlsx grid draws without the Tabulator `formatter` warning;
+  4. an xlsx grid draws without a Tabulator column warning, shows every
+     column, does not cut its text, numbers its rows, and hides the sheet
+     selector for a file of one sheet;
   5. an audio pane's controller is in audio mode and its bar has a height;
   6. a docx draws with its layout in a shadow root: bold text, justified
      text and the header image, with no error in the console.
@@ -305,8 +307,28 @@ def check_sheet(page, slug, warnings):
     page.wait_for_selector(f"{sel} .tabulator-cell", timeout=30000)
     cells = page.eval_on_selector_all(f"{sel} .tabulator-cell", "els => els.map(e => e.innerHTML)")
     check("sheet: a cell with markup text draws as text", "&lt;b&gt;1&lt;/b&gt;" in cells, f"{cells[:4]}")
-    bad = [w for w in warnings if "formatter" in w]
-    check("sheet: no Tabulator formatter warning", not bad, f"{bad[:1]}")
+    bad = [w for w in warnings if "Invalid column definition" in w or "formatter" in w]
+    check("sheet: no Tabulator column warning", not bad, f"{bad[:1]}")
+    got = page.evaluate(
+        f"""() => {{
+        const pane = document.querySelector('{sel}');
+        const box = pane.querySelector('.sheet-body').getBoundingClientRect();
+        const colB = [...pane.querySelectorAll('.tabulator-col')].find(c => c.textContent.trim() === 'B');
+        const b = colB ? colB.getBoundingClientRect() : null;
+        const cell = pane.querySelector('.tabulator-row .tabulator-cell[tabulator-field="c0"]');
+        const nums = [...pane.querySelectorAll('.tabulator-row .sheet-rownum')].map(c => c.textContent);
+        return {{
+          bShown: !!b && b.width > 20 && b.right <= box.right,
+          clipped: cell ? cell.scrollHeight > cell.clientHeight + 1 : null,
+          nums: nums.slice(0, 3),
+          selectHidden: pane.querySelector('.sheet-select').hidden,
+        }};
+      }}"""
+    )
+    check("sheet: column B is shown inside the pane", got["bShown"], f"{got}")
+    check("sheet: a cell's text is not cut", got["clipped"] is False, f"{got['clipped']}")
+    check("sheet: the rows are numbered", got["nums"] == ["1", "2", "3"], f"{got['nums']}")
+    check("sheet: one sheet shows no sheet selector", got["selectHidden"], "")
     page.screenshot(path=str(SHOTS / "wb_viewer_sheet.png"))
 
 
@@ -380,7 +402,7 @@ def main():
     finally:
         stop(proc)
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
-    sys.exit(0 if len(results) == 11 and all(results) else 1)
+    sys.exit(0 if len(results) == 15 and all(results) else 1)
 
 
 if __name__ == "__main__":

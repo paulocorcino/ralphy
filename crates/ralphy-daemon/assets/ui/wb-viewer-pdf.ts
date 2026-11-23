@@ -251,10 +251,12 @@ function buildShell(host: ViewerReadOnlyDeps, rec: BytesRecord): Pane {
     `
     <div class="viewer-toolbar">
       <span class="viewer-path"></span>
-      <input class="pdf-page" type="number" min="1" aria-label="Page number" />
+      <input class="text-field pdf-page" type="number" min="1"
+        aria-label="Page number" />
       <span class="pdf-meta"></span>
       <span class="spacer"></span>
-      <input class="pdf-find" type="search" placeholder="Find" aria-label="Find in the PDF" />
+      <input class="text-field pdf-find" type="search" placeholder="Find"
+        aria-label="Find in the PDF" />
       ${detachBtnHtml(rec)}
     </div>
     <div class="viewer-body pdf-body"><div class="pdfViewer pdf-pages"></div></div>`,

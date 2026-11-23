@@ -61,11 +61,23 @@ function element(tag, made) {
   return el;
 }
 
+// A head whose stylesheets load as soon as they are added, unless held.
+function loadingHead(made) {
+  const head = element("head", made);
+  const append = head.append;
+  head.held = false;
+  head.append = (...kids) => {
+    append(...kids);
+    if (!head.held) queueMicrotask(() => kids.forEach((kid) => kid.fire("load")));
+  };
+  return head;
+}
+
 function fakeDocument() {
   const made = [];
   return {
     made,
-    head: element("head"),
+    head: loadingHead(made),
     createElement: (tag) => element(tag, made),
   };
 }
@@ -81,16 +93,21 @@ function fakeKit() {
   const grids = [];
   const registered = [];
   const FormatModule = { name: "format" };
+  const FrozenColumnsModule = { name: "frozen columns" };
   class Tabulator {
     constructor(holder, options) {
       this.options = options;
       this.destroyed = false;
+      this.redraws = [];
       grids.push(this);
     }
     static registerModule(modules) {
       registered.push(...modules);
     }
     setFilter() {}
+    redraw(force) {
+      this.redraws.push(force);
+    }
     clearFilter() {}
     destroy() {
       this.destroyed = true;
@@ -100,11 +117,13 @@ function fakeKit() {
     grids,
     registered,
     FormatModule,
+    FrozenColumnsModule,
     module: {
       Tabulator,
       FilterModule: {},
       ResizeColumnsModule: {},
       FormatModule,
+      FrozenColumnsModule,
       ImportModule: { importers: { csv } },
     },
   };
@@ -127,8 +146,7 @@ const table = (rows) => ({
   table: { grid: rows.map((row) => row.map((text) => cell(text))), headerRows: 0, kind: "data" },
 });
 
-function sheetPane(path, deps) {
-  const document = fakeDocument();
+function sheetPane(path, deps, document = fakeDocument()) {
   const host = {
     document,
     viewers: element("viewers"),
@@ -141,8 +159,14 @@ function sheetPane(path, deps) {
   return { document, pane: host.viewers.children[0] };
 }
 
+// An observer that never reports, for the real Tabulator build.
+function QuietObserver() {
+  return { observe() {}, unobserve() {}, disconnect() {} };
+}
+
 test("the table built by the viewer has no download function", async () => {
-  const saved = ["document", "window", "getComputedStyle", "HTMLElement"].map((name) => [
+  const globals = ["document", "window", "getComputedStyle", "HTMLElement", "ResizeObserver"];
+  const saved = [...globals, "addEventListener", "removeEventListener"].map((name) => [
     name,
     Object.getOwnPropertyDescriptor(globalThis, name),
   ]);
@@ -164,6 +188,10 @@ test("the table built by the viewer has no download function", async () => {
   globalThis.window = globalThis;
   globalThis.getComputedStyle = () => any;
   globalThis.HTMLElement = { [Symbol.hasInstance]: () => true };
+  // The resize module watches the holder, or the window when there is no observer.
+  globalThis.ResizeObserver = QuietObserver;
+  globalThis.addEventListener = () => {};
+  globalThis.removeEventListener = () => {};
   try {
     const kit = await import("../assets/ui/vendor/tabulator/tabulator_esm.min.mjs");
     const grid = drawGrid(kit, any, { name: "s", rows: [["a", "b"]] });
@@ -194,6 +222,74 @@ test("the grid registers the format module its plaintext cells need", async () =
   assert.ok(kit.registered.includes(kit.FormatModule), "plaintext is drawn by the format module");
 });
 
+function oneSheet(kit) {
+  const model = { blocks: [table([["a", "b"]])], notes: [], assets: [] };
+  return sheetPane("book.xlsx", {
+    fetchBytes: () => Promise.resolve(new Uint8Array([1])),
+    read: () => Promise.resolve({ ok: true, document: model }),
+    load: () => Promise.resolve({ ok: true, module: kit.module }),
+  });
+}
+
+test("the grid measures its columns again when its hidden pane is shown", async () => {
+  const kit = fakeKit();
+  let observer = null;
+  // Only for this test: other files pin that no observer exists.
+  globalThis.ResizeObserver = function ResizeObserver(callback) {
+    observer = { fire: (width) => callback([{ contentRect: { width } }]), observe() {} };
+    return observer;
+  };
+  try {
+    oneSheet(kit);
+    await settle();
+  } finally {
+    delete globalThis.ResizeObserver;
+  }
+  observer.fire(0);
+  assert.deepEqual(kit.grids[0].redraws, [], "a hidden pane draws nothing");
+  observer.fire(800);
+  observer.fire(900);
+  assert.deepEqual(kit.grids[0].redraws, [true], "shown once: one full redraw");
+});
+
+test("the grid waits for its stylesheet before it draws", async () => {
+  const kit = fakeKit();
+  const document = fakeDocument();
+  document.head.held = true;
+  const model = { blocks: [table([["a"]])], notes: [], assets: [] };
+  sheetPane(
+    "book.xlsx",
+    {
+      fetchBytes: () => Promise.resolve(new Uint8Array([1])),
+      read: () => Promise.resolve({ ok: true, document: model }),
+      load: () => Promise.resolve({ ok: true, module: kit.module }),
+    },
+    document,
+  );
+  await settle();
+  assert.equal(kit.grids.length, 0, "no grid is measured without its styles");
+  document.made.find((el) => el.tag === "link").fire("load");
+  await settle();
+  assert.equal(kit.grids.length, 1);
+});
+
+test("the grid numbers its rows in a frozen column", async () => {
+  const kit = fakeKit();
+  oneSheet(kit);
+  await settle();
+  const { rowHeader } = kit.grids[0].options;
+  assert.equal(rowHeader.formatter, "rownum");
+  assert.equal(rowHeader.frozen, true);
+  assert.ok(kit.registered.includes(kit.FrozenColumnsModule), "a frozen column needs its module");
+});
+
+test("a file of one sheet hides the sheet selector", async () => {
+  const kit = fakeKit();
+  const { document } = oneSheet(kit);
+  await settle();
+  assert.equal(document.made.find((el) => el.tag === "select").hidden, true);
+});
+
 test("an xlsx with three sheets offers three sheets in the selector", async () => {
   const { module, grids } = fakeKit();
   const model = {
@@ -221,6 +317,7 @@ test("an xlsx with three sheets offers three sheets in the selector", async () =
   );
   assert.equal(grids.length, 1);
   select.value = "2";
+  assert.notEqual(select.hidden, true, "three sheets can be chosen");
   select.fire("change");
   assert.deepEqual(grids[1].options.data, [{ c0: "3", c1: "4" }]);
   assert.equal(grids[0].destroyed, true);

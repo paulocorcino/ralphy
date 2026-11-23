@@ -996,13 +996,7 @@
   z-index: 1;
 }
 .pdf-page {
-  width: 5ch;
-  font: inherit;
-  font-size: var(--fs-sm);
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  width: 8ch;
 }
 /* The note of a viewer that is still reading its file. */
 .viewer-loading {
@@ -1025,4 +1019,46 @@
 .docx-page {
   all: initial;
   display: block;
+}
+/* The sheet grid in the workbench colors. Tabulator's own sheet is light;
+   these rules win because the viewer class makes them more specific. */
+.sheet-viewer .tabulator {
+  font-size: var(--fs-sm);
+  color: var(--text);
+  background: var(--bg);
+  border: 0;
+}
+.sheet-viewer .tabulator .tabulator-header,
+.sheet-viewer .tabulator .tabulator-header .tabulator-col {
+  color: var(--text-muted);
+  background: var(--surface);
+  border-color: var(--border);
+}
+.sheet-viewer .tabulator .tabulator-tableholder {
+  background: var(--bg);
+}
+.sheet-viewer .tabulator-row,
+.sheet-viewer .tabulator-row.tabulator-row-even {
+  color: var(--text);
+  background: var(--chrome);
+  border-color: var(--border);
+}
+.sheet-viewer .tabulator-row.tabulator-row-even {
+  background: var(--log-bg);
+}
+.sheet-viewer .tabulator-row:hover {
+  background: var(--surface-hi);
+}
+.sheet-viewer .tabulator-row .tabulator-cell {
+  border-color: var(--border);
+}
+.sheet-viewer .tabulator-row .tabulator-cell.sheet-rownum,
+.sheet-viewer .tabulator-row .tabulator-cell.tabulator-row-header {
+  color: var(--text-muted);
+  background: var(--surface);
+}
+.sheet-controls {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
 }

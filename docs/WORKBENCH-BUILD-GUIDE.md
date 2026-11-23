@@ -202,10 +202,13 @@ The grid of the sheet viewer (ADR-0091 D11). `vendor/tabulator/` holds
 `tabulator_esm.min.mjs`, `tabulator.min.css` and `LICENSE` of the npm tarball,
 byte for byte; the `.mjs` name is the one the package gives its ESM build, and
 the loader needs that extension. The viewer imports the core and registers
-four modules only: `FilterModule`, `ResizeColumnsModule`, `ImportModule`
-(it reads csv and tsv files itself) and `FormatModule` (it draws the
-`plaintext` cells; without it Tabulator logs `Invalid column definition
-option: formatter`). Never register `DownloadModule`:
+five modules only: `FilterModule`, `ResizeColumnsModule`, `ImportModule`
+(it reads csv and tsv files itself), `FormatModule` (it draws the
+`plaintext` cells and the row numbers; without it Tabulator logs `Invalid
+column definition option: formatter`) and `FrozenColumnsModule` (the row
+numbers stay at the left). The grid draws only after `tabulator.min.css`
+has loaded: drawn before, every column is as wide as the pane and every row
+is cut. Never register `DownloadModule`:
 the file viewer has no save (ADR-0091 D12). Nothing downloads a file from the
 grid. Both files name a source map that is not vendored, so the developer
 tools show one missing file.

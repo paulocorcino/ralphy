@@ -28,12 +28,28 @@ export type Sheet = { name: string; rows: string[][] };
 
 type GridRow = Record<string, string>;
 type GridColumn = { title: string; field: string; formatter: "plaintext" };
-type GridOptions = { data: GridRow[]; columns: GridColumn[]; height: string; layout: "fitData" };
+type RowHeader = { formatter: "rownum"; frozen: true; hozAlign: "right"; cssClass: string };
+type GridOptions = {
+  data: GridRow[];
+  columns: GridColumn[];
+  rowHeader: RowHeader;
+  height: string;
+  layout: "fitData";
+};
+
+// The row numbers of a sheet, as a spreadsheet shows them, frozen at the left.
+const ROW_HEADER: RowHeader = {
+  formatter: "rownum",
+  frozen: true,
+  hozAlign: "right",
+  cssClass: "sheet-rownum",
+};
 
 /** The part of a Tabulator table the pane uses. */
 export interface Grid {
   setFilter(filter: (row: GridRow) => boolean): void;
   clearFilter(): void;
+  redraw(force: boolean): void;
   destroy(): void;
 }
 
@@ -48,23 +64,35 @@ export type TabulatorKit = {
   FilterModule: unknown;
   ResizeColumnsModule: unknown;
   FormatModule: unknown;
+  FrozenColumnsModule: unknown;
   ImportModule: { importers: { csv: (text: string) => string[][] } };
 };
 
 function isKit(module: unknown): module is TabulatorKit {
   if (typeof module !== "object" || module === null) return false;
-  const parts = ["Tabulator", "ImportModule", "FilterModule", "FormatModule"];
+  const parts = [
+    "Tabulator",
+    "ImportModule",
+    "FilterModule",
+    "FormatModule",
+    "FrozenColumnsModule",
+  ];
   return parts.every((part) => part in module);
 }
 
 const registered = new WeakSet<object>();
 
-// The modules of D11, once per loaded module; the format module draws the
-// `plaintext` cells. Never the download module.
+// The modules of D11, once per loaded module. The format module draws the
+// `plaintext` cells and the row numbers. Never the download module.
 function gridClass(kit: TabulatorKit): GridClass {
   if (!registered.has(kit)) {
-    const { FilterModule, ResizeColumnsModule, ImportModule, FormatModule } = kit;
-    kit.Tabulator.registerModule([FilterModule, ResizeColumnsModule, ImportModule, FormatModule]);
+    kit.Tabulator.registerModule([
+      kit.FilterModule,
+      kit.ResizeColumnsModule,
+      kit.ImportModule,
+      kit.FormatModule,
+      kit.FrozenColumnsModule,
+    ]);
     registered.add(kit);
   }
   return kit.Tabulator;
@@ -94,7 +122,14 @@ export function drawGrid(kit: TabulatorKit, holder: HTMLElement, sheet: Sheet): 
   }));
   const data = rows.map((row) => Object.fromEntries(fields.map((f, at) => [f, row[at] ?? ""])));
   const Grid = gridClass(kit);
-  return new Grid(holder, { data, columns, height: "100%", layout: "fitData" });
+  const options: GridOptions = {
+    data,
+    columns,
+    rowHeader: ROW_HEADER,
+    height: "100%",
+    layout: "fitData",
+  };
+  return new Grid(holder, options);
 }
 
 /** Keep the rows with a cell that holds `term`, any case; an empty term keeps all. */
@@ -142,15 +177,28 @@ export function textRows(kit: TabulatorKit, text: string, tsv: boolean): string[
   return lines.map((line) => line.split("\t"));
 }
 
-const styled = new WeakSet<Document>();
+const styled = new WeakMap<Document, Promise<void>>();
 
-function addGridStyle(document: Document) {
-  if (styled.has(document)) return;
-  styled.add(document);
+// Tabulator measures its columns and rows when it draws: drawn before its
+// stylesheet applies, every column is as wide as the pane and every row
+// is cut. The grid waits for the stylesheet, or for its failure.
+function gridStyle(document: Document): Promise<void> {
+  const known = styled.get(document);
+  if (known) return known;
   const link = document.createElement("link");
+  const ready = new Promise<void>((resolve) => {
+    link.addEventListener("load", () => {
+      resolve();
+    });
+    link.addEventListener("error", () => {
+      resolve();
+    });
+  });
   link.setAttribute("rel", "stylesheet");
   link.setAttribute("href", TABULATOR_CSS_PATH);
   document.head.append(link);
+  styled.set(document, ready);
+  return ready;
 }
 
 /** The controls and grid of a pane that shows sheets. */
@@ -165,14 +213,27 @@ function rowsNote(sheet: Sheet) {
   );
 }
 
+// A grid built in a hidden pane measures its columns as 0 wide; it measures
+// them again when the pane is shown. Tabulator's resize module redraws the
+// rows only, so it does not do this.
+function redrawWhenShown(holder: HTMLElement, grid: () => Grid | null) {
+  if (typeof ResizeObserver === "undefined") return;
+  let shown = false;
+  new ResizeObserver(([entry]) => {
+    const visible = (entry?.contentRect.width ?? 0) > 0;
+    if (visible && !shown) grid()?.redraw(true);
+    shown = visible;
+  }).observe(holder);
+}
+
 function sheetView(document: Document, kit: TabulatorKit): SheetView & { close: () => void } {
   const bar = document.createElement("span");
   bar.className = "sheet-controls";
   const select = document.createElement("select");
-  select.className = "sheet-select";
+  select.className = "text-field sheet-select";
   select.setAttribute("aria-label", "Sheet");
   const filter = document.createElement("input");
-  filter.className = "sheet-filter";
+  filter.className = "text-field sheet-filter";
   filter.setAttribute("type", "search");
   filter.setAttribute("placeholder", "Filter rows");
   filter.setAttribute("aria-label", "Filter rows");
@@ -198,8 +259,11 @@ function sheetView(document: Document, kit: TabulatorKit): SheetView & { close: 
   filter.addEventListener("input", () => {
     if (grid) applyFilter(grid, filter.value);
   });
+  let closed = false;
   const show = (all: Sheet[]) => {
     sheets = all;
+    // A file of one sheet has no name for it, so there is nothing to choose.
+    select.hidden = all.length < 2;
     select.replaceChildren(
       ...all.map((sheet, at) => {
         const option = document.createElement("option");
@@ -208,13 +272,17 @@ function sheetView(document: Document, kit: TabulatorKit): SheetView & { close: 
         return option;
       }),
     );
-    addGridStyle(document);
-    draw(0);
+    void gridStyle(document).then(() => {
+      if (!closed) draw(0);
+      return null;
+    });
   };
   const close = () => {
+    closed = true;
     grid?.destroy();
     grid = null;
   };
+  redrawWhenShown(holder, () => grid);
   return { bar, holder, show, close };
 }
 

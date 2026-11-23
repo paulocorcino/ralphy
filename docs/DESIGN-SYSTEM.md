@@ -242,6 +242,13 @@ outline shows focus with `outline: 1px solid var(--focus-ring)` and
 | [Command palette](./design-system/command-palette.md)     | `.palette-modal`                | 1 part   |
 | [Help screen](./design-system/help-screen.md)             | `.help-modal`                   | 1 part   |
 | Zoom bar (`wb-zoom-bar.ts`)                               | `.zoom-bar`, `.zoom-bar-btn`    | Code     |
+| Sheet grid (`wb-viewer-sheet.ts`)                         | `.sheet-viewer .tabulator`      | Code     |
+
+The sheet grid is Tabulator's grid in the workbench colors (`07-viewers.css`):
+the header and the row numbers on `--surface`, rows on `--chrome` and
+`--log-bg` by turns, `--surface-hi` on hover, lines in `--border`. Its sheet
+selector and filter are [Text fields](./design-system/text-field.md), as
+are the find and page fields of the PDF viewer.
 
 The count is the number of `*.part.html` files and pages that use the
 class, measured on 2026-11-14 with `grep -l`. "Code" means the element is
