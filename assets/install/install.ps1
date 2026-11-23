@@ -29,6 +29,15 @@ function Install-Ralphy {
     # Windows PowerShell 5.1 does not offer TLS 1.2 by default.
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
+    # Checked before any question: an install that cannot happen asks nothing.
+    # Windows 11 on ARM64 runs the x64 build under emulation.
+    $target = 'windows-x64'
+    switch ($env:PROCESSOR_ARCHITECTURE) {
+        'AMD64' { }
+        'ARM64' { Write-Host 'This is Windows on ARM64: the x64 build runs under emulation.' }
+        default { throw "there is no Ralphy build for Windows on $($env:PROCESSOR_ARCHITECTURE)" }
+    }
+
     $identity = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
     $elevated = $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     if ($elevated) {
@@ -42,11 +51,6 @@ function Install-Ralphy {
                 throw 'stopped. Run it again in a normal window'
             }
         }
-    }
-
-    switch ($env:PROCESSOR_ARCHITECTURE) {
-        'AMD64' { $target = 'windows-x64' }
-        default { throw "there is no Ralphy build for Windows on $($env:PROCESSOR_ARCHITECTURE)" }
     }
 
     if ($env:RALPHY_VERSION) {
@@ -90,15 +94,40 @@ function Install-Ralphy {
         # does not start it.
         & $ralphy daemon install
         if ($LASTEXITCODE -ne 0) { throw 'ralphy daemon install failed' }
-    } else {
-        Write-Host 'To start the daemon at sign-in, run: ralphy daemon install'
     }
 
     Write-Host ''
     # `doctor` exits 1 when a tool is missing; that never stops the install.
     & $ralphy doctor
-    if ($LASTEXITCODE -gt 1) { throw "could not run $ralphy (exit $LASTEXITCODE)" }
+    $doctorStatus = $LASTEXITCODE
+    if ($doctorStatus -gt 1) { throw "could not run $ralphy (exit $doctorStatus)" }
+    Write-NextStep -Dir (Split-Path -Parent $ralphy) -ToolsMissing ($doctorStatus -eq 1) -WithDaemon $WithDaemon
     $global:LASTEXITCODE = 0
 }
 
-Install-Ralphy -WithDaemon ($Daemon.IsPresent -or $env:RALPHY_DAEMON -eq '1')
+# The last lines of the output are what the person reads, so they list what is
+# left to do, in order.
+function Write-NextStep {
+    param([string]$Dir, [bool]$ToolsMissing, [bool]$WithDaemon)
+    $steps = @()
+    $onPath = @($env:Path -split ';' | ForEach-Object { $_.TrimEnd('') }) -contains $Dir.TrimEnd('')
+    if (-not $onPath) {
+        $steps += "Open a new window, or run this in this one: `$env:Path = '$Dir;' + `$env:Path"
+    }
+    if ($ToolsMissing) { $steps += 'Install each tool marked [miss] above, then run: ralphy doctor' }
+    if (-not $WithDaemon) { $steps += 'Start the daemon at sign-in: ralphy daemon install' }
+    Write-Host ''
+    Write-Host 'Next steps:'
+    if ($steps.Count -eq 0) { Write-Host '  None. Ralphy is ready.' }
+    for ($i = 0; $i -lt $steps.Count; $i++) { Write-Host "  $($i + 1). $($steps[$i])" }
+}
+
+# An expected stop is one line, not a PowerShell error record. Under `irm | iex`
+# there is no script file, and `exit` would close the person's own console.
+try {
+    Install-Ralphy -WithDaemon ($Daemon.IsPresent -or $env:RALPHY_DAEMON -eq '1')
+} catch {
+    [Console]::Error.WriteLine("ralphy install: $($_.Exception.Message)")
+    if ($PSCommandPath) { exit 1 }
+    $global:LASTEXITCODE = 1
+}

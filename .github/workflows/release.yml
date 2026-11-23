@@ -111,6 +111,7 @@ jobs:
           reg query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' /v ralphy-daemon
           if ($LASTEXITCODE -ne 0) { throw 'the daemon autostart is not registered' }
           if ($installed -notmatch 'not started from this administrator window') { throw "no refusal line: $installed" }
+          if ($installed -notmatch 'Next steps:') { throw "no next steps: $installed" }
           $running = Get-CimInstance Win32_Process -Filter "Name = 'ralphy.exe'" |
             Where-Object { $_.CommandLine -match ' daemon' }
           if ($running) { throw 'an elevated install started the daemon' }
@@ -123,6 +124,7 @@ jobs:
           $bad = pwsh -NoProfile -File assets/install/install.ps1 2>&1 | Out-String
           if ($LASTEXITCODE -eq 0) { throw 'install.ps1 accepted a wrong checksum' }
           if ($bad -notmatch 'SHA-256 of') { throw "refused for another reason: $bad" }
+          if ($bad -match 'CategoryInfo') { throw "the stop is a stack trace: $bad" }
           if (Test-Path (Join-Path $env:RALPHY_INSTALL_DIR 'ralphy.exe')) { throw 'a binary was installed' }
           Stop-Process -Id $server.Id
           # The runner ends the step with the last native exit code, which is the

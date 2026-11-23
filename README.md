@@ -65,8 +65,8 @@ end the Linux and macOS line with `| RALPHY_DAEMON=1 sh`, or on Windows run
 then run the file. Run it again to repair an install.
 
 Prefer to do it by hand? Grab the archive for your platform from the
-[**Releases page**](https://github.com/paulocorcino/ralphy/releases) — Windows, Linux
-(x64 and ARM64), or macOS (Intel & Apple Silicon) — unzip it anywhere, then let it put
+[**Releases page**](https://github.com/paulocorcino/ralphy/releases) — Windows (x64; on
+ARM64 it runs under emulation), Linux (x64 and ARM64), or macOS (Intel & Apple Silicon) — unzip it anywhere, then let it put
 itself on your `PATH`:
 
 ```bash
