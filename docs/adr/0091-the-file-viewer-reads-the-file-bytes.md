@@ -399,3 +399,43 @@ to choose the separator, on 2026-11-23.
 registered. A csv grid has a selector of the separator (comma, semicolon,
 tab, bar); it starts on the separator used most in the first line. A tsv
 file is read by its tabs and has no selector.
+
+## Amendment 2026-11-23 — D3, D8, D10, D11: SheetJS and an own odt reader replace anydoc-wasm
+
+After the amendments above, anydoc-wasm read only odt, xlsx and ods, and it
+was the largest library of the viewer. The operator asked for a lighter
+way and approved these changes on 2026-11-23.
+
+**Spike (2026-11-23).** SheetJS Community Edition 0.20.3 (Apache-2.0, the
+tarball of `cdn.sheetjs.com`; the npm package stopped at 0.18.5, which has
+known vulnerabilities). Its ES module `xlsx.mjs` is 1.0 MB, 254 KB after
+gzip, against 6.7 MB and 2.9 MB for anydoc-wasm. It imports nothing and has
+no `eval` and no `new Function`. Reading the same files in Node 22:
+
+| File | SheetJS | anydoc-wasm |
+| --- | --- | --- |
+| A real xlsx, 12 KB, one sheet | 20 ms | 38 ms |
+| An ods of three sheets, 22 KB | 5 ms | 4 ms |
+| An xlsx of 50,000 rows, 7.8 MB | 0.77 s | 45.6 s |
+
+SheetJS gives the name of each sheet, also of a file with one sheet, which
+anydoc did not. An odt reader written for the spike (about 170 lines) read
+a real odt of 52 KB in 32 ms in Chromium: paragraphs, bold, italics,
+indents, a numbered list and an image, close to the PDF that Word exported.
+It reads the zip with the `CFB` reader that SheetJS exports.
+
+**D3, changed.** The cap of an xlsx or an ods file is 16 MiB. The viewer
+reads a file over 8 MiB in more than one answer of D4.
+
+**D8, changed.** SheetJS (`vendor/sheetjs/xlsx.mjs`) is a vendored library
+of the sheet and document viewers. anydoc-wasm and its worker are removed.
+
+**D10, changed.** An odt is read by the viewer's own reader
+(`wb-odt.ts`): `content.xml` and `styles.xml` become DOM, text only through
+text nodes, an image only as a `blob:` address of an image type, a web link
+in a new tab with `noopener noreferrer`. A style gives only a closed list
+of properties, each checked against its own pattern (weight, style,
+underline, alignment, size, color, background, margin, font family).
+
+**D11, changed.** An xlsx or ods file is read by SheetJS. A cell shows its
+formatted value, as the file stored it. No formula runs.

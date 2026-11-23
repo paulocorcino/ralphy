@@ -14,7 +14,9 @@ Over a REAL daemon with a scratch store:
   7. a zip lists its entries as a table that scrolls, with a header that
      stays, names indented under their folder, and sizes in their column;
   8. a semicolon csv opens as a grid split on semicolons, and the separator
-     selector changes the split.
+     selector changes the split;
+  9. an odt draws on a white page: its font, bold, highlight, an image, and
+     a list that continues the numbering of the list before it.
 
 The fixtures are written by this script. The daemon is stopped by its own
 subprocess handle, never by name.
@@ -196,6 +198,16 @@ def docx_bytes(path):
         z.writestr("word/media/logo.png", png_bytes())
 
 
+def odt_bytes(path):
+    """An odt with a font face, bold, a highlight, two lists and an image, from fixtures/odt."""
+    folder = Path(__file__).parent / "fixtures" / "odt"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr(zipfile.ZipInfo("mimetype"), "application/vnd.oasis.opendocument.text")
+        for name in ("content.xml", "styles.xml"):
+            z.writestr(name, (folder / name).read_text(encoding="utf-8"), zipfile.ZIP_DEFLATED)
+        z.writestr("Pictures/logo.png", png_bytes())
+
+
 def wav_bytes(seconds=2, rate=8000):
     data = b"\x80" * (seconds * rate)
     fmt = struct.pack("<HHIIHH", 1, 1, rate, rate, 1, 8)
@@ -210,6 +222,7 @@ def make_fixture_repo():
     xlsx_bytes(d / "book.xlsx")
     (d / "tone.wav").write_bytes(wav_bytes())
     docx_bytes(d / "contract.docx")
+    odt_bytes(d / "notes.odt")
     with zipfile.ZipFile(d / "bundle.zip", "w") as z:
         for i in range(80):
             z.writestr(f"top/inner/file{i:02d}.txt", "x" * (1000 + i))
@@ -434,6 +447,35 @@ def check_csv(page, slug):
     page.screenshot(path=str(SHOTS / "wb_viewer_csv.png"))
 
 
+def check_odt(page, slug):
+    open_path(page, slug, "notes.odt")
+    sel = pane(slug, "notes.odt")
+    page.wait_for_selector(f"{sel} .odt-page p", timeout=30000)
+    page.wait_for_function(f"() => document.querySelector('{sel} .odt-page img')?.naturalWidth > 0", timeout=15000)
+    got = page.evaluate(
+        f"""() => {{
+        const root = document.querySelector('{sel} .odt-page');
+        const spans = [...root.querySelectorAll('span')];
+        const bold = spans.find(s => s.textContent === 'Bold words');
+        const marked = spans.find(s => s.textContent === 'Marked words'.toLowerCase());
+        const lists = [...root.querySelectorAll('ol')];
+        return {{
+          bold: bold ? getComputedStyle(bold).fontWeight : null,
+          marked: marked ? getComputedStyle(marked).backgroundColor : null,
+          starts: lists.map(l => l.start),
+          font: getComputedStyle(root).fontFamily,
+          ground: getComputedStyle(root).backgroundColor,
+        }};
+      }}"""
+    )
+    check("odt: bold text is bold", got["bold"] == "700", f"{got}")
+    check("odt: a highlight keeps its color", got["marked"] == "rgb(255, 255, 0)", f"{got['marked']}")
+    check("odt: a continued list goes on counting", got["starts"] == [1, 3], f"{got['starts']}")
+    check("odt: the page takes the file's font on white", "Liberation Serif" in got["font"] and got["ground"] == "rgb(255, 255, 255)", f"{got['font']} {got['ground']}")
+    check("odt: the image draws", True)
+    page.screenshot(path=str(SHOTS / "wb_viewer_odt.png"))
+
+
 def main():
     if os.environ.get("RALPHY_TEST_SKIP_BUILD") != "1":
         subprocess.run(["cargo", "build", "-p", "ralphy-cli", "--bin", "ralphy"], cwd=REPO_ROOT, check=True)
@@ -461,11 +503,12 @@ def main():
             check_docx(page, slug, warnings)
             check_archive(page, slug)
             check_csv(page, slug)
+            check_odt(page, slug)
             browser.close()
     finally:
         stop(proc)
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
-    sys.exit(0 if len(results) == 21 and all(results) else 1)
+    sys.exit(0 if len(results) == 26 and all(results) else 1)
 
 
 if __name__ == "__main__":

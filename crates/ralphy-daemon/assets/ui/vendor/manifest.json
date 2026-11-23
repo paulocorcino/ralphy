@@ -14,28 +14,6 @@
       ]
     },
     {
-      "name": "anydoc-wasm",
-      "npm": "@firecrawl/anydoc-wasm",
-      "version": "0.2.5",
-      "source": "https://registry.npmjs.org/@firecrawl/anydoc-wasm/-/anydoc-wasm-0.2.5.tgz",
-      "files": [
-        {
-          "path": "anydoc/LICENSE",
-          "sha256": "03a9e7657aac6536fb6458bd220347c4e7f85bd0a51d8d9e8528530b7a682ade"
-        },
-        {
-          "path": "anydoc/anydoc_wasm.js",
-          "sha256": "4860ad4c02c523593a5dae7698e186e8d7cf75a0e0bf3c2c294373de58eaee74",
-          "note": "the wasm-bindgen glue, byte for byte. Only the document worker imports it"
-        },
-        {
-          "path": "anydoc/anydoc_wasm_bg.wasm",
-          "sha256": "09c5390769f65236a186d1d39a12b61a66cc6a1b6fd3c5961baef24a7c6e9b62",
-          "note": "byte for byte; the glue fetches it next to itself"
-        }
-      ]
-    },
-    {
       "name": "Bootstrap Icons",
       "npm": "bootstrap-icons",
       "version": "1.11.3",
@@ -1097,6 +1075,23 @@
         {
           "path": "pdfjs/wasm/qcms_bg.wasm",
           "sha256": "663d86126d5f5fcb1c61490f94353e2a8375660b8c5498ab3ebab5a34b08800e"
+        }
+      ]
+    },
+    {
+      "name": "SheetJS",
+      "npm": "xlsx",
+      "version": "0.20.3",
+      "source": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+      "files": [
+        {
+          "path": "sheetjs/LICENSE",
+          "sha256": "4d2a38ac35cda06a555c84074a819d413339cd3691b822cae50f8f322fe01f64"
+        },
+        {
+          "path": "sheetjs/xlsx.mjs",
+          "sha256": "1a0fb062ee9781b13f6687371b202aaefc53b6ce55b530c027e01f9c087b77db",
+          "note": "byte for byte; the cdn tarball, not npm, where xlsx stopped at 0.18.5"
         }
       ]
     },

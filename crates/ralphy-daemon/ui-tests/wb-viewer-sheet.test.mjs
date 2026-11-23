@@ -10,6 +10,7 @@ import {
   mountSheetSwitch,
 } from "../assets/ui/wb-viewer-sheet.ts";
 import { viewerKindOf } from "../assets/ui/wb-viewers.ts";
+import { SHEETJS_PATH } from "../assets/ui/wb-sheet-read.ts";
 
 function element(tag, made) {
   const el = {
@@ -136,16 +137,26 @@ function settle() {
   });
 }
 
-const words = (text) => ({ kind: "text", text, style: {} });
-const cell = (text) => ({
-  kind: "origin",
-  cell: { blocks: [{ kind: "paragraph", content: [words(text)] }], colSpan: 1, rowSpan: 1 },
-});
-const heading = (text) => ({ kind: "heading", level: 1, content: [words(text)] });
-const table = (rows) => ({
-  kind: "table",
-  table: { grid: rows.map((row) => row.map((text) => cell(text))), headerRows: 0, kind: "data" },
-});
+// A SheetJS that reads the given sheets, whatever the bytes are.
+function fakeSheetJs(sheets) {
+  return {
+    read: () => ({
+      SheetNames: sheets.map((sheet) => sheet.name),
+      Sheets: Object.fromEntries(sheets.map((sheet) => [sheet.name, sheet])),
+    }),
+    utils: { sheet_to_json: (sheet) => sheet.rows },
+    CFB: {},
+  };
+}
+
+// The steps of a sheet pane over the fake grid and the fake reader.
+function sheetDeps(kit, sheets) {
+  const xlsx = fakeSheetJs(sheets);
+  return {
+    fetchBytes: () => Promise.resolve(new Uint8Array([1])),
+    load: (path) => Promise.resolve({ ok: true, module: path === SHEETJS_PATH ? xlsx : kit }),
+  };
+}
 
 function sheetPane(path, deps, document = fakeDocument()) {
   const host = {
@@ -212,24 +223,14 @@ test("the table built by the viewer has no download function", async () => {
 
 test("the grid registers the format module its plaintext cells need", async () => {
   const kit = fakeKit();
-  const model = { blocks: [table([["<b>x</b>"]])], notes: [], assets: [] };
-  sheetPane("book.xlsx", {
-    fetchBytes: () => Promise.resolve(new Uint8Array([1])),
-    read: () => Promise.resolve({ ok: true, document: model }),
-    load: () => Promise.resolve({ ok: true, module: kit.module }),
-  });
+  sheetPane("book.xlsx", sheetDeps(kit.module, [{ name: "Data", rows: [["<b>x</b>"]] }]));
   await settle();
   assert.equal(kit.grids[0].options.columns[0].formatter, "plaintext");
   assert.ok(kit.registered.includes(kit.FormatModule), "plaintext is drawn by the format module");
 });
 
 function oneSheet(kit) {
-  const model = { blocks: [table([["a", "b"]])], notes: [], assets: [] };
-  return sheetPane("book.xlsx", {
-    fetchBytes: () => Promise.resolve(new Uint8Array([1])),
-    read: () => Promise.resolve({ ok: true, document: model }),
-    load: () => Promise.resolve({ ok: true, module: kit.module }),
-  });
+  return sheetPane("book.xlsx", sheetDeps(kit.module, [{ name: "Data", rows: [["a", "b"]] }]));
 }
 
 test("the grid measures its columns again when its hidden pane is shown", async () => {
@@ -260,16 +261,7 @@ test("the grid waits for its stylesheet before it draws", async () => {
   const kit = fakeKit();
   const document = fakeDocument();
   document.head.held = true;
-  const model = { blocks: [table([["a"]])], notes: [], assets: [] };
-  sheetPane(
-    "book.xlsx",
-    {
-      fetchBytes: () => Promise.resolve(new Uint8Array([1])),
-      read: () => Promise.resolve({ ok: true, document: model }),
-      load: () => Promise.resolve({ ok: true, module: kit.module }),
-    },
-    document,
-  );
+  sheetPane("book.xlsx", sheetDeps(kit.module, [{ name: "Data", rows: [["a"]] }]), document);
   await settle();
   assert.equal(kit.grids.length, 0, "no grid is measured without its styles");
   document.made.find((el) => el.tag === "link").fire("load");
@@ -296,23 +288,12 @@ test("a file of one sheet hides the sheet selector", async () => {
 
 test("an xlsx with three sheets offers three sheets in the selector", async () => {
   const { module, grids } = fakeKit();
-  const model = {
-    blocks: [
-      heading("North"),
-      table([["1"]]),
-      heading("South"),
-      table([["2"]]),
-      heading("East"),
-      table([["3", "4"]]),
-    ],
-    notes: [],
-    assets: [],
-  };
-  const { document } = sheetPane("book.xlsx", {
-    fetchBytes: () => Promise.resolve(new Uint8Array([1])),
-    read: () => Promise.resolve({ ok: true, document: model }),
-    load: () => Promise.resolve({ ok: true, module }),
-  });
+  const sheets = [
+    { name: "North", rows: [["1"]] },
+    { name: "South", rows: [["2"]] },
+    { name: "East", rows: [["3", "4"]] },
+  ];
+  const { document } = sheetPane("book.xlsx", sheetDeps(module, sheets));
   await settle();
   const select = document.made.find((el) => el.tag === "select");
   assert.deepEqual(
@@ -424,10 +405,6 @@ test("a too large answer shows the message and starts no reader", async () => {
   const started = [];
   const { pane } = sheetPane("big.ods", {
     fetchBytes: () => Promise.resolve("too large"),
-    read: () => {
-      started.push("read");
-      return Promise.resolve({ ok: false, code: "failed" });
-    },
     load: () => {
       started.push("load");
       return Promise.resolve({ ok: false, text: "" });
