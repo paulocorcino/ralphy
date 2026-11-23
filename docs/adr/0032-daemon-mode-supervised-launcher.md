@@ -840,3 +840,61 @@ expire by themselves. The epoch stays the tool for "end everything".
   credentials, which the cookie does not carry; the login throttle covers it.
 - No device or IP binding is added. The remembered amendment's reason still
   holds: the dev-tunnel path rewrites `Host` and `Origin`.
+
+## Amendment (2026-11-23, #1030): Windows autostart is a shortcut in the Startup folder
+
+*Proposed. Supersedes the Windows paragraph of §10 and the `powershell.exe`
+fallback of the amendment of 2026-09-15.*
+
+A corporate MDR flagged the Windows autostart of an operator as persistence.
+The chain it saw is a common pattern of malware: `reg.exe` writes a `Run`
+value (MITRE ATT&CK T1547.001), the value starts a hidden PowerShell, and the
+PowerShell starts an unsigned binary from a folder of the user profile.
+
+**Spike (2026-11-23, Windows 11, Windows Terminal as the default terminal).**
+A shortcut was opened through the shell, as logon opens the Startup folder,
+and the visible top-level windows were listed every 15 ms for 4 s. The
+target was a console program (`ping`). Three runs, the same result:
+
+| How the shortcut starts the program | New window |
+| --- | --- |
+| The console program itself | yes: a Windows Terminal window |
+| The console program, shortcut set to "minimized" | yes: a minimized console on the taskbar |
+| `conhost.exe --headless <program>` | none |
+| A GUI-subsystem launcher that starts the program with `CREATE_NO_WINDOW` | none |
+
+A console program opened by a shortcut gets its window before any of its
+code runs, so the program cannot hide it itself.
+
+Decision:
+
+- **A shortcut in the per-user Startup folder** (`FOLDERID_Startup`,
+  `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Ralphy daemon.lnk`)
+  replaces the `Run` value. Ralphy writes it itself through the shell's COM
+  `IShellLinkW` (the `windows` crate of Microsoft); no `reg.exe` and no
+  script runs.
+- **The shortcut starts `ralphyw.exe`**, a GUI-subsystem launcher beside
+  `ralphy.exe`, built from `ralphy-cli`. It starts `ralphy.exe daemon` with
+  `CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB`, the
+  flags `daemon restart` already uses, and exits. No PowerShell is in the
+  chain. `conhost --headless` also opens no window, but it is a known way to
+  hide a process (LOLBAS), which is the pattern this change moves away from.
+  The release archive, the installer, `ralphy update` and
+  `scripts/update-ralphy.ps1` carry the second binary.
+- **The daemon writes its own log** (`~/.ralphy/daemon.log`), so no shell
+  redirects its output.
+- **Upgrade.** `install` deletes an old `ralphy-daemon` value under
+  `HKCU\…\CurrentVersion\Run` through the registry API, so an upgraded
+  machine does not start the daemon twice. `uninstall` deletes both.
+- **Status** reports three facts: the shortcut exists; the operator turned it
+  off in Task Manager → Startup apps (the value of the shortcut's name under
+  `HKCU\…\Explorer\StartupApproved\StartupFolder`, to be confirmed by turning
+  it off and on); an old `Run` value still exists.
+
+Consequences:
+
+- This lowers the chance of a detection; it does not remove it. T1547.001
+  also covers the Startup folder. The real answer for a corporate machine is
+  a signed binary, a separate decision. No text of Ralphy says "no alerts".
+- The install folder (`.local\bin`) does not move here; it is its own issue.
+- `AutostartStatus` (public) gains the two Windows facts above.
