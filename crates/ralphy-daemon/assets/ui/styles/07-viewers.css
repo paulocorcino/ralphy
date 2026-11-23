@@ -181,7 +181,11 @@
     linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
     linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%);
   background-size: 16px 16px;
-  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
 }
 .image-viewer .zoom-surface:focus-visible {
   outline: 1px solid var(--focus-ring);
@@ -983,4 +987,30 @@
     min-width: 44px;
     height: 44px;
   }
+}
+/* The PDF pane keeps its zoom bar on the pane, under the toolbar and left of
+   the scroller's bar, so it stays in place while the pages scroll. */
+.pdf-viewer > .zoom-bar {
+  top: calc(var(--viewer-toolbar-h, 2.25rem) + 0.75rem);
+  right: 1.5rem;
+  z-index: 1;
+}
+.pdf-page {
+  width: 5ch;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+/* The note of a viewer that is still reading its file. */
+.viewer-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  pointer-events: none;
 }

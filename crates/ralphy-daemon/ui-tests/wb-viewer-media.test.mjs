@@ -93,7 +93,10 @@ test("the controller carries nohotkeys and the bar has no download control", () 
   assert.equal(controller.tag, "media-controller");
   assert.equal("nohotkeys" in controller.attrs, true);
   const tags = controller.all().map((el) => el.tag);
-  assert.equal(tags.some((tag) => /download/u.test(tag)), false);
+  assert.equal(
+    tags.some((tag) => /download/u.test(tag)),
+    false,
+  );
   assert.equal(tags.includes("media-play-button"), true);
 });
 
@@ -116,4 +119,11 @@ test("the table opens the eight media extensions", () => {
     assert.equal(viewerKindOf(ext), "media", ext);
   }
   assert.equal(VIEWERS.media.build, buildMedia);
+});
+
+test("an audio file's controller is in audio mode, a video's is not", () => {
+  for (const path of ["voice.ogg", "song.mp3", "a.wav", "a.m4a"]) {
+    assert.equal("audio" in pane(path, loaded).controller.attrs, true, path);
+  }
+  assert.equal("audio" in pane("clip.mp4", loaded).controller.attrs, false);
 });

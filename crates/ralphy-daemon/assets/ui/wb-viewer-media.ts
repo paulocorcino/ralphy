@@ -41,11 +41,12 @@ function controlBar(document: Document, video: boolean) {
   return bar;
 }
 
+// Without `audio`, media-chrome sizes an audio element as a video with no
+// picture: the pane is empty and the bar hides itself.
 function mediaController(document: Document, media: HTMLElement, video: boolean) {
-  const controller = element(document, "media-controller", {
-    nohotkeys: "",
-    class: "media-controller",
-  });
+  const attrs: Record<string, string> = { nohotkeys: "", class: "media-controller" };
+  if (!video) attrs["audio"] = "";
+  const controller = element(document, "media-controller", attrs);
   controller.style.width = "100%";
   controller.style.maxHeight = "100%";
   controller.append(media, controlBar(document, video));

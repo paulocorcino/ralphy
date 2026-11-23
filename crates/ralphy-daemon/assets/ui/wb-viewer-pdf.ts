@@ -12,6 +12,7 @@ import type { ZoomDrive } from "./wb-zoom-bar.ts";
 import { loadVendor } from "./wb-vendor-load.ts";
 import type { VendorLoad } from "./wb-vendor-load.ts";
 import { devError } from "./wb-log.ts";
+import { showLoading } from "./wb-viewer-loading.ts";
 import type { ViewerReadOnlyDeps } from "./wb-file-viewer-read-only.ts";
 import type { BytesRecord } from "./wb-file-viewer-records.ts";
 
@@ -44,7 +45,10 @@ type PdfCore = {
   AnnotationMode: { ENABLE: number };
   getDocument(src: PdfSource): { promise: Promise<PdfDocument> };
 };
-type EventBus = { dispatch(name: string, detail: Record<string, unknown>): void };
+type EventBus = {
+  dispatch(name: string, detail: Record<string, unknown>): void;
+  on(name: "pagechanging", fn: (detail: { pageNumber: number }) => void): void;
+};
 type LinkService = {
   setViewer(viewer: PdfView): void;
   setDocument(doc: PdfDocument): void;
@@ -52,6 +56,7 @@ type LinkService = {
 type PdfView = {
   currentScale: number;
   currentScaleValue: string;
+  currentPageNumber: number;
   setDocument(doc: PdfDocument): void;
 };
 type PdfViewerLib = {
@@ -136,6 +141,29 @@ function pdfDrive(view: PdfView, scroller: HTMLElement): ZoomDrive {
   };
 }
 
+/** The page a typed value names, inside 1 to `count`, or null when it names none. */
+export function pageOf(value: string, count: number): number | null {
+  const page = Math.trunc(Number(value));
+  if (value.trim() === "" || Number.isNaN(page) || count < 1) return null;
+  return Math.min(Math.max(page, 1), count);
+}
+
+// The page field goes to the typed page on Enter, and follows the scroll.
+function wirePage(field: HTMLInputElement, view: PdfView, bus: EventBus, count: number) {
+  field.max = String(count);
+  field.value = "1";
+  field.addEventListener("keydown", (ev: KeyboardEvent) => {
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    const page = pageOf(field.value, count);
+    if (page !== null) view.currentPageNumber = page;
+    field.value = String(view.currentPageNumber);
+  });
+  bus.on("pagechanging", (detail: { pageNumber: number }) => {
+    field.value = String(detail.pageNumber);
+  });
+}
+
 function wireFind(field: HTMLInputElement, bus: EventBus) {
   let last = "";
   field.addEventListener("keydown", (ev: KeyboardEvent) => {
@@ -156,7 +184,13 @@ function wireFind(field: HTMLInputElement, bus: EventBus) {
   });
 }
 
-type Pane = { el: HTMLElement; body: HTMLElement; pages: HTMLElement; meta: HTMLElement };
+type Pane = {
+  el: HTMLElement;
+  body: HTMLElement;
+  pages: HTMLElement;
+  meta: HTMLElement;
+  loaded: () => void;
+};
 
 type Pdfjs = { core: PdfCore; lib: PdfViewerLib };
 
@@ -182,14 +216,17 @@ async function openDocument(host: ViewerReadOnlyDeps, pane: Pane, url: string, p
     annotationMode: core.AnnotationMode.ENABLE,
   });
   linkService.setViewer(view);
+  // The bar is a child of the pane, not of the scroller, so it stays in place.
   const bar = buildZoomBar(host.document, pdfDrive(view, pane.body), pane.body);
-  pane.body.append(bar.el);
+  pane.el.append(bar.el);
   wireFind(needInput(pane.el, ".pdf-find"), eventBus);
   const doc = await core.getDocument(pdfSource(url)).promise;
   view.setDocument(doc);
   linkService.setDocument(doc);
   view.currentScaleValue = FIT;
   bar.refresh();
+  pane.loaded();
+  wirePage(needInput(pane.el, ".pdf-page"), view, eventBus, doc.numPages);
   pane.meta.textContent = `${String(doc.numPages)} pages`;
 }
 
@@ -214,6 +251,7 @@ function buildShell(host: ViewerReadOnlyDeps, rec: BytesRecord): Pane {
     `
     <div class="viewer-toolbar">
       <span class="viewer-path"></span>
+      <input class="pdf-page" type="number" min="1" aria-label="Page number" />
       <span class="pdf-meta"></span>
       <span class="spacer"></span>
       <input class="pdf-find" type="search" placeholder="Find" aria-label="Find in the PDF" />
@@ -231,7 +269,8 @@ function buildShell(host: ViewerReadOnlyDeps, rec: BytesRecord): Pane {
   body.style.position = "absolute";
   body.style.inset = "var(--viewer-toolbar-h, 2.25rem) 0 0 0";
   body.style.overflow = "auto";
-  return { el, body, pages: need(el, ".pdf-pages"), meta: need(el, ".pdf-meta") };
+  const loaded = showLoading(document, body);
+  return { el, body, pages: need(el, ".pdf-pages"), meta: need(el, ".pdf-meta"), loaded };
 }
 
 export function buildPdf(
@@ -245,6 +284,7 @@ export function buildPdf(
   void loadPdfjs(load)
     .then((pdfjs) => {
       if (typeof pdfjs === "string") {
+        pane.loaded();
         pane.meta.textContent = pdfjs;
         return null;
       }
@@ -252,6 +292,7 @@ export function buildPdf(
     })
     .catch((err: unknown) => {
       devError("[workbench] the PDF failed to open", err);
+      pane.loaded();
       pane.meta.textContent = PDF_ERROR_TEXT;
     });
   rec.el = pane.el;

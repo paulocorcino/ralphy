@@ -7,6 +7,7 @@ import { setMarkup } from "./wb-html.ts";
 import { need, required } from "./wb-dom-need.ts";
 import { fileBytesUrl } from "./wb-file-bytes.ts";
 import { devError } from "./wb-log.ts";
+import { showLoading } from "./wb-viewer-loading.ts";
 import { readAnydoc } from "./wb-anydoc.ts";
 import { loadVendor } from "./wb-vendor-load.ts";
 import type { AnydocFormat, AnydocResult } from "./wb-anydoc.ts";
@@ -46,20 +47,24 @@ export type TabulatorKit = {
   Tabulator: GridClass;
   FilterModule: unknown;
   ResizeColumnsModule: unknown;
+  FormatModule: unknown;
   ImportModule: { importers: { csv: (text: string) => string[][] } };
 };
 
 function isKit(module: unknown): module is TabulatorKit {
   if (typeof module !== "object" || module === null) return false;
-  return "Tabulator" in module && "ImportModule" in module && "FilterModule" in module;
+  const parts = ["Tabulator", "ImportModule", "FilterModule", "FormatModule"];
+  return parts.every((part) => part in module);
 }
 
 const registered = new WeakSet<object>();
 
-// The three modules of D11, once per loaded module. Never the download module.
+// The modules of D11, once per loaded module; the format module draws the
+// `plaintext` cells. Never the download module.
 function gridClass(kit: TabulatorKit): GridClass {
   if (!registered.has(kit)) {
-    kit.Tabulator.registerModule([kit.FilterModule, kit.ResizeColumnsModule, kit.ImportModule]);
+    const { FilterModule, ResizeColumnsModule, ImportModule, FormatModule } = kit;
+    kit.Tabulator.registerModule([FilterModule, ResizeColumnsModule, ImportModule, FormatModule]);
     registered.add(kit);
   }
   return kit.Tabulator;
@@ -297,7 +302,9 @@ export function buildSheet(
   const meta = need(el, ".sheet-meta");
   const at = { meta, toolbar: need(el, ".viewer-toolbar"), body: need(el, ".sheet-body") };
   const url = fileBytesUrl(rec.project, rec.path, rec.checkout);
-  showFile(document, deps, url, { ...at, path: rec.path }).catch((err: unknown) => {
+  const loaded = showLoading(document, at.body);
+  void showFile(document, deps, url, { ...at, path: rec.path }).then(loaded, (err: unknown) => {
+    loaded();
     devError("[workbench] sheet failed to load", err);
     meta.textContent = SHEET_ERROR_TEXT;
   });

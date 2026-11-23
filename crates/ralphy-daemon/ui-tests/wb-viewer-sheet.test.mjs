@@ -79,13 +79,17 @@ const csv = (text) =>
 // A Tabulator stand-in that records each grid it draws.
 function fakeKit() {
   const grids = [];
+  const registered = [];
+  const FormatModule = { name: "format" };
   class Tabulator {
     constructor(holder, options) {
       this.options = options;
       this.destroyed = false;
       grids.push(this);
     }
-    static registerModule() {}
+    static registerModule(modules) {
+      registered.push(...modules);
+    }
     setFilter() {}
     clearFilter() {}
     destroy() {
@@ -94,10 +98,13 @@ function fakeKit() {
   }
   return {
     grids,
+    registered,
+    FormatModule,
     module: {
       Tabulator,
       FilterModule: {},
       ResizeColumnsModule: {},
+      FormatModule,
       ImportModule: { importers: { csv } },
     },
   };
@@ -174,6 +181,19 @@ test("the table built by the viewer has no download function", async () => {
   }
 });
 
+test("the grid registers the format module its plaintext cells need", async () => {
+  const kit = fakeKit();
+  const model = { blocks: [table([["<b>x</b>"]])], notes: [], assets: [] };
+  sheetPane("book.xlsx", {
+    fetchBytes: () => Promise.resolve(new Uint8Array([1])),
+    read: () => Promise.resolve({ ok: true, document: model }),
+    load: () => Promise.resolve({ ok: true, module: kit.module }),
+  });
+  await settle();
+  assert.equal(kit.grids[0].options.columns[0].formatter, "plaintext");
+  assert.ok(kit.registered.includes(kit.FormatModule), "plaintext is drawn by the format module");
+});
+
 test("an xlsx with three sheets offers three sheets in the selector", async () => {
   const { module, grids } = fakeKit();
   const model = {
@@ -241,7 +261,13 @@ test("two clicks while the grid library loads build one grid", async () => {
   const body = element("editor");
   holder.append(body);
   const button = mountSheetSwitch(
-    { document: fakeDocument(), toolbar: element("toolbar"), body, text: () => "a,b", path: "a.csv" },
+    {
+      document: fakeDocument(),
+      toolbar: element("toolbar"),
+      body,
+      text: () => "a,b",
+      path: "a.csv",
+    },
     () => Promise.resolve({ ok: true, module }),
   );
   button.fire("click");
