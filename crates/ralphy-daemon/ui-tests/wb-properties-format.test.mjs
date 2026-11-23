@@ -6,6 +6,7 @@ import {
   folderContents,
   folderSize,
   formatBytes,
+  formatSize,
   formatModified,
   modifiedText,
   typeText,
@@ -66,4 +67,10 @@ test("a folder says how many files and folders it holds, with the right plural",
   assert.equal(folderContents({ files: 3, dirs: 1 }), "3 files, 1 folder");
   assert.equal(folderContents({ files: 1, dirs: 0 }), "1 file, 0 folders");
   assert.equal(folderContents({ files: 214000, dirs: 2 }), "214,000 files, 2 folders");
+});
+
+test("the short size has no exact count", () => {
+  assert.equal(formatSize(377_681), "368.8 KB");
+  assert.equal(formatSize(940), "940 bytes");
+  assert.equal(formatSize(1), "1 byte");
 });

@@ -10,7 +10,11 @@ Over a REAL daemon with a scratch store:
      selector for a file of one sheet;
   5. an audio pane's controller is in audio mode and its bar has a height;
   6. a docx draws with its layout in a shadow root: bold text, justified
-     text and the header image, with no error in the console.
+     text and the header image, with no error in the console;
+  7. a zip lists its entries as a table that scrolls, with a header that
+     stays, names indented under their folder, and sizes in their column;
+  8. a semicolon csv opens as a grid split on semicolons, and the separator
+     selector changes the split.
 
 The fixtures are written by this script. The daemon is stopped by its own
 subprocess handle, never by name.
@@ -206,6 +210,10 @@ def make_fixture_repo():
     xlsx_bytes(d / "book.xlsx")
     (d / "tone.wav").write_bytes(wav_bytes())
     docx_bytes(d / "contract.docx")
+    with zipfile.ZipFile(d / "bundle.zip", "w") as z:
+        for i in range(80):
+            z.writestr(f"top/inner/file{i:02d}.txt", "x" * (1000 + i))
+    (d / "money.csv").write_text("name;value\nfig;3,5\nplum;1,25\n", encoding="utf-8")
     for args in (
         ["git", "init"],
         ["git", "config", "user.email", "wbviewers@example.com"],
@@ -373,6 +381,59 @@ def check_docx(page, slug, warnings):
     page.screenshot(path=str(SHOTS / "wb_viewer_docx.png"))
 
 
+def check_archive(page, slug):
+    open_path(page, slug, "bundle.zip")
+    sel = pane(slug, "bundle.zip")
+    page.wait_for_selector(f"{sel} .archive-head", timeout=15000)
+    got = page.evaluate(
+        f"""() => {{
+        const body = document.querySelector('{sel} .archive-body');
+        const rows = [...body.querySelectorAll('.archive-row:not(.archive-head)')];
+        const file = rows.find(r => r.textContent.includes('file00.txt'));
+        body.scrollTop = body.scrollHeight;
+        const head = body.querySelector('.archive-head').getBoundingClientRect().top;
+        return {{
+          scrolls: body.scrollHeight > body.clientHeight && body.scrollTop > 0,
+          headTop: Math.round(head - body.getBoundingClientRect().top),
+          name: file ? file.querySelector('.archive-path').textContent : null,
+          size: file ? file.querySelector('.archive-size').textContent : null,
+          indent: file ? file.querySelector('.archive-path span').getBoundingClientRect().left
+            - body.querySelector('.archive-head .archive-path').getBoundingClientRect().left : null,
+        }};
+      }}"""
+    )
+    check("zip: the list scrolls and the header stays at the top", got["scrolls"] and got["headTop"] == 0, f"{got}")
+    check("zip: a row shows its name and its size apart", got["name"] == "file00.txt" and got["size"] == "1,000 bytes", f"{got}")
+    check("zip: a file is indented under its folders", (got["indent"] or 0) > 20, f"{got['indent']}")
+    page.screenshot(path=str(SHOTS / "wb_viewer_zip.png"))
+
+
+def check_csv(page, slug):
+    open_path(page, slug, "money.csv")
+    sel = pane(slug, "money.csv")
+    page.wait_for_selector(f"{sel} .sheet-switch", timeout=15000)
+    # The switch reads the editor's text, so it waits for the editor to hold it.
+    page.wait_for_function(
+        f"() => (document.querySelector('{sel} .view-lines')?.textContent ?? '').includes('name;value')",
+        timeout=15000,
+    )
+    page.click(f"{sel} .sheet-switch")
+    page.wait_for_selector(f"{sel} .tabulator-cell", timeout=30000)
+    cells = lambda: page.eval_on_selector_all(
+        f"{sel} .tabulator-row .tabulator-cell:not(.sheet-rownum)", "els => els.map(e => e.textContent)"
+    )
+    first = cells()
+    check("csv: a semicolon file splits on semicolons", first[:4] == ["name", "value", "fig", "3,5"], f"{first[:4]}")
+    ground = page.eval_on_selector(f"{sel} .tabulator-row", "el => getComputedStyle(el).backgroundColor")
+    check("csv: the grid has the workbench colors, not the light sheet", ground != "rgb(255, 255, 255)", ground)
+    page.select_option(f"{sel} .sheet-separator", ",")
+    page.wait_for_function(
+        f"() => [...document.querySelectorAll('{sel} .tabulator-cell')].some(c => c.textContent === 'fig;3')"
+    )
+    check("csv: the separator selector changes the split", True)
+    page.screenshot(path=str(SHOTS / "wb_viewer_csv.png"))
+
+
 def main():
     if os.environ.get("RALPHY_TEST_SKIP_BUILD") != "1":
         subprocess.run(["cargo", "build", "-p", "ralphy-cli", "--bin", "ralphy"], cwd=REPO_ROOT, check=True)
@@ -398,11 +459,13 @@ def main():
             check_sheet(page, slug, warnings)
             check_audio(page, slug)
             check_docx(page, slug, warnings)
+            check_archive(page, slug)
+            check_csv(page, slug)
             browser.close()
     finally:
         stop(proc)
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
-    sys.exit(0 if len(results) == 15 and all(results) else 1)
+    sys.exit(0 if len(results) == 21 and all(results) else 1)
 
 
 if __name__ == "__main__":

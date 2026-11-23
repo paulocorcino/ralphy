@@ -387,3 +387,15 @@ noreferrer`. odt, xlsx and ods stay on anydoc-wasm.
 **Considered.** mammoth was rejected again: it gives HTML with no layout.
 A sandboxed iframe with no scripts was the fallback if DOMPurify had broken
 the layout; it did not.
+
+## Amendment 2026-11-23 — D11: a csv is read with a chosen separator
+
+Tabulator's csv importer reads commas only, and a csv saved by a spreadsheet
+set to Portuguese or German uses semicolons. The operator asked for a way
+to choose the separator, on 2026-11-23.
+
+**D11, changed.** A csv or tsv file is read by the viewer's own reader
+(`wb-sheet-csv.ts`), not by Tabulator's `ImportModule`, which is no longer
+registered. A csv grid has a selector of the separator (comma, semicolon,
+tab, bar); it starts on the separator used most in the first line. A tsv
+file is read by its tabs and has no selector.

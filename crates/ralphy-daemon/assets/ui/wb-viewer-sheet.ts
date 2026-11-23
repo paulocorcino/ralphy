@@ -8,6 +8,8 @@ import { need, required } from "./wb-dom-need.ts";
 import { fileBytesUrl } from "./wb-file-bytes.ts";
 import { devError } from "./wb-log.ts";
 import { showLoading } from "./wb-viewer-loading.ts";
+import { guessSeparator, parseDelimited, SEPARATORS } from "./wb-sheet-csv.ts";
+import type { Separator } from "./wb-sheet-csv.ts";
 import { readAnydoc } from "./wb-anydoc.ts";
 import { loadVendor } from "./wb-vendor-load.ts";
 import type { AnydocFormat, AnydocResult } from "./wb-anydoc.ts";
@@ -50,6 +52,7 @@ export interface Grid {
   setFilter(filter: (row: GridRow) => boolean): void;
   clearFilter(): void;
   redraw(force: boolean): void;
+  on(event: "tableBuilt", callback: () => void): void;
   destroy(): void;
 }
 
@@ -65,18 +68,11 @@ export type TabulatorKit = {
   ResizeColumnsModule: unknown;
   FormatModule: unknown;
   FrozenColumnsModule: unknown;
-  ImportModule: { importers: { csv: (text: string) => string[][] } };
 };
 
 function isKit(module: unknown): module is TabulatorKit {
   if (typeof module !== "object" || module === null) return false;
-  const parts = [
-    "Tabulator",
-    "ImportModule",
-    "FilterModule",
-    "FormatModule",
-    "FrozenColumnsModule",
-  ];
+  const parts = ["Tabulator", "FilterModule", "FormatModule", "FrozenColumnsModule"];
   return parts.every((part) => part in module);
 }
 
@@ -89,7 +85,6 @@ function gridClass(kit: TabulatorKit): GridClass {
     kit.Tabulator.registerModule([
       kit.FilterModule,
       kit.ResizeColumnsModule,
-      kit.ImportModule,
       kit.FormatModule,
       kit.FrozenColumnsModule,
     ]);
@@ -169,12 +164,26 @@ export function sheetsOf(model: DocModel): Sheet[] {
   return sheets;
 }
 
-/** The rows of a csv text, by Tabulator's importer, or of a tsv text, by its tabs. */
-export function textRows(kit: TabulatorKit, text: string, tsv: boolean): string[][] {
-  if (!tsv) return kit.ImportModule.importers.csv(text);
-  const lines = text.split(/\r?\n/u);
-  if (lines.at(-1) === "") lines.pop();
-  return lines.map((line) => line.split("\t"));
+// The separator selector of a csv grid: its first value is the guess.
+function separatorSelect(document: Document, text: string, change: (s: Separator) => void) {
+  const select = document.createElement("select");
+  select.className = "text-field sheet-separator";
+  select.setAttribute("aria-label", "Separator");
+  select.setAttribute("title", "Separator");
+  select.append(
+    ...SEPARATORS.map(({ value, label }) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      return option;
+    }),
+  );
+  select.value = guessSeparator(text);
+  select.addEventListener("change", () => {
+    const picked = SEPARATORS.find(({ value }) => value === select.value);
+    if (picked) change(picked.value);
+  });
+  return select;
 }
 
 const styled = new WeakMap<Document, Promise<void>>();
@@ -245,11 +254,18 @@ function sheetView(document: Document, kit: TabulatorKit): SheetView & { close: 
   holder.style.height = "100%";
   let sheets: Sheet[] = [];
   let grid: Grid | null = null;
+  // Tabulator throws on a redraw before it has built the table.
+  let built: Grid | null = null;
   const draw = (at: number) => {
     const sheet = sheets[at];
     if (!sheet) return;
     grid?.destroy();
-    grid = drawGrid(kit, holder, sheet);
+    const drawn = drawGrid(kit, holder, sheet);
+    grid = drawn;
+    built = null;
+    drawn.on("tableBuilt", () => {
+      if (grid === drawn) built = drawn;
+    });
     note.textContent = rowsNote(sheet);
     filter.value = "";
   };
@@ -282,7 +298,7 @@ function sheetView(document: Document, kit: TabulatorKit): SheetView & { close: 
     grid?.destroy();
     grid = null;
   };
-  redrawWhenShown(holder, () => grid);
+  redrawWhenShown(holder, () => built);
   return { bar, holder, show, close };
 }
 
@@ -427,8 +443,16 @@ export function mountSheetSwitch(host: SheetSwitchHost, load = loadVendor): HTML
     body.style.display = "none";
     open = { pane, close: view.close };
     setCaption(button, true);
-    const rows = textRows(kit, host.text(), host.path.toLowerCase().endsWith(".tsv"));
-    view.show([{ name: host.path, rows }]);
+    const text = host.text();
+    const showWith = (separator: Separator) => {
+      view.show([{ name: host.path, rows: parseDelimited(text, separator) }]);
+    };
+    if (host.path.toLowerCase().endsWith(".tsv")) {
+      showWith("\t");
+      return;
+    }
+    view.bar.prepend(separatorSelect(document, text, showWith));
+    showWith(guessSeparator(text));
   };
   // A second click while the library loads would build a second grid.
   let loading = false;

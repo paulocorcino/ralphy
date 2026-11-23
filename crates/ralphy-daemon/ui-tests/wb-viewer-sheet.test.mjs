@@ -31,6 +31,10 @@ function element(tag, made) {
     insertBefore(kid) {
       el.append(kid);
     },
+    prepend(...kids) {
+      for (const kid of kids) kid.parent = el;
+      el.children.unshift(...kids);
+    },
     replaceChildren(...kids) {
       el.children = [];
       el.append(...kids);
@@ -82,12 +86,6 @@ function fakeDocument() {
   };
 }
 
-const csv = (text) =>
-  text
-    .split("\n")
-    .filter((line) => line !== "")
-    .map((line) => line.split(","));
-
 // A Tabulator stand-in that records each grid it draws.
 function fakeKit() {
   const grids = [];
@@ -99,6 +97,7 @@ function fakeKit() {
       this.options = options;
       this.destroyed = false;
       this.redraws = [];
+      this.handlers = {};
       grids.push(this);
     }
     static registerModule(modules) {
@@ -107,6 +106,9 @@ function fakeKit() {
     setFilter() {}
     redraw(force) {
       this.redraws.push(force);
+    }
+    on(event, callback) {
+      this.handlers[event] = callback;
     }
     clearFilter() {}
     destroy() {
@@ -124,7 +126,6 @@ function fakeKit() {
       ResizeColumnsModule: {},
       FormatModule,
       FrozenColumnsModule,
-      ImportModule: { importers: { csv } },
     },
   };
 }
@@ -245,7 +246,10 @@ test("the grid measures its columns again when its hidden pane is shown", async 
   } finally {
     delete globalThis.ResizeObserver;
   }
+  observer.fire(800);
+  assert.deepEqual(kit.grids[0].redraws, [], "no redraw before the table is built");
   observer.fire(0);
+  kit.grids[0].handlers.tableBuilt();
   assert.deepEqual(kit.grids[0].redraws, [], "a hidden pane draws nothing");
   observer.fire(800);
   observer.fire(900);
@@ -350,6 +354,48 @@ test("a csv opens in the editor and the switch shows a grid and back, text uncha
   assert.deepEqual(holder.children, [body]);
   assert.equal(grids[0].destroyed, true);
   assert.equal(editor.text, before);
+});
+
+test("a semicolon csv is read with its guessed separator, and the selector changes it", async () => {
+  const { module, grids } = fakeKit();
+  const document = fakeDocument();
+  const body = element("editor");
+  element("viewer").append(body);
+  mountSheetSwitch(
+    { document, toolbar: element("toolbar"), body, text: () => "a;b\n1,5;2\n", path: "a.csv" },
+    () => Promise.resolve({ ok: true, module }),
+  ).fire("click");
+  await settle();
+  const select = document.made.find((el) => el.attrs["aria-label"] === "Separator");
+  assert.equal(select.value, ";", "the guess is the semicolon");
+  assert.deepEqual(grids.at(-1).options.data, [
+    { c0: "a", c1: "b" },
+    { c0: "1,5", c1: "2" },
+  ]);
+  select.value = ",";
+  select.fire("change");
+  await settle();
+  assert.deepEqual(grids.at(-1).options.data, [
+    { c0: "a;b", c1: "" },
+    { c0: "1", c1: "5;2" },
+  ]);
+});
+
+test("a tsv grid has no separator selector", async () => {
+  const { module, grids } = fakeKit();
+  const document = fakeDocument();
+  const body = element("editor");
+  element("viewer").append(body);
+  mountSheetSwitch(
+    { document, toolbar: element("toolbar"), body, text: () => "a\tb\n", path: "a.tsv" },
+    () => Promise.resolve({ ok: true, module }),
+  ).fire("click");
+  await settle();
+  assert.equal(
+    document.made.some((el) => el.attrs["aria-label"] === "Separator"),
+    false,
+  );
+  assert.deepEqual(grids[0].options.data, [{ c0: "a", c1: "b" }]);
 });
 
 test("two clicks while the grid library loads build one grid", async () => {

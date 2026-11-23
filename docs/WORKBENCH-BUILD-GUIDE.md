@@ -202,8 +202,8 @@ The grid of the sheet viewer (ADR-0091 D11). `vendor/tabulator/` holds
 `tabulator_esm.min.mjs`, `tabulator.min.css` and `LICENSE` of the npm tarball,
 byte for byte; the `.mjs` name is the one the package gives its ESM build, and
 the loader needs that extension. The viewer imports the core and registers
-five modules only: `FilterModule`, `ResizeColumnsModule`, `ImportModule`
-(it reads csv and tsv files itself), `FormatModule` (it draws the
+four modules only: `FilterModule`, `ResizeColumnsModule`, `FormatModule`
+(it draws the
 `plaintext` cells and the row numbers; without it Tabulator logs `Invalid
 column definition option: formatter`) and `FrozenColumnsModule` (the row
 numbers stay at the left). The grid draws only after `tabulator.min.css`
