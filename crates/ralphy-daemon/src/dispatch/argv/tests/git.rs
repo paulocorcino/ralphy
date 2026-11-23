@@ -282,7 +282,8 @@ fn config_argv_refuses_local_only_keys() {
     // of the verify gate's child, the two hatches re-arm what an ADR closed,
     // `events.token` is the sink's bearer (audit F12),
     // `queue.trust_all_comments` lets a stranger's comment reach the prompt,
-    // the guard proof waiver lets a session run with no proof of the guard.
+    // the guard proof waiver lets a session run with no proof of the guard,
+    // and the console workflow key lets a console agent push.
     for key in [
         "verify.command",
         "copilot.allow_builtin_mcp_servers_i_understand_the_risk",
@@ -291,6 +292,7 @@ fn config_argv_refuses_local_only_keys() {
         "queue.trust_all_comments",
         "claude.run_without_guard_proof_i_understand_the_risk",
         "antigravity.run_without_guard_proof_i_understand_the_risk",
+        "antigravity.console_agent_workflow_i_understand_the_risk",
     ] {
         assert_eq!(
             config_argv(

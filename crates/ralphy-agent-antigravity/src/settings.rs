@@ -19,6 +19,11 @@ pub struct AntigravitySettings {
     // ADR-0072 D6 and ADR-0086 D9: the escape of the proof turn.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub run_without_guard_proof_i_understand_the_risk: bool,
+    /// Local-only opt-in: in a workbench console, the agent may switch
+    /// branches, push and write pull requests. A run never reads it.
+    // ADR-0093 D2.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub console_agent_workflow_i_understand_the_risk: bool,
 }
 
 impl AntigravitySettings {

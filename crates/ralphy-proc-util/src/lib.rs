@@ -16,6 +16,11 @@ pub mod stop_signal;
 pub use pid::pid_is_alive;
 pub use stop::{exit_on_stop_signal, send_stop_signal, stop_within, stoppable_group};
 
+/// Set to `1` by the daemon on a console whose agent may run the guard's
+/// workflow rules. Every `ralphy` process but the guard hook removes it.
+// ADR-0093 D3, D4.
+pub const GUARD_CONSOLE_ENV: &str = "RALPHY_GUARD_CONSOLE";
+
 /// Put `cmd`'s child into its own process group (Unix), so [`kill_tree`] can
 /// signal the whole tree; a no-op elsewhere. Call it before `spawn`.
 pub fn own_process_group(cmd: &mut Command) {

@@ -15,7 +15,7 @@ use std::process::ExitCode;
 
 use serde_json::{json, Value};
 
-use super::{evaluate_guard, normalise_path, read_payload, GuardContext, GuardDecision};
+use super::{evaluate_guard, normalise_path, read_payload, GuardContext, GuardDecision, HookEnv};
 
 /// The agy verbs that start a remote take-over, a listening server, or change
 /// the installed binary: Ralphy never runs them, so the agent may not.
@@ -72,13 +72,8 @@ const INPUT_KEYS: &[&str] = &["Input", "input", "Text", "text"];
 const FILE_KEYS: [&str; 2] = ["Path", "TargetFile"];
 
 /// Judge the payload `raw` and print the answer agy reads.
-pub(super) fn answer(
-    raw: &str,
-    fallback_cwd: Option<&Path>,
-    tool_dir: String,
-    temp_dir: String,
-) -> ExitCode {
-    outln!("{}", reply(&decide(raw, fallback_cwd, tool_dir, temp_dir)));
+pub(super) fn answer(raw: &str, fallback_cwd: Option<&Path>, env: HookEnv) -> ExitCode {
+    outln!("{}", reply(&decide(raw, fallback_cwd, env)));
     ExitCode::SUCCESS
 }
 
@@ -92,12 +87,7 @@ fn reply(decision: &GuardDecision) -> String {
 }
 
 /// Judge one agy payload; `fallback_cwd` stands in for a payload without `cwd`.
-fn decide(
-    raw: &str,
-    fallback_cwd: Option<&Path>,
-    tool_dir: String,
-    temp_dir: String,
-) -> GuardDecision {
+fn decide(raw: &str, fallback_cwd: Option<&Path>, env: HookEnv) -> GuardDecision {
     let Some(payload) = read_payload(raw) else {
         return unreadable("not a JSON object");
     };
@@ -110,11 +100,7 @@ fn decide(
         Some(cwd) => normalise_path(Path::new(cwd)),
         None => fallback_cwd.map(normalise_path).unwrap_or_default(),
     };
-    let ctx = GuardContext {
-        tool_dir,
-        cwd,
-        temp_dir,
-    };
+    let ctx = env.context(cwd);
     match name {
         "run_command" => judge_command(args, &["CommandLine"], &ctx),
         "send_command_input" => judge_command(args, INPUT_KEYS, &ctx),

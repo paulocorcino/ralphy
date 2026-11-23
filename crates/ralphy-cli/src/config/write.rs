@@ -220,6 +220,14 @@ fn set_agent_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
                 .with_context(|| format!("{key} must be 'true' or 'false', got '{value}'"))?;
             with_antigravity(s, |a| a.run_without_guard_proof_i_understand_the_risk = b)?;
         }
+        // Local-only: the daemon refuses to set it, because a push sends data
+        // off the machine (ADR-0093 D2).
+        "antigravity.console_agent_workflow_i_understand_the_risk" => {
+            let b = value
+                .parse::<bool>()
+                .with_context(|| format!("{key} must be 'true' or 'false', got '{value}'"))?;
+            with_antigravity(s, |a| a.console_agent_workflow_i_understand_the_risk = b)?;
+        }
         // Same reasoning, a different capability (ADR-0042 D6): the hatch lets a
         // run upload the operator's repository to the vendor. Ralphy never denies
         // the capability — it denies a SILENT one.
@@ -388,6 +396,11 @@ pub(crate) fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "antigravity.run_without_guard_proof_i_understand_the_risk" => {
             with_antigravity(&mut s, |a| {
                 a.run_without_guard_proof_i_understand_the_risk = false;
+            })?;
+        }
+        "antigravity.console_agent_workflow_i_understand_the_risk" => {
+            with_antigravity(&mut s, |a| {
+                a.console_agent_workflow_i_understand_the_risk = false;
             })?;
         }
         _ => unreachable!(),

@@ -1,4 +1,5 @@
 use super::*;
+use crate::guard::WorkflowRules;
 use serde_json::json;
 
 const RUN_COMMAND: &str =
@@ -16,12 +17,17 @@ const WORKSPACE: &str = r"<home>\AppData\Local\Temp\agy784root\repo_p1";
 /// The guard's answer on stdout for `raw`, judged with a tool dir and a temp
 /// dir that hold none of the fixture's paths.
 fn answer(raw: &str) -> String {
-    reply(&decide(
-        raw,
-        None,
-        "c:/tools/ralphy".into(),
-        "c:/sys-temp".into(),
-    ))
+    answer_with(raw, WorkflowRules::Apply)
+}
+
+/// [`answer`] with the given workflow rules.
+fn answer_with(raw: &str, workflow: WorkflowRules) -> String {
+    let env = HookEnv {
+        tool_dir: "c:/tools/ralphy".into(),
+        temp_dir: "c:/sys-temp".into(),
+        workflow,
+    };
+    reply(&decide(raw, None, env))
 }
 
 /// The fixture `raw` with its `toolCall.args` replaced by `args`.
@@ -268,4 +274,14 @@ fn hook_guard_vendor_defaults_to_claude() {
     );
     let agy = ["ralphy", "hook", "guard", "--vendor", "antigravity"];
     assert_eq!(vendor_of(&agy), GuardVendor::Antigravity);
+}
+
+/// An `agy` console the daemon marked pushes; a reset is still denied.
+#[test]
+fn a_marked_console_pushes_but_does_not_reset() {
+    let push = answer_with(&command("git push origin feat/x"), WorkflowRules::Skip);
+    assert_eq!(parsed(&push)["decision"], "allow", "{push}");
+    assert_denied(&answer(&command("git push origin feat/x")), "push in a run");
+    let reset = answer_with(&command("git reset --hard"), WorkflowRules::Skip);
+    assert_denied(&reset, "reset in a marked console");
 }

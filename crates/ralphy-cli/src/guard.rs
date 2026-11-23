@@ -39,6 +39,7 @@ mod wrappers;
 
 use delete::{classify_delete, dotnet_delete_target, first_disallowed_target};
 use rules::denied_by_rules;
+pub(crate) use rules::WorkflowRules;
 use wrappers::{Runs, Shell};
 
 /// How many shells inside shells (`bash -c "bash -c …"`) the guard reads.
@@ -63,6 +64,28 @@ pub(crate) struct GuardContext {
     pub cwd: String,
     /// The system temp directory. Recursive deletes under it are allowed.
     pub temp_dir: String,
+    /// Whether the workflow rules apply to this session.
+    pub workflow: WorkflowRules,
+}
+
+/// What the hook process knows before it reads the payload, in the
+/// [`GuardContext`] form.
+pub(crate) struct HookEnv {
+    pub tool_dir: String,
+    pub temp_dir: String,
+    pub workflow: WorkflowRules,
+}
+
+impl HookEnv {
+    /// The context of a payload whose worktree is `cwd`.
+    fn context(self, cwd: String) -> GuardContext {
+        GuardContext {
+            tool_dir: self.tool_dir,
+            cwd,
+            temp_dir: self.temp_dir,
+            workflow: self.workflow,
+        }
+    }
 }
 
 /// Evaluate whether a `PreToolUse` call should be allowed or denied.
@@ -117,7 +140,7 @@ fn evaluate_tool_command(tool_input: &Value, ctx: &GuardContext, shell: Shell) -
 /// Judge one command line: the deny rules over its whole text, then each of
 /// its segments.
 fn evaluate_command(cmd: &str, judge: Judge<'_>) -> GuardDecision {
-    if let Some(why) = denied_by_rules(cmd) {
+    if let Some(why) = denied_by_rules(cmd, judge.ctx.workflow) {
         return GuardDecision::Deny(why);
     }
     if let Some(tok) = dotnet_delete_target(cmd, judge.ctx) {
@@ -171,7 +194,7 @@ fn evaluate_from_input(args: &[String], shell: Shell) -> GuardDecision {
 /// `format` rule looks only at the start of a command.
 fn evaluate_words(words: &[String], segment_len: usize, judge: Judge<'_>) -> GuardDecision {
     if words.len() < segment_len {
-        if let Some(why) = denied_by_rules(&words.join(" ")) {
+        if let Some(why) = denied_by_rules(&words.join(" "), judge.ctx.workflow) {
             return GuardDecision::Deny(why);
         }
     }
@@ -273,14 +296,12 @@ fn normalise_path(dir: &std::path::Path) -> String {
 /// fails closed. A readable payload is judged by the rules, so a tool the
 /// guard does not know is allowed.
 ///
-/// `fallback_cwd` stands in for a payload without `cwd`; `tool_dir` and
-/// `temp_dir` are already in the [`GuardContext`] form.
+/// `fallback_cwd` stands in for a payload without `cwd`.
 // ADR-0072 D6.
 pub(crate) fn decide_hook_input(
     raw: &str,
     fallback_cwd: Option<&std::path::Path>,
-    tool_dir: String,
-    temp_dir: String,
+    env: HookEnv,
 ) -> GuardDecision {
     let Some(payload) = read_payload(raw) else {
         let what = if raw.trim().is_empty() {
@@ -302,11 +323,7 @@ pub(crate) fn decide_hook_input(
         .map(|s| normalise_path(std::path::Path::new(s)))
         .or_else(|| fallback_cwd.map(normalise_path))
         .unwrap_or_default();
-    let ctx = GuardContext {
-        tool_dir,
-        cwd,
-        temp_dir,
-    };
+    let ctx = env.context(cwd);
     evaluate_guard(tool_name, tool_input, &ctx)
 }
 
@@ -363,12 +380,16 @@ pub(crate) fn run_guard_hook(vendor: GuardVendor, cost_gate: bool) -> ExitCode {
         .and_then(|p| p.parent().map(normalise_path))
         .unwrap_or_default();
     let process_cwd = std::env::current_dir().ok();
-    let temp_dir = normalise_path(&std::env::temp_dir());
+    let env = HookEnv {
+        tool_dir,
+        temp_dir: normalise_path(&std::env::temp_dir()),
+        workflow: workflow_rules_of_this_session(),
+    };
     if vendor == GuardVendor::Antigravity {
-        return antigravity::answer(&raw, process_cwd.as_deref(), tool_dir, temp_dir);
+        return antigravity::answer(&raw, process_cwd.as_deref(), env);
     }
 
-    let reason = match decide_hook_input(&raw, process_cwd.as_deref(), tool_dir, temp_dir) {
+    let reason = match decide_hook_input(&raw, process_cwd.as_deref(), env) {
         GuardDecision::Allow if cost_gate => cost_gate_reason(&raw),
         GuardDecision::Allow => None,
         GuardDecision::Deny(reason) => Some(reason),
@@ -379,6 +400,21 @@ pub(crate) fn run_guard_hook(vendor: GuardVendor, cost_gate: bool) -> ExitCode {
             ExitCode::from(2)
         }
         None => ExitCode::SUCCESS,
+    }
+}
+
+/// The workflow rules are skipped only in a console the daemon marked.
+// ADR-0093 D3: the hook inherits the vendor CLI's environment, which a tool
+// call cannot change.
+fn workflow_rules_of_this_session() -> WorkflowRules {
+    workflow_rules_for(std::env::var_os(ralphy_proc_util::GUARD_CONSOLE_ENV).as_deref())
+}
+
+/// [`workflow_rules_of_this_session`] over the variable's value.
+fn workflow_rules_for(value: Option<&std::ffi::OsStr>) -> WorkflowRules {
+    match value {
+        Some(v) if v == "1" => WorkflowRules::Skip,
+        _ => WorkflowRules::Apply,
     }
 }
 

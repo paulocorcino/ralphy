@@ -77,6 +77,14 @@ fn main() -> ExitCode {
 }
 
 fn run_command(command: Command) -> Result<ExitCode> {
+    if !reads_the_console_mark(&command) {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "it runs before the first thread starts, so no other thread reads \
+                      the environment while it changes"
+        )]
+        std::env::remove_var(ralphy_proc_util::GUARD_CONSOLE_ENV);
+    }
     if starts_an_agent_outside_run(&command) {
         run::strip_secret_tokens_from_env();
     }
@@ -140,6 +148,13 @@ fn askpass_exit_code() -> Option<ExitCode> {
             Some(ExitCode::FAILURE)
         }
     }
+}
+
+/// Only the guard hook reads the daemon's console mark. Every other command
+/// drops it, so a run started from a console never inherits it.
+// ADR-0093 D4.
+fn reads_the_console_mark(command: &Command) -> bool {
+    matches!(command, Command::Hook(HookCommand::Guard { .. }))
 }
 
 /// The commands other than `run` that start an agent session. None of them
@@ -416,6 +431,24 @@ mod tests {
                 !starts_an_agent_outside_run(&parse(&["ralphy", name])),
                 "{name}"
             );
+        }
+    }
+
+    /// A run started from a marked console drops the mark; the guard keeps it.
+    #[test]
+    fn only_the_guard_hook_keeps_the_console_mark() {
+        let parse = |args: &[&str]| {
+            let matches = cli::command().try_get_matches_from(args).expect("parse");
+            Cli::from_arg_matches(&matches).expect("a command").command
+        };
+        let guard = parse(&["ralphy", "hook", "guard", "--vendor", "antigravity"]);
+        assert!(reads_the_console_mark(&guard));
+        for args in [
+            &["ralphy", "run"][..],
+            &["ralphy", "hook", "status"],
+            &["ralphy", "triage"],
+        ] {
+            assert!(!reads_the_console_mark(&parse(args)), "{args:?}");
         }
     }
 
