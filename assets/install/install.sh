@@ -130,6 +130,30 @@ enable_linger() {
     fi
 }
 
+# The last lines of the output are what the person reads, so they list what is
+# left to do, in order. $1: the install folder, $2: the doctor exit code.
+next_steps() {
+    n=0
+    say ""
+    say "Next steps:"
+    case ":$PATH:" in
+        *":$1:"*) ;;
+        *)
+            n=$((n + 1))
+            say "  $n. Open a new terminal, or run this in this one: export PATH=\"$1:\$PATH\""
+            ;;
+    esac
+    if [ "$2" = 1 ]; then
+        n=$((n + 1))
+        say "  $n. Install each tool marked [miss] above, then run: ralphy doctor"
+    fi
+    if [ "${RALPHY_DAEMON:-}" != 1 ]; then
+        n=$((n + 1))
+        say "  $n. Start the daemon at sign-in: ralphy daemon install"
+    fi
+    [ "$n" -gt 0 ] || say "  None. Ralphy is ready."
+}
+
 main() {
     check_root
     target="$(detect_target)"
@@ -160,8 +184,6 @@ main() {
     if [ "${RALPHY_DAEMON:-}" = 1 ]; then
         "$ralphy" daemon install
         enable_linger
-    else
-        say "To start the daemon at sign-in, run: ralphy daemon install"
     fi
 
     say ""
@@ -170,6 +192,7 @@ main() {
     status=0
     "$ralphy" doctor || status=$?
     [ "$status" -le 1 ] || fail "could not run $ralphy (exit $status)"
+    next_steps "$(dirname "$ralphy")" "$status"
 }
 
 main "$@"

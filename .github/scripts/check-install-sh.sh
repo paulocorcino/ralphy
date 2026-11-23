@@ -21,8 +21,11 @@ for _ in $(seq 1 50); do
   curl -fsS -o /dev/null "$RALPHY_RELEASES_URL" && break
   sleep 0.2
 done
-sh assets/install/install.sh
+sh assets/install/install.sh >"$RUNNER_TEMP/install.out"
+cat "$RUNNER_TEMP/install.out"
 "$RALPHY_INSTALL_DIR/ralphy" --version
+# The last lines are the next steps.
+tail -n 3 "$RUNNER_TEMP/install.out" | grep -q "ralphy daemon install"
 sh assets/install/install.sh   # a second run repairs the install
 # The default folder, decided by the binary: a scratch home has no
 # ~/.cargo/bin, so it is ~/.local/bin. Each ( ) group sets its own HOME
