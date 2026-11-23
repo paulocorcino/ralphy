@@ -17,6 +17,8 @@ Amended 2026-11-07: D7, the page may send the Telegram token, write-only.
 
 Amended by ADR-0089 (D10: an HTML file runs its scripts when the operator allows it, from a route with a token; a frame cannot navigate to a data endpoint).
 
+Amended by ADR-0093 (proposed: D6, a local-only setting lets the agent of a console push and write pull requests).
+
 ## Context
 
 Ralphy runs AI agents with shell access on the operator's machine, serves a

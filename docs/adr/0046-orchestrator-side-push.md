@@ -5,6 +5,8 @@ built** (see the amendment at the end, #320). The *orchestrator-initiated* push
 below stays **proposed**: its **OPEN** sections carry questions a maintainer
 must still settle, and none of that automation is implemented.
 
+Amended by ADR-0093 (proposed: §1 holds for a run; in a console the operator may let the agent push).
+
 Ralphy's loop ends with commits on a run branch and stops there. The operator
 finds them by opening the repo — which works when a human ran `ralphy run` and
 is sitting in front of it, and works badly for the mode Ralphy is being pointed
