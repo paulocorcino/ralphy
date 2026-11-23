@@ -4,6 +4,8 @@ Status: accepted
 Kind: vendor
 Protects: extensibility, observability and cost; constraints security, portability
 
+Amended by ADR-0093 (proposed: D9, the guard skips its workflow rules in a console when the operator allows it).
+
 Replaces ADR-0043 when it is accepted and the Gemini adapter is removed (see
 the section _ADR-0043_ below). Applies the
 [ADR-0040](./0040-agent-adapter-onboarding-contract.md) onboarding contract,

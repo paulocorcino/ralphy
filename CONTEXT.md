@@ -729,6 +729,14 @@ The stable name of one kind of **failure** inside its **text domain**. A
 published failure code never takes a new meaning.
 _Avoid_: reason, error code, status.
 
+**Workflow rule**:
+A rule of the guard that exists because a run's orchestrator owns the branch, the push and the pull request: `git push`, a **branch switch**, `git worktree`, and a `gh pr` verb that writes. In a console, the operator may turn these rules off (ADR-0093).
+_Avoid_: soft rule, git rule.
+
+**Safety rule**:
+Every rule of the guard that is not a **workflow rule**. No setting turns a safety rule off (ADR-0093).
+_Avoid_: hard rule, deny rule (both groups deny).
+
 ## Relationships
 
 - The **queue** is the open issues that carry a **queue label**, in ascending
