@@ -240,7 +240,9 @@ named.
   code yet.
 - D9: not checked by code: manual, reviewed in the PR (the options passed to
   pdf.js and the vendored file list).
-- D10: not checked by code: manual, reviewed in the PR.
+- D10: not checked by code: manual, reviewed in the PR. Since the amendment
+  of 2026-11-23, a unit test pins the options passed to docx-preview and the
+  sanitizing of its output.
 - D11: not checked by code: manual, reviewed in the PR (the registered
   modules).
 - D12: not checked by code: manual, reviewed in the PR.
@@ -330,3 +332,58 @@ off (`nohotkeys`), so no key of the player escapes the keyboard command list
 (ADR-0087). The media element has no `controls` attribute; it keeps
 `disablePictureInPicture`, and the browser's own context menu is off on the
 player.
+
+## Amendment 2026-11-23 — D8, D10: a docx is drawn by docx-preview
+
+The model of anydoc-wasm keeps the words of a docx and four marks of a
+character (bold, italic, strike, code). It has no header, footer, page,
+font, size, color or alignment. A contract opened from a real project lost
+its logo and its layout. The operator asked for a docx that looks like the
+file in Word, as a PDF does, and approved these changes on 2026-11-23.
+
+**Spike (2026-11-23).** `docx-preview` 0.4.1 (Apache-2.0, 75 KB minified,
+with `jszip` 3.10.2, 98 KB) read a real contract of 130 KB in Chromium,
+under a CSP with `script-src 'self'`. Reading took 35–51 ms and drawing
+14–27 ms. The library has no `eval` and no `new Function`; jszip has one
+`new Function`, in a `setImmediate` shim that runs only when it is given a
+string, which the library never does. The library writes `innerHTML` only
+to empty its containers and to write `&nbsp;`. An "altChunk" (HTML stored
+in the docx) becomes an iframe with `srcdoc`: the option
+`renderAltChunks: false` turns it off. DOMPurify removed 0.3 % of the
+output and kept the layout. It removed the two images until a hook let a
+`blob:` address through on an image. Compared with the PDF that Word
+exported from the same file:
+
+| | Word | docx-preview |
+| --- | --- | --- |
+| Fonts, bold, justified text, page width | yes | yes |
+| Header image | in the header | drawn over the title |
+| Footer in a text box | shown | empty |
+| Pages | 17 | 2: only explicit breaks; the file has no saved page breaks |
+
+The `experimental` mode drew fewer parts, not more. A copy that equals Word
+needs a layout engine (LibreOffice in the daemon, about 300 MB on every
+machine and peer). It was left out.
+
+**D8, changed.** `docx-preview` and `jszip` are vendored libraries of the
+document viewer, as one built file, as Crepe is. Neither can be copied byte
+for byte: the ES module of docx-preview imports `jszip` by its bare name,
+which a browser resolves only through an import map, and the page policy
+refuses an inline script. Their UMD builds see the global AMD `define` of
+the Monaco loader and register there instead of on `globalThis`. A recipe
+in `crates/ralphy-daemon/vendor-build/docx-preview/` (esbuild, by hand,
+never in CI) bundles the two into `vendor/docx-preview/docx-preview.js`,
+whose first line names both versions.
+
+**D10, changed.** A docx is drawn by `docx-preview`, with
+`renderAltChunks: false`, `renderComments: false`, `renderChanges: false`
+and `useBase64URL: false`. Its output passes DOMPurify, which keeps a
+`blob:` address only as the source of an image, and then goes into a shadow
+root of the pane, so the document's styles never reach the workbench. The
+other rules of D10 stay: no script of the file runs, nothing loads from
+outside the page, and a link to the web opens in a new tab with `noopener
+noreferrer`. odt, xlsx and ods stay on anydoc-wasm.
+
+**Considered.** mammoth was rejected again: it gives HTML with no layout.
+A sandboxed iframe with no scripts was the fallback if DOMPurify had broken
+the layout; it did not.
