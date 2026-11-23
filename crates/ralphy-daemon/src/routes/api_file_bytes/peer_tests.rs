@@ -15,8 +15,8 @@ use crate::peer::client::StreamDeadlines;
 use crate::peer::{self, PeerDescriptor, PEER_PROTOCOL_VERSION};
 use crate::{auth, epoch, registry, router, StorePaths};
 
-const PEER_ID: &str = "01J9ZQ0000000000000000PEER";
-const TOKEN: &str = "peer-token";
+pub(in crate::routes) const PEER_ID: &str = "01J9ZQ0000000000000000PEER";
+pub(in crate::routes) const TOKEN: &str = "peer-token";
 
 /// A PNG of 64 bytes: the signature, then padding.
 fn png() -> Vec<u8> {
@@ -26,7 +26,7 @@ fn png() -> Vec<u8> {
 }
 
 /// A store folder whose registry holds the repo `demo` with `a.png`.
-fn store_with_demo() -> (tempfile::TempDir, PathBuf) {
+pub(in crate::routes) fn store_with_demo() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("a temp dir");
     let repo = dir.path().join("repo");
     std::fs::create_dir(&repo).expect("the repo folder");
@@ -38,7 +38,7 @@ fn store_with_demo() -> (tempfile::TempDir, PathBuf) {
     (dir, registry_path)
 }
 
-fn router_on(registry_path: &Path, auth: Arc<auth::AuthState>) -> Router {
+pub(in crate::routes) fn router_on(registry_path: &Path, auth: Arc<auth::AuthState>) -> Router {
     let (_tx, shutdown) = tokio::sync::watch::channel(false);
     router(
         None,
@@ -51,7 +51,7 @@ fn router_on(registry_path: &Path, auth: Arc<auth::AuthState>) -> Router {
     )
 }
 
-fn bearer_auth() -> Arc<auth::AuthState> {
+pub(in crate::routes) fn bearer_auth() -> Arc<auth::AuthState> {
     auth::AuthState::fixed(
         auth::AuthPolicy::Bearer(TOKEN.to_owned()),
         epoch::SessionEpoch::in_memory_detached(),
@@ -59,7 +59,7 @@ fn bearer_auth() -> Arc<auth::AuthState> {
 }
 
 /// Serve `app` on a loopback port and return the port.
-async fn serve(app: Router) -> u16 {
+pub(in crate::routes) async fn serve(app: Router) -> u16 {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("a loopback port");
@@ -68,7 +68,7 @@ async fn serve(app: Router) -> u16 {
     port
 }
 
-fn descriptor(port: u16) -> PeerDescriptor {
+pub(in crate::routes) fn descriptor(port: u16) -> PeerDescriptor {
     PeerDescriptor {
         daemon_id: PEER_ID.to_owned(),
         name: "peer".to_owned(),

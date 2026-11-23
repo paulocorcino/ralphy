@@ -183,15 +183,12 @@ async fn from_peer(
     headers: &HeaderMap,
     deadlines: StreamDeadlines,
 ) -> Response {
-    let mut path = format!(
-        "/api/peer/file/bytes?repo={}&path={}",
-        encode_query_value(slug),
-        encode_query_value(&query.path)
+    let path = peer_file_query(
+        "/api/peer/file/bytes",
+        slug,
+        &query.path,
+        query.checkout.as_deref(),
     );
-    if let Some(name) = &query.checkout {
-        path.push_str("&checkout=");
-        path.push_str(&encode_query_value(name));
-    }
     let mut forwarded = HeaderMap::new();
     if let Some(range) = headers.get(header::RANGE) {
         forwarded.insert(header::RANGE, range.clone());
@@ -204,6 +201,25 @@ async fn from_peer(
             StatusCode::BAD_GATEWAY.into_response()
         }
     }
+}
+
+/// The address of a peer route that reads one file of the peer's repo `slug`.
+pub(crate) fn peer_file_query(
+    route: &str,
+    slug: &str,
+    path: &str,
+    checkout: Option<&str>,
+) -> String {
+    let mut query = format!(
+        "{route}?repo={}&path={}",
+        encode_query_value(slug),
+        encode_query_value(path)
+    );
+    if let Some(name) = checkout {
+        query.push_str("&checkout=");
+        query.push_str(&encode_query_value(name));
+    }
+    query
 }
 
 /// The headers of the content a peer sent, on the peer's status and body.
@@ -238,6 +254,31 @@ pub(crate) async fn serve_for_peer(
     with_answer_headers(read_off_reactor(local, query, &headers).await)
 }
 
+/// `/api/peer/preview`: a peer asks for one file of the closed list of the
+/// preview route (ADR-0089 D3), in a repo of this daemon's own registry. The
+/// peer that asks writes the policy, because only it knows the browser's host.
+pub(crate) async fn serve_preview_for_peer(registry_path: PathBuf, query: BytesQuery) -> Response {
+    let local = Local {
+        registry_path,
+        peers_dir: PathBuf::new(),
+        daemon_id: String::new(),
+    };
+    let read = blocking_read(move || {
+        let root = local_root(&local, &query)?;
+        crate::preview::read(&root, &query.path)
+    });
+    match read.await.flatten() {
+        Some((media_type, bytes)) => {
+            let mut resp = bytes.into_response();
+            let h = resp.headers_mut();
+            h.insert(header::CONTENT_TYPE, HeaderValue::from_static(media_type));
+            h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            resp
+        }
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
 /// `/api/file/bytes`, behind the auth guard like every `/api` route.
 pub(crate) fn file_bytes_routes(s: &RouterShared) -> Router {
     let local = Local {
@@ -254,6 +295,6 @@ pub(crate) fn file_bytes_routes(s: &RouterShared) -> Router {
 }
 
 #[cfg(test)]
-mod peer_tests;
+pub(in crate::routes) mod peer_tests;
 #[cfg(test)]
 mod tests;

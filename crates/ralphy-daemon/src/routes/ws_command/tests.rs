@@ -131,8 +131,8 @@ async fn file_preview_makes_a_token_for_the_repo_and_ends_it() {
     let token = reply["token"].as_str().expect("a token").to_owned();
     let now = std::time::Instant::now();
     assert_eq!(
-        crate::preview::PREVIEWS.root_of(&token, now),
-        Some(repo.path().to_path_buf())
+        crate::preview::PREVIEWS.scope_of(&token, now),
+        Some(crate::preview::Scope::Local(repo.path().to_path_buf()))
     );
 
     cmd.payload = serde_json::json!({ "repo": "demo", "revoke": token });
@@ -140,7 +140,7 @@ async fn file_preview_makes_a_token_for_the_repo_and_ends_it() {
         panic!("the verb streamed");
     };
     assert_eq!(reply, serde_json::json!({ "status": "ok" }));
-    assert_eq!(crate::preview::PREVIEWS.root_of(&token, now), None);
+    assert_eq!(crate::preview::PREVIEWS.scope_of(&token, now), None);
 
     // A repo this daemon does not know gets no token.
     cmd.payload = serde_json::json!({ "repo": "nope" });
@@ -149,4 +149,41 @@ async fn file_preview_makes_a_token_for_the_repo_and_ends_it() {
     };
     assert_eq!(reply["status"], "error", "{reply}");
     assert_eq!(reply.get("token"), None, "{reply}");
+}
+
+// ADR-0089, amendment 2026-11-23: for a repo of a peer, the token is made
+// here and names the peer, and nothing is relayed.
+#[tokio::test]
+async fn file_preview_of_a_peer_repo_makes_a_local_token_for_the_peer() {
+    let dir = tempfile::tempdir().expect("a temp dir is writable");
+    let ctx = ctx(dir.path());
+    let peer = peer::PeerDescriptor {
+        daemon_id: "01J9ZQ0000000000000000PEER".to_owned(),
+        name: "peer".to_owned(),
+        avatar: "x".to_owned(),
+        address: "127.0.0.1".to_owned(),
+        port: 1,
+        environment: "WSL: Ubuntu".to_owned(),
+        os: String::new(),
+        token: "peer-token".to_owned(),
+        protocol_version: peer::PEER_PROTOCOL_VERSION,
+        tunnel: None,
+        nudge: None,
+    };
+    peer::write_descriptor(dir.path(), &peer).expect("the peer is announced");
+    let mut cmd = command("file.preview");
+    cmd.payload =
+        serde_json::json!({ "repo": "01J9ZQ0000000000000000PEER/demo", "checkout": "wt" });
+    let Answer::Reply(reply) = answer_one(&ctx, &cmd, &nobody()).await else {
+        panic!("the verb streamed");
+    };
+    assert_eq!(reply["status"], "ok", "{reply}");
+    let token = reply["token"].as_str().expect("a token");
+    let scope = crate::preview::PREVIEWS.scope_of(token, std::time::Instant::now());
+    let expected = crate::preview::Scope::Peer {
+        peer: Box::new(peer),
+        slug: "demo".to_owned(),
+        checkout: Some("wt".to_owned()),
+    };
+    assert_eq!(scope, Some(expected));
 }

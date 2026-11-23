@@ -115,14 +115,14 @@ test("a second click ends the token and draws the file with no script", async (t
 test("no script runs for unsaved text, a refusal, or a pane that went away", async (t) => {
   t.after(restoreGlobals);
   // [the reply of the daemon, the pane, what the operator is told, what the daemon is asked]
-  const text = { cause: "the project is on another computer", remedy: "Open that workbench." };
-  const peer = { status: "error", failure: { domain: "daemon", code: "scripts-on-a-peer", text } };
+  const text = { cause: "the ralphy command failed", remedy: "The daemon log has the reason." };
+  const refused = { status: "error", failure: { domain: "daemon", code: "ralphy-failed", text } };
   const rows = [
     [{ status: "ok", token: "t0" }, { dirty: true }, ["Save the file before you run its scripts."], []],
     [
-      peer,
+      refused,
       {},
-      ["Could not run the scripts: the project is on another computer. Open that workbench."],
+      ["Could not run the scripts: the ralphy command failed. The daemon log has the reason."],
       [{ repo: "o/r" }],
     ],
     [{ status: "ok" }, {}, ["Could not run the scripts: the daemon gave no reason."], [{ repo: "o/r" }]],

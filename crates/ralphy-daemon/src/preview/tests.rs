@@ -17,22 +17,22 @@ fn a_token_opens_its_root_until_it_is_idle_or_closed() {
         .expect("the expiry is longer than a second");
     let almost = start + nearly;
     assert_eq!(
-        previews.root_of(&token, almost),
-        Some(PathBuf::from("the-root"))
+        previews.scope_of(&token, almost),
+        Some(Scope::Local(PathBuf::from("the-root")))
     );
     // That read was a request: the idle time counts from it.
     let later = almost + nearly;
     assert_eq!(
-        previews.root_of(&token, later),
-        Some(PathBuf::from("the-root"))
+        previews.scope_of(&token, later),
+        Some(Scope::Local(PathBuf::from("the-root")))
     );
-    assert_eq!(previews.root_of(&token, later + IDLE_EXPIRY), None);
+    assert_eq!(previews.scope_of(&token, later + IDLE_EXPIRY), None);
 
     let second = previews.open(PathBuf::from("the-root"), start);
     assert_ne!(second, token);
-    assert_eq!(previews.root_of("not-a-token", start), None);
+    assert_eq!(previews.scope_of("not-a-token", start), None);
     previews.close(&second);
-    assert_eq!(previews.root_of(&second, start), None);
+    assert_eq!(previews.scope_of(&second, start), None);
 }
 
 #[test]
@@ -42,14 +42,14 @@ fn the_oldest_token_makes_room_for_a_new_one() {
     let tokens: Vec<String> = (0..=MAX_PREVIEWS)
         .map(|n| previews.open(PathBuf::from(format!("root-{n}")), now))
         .collect();
-    assert_eq!(previews.root_of(&tokens[0], now), None);
+    assert_eq!(previews.scope_of(&tokens[0], now), None);
     assert_eq!(
-        previews.root_of(&tokens[1], now),
-        Some(PathBuf::from("root-1"))
+        previews.scope_of(&tokens[1], now),
+        Some(Scope::Local(PathBuf::from("root-1")))
     );
     assert_eq!(
-        previews.root_of(&tokens[MAX_PREVIEWS], now),
-        Some(PathBuf::from(format!("root-{MAX_PREVIEWS}")))
+        previews.scope_of(&tokens[MAX_PREVIEWS], now),
+        Some(Scope::Local(PathBuf::from(format!("root-{MAX_PREVIEWS}"))))
     );
 }
 
