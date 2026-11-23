@@ -316,6 +316,15 @@ pub(crate) fn peer_routes(s: &RouterShared) -> Router {
             }),
         )
         .route(
+            "/api/peer/preview",
+            get({
+                let registry = s.registry_path.clone();
+                move |q: Query<super::BytesQuery>| {
+                    super::serve_preview_for_peer(registry.clone(), q.0)
+                }
+            }),
+        )
+        .route(
             "/api/peer/tree/poll",
             post({
                 let registry = s.registry_path.clone();

@@ -171,6 +171,21 @@ fetches the `.wasm` file next to itself; the daemon serves it gzipped
 through `'unsafe-eval'`. The glue has no `eval` and no `new Function`; check
 this again after a bump.
 
+### docx-preview (pinned `0.4.1`, with jszip `3.10.2`), built
+
+The docx viewer (ADR-0091 D10, amendment of 2026-11-23). It is built, as
+Crepe is, because it cannot be copied byte for byte: its ES module imports
+`jszip` by its bare name, and its UMD build would register on the Monaco
+loader's AMD `define`. The recipe in `crates/ralphy-daemon/vendor-build/docx-preview/`
+(`npm ci && node build.mjs`, by hand) writes
+`vendor/docx-preview/docx-preview.js`, one ES module, and the two licences.
+Its first line names the pins; the test `vendored_docx_preview_states_its_recipe`
+checks it. The bundle has no `eval`; its one `new Function` is jszip's
+`setImmediate` shim, which runs only when it is given a string. Check both
+again after a bump. `wb-viewer-docx.ts` passes `renderAltChunks: false`, so
+HTML stored in a docx is never drawn, and writes the output through
+`setSanitizedDocument` (`wb-html.ts`) into a shadow root.
+
 ### media-chrome (pinned `4.19.5`)
 
 The controls of the media viewer. `vendor/media-chrome/media-chrome.mjs` is
@@ -187,8 +202,13 @@ The grid of the sheet viewer (ADR-0091 D11). `vendor/tabulator/` holds
 `tabulator_esm.min.mjs`, `tabulator.min.css` and `LICENSE` of the npm tarball,
 byte for byte; the `.mjs` name is the one the package gives its ESM build, and
 the loader needs that extension. The viewer imports the core and registers
-three modules only: `FilterModule`, `ResizeColumnsModule` and `ImportModule`
-(the last reads csv and tsv files itself). Never register `DownloadModule`:
+four modules only: `FilterModule`, `ResizeColumnsModule`, `FormatModule`
+(it draws the
+`plaintext` cells and the row numbers; without it Tabulator logs `Invalid
+column definition option: formatter`) and `FrozenColumnsModule` (the row
+numbers stay at the left). The grid draws only after `tabulator.min.css`
+has loaded: drawn before, every column is as wide as the pane and every row
+is cut. Never register `DownloadModule`:
 the file viewer has no save (ADR-0091 D12). Nothing downloads a file from the
 grid. Both files name a source map that is not vendored, so the developer
 tools show one missing file.

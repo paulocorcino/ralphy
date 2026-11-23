@@ -79,8 +79,8 @@ So the token must be enough, and it must be all. The `Host` is still
 checked.
 
 The verb is served only by the daemon the browser talks to. For a project
-of a peer it answers the failure `scripts-on-a-peer`: the browser cannot
-reach the route of a peer.
+of a peer, the amendment of 2026-11-23 replaces the refusal: the token is
+made here and the route reads the files from the peer.
 
 The route serves a closed list of file kinds: HTML, CSS, JavaScript, JSON
 and the image kinds of ADR-0049 §3. Every other file is not found. The path
@@ -193,8 +193,8 @@ Firefox 150 and WebKit 26.4. These are open:
   `a_token_opens_its_root_until_it_is_idle_or_closed` and
   `the_oldest_token_makes_room_for_a_new_one`
   (`crates/ralphy-daemon/src/preview/tests.rs`), and
-  `file_preview_makes_a_token_for_the_repo_and_ends_it`. Not checked by
-  code: the refusal for a project of a peer.
+  `file_preview_makes_a_token_for_the_repo_and_ends_it`. The project of a
+  peer: see the amendment of 2026-11-23.
 - D4: checked by
   `the_policy_names_only_the_route_and_takes_from_the_web_what_the_daemon_allows`,
   `a_preview_file_is_served_to_its_token_with_its_own_policy` and
@@ -345,3 +345,37 @@ These stay open:
   does;
 - with web content on and the page reached over `https`, a script that asks
   the daemon's own address for a script or a style.
+
+## Amendment 2026-11-23 — D3: a file of a peer, through the local daemon
+
+Changes D3. Before, `file.preview` refused a project of a peer with the
+failure `scripts-on-a-peer`, because the browser cannot reach the route of a
+peer. That was the only reason. ADR-0072 trusts a peer daemon as much as the
+local daemon.
+
+Now the daemon the browser talks to makes the token for a project of a peer
+too. The token names the peer, the repo as the peer names it, and the
+checkout. The verb is still not relayed.
+
+`GET /preview/<token>/<path>` with such a token reads the file from the new
+peer route `GET /api/peer/preview?repo=&path=&checkout=`. That route needs
+the peer key, as every `/api/peer` route does. It serves the closed list of
+D3 with its caps, confined to the checkout, and answers only the media type
+and the bytes. The body is streamed, as the file bytes route of ADR-0091 D6
+streams it.
+
+The local daemon writes every header of D4. Only it knows the address the
+browser uses, and its own options of D5 apply. A file the peer refuses, and
+a peer that does not answer, are not found, with the policy.
+
+The failure code `scripts-on-a-peer` is retired. An older peer has no
+`/api/peer/preview`, so the files of its projects are not found until it is
+updated.
+
+Compliance: checked by
+`file_preview_of_a_peer_repo_makes_a_local_token_for_the_peer`
+(`routes/ws_command/tests.rs`), and by
+`a_peer_file_comes_with_the_policy_of_this_daemon`,
+`a_file_the_peer_refuses_or_a_gone_peer_is_not_found` and
+`the_peer_preview_route_needs_the_peer_key`
+(`routes/preview/peer_tests.rs`).

@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
+use crate::peer::PeerDescriptor;
 use crate::{confine, tree};
 
 /// A token with no request for this long is gone (D3).
@@ -18,9 +19,28 @@ pub(crate) const MAX_PREVIEWS: usize = 32;
 /// slots are: the verb makes a token and the route reads it.
 pub(crate) static PREVIEWS: LazyLock<Previews> = LazyLock::new(Previews::default);
 
+/// Where the files of a token are: a folder of this daemon, or a repo of a
+/// peer, read through the peer's own route.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Scope {
+    Local(PathBuf),
+    Peer {
+        peer: Box<PeerDescriptor>,
+        /// The repo as the peer names it.
+        slug: String,
+        checkout: Option<String>,
+    },
+}
+
+impl From<PathBuf> for Scope {
+    fn from(root: PathBuf) -> Self {
+        Scope::Local(root)
+    }
+}
+
 struct Grant {
     token: String,
-    root: PathBuf,
+    scope: Scope,
     last_used: Instant,
 }
 
@@ -31,8 +51,8 @@ pub(crate) struct Previews {
 }
 
 impl Previews {
-    /// A new token for the files under `root`.
-    pub(crate) fn open(&self, root: PathBuf, now: Instant) -> String {
+    /// A new token for the files of `scope`.
+    pub(crate) fn open(&self, scope: impl Into<Scope>, now: Instant) -> String {
         let mut bytes = [0_u8; 32];
         getrandom::fill(&mut bytes).expect("the OS CSPRNG must be available to mint a token");
         let token = data_encoding::HEXLOWER.encode(&bytes);
@@ -43,21 +63,21 @@ impl Previews {
         }
         grants.push(Grant {
             token: token.clone(),
-            root,
+            scope: scope.into(),
             last_used: now,
         });
         token
     }
 
-    /// The root of a live token. A read counts as a request of the token.
-    pub(crate) fn root_of(&self, token: &str, now: Instant) -> Option<PathBuf> {
+    /// The scope of a live token. A read counts as a request of the token.
+    pub(crate) fn scope_of(&self, token: &str, now: Instant) -> Option<Scope> {
         let mut grants = self.grants.lock().unwrap_or_else(PoisonError::into_inner);
         let grant = grants.iter_mut().find(|g| g.token == token)?;
         if now.duration_since(grant.last_used) >= IDLE_EXPIRY {
             return None;
         }
         grant.last_used = now;
-        Some(grant.root.clone())
+        Some(grant.scope.clone())
     }
 
     /// End a token. An unknown token is already ended.

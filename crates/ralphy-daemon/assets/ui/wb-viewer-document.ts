@@ -6,6 +6,7 @@ import { setMarkup } from "./wb-html.ts";
 import { need, required } from "./wb-dom-need.ts";
 import { fileBytesUrl } from "./wb-file-bytes.ts";
 import { devError } from "./wb-log.ts";
+import { showLoading } from "./wb-viewer-loading.ts";
 import { readAnydoc } from "./wb-anydoc.ts";
 import { liveFontDeps } from "./wb-viewer-font.ts";
 import type { AnydocFormat, AnydocResult } from "./wb-anydoc.ts";
@@ -225,7 +226,9 @@ export function buildDocument(
   need(el, '[data-act="detach"]').addEventListener("click", () => {
     host.detachClick(rec);
   });
+  const loaded = showLoading(document, body);
   const fail = (err: unknown) => {
+    loaded();
     devError("[workbench] document failed to load", err);
     meta.textContent = DOCUMENT_ERROR_TEXT;
   };
@@ -233,8 +236,12 @@ export function buildDocument(
     .fetchBytes(fileBytesUrl(rec.project, rec.path, rec.checkout))
     .then((bytes) => deps.read(bytes, formatOf(rec.path)))
     .then((result) => {
-      if (result.ok) body.append(...renderDocument(document, result.document));
-      else fail(result.code);
+      if (!result.ok) {
+        fail(result.code);
+        return null;
+      }
+      loaded();
+      body.append(...renderDocument(document, result.document));
       return null;
     }, fail);
   rec.el = el;

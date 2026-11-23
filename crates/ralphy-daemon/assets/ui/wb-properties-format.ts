@@ -12,18 +12,27 @@ export type SizeReply = ReplyOf<"tree.size">;
 
 const UNITS = ["KB", "MB", "GB", "TB"];
 
-/** A size for a person, then the exact bytes: `12.4 KB (12,698 bytes)`. Units
- * are 1024 bytes, as the file manager of the system shows them. */
-export function formatBytes(bytes: number) {
-  const exact = `${bytes.toLocaleString("en-US")} ${bytes === 1 ? "byte" : "bytes"}`;
-  if (bytes < 1024) return exact;
+function exactBytes(bytes: number) {
+  return `${bytes.toLocaleString("en-US")} ${bytes === 1 ? "byte" : "bytes"}`;
+}
+
+/** A size for a person: `12.4 KB`, or `940 bytes` under 1 KB. Units are
+ * 1024 bytes, as the file manager of the system shows them. */
+export function formatSize(bytes: number) {
+  if (bytes < 1024) return exactBytes(bytes);
   let value = bytes;
   let unit = -1;
   while (value >= 1024 && unit < UNITS.length - 1) {
     value /= 1024;
     unit++;
   }
-  return `${value.toFixed(1)} ${UNITS[unit]} (${exact})`;
+  return `${value.toFixed(1)} ${String(UNITS[unit])}`;
+}
+
+/** A size for a person, then the exact bytes: `12.4 KB (12,698 bytes)`. */
+export function formatBytes(bytes: number) {
+  const short = formatSize(bytes);
+  return bytes < 1024 ? short : `${short} (${exactBytes(bytes)})`;
 }
 
 /** The time of a change, as `15 Oct 2026, 19:48`, in the time zone of the

@@ -1,10 +1,10 @@
 // Unit tests for assets/ui/wb-viewer-archive.ts: the archive pane draws the
-// `file.entries` reply as text rows.
+// `file.entries` reply as a table: a header, then one row per entry.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildArchive } from "../assets/ui/wb-viewer-archive.ts";
+import { buildArchive, entryName } from "../assets/ui/wb-viewer-archive.ts";
 import { classify } from "../assets/ui/wb-file-paths.ts";
 
 function fixture(name) {
@@ -18,6 +18,7 @@ function fakeEl(tag) {
     style: {},
     dataset: {},
     className: "",
+    attrs: {},
     innerHTML: "",
     textContent: "",
     children: [],
@@ -30,6 +31,9 @@ function fakeEl(tag) {
     querySelector(sel) {
       if (!found.has(sel)) found.set(sel, fakeEl(sel));
       return found.get(sel);
+    },
+    setAttribute(name, value) {
+      el.attrs[name] = value;
     },
     addEventListener() {},
   };
@@ -56,14 +60,27 @@ async function draw(reply) {
   }
 }
 
-const textOf = (row) => row.children.map((c) => c.textContent);
+// The name a row shows (the text after its icon) and its size.
+const nameOf = (row) => row.children[0].children[1].textContent;
+const sizeOf = (row) => row.children[1].textContent;
 
-test("a listing draws rows, one per entry, with path and size", async () => {
+test("a listing draws a header, then one row per entry with its name and size", async () => {
   const reply = fixture("file.entries");
-  const rows = await draw(reply);
+  const [head, ...rows] = await draw(reply);
+  assert.deepEqual(
+    head.children.map((c) => c.textContent),
+    ["Name", "Size"],
+  );
   assert.equal(rows.length, reply.entries.length);
-  assert.equal(textOf(rows[0])[0], "docs/readme.txt");
-  assert.match(textOf(rows[0])[1], /940 bytes/u);
+  assert.equal(nameOf(rows[0]), "readme.txt", "the name, not the whole path");
+  assert.equal(sizeOf(rows[0]), "940 bytes");
+  assert.equal(rows[0].attrs.title, "docs/readme.txt\n940 bytes", "the title holds the path");
+});
+
+test("a row is indented by the depth of its folder", () => {
+  assert.deepEqual(entryName("a.txt"), { depth: 0, name: "a.txt" });
+  assert.deepEqual(entryName("Cactus/royalties/Classes/"), { depth: 2, name: "Classes" });
+  assert.deepEqual(entryName("Cactus/royalties/x.php"), { depth: 2, name: "x.php" });
 });
 
 test("a name that looks like markup shows as text and adds no element", async () => {
@@ -73,21 +90,21 @@ test("a name that looks like markup shows as text and adds no element", async ()
     truncated: false,
     entries: [{ path: name, size: 1, folder: false, modified: null }],
   });
-  assert.equal(rows.length, 1);
-  assert.equal(textOf(rows[0])[0], name);
+  assert.equal(rows.length, 2, "the header and one row");
+  assert.equal(nameOf(rows[1]), name);
   assert.deepEqual(
-    rows[0].children.map((c) => c.tag),
-    ["span", "span"],
+    rows[1].children[0].children.map((c) => c.tag),
+    ["i", "span"],
   );
 });
 
 test("a partial listing shows the partial note", async () => {
   const reply = { ...fixture("file.entries"), truncated: true };
   const rows = await draw(reply);
-  assert.equal(rows.length, reply.entries.length + 1);
+  assert.equal(rows.length, reply.entries.length + 2);
   assert.match(rows.at(-1).textContent, /partial/u);
   const whole = await draw(fixture("file.entries"));
-  assert.equal(whole.length, reply.entries.length);
+  assert.equal(whole.length, reply.entries.length + 1);
 });
 
 test("a zip, a tar and a tgz open in the archive viewer", () => {

@@ -1505,6 +1505,6 @@ By [ADR-0089](./0089-an-html-file-runs-its-scripts-only-when-the-operator-allows
 It is the first verb of the `Native` class: the daemon answers it from its
 own memory, with no child and no read of the repository. The token opens
 `GET /preview/<token>/<path>` for the files of the checkout, and `revoke`
-ends it. The verb is never relayed: for a project of a peer it answers
-the failure `scripts-on-a-peer` of the wording catalog, because the browser
-cannot reach the route of a peer.
+ends it. The verb is never relayed: for a project of a peer the token is
+made here, and the route reads the files from the peer (ADR-0089, amendment
+of 2026-11-23).

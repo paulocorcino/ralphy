@@ -79,10 +79,10 @@ pub(crate) async fn answer_one(ctx: &CommandCtx, cmd: &Command, who: &SocketAudi
     let reply = match fleet::route(repo_ref(cmd), daemon_id.unwrap_or(""), &descriptors) {
         fleet::Route::Local { slug } => local_reply(ctx, cmd, verb, slug).await,
         fleet::Route::UnknownDaemon { daemon_id } => unknown_daemon(daemon_id),
-        // The browser cannot reach the route of a peer: no token is made there.
-        fleet::Route::Peer { .. } if verb == dispatch::Verb::FilePreview => {
-            let failure = crate::DaemonFailure::ScriptsOnAPeer.failure(&[]);
-            serde_json::json!({ "status": "error", "failure": failure })
+        // The browser reaches only this daemon: the token is made here, and the
+        // route reads the files from the peer (ADR-0089, amendment 2026-11-23).
+        fleet::Route::Peer { peer, slug } if verb == dispatch::Verb::FilePreview => {
+            file_preview_on_peer(cmd, peer, slug)
         }
         fleet::Route::Peer { peer, slug } => relay_to_peer(peer, &for_peer(cmd, slug)).await,
     };
@@ -120,9 +120,8 @@ async fn local_reply(
 /// `file.preview` (ADR-0089 D3): with `revoke`, end that token; else make a
 /// token for the files of the repo, or of the checkout the payload names.
 async fn file_preview(cmd: &Command, repo_path: &Path) -> serde_json::Value {
-    if let Some(token) = cmd.payload.get("revoke").and_then(|v| v.as_str()) {
-        crate::preview::PREVIEWS.close(token);
-        return serde_json::json!({ "status": "ok" });
+    if let Some(reply) = revoked(cmd) {
+        return reply;
     }
     let checkout = match checkout_of(cmd, repo_path).await {
         Ok(checkout) => checkout,
@@ -130,6 +129,32 @@ async fn file_preview(cmd: &Command, repo_path: &Path) -> serde_json::Value {
     };
     let root = checkout.map_or_else(|| repo_path.to_path_buf(), |c| c.root().to_path_buf());
     let token = crate::preview::PREVIEWS.open(root, std::time::Instant::now());
+    serde_json::json!({ "status": "ok", "token": token })
+}
+
+/// With `revoke`, end that token and answer; else `None`.
+fn revoked(cmd: &Command) -> Option<serde_json::Value> {
+    let token = cmd.payload.get("revoke").and_then(|v| v.as_str())?;
+    crate::preview::PREVIEWS.close(token);
+    Some(serde_json::json!({ "status": "ok" }))
+}
+
+/// `file.preview` for a repo of `peer`: the token lives on this daemon.
+fn file_preview_on_peer(
+    cmd: &Command,
+    peer: &peer::PeerDescriptor,
+    slug: &str,
+) -> serde_json::Value {
+    if let Some(reply) = revoked(cmd) {
+        return reply;
+    }
+    let checkout = cmd.payload.get("checkout").and_then(|v| v.as_str());
+    let scope = crate::preview::Scope::Peer {
+        peer: Box::new(peer.clone()),
+        slug: slug.to_owned(),
+        checkout: checkout.filter(|name| !name.is_empty()).map(str::to_owned),
+    };
+    let token = crate::preview::PREVIEWS.open(scope, std::time::Instant::now());
     serde_json::json!({ "status": "ok", "token": token })
 }
 

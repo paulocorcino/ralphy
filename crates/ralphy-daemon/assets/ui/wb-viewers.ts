@@ -5,6 +5,7 @@
 import { buildImage } from "./wb-file-viewer-read-only.ts";
 import { buildArchive } from "./wb-viewer-archive.ts";
 import { buildDocument } from "./wb-viewer-document.ts";
+import { buildDocx } from "./wb-viewer-docx.ts";
 import { buildFont } from "./wb-viewer-font.ts";
 import { buildMedia } from "./wb-viewer-media.ts";
 import { buildSheet } from "./wb-viewer-sheet.ts";
@@ -35,8 +36,12 @@ export const VIEWERS: Record<string, ViewerEntry> = {
     extensions: ["ttf", "otf", "woff", "woff2"],
     build: buildFont,
   },
+  docx: {
+    extensions: ["docx"],
+    build: buildDocx,
+  },
   document: {
-    extensions: ["docx", "odt"],
+    extensions: ["odt"],
     build: buildDocument,
   },
   sheet: {

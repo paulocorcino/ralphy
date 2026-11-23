@@ -27,8 +27,13 @@ function fakeEl(tag) {
     setAttribute(name, value) {
       el.attrs[name] = value;
     },
+    parent: null,
     append(...kids) {
+      for (const kid of kids) kid.parent = el;
       el.children.push(...kids);
+    },
+    remove() {
+      el.parent.children = el.parent.children.filter((kid) => kid !== el);
     },
     addEventListener(name, fn) {
       listeners.set(name, fn);
@@ -53,6 +58,7 @@ const PANE_PARTS = [
   ".pdf-body",
   ".pdf-pages",
   ".pdf-find",
+  ".pdf-page",
   '[data-act="detach"]',
   ".viewer-path",
 ];
@@ -63,7 +69,14 @@ function PDFFindController() {
 
 // A fake pdf.js: the core and the viewer module, recording what the pane asks.
 function fakePdfjs() {
-  const seen = { documentOptions: null, viewerOptions: null, linkOptions: null, finds: [] };
+  const seen = {
+    documentOptions: null,
+    viewerOptions: null,
+    linkOptions: null,
+    finds: [],
+    handlers: new Map(),
+    view: null,
+  };
   const doc = { numPages: 120 };
   const core = {
     GlobalWorkerOptions: { workerSrc: "" },
@@ -80,6 +93,9 @@ function fakePdfjs() {
       dispatch(name, detail) {
         if (name === "find") seen.finds.push(detail);
       },
+      on(name, fn) {
+        seen.handlers.set(name, fn);
+      },
     };
   }
   function PDFLinkService(options) {
@@ -88,7 +104,13 @@ function fakePdfjs() {
   }
   function PDFViewer(options) {
     seen.viewerOptions = options;
-    return { currentScale: 1, currentScaleValue: "auto", setDocument() {} };
+    seen.view = {
+      currentScale: 1,
+      currentScaleValue: "auto",
+      currentPageNumber: 1,
+      setDocument() {},
+    };
+    return seen.view;
   }
   const viewerLib = {
     EventBus,
@@ -186,9 +208,8 @@ test("links: a web link opens in a new tab with noopener noreferrer", async () =
 });
 
 test("zoom: the bar's Zoom in raises the viewer's currentScale", async () => {
-  const { stubs } = await opened();
-  const body = stubs[".pdf-body"];
-  const bar = body.children.find((kid) => kid.className === "zoom-bar");
+  const { stubs, rec } = await opened();
+  const bar = rec.el.children.find((kid) => kid.className === "zoom-bar");
   const zoomIn = bar.children.find((kid) => kid.dataset.zoom === "in");
   const viewer = stubs[".pdf-pages"];
   assert.ok(viewer);
@@ -215,4 +236,37 @@ test("a failed load of pdf.js shows the loader's text", async () => {
 test("the table opens pdf files with the pdf builder", () => {
   assert.equal(viewerKindOf("pdf"), "pdf");
   assert.equal(VIEWERS.pdf.build, buildPdf);
+});
+
+const isLoadingNote = (kid) => kid.className === "empty-note viewer-loading";
+
+test("loading: the body shows a note until the document is drawn", async () => {
+  let release;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  const pdfjs = fakePdfjs();
+  const load = async (path) => {
+    await held;
+    return { ok: true, module: path === PDF_CORE_PATH ? pdfjs.core : pdfjs.viewerLib };
+  };
+  const { stubs } = pane(load);
+  const body = stubs[".pdf-body"];
+  assert.equal(body.children.filter(isLoadingNote).length, 1, "the note shows while it loads");
+  release();
+  await settle();
+  assert.equal(body.children.filter(isLoadingNote).length, 0, "the note goes once drawn");
+});
+
+test("page: Enter in the page field goes to that page, inside the document", async () => {
+  const { stubs, seen } = await opened();
+  const field = stubs[".pdf-page"];
+  field.value = "7";
+  field.fire("keydown", { key: "Enter" });
+  assert.equal(seen.view.currentPageNumber, 7);
+  field.value = "999";
+  field.fire("keydown", { key: "Enter" });
+  assert.equal(seen.view.currentPageNumber, 120, "a page past the end goes to the last");
+  seen.handlers.get("pagechanging")({ pageNumber: 42 });
+  assert.equal(field.value, "42", "the field follows the scroll");
 });

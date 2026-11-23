@@ -71,7 +71,9 @@ const NOT_PEER_REPLIES: &[(&str, &str, &str)] = &[
 /// no reply type: it changes the transport of the relayed consoles and spawn
 /// verbs, which ride a channel of the peer's page socket (#830). The new verb
 /// `file.preview` keeps version 5 (ADR-0089 D3): its `token` is optional in the
-/// page type, and the verb is never relayed, so no peer answers it.
+/// page type, and the verb is never relayed, so no peer answers it. For a
+/// peer project the files come from the new route `/api/peer/preview`; an
+/// older peer answers it 404, and the frame shows the file as not found.
 /// The new verb `file.entries` keeps version 5 (ADR-0091 D7): every field of
 /// its reply is optional in the page type, and an older peer answers it
 /// `unknown verb`, which the archive viewer shows as a failed listing.

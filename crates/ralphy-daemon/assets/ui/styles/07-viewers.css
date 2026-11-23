@@ -181,7 +181,11 @@
     linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
     linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%);
   background-size: 16px 16px;
-  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
 }
 .image-viewer .zoom-surface:focus-visible {
   outline: 1px solid var(--focus-ring);
@@ -983,4 +987,121 @@
     min-width: 44px;
     height: 44px;
   }
+}
+/* The PDF pane keeps its zoom bar on the pane, under the toolbar and left of
+   the scroller's bar, so it stays in place while the pages scroll. */
+.pdf-viewer > .zoom-bar {
+  top: calc(var(--viewer-toolbar-h, 2.25rem) + 0.75rem);
+  right: 1.5rem;
+  z-index: 1;
+}
+.pdf-page {
+  width: 8ch;
+}
+/* The note of a viewer that is still reading its file. */
+.viewer-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  pointer-events: none;
+}
+/* A docx drawn with its layout: white pages on the page ground.
+   The document's own styles stay inside the shadow root of `.docx-page`. */
+.docx-body {
+  overflow: auto;
+  background: var(--bg);
+}
+/* Inherited properties cross a shadow root: the host starts from the
+   browser defaults, so the workbench font never reaches the document. */
+.docx-page {
+  all: initial;
+  display: block;
+}
+/* The sheet grid in the workbench colors. Tabulator's own sheet is light;
+   these rules win because the pane class makes them more specific. */
+.sheet-body .tabulator {
+  font-size: var(--fs-sm);
+  color: var(--text);
+  background: var(--bg);
+  border: 0;
+}
+.sheet-body .tabulator .tabulator-header,
+.sheet-body .tabulator .tabulator-header .tabulator-col {
+  color: var(--text-muted);
+  background: var(--surface);
+  border-color: var(--border);
+}
+.sheet-body .tabulator .tabulator-tableholder {
+  background: var(--bg);
+}
+.sheet-body .tabulator-row,
+.sheet-body .tabulator-row.tabulator-row-even {
+  color: var(--text);
+  background: var(--chrome);
+  border-color: var(--border);
+}
+.sheet-body .tabulator-row.tabulator-row-even {
+  background: var(--log-bg);
+}
+.sheet-body .tabulator-row:hover {
+  background: var(--surface-hi);
+}
+.sheet-body .tabulator-row .tabulator-cell {
+  border-color: var(--border);
+}
+.sheet-body .tabulator-row .tabulator-cell.sheet-rownum,
+.sheet-body .tabulator-row .tabulator-cell.tabulator-row-header {
+  color: var(--text-muted);
+  background: var(--surface);
+}
+.sheet-controls {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+}
+/* The entries of an archive: a name column indented by folder depth and a
+   size column, under a header that stays at the top while the list scrolls. */
+.archive-body {
+  overflow: auto;
+  font-size: var(--fs-sm);
+}
+.archive-row {
+  display: flex;
+  gap: var(--space-5);
+  padding: var(--space-2) var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+.archive-row:hover {
+  background: var(--surface-hi);
+}
+.archive-head {
+  position: sticky;
+  top: 0;
+  color: var(--text-muted);
+  background: var(--surface);
+}
+.archive-path {
+  display: flex;
+  flex: 1;
+  gap: var(--space-3);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.archive-folder .archive-path {
+  color: var(--text-muted);
+}
+.archive-size {
+  flex: none;
+  width: 8rem;
+  color: var(--text-muted);
+  text-align: right;
+}
+.archive-note {
+  padding: var(--space-4) var(--space-5);
+  color: var(--text-muted);
 }

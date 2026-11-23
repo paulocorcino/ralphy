@@ -7,6 +7,9 @@ import { setMarkup } from "./wb-html.ts";
 import { need, required } from "./wb-dom-need.ts";
 import { fileBytesUrl } from "./wb-file-bytes.ts";
 import { devError } from "./wb-log.ts";
+import { showLoading } from "./wb-viewer-loading.ts";
+import { guessSeparator, parseDelimited, SEPARATORS } from "./wb-sheet-csv.ts";
+import type { Separator } from "./wb-sheet-csv.ts";
 import { readAnydoc } from "./wb-anydoc.ts";
 import { loadVendor } from "./wb-vendor-load.ts";
 import type { AnydocFormat, AnydocResult } from "./wb-anydoc.ts";
@@ -27,12 +30,29 @@ export type Sheet = { name: string; rows: string[][] };
 
 type GridRow = Record<string, string>;
 type GridColumn = { title: string; field: string; formatter: "plaintext" };
-type GridOptions = { data: GridRow[]; columns: GridColumn[]; height: string; layout: "fitData" };
+type RowHeader = { formatter: "rownum"; frozen: true; hozAlign: "right"; cssClass: string };
+type GridOptions = {
+  data: GridRow[];
+  columns: GridColumn[];
+  rowHeader: RowHeader;
+  height: string;
+  layout: "fitData";
+};
+
+// The row numbers of a sheet, as a spreadsheet shows them, frozen at the left.
+const ROW_HEADER: RowHeader = {
+  formatter: "rownum",
+  frozen: true,
+  hozAlign: "right",
+  cssClass: "sheet-rownum",
+};
 
 /** The part of a Tabulator table the pane uses. */
 export interface Grid {
   setFilter(filter: (row: GridRow) => boolean): void;
   clearFilter(): void;
+  redraw(force: boolean): void;
+  on(event: "tableBuilt", callback: () => void): void;
   destroy(): void;
 }
 
@@ -46,20 +66,28 @@ export type TabulatorKit = {
   Tabulator: GridClass;
   FilterModule: unknown;
   ResizeColumnsModule: unknown;
-  ImportModule: { importers: { csv: (text: string) => string[][] } };
+  FormatModule: unknown;
+  FrozenColumnsModule: unknown;
 };
 
 function isKit(module: unknown): module is TabulatorKit {
   if (typeof module !== "object" || module === null) return false;
-  return "Tabulator" in module && "ImportModule" in module && "FilterModule" in module;
+  const parts = ["Tabulator", "FilterModule", "FormatModule", "FrozenColumnsModule"];
+  return parts.every((part) => part in module);
 }
 
 const registered = new WeakSet<object>();
 
-// The three modules of D11, once per loaded module. Never the download module.
+// The modules of D11, once per loaded module. The format module draws the
+// `plaintext` cells and the row numbers. Never the download module.
 function gridClass(kit: TabulatorKit): GridClass {
   if (!registered.has(kit)) {
-    kit.Tabulator.registerModule([kit.FilterModule, kit.ResizeColumnsModule, kit.ImportModule]);
+    kit.Tabulator.registerModule([
+      kit.FilterModule,
+      kit.ResizeColumnsModule,
+      kit.FormatModule,
+      kit.FrozenColumnsModule,
+    ]);
     registered.add(kit);
   }
   return kit.Tabulator;
@@ -89,7 +117,14 @@ export function drawGrid(kit: TabulatorKit, holder: HTMLElement, sheet: Sheet): 
   }));
   const data = rows.map((row) => Object.fromEntries(fields.map((f, at) => [f, row[at] ?? ""])));
   const Grid = gridClass(kit);
-  return new Grid(holder, { data, columns, height: "100%", layout: "fitData" });
+  const options: GridOptions = {
+    data,
+    columns,
+    rowHeader: ROW_HEADER,
+    height: "100%",
+    layout: "fitData",
+  };
+  return new Grid(holder, options);
 }
 
 /** Keep the rows with a cell that holds `term`, any case; an empty term keeps all. */
@@ -129,23 +164,50 @@ export function sheetsOf(model: DocModel): Sheet[] {
   return sheets;
 }
 
-/** The rows of a csv text, by Tabulator's importer, or of a tsv text, by its tabs. */
-export function textRows(kit: TabulatorKit, text: string, tsv: boolean): string[][] {
-  if (!tsv) return kit.ImportModule.importers.csv(text);
-  const lines = text.split(/\r?\n/u);
-  if (lines.at(-1) === "") lines.pop();
-  return lines.map((line) => line.split("\t"));
+// The separator selector of a csv grid: its first value is the guess.
+function separatorSelect(document: Document, text: string, change: (s: Separator) => void) {
+  const select = document.createElement("select");
+  select.className = "text-field sheet-separator";
+  select.setAttribute("aria-label", "Separator");
+  select.setAttribute("title", "Separator");
+  select.append(
+    ...SEPARATORS.map(({ value, label }) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      return option;
+    }),
+  );
+  select.value = guessSeparator(text);
+  select.addEventListener("change", () => {
+    const picked = SEPARATORS.find(({ value }) => value === select.value);
+    if (picked) change(picked.value);
+  });
+  return select;
 }
 
-const styled = new WeakSet<Document>();
+const styled = new WeakMap<Document, Promise<void>>();
 
-function addGridStyle(document: Document) {
-  if (styled.has(document)) return;
-  styled.add(document);
+// Tabulator measures its columns and rows when it draws: drawn before its
+// stylesheet applies, every column is as wide as the pane and every row
+// is cut. The grid waits for the stylesheet, or for its failure.
+function gridStyle(document: Document): Promise<void> {
+  const known = styled.get(document);
+  if (known) return known;
   const link = document.createElement("link");
+  const ready = new Promise<void>((resolve) => {
+    link.addEventListener("load", () => {
+      resolve();
+    });
+    link.addEventListener("error", () => {
+      resolve();
+    });
+  });
   link.setAttribute("rel", "stylesheet");
   link.setAttribute("href", TABULATOR_CSS_PATH);
   document.head.append(link);
+  styled.set(document, ready);
+  return ready;
 }
 
 /** The controls and grid of a pane that shows sheets. */
@@ -160,14 +222,27 @@ function rowsNote(sheet: Sheet) {
   );
 }
 
+// A grid built in a hidden pane measures its columns as 0 wide; it measures
+// them again when the pane is shown. Tabulator's resize module redraws the
+// rows only, so it does not do this.
+function redrawWhenShown(holder: HTMLElement, grid: () => Grid | null) {
+  if (typeof ResizeObserver === "undefined") return;
+  let shown = false;
+  new ResizeObserver(([entry]) => {
+    const visible = (entry?.contentRect.width ?? 0) > 0;
+    if (visible && !shown) grid()?.redraw(true);
+    shown = visible;
+  }).observe(holder);
+}
+
 function sheetView(document: Document, kit: TabulatorKit): SheetView & { close: () => void } {
   const bar = document.createElement("span");
   bar.className = "sheet-controls";
   const select = document.createElement("select");
-  select.className = "sheet-select";
+  select.className = "text-field sheet-select";
   select.setAttribute("aria-label", "Sheet");
   const filter = document.createElement("input");
-  filter.className = "sheet-filter";
+  filter.className = "text-field sheet-filter";
   filter.setAttribute("type", "search");
   filter.setAttribute("placeholder", "Filter rows");
   filter.setAttribute("aria-label", "Filter rows");
@@ -179,11 +254,18 @@ function sheetView(document: Document, kit: TabulatorKit): SheetView & { close: 
   holder.style.height = "100%";
   let sheets: Sheet[] = [];
   let grid: Grid | null = null;
+  // Tabulator throws on a redraw before it has built the table.
+  let built: Grid | null = null;
   const draw = (at: number) => {
     const sheet = sheets[at];
     if (!sheet) return;
     grid?.destroy();
-    grid = drawGrid(kit, holder, sheet);
+    const drawn = drawGrid(kit, holder, sheet);
+    grid = drawn;
+    built = null;
+    drawn.on("tableBuilt", () => {
+      if (grid === drawn) built = drawn;
+    });
     note.textContent = rowsNote(sheet);
     filter.value = "";
   };
@@ -193,8 +275,11 @@ function sheetView(document: Document, kit: TabulatorKit): SheetView & { close: 
   filter.addEventListener("input", () => {
     if (grid) applyFilter(grid, filter.value);
   });
+  let closed = false;
   const show = (all: Sheet[]) => {
     sheets = all;
+    // A file of one sheet has no name for it, so there is nothing to choose.
+    select.hidden = all.length < 2;
     select.replaceChildren(
       ...all.map((sheet, at) => {
         const option = document.createElement("option");
@@ -203,13 +288,17 @@ function sheetView(document: Document, kit: TabulatorKit): SheetView & { close: 
         return option;
       }),
     );
-    addGridStyle(document);
-    draw(0);
+    void gridStyle(document).then(() => {
+      if (!closed) draw(0);
+      return null;
+    });
   };
   const close = () => {
+    closed = true;
     grid?.destroy();
     grid = null;
   };
+  redrawWhenShown(holder, () => built);
   return { bar, holder, show, close };
 }
 
@@ -297,7 +386,9 @@ export function buildSheet(
   const meta = need(el, ".sheet-meta");
   const at = { meta, toolbar: need(el, ".viewer-toolbar"), body: need(el, ".sheet-body") };
   const url = fileBytesUrl(rec.project, rec.path, rec.checkout);
-  showFile(document, deps, url, { ...at, path: rec.path }).catch((err: unknown) => {
+  const loaded = showLoading(document, at.body);
+  void showFile(document, deps, url, { ...at, path: rec.path }).then(loaded, (err: unknown) => {
+    loaded();
     devError("[workbench] sheet failed to load", err);
     meta.textContent = SHEET_ERROR_TEXT;
   });
@@ -352,8 +443,16 @@ export function mountSheetSwitch(host: SheetSwitchHost, load = loadVendor): HTML
     body.style.display = "none";
     open = { pane, close: view.close };
     setCaption(button, true);
-    const rows = textRows(kit, host.text(), host.path.toLowerCase().endsWith(".tsv"));
-    view.show([{ name: host.path, rows }]);
+    const text = host.text();
+    const showWith = (separator: Separator) => {
+      view.show([{ name: host.path, rows: parseDelimited(text, separator) }]);
+    };
+    if (host.path.toLowerCase().endsWith(".tsv")) {
+      showWith("\t");
+      return;
+    }
+    view.bar.prepend(separatorSelect(document, text, showWith));
+    showWith(guessSeparator(text));
   };
   // A second click while the library loads would build a second grid.
   let loading = false;

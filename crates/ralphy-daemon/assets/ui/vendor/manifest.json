@@ -73,6 +73,28 @@
       ]
     },
     {
+      "name": "docx-preview",
+      "npm": "docx-preview",
+      "version": "0.4.1",
+      "source": "crates/ralphy-daemon/vendor-build/docx-preview",
+      "files": [
+        {
+          "path": "docx-preview/LICENSE",
+          "sha256": "8668bf4417d161e4eb4d47d6044526e4914d9eb3c748573d9bb7e87708c1253f"
+        },
+        {
+          "path": "docx-preview/LICENSE-jszip",
+          "sha256": "566c953c6090b1218ca6217dd7359d45dde46581968586dc607d59a78af6a9c4",
+          "note": "jszip 3.10.2 is bundled into docx-preview.js; its licence travels with it"
+        },
+        {
+          "path": "docx-preview/docx-preview.js",
+          "sha256": "4b812487426212c6329273cf2d594cdd1868490ed06f7270895e04d6fd2218b0",
+          "note": "built: docx-preview 0.4.1 and jszip 3.10.2 as one ES module by the recipe"
+        }
+      ]
+    },
+    {
       "name": "Devicon",
       "npm": "devicon",
       "version": "2.17.0",

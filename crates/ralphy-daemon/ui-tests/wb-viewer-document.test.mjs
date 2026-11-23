@@ -131,7 +131,6 @@ test("an asset of a non-image type draws nothing", () => {
   assert.ok(!document.made.some((el) => el.tag === "img"), "no img is drawn");
 });
 
-test("docx and odt files open in the document viewer", () => {
-  assert.equal(viewerKindOf("docx"), "document");
+test("odt files open in the document viewer", () => {
   assert.equal(viewerKindOf("odt"), "document");
 });
