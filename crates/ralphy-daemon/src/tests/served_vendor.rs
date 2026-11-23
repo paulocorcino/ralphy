@@ -227,3 +227,42 @@ async fn root_serves_the_vendored_crepe() {
         );
     }
 }
+
+/// The docx-preview bundle names the pins of its recipe on its first line
+/// (ADR-0091, amendment of 2026-11-23), so a bundle built from other
+/// versions, or by something else, fails here.
+#[test]
+fn vendored_docx_preview_states_its_recipe() {
+    let recipe = include_str!("../../vendor-build/docx-preview/package.json");
+    let version = |name: &str| -> String {
+        let after = recipe
+            .split_once(&format!("\"{name}\": \""))
+            .unwrap_or_else(|| panic!("the recipe must pin {name}"))
+            .1;
+        after.split_once('"').expect("a closing quote").0.to_owned()
+    };
+    let header = format!(
+        "/* docx-preview {} · jszip {} · esbuild {} */",
+        version("docx-preview"),
+        version("jszip"),
+        version("esbuild")
+    );
+    let bundle = UI
+        .get_file("vendor/docx-preview/docx-preview.js")
+        .and_then(|f| f.contents_utf8())
+        .expect("vendor/docx-preview/docx-preview.js must be embedded as UTF-8");
+    assert_eq!(
+        bundle.lines().next().unwrap_or_default(),
+        header,
+        "rerun `node build.mjs` in vendor-build/docx-preview"
+    );
+    for licence in [
+        "vendor/docx-preview/LICENSE",
+        "vendor/docx-preview/LICENSE-jszip",
+    ] {
+        assert!(
+            UI.get_file(licence).is_some(),
+            "{licence} must travel with the bundle"
+        );
+    }
+}

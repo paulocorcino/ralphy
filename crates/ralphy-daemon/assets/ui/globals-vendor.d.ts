@@ -212,9 +212,25 @@ declare var marked: { parse(markdown: string): string };
 declare var DOMPurify: {
   sanitize(
     dirty: string,
-    config?: { USE_PROFILES?: { svg?: boolean; svgFilters?: boolean; html?: boolean } },
+    config?: {
+      USE_PROFILES?: { svg?: boolean; svgFilters?: boolean; html?: boolean };
+      FORCE_BODY?: boolean;
+      ADD_TAGS?: string[];
+    },
   ): string;
+  addHook(
+    entry: "uponSanitizeAttribute",
+    hook: (node: Element, data: PurifyAttribute) => void,
+  ): void;
+  addHook(entry: "afterSanitizeAttributes", hook: (node: Element) => void): void;
+  removeHook(entry: "uponSanitizeAttribute" | "afterSanitizeAttributes"): void;
 };
+/** The attribute a DOMPurify hook looks at; `forceKeepAttr` keeps it. */
+interface PurifyAttribute {
+  attrName: string;
+  attrValue: string;
+  forceKeepAttr?: boolean;
+}
 /** The vendored xterm.js and its addons (`vendor/xterm*.js`). */
 // oxlint-disable-next-line eslint/no-var -- a global `var` is a window property; `let` is not
 declare var Terminal: new (options: {

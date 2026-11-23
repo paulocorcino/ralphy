@@ -6,7 +6,9 @@ Over a REAL daemon with a scratch store:
   2. its zoom bar stays in place while the pages scroll;
   3. the page field goes to a typed page;
   4. an xlsx grid draws without the Tabulator `formatter` warning;
-  5. an audio pane's controller is in audio mode and its bar has a height.
+  5. an audio pane's controller is in audio mode and its bar has a height;
+  6. a docx draws with its layout in a shadow root: bold text, justified
+     text and the header image, with no error in the console.
 
 The fixtures are written by this script. The daemon is stopped by its own
 subprocess handle, never by name.
@@ -23,6 +25,7 @@ import tempfile
 import time
 import urllib.request
 import zipfile
+import zlib
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -118,6 +121,75 @@ def xlsx_bytes(path):
             z.writestr(name, text)
 
 
+def png_bytes(width=40, height=20):
+    def chunk(tag, data):
+        body = tag + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+    raw = b"".join(b"\x00" + bytes((30, 140, 60)) * width for _ in range(height))
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    signature = b"\x89PNG\r\n\x1a\n"
+    return signature + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+
+
+def docx_bytes(path):
+    """A docx with a bold title, a justified paragraph and an image in the header."""
+    w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    r = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    pkg = "http://schemas.openxmlformats.org/package/2006/relationships"
+    wp = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+    a = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    pic = "http://schemas.openxmlformats.org/drawingml/2006/picture"
+    drawing = (
+        f'<w:drawing><wp:inline><wp:extent cx="762000" cy="381000"/><wp:docPr id="1" name="logo"/>'
+        f'<a:graphic xmlns:a="{a}"><a:graphicData uri="{pic}"><pic:pic xmlns:pic="{pic}">'
+        '<pic:nvPicPr><pic:cNvPr id="1" name="logo.png"/><pic:cNvPicPr/></pic:nvPicPr>'
+        '<pic:blipFill><a:blip r:embed="img1"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+        '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="762000" cy="381000"/></a:xfrm>'
+        '<a:prstGeom prst="rect"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>'
+    )
+    parts = {
+        "[Content_Types].xml": (
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Default Extension="png" ContentType="image/png"/>'
+            '<Override PartName="/word/document.xml" ContentType="application/'
+            'vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+            '<Override PartName="/word/header1.xml" ContentType="application/'
+            'vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>'
+        ),
+        "_rels/.rels": (
+            f'<Relationships xmlns="{pkg}"><Relationship Id="r1" '
+            f'Type="{r}/officeDocument" Target="word/document.xml"/></Relationships>'
+        ),
+        "word/_rels/document.xml.rels": (
+            f'<Relationships xmlns="{pkg}"><Relationship Id="h1" Type="{r}/header" '
+            'Target="header1.xml"/></Relationships>'
+        ),
+        "word/_rels/header1.xml.rels": (
+            f'<Relationships xmlns="{pkg}"><Relationship Id="img1" Type="{r}/image" '
+            'Target="media/logo.png"/></Relationships>'
+        ),
+        "word/header1.xml": (
+            f'<w:hdr xmlns:w="{w}" xmlns:r="{r}" xmlns:wp="{wp}"><w:p><w:r>{drawing}</w:r></w:p></w:hdr>'
+        ),
+        "word/document.xml": (
+            f'<w:document xmlns:w="{w}" xmlns:r="{r}"><w:body>'
+            '<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>CONTRACT TITLE</w:t></w:r></w:p>'
+            '<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:t xml:space="preserve">'
+            + "The parties agree to the terms below. " * 12
+            + '</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="h1"/>'
+            '<w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1417" w:right="1701" w:bottom="1417" '
+            'w:left="1701" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>'
+        ),
+    }
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, text in parts.items():
+            z.writestr(name, text)
+        z.writestr("word/media/logo.png", png_bytes())
+
+
 def wav_bytes(seconds=2, rate=8000):
     data = b"\x80" * (seconds * rate)
     fmt = struct.pack("<HHIIHH", 1, 1, rate, rate, 1, 8)
@@ -131,6 +203,7 @@ def make_fixture_repo():
     (d / "long.pdf").write_bytes(pdf_bytes(PAGES))
     xlsx_bytes(d / "book.xlsx")
     (d / "tone.wav").write_bytes(wav_bytes())
+    docx_bytes(d / "contract.docx")
     for args in (
         ["git", "init"],
         ["git", "config", "user.email", "wbviewers@example.com"],
@@ -247,6 +320,37 @@ def check_audio(page, slug):
     page.screenshot(path=str(SHOTS / "wb_viewer_audio.png"))
 
 
+def check_docx(page, slug, warnings):
+    open_path(page, slug, "contract.docx")
+    sel = pane(slug, "contract.docx")
+    page.wait_for_selector(f"{sel} .docx-page", timeout=30000)
+    page.wait_for_function(
+        f"() => !!document.querySelector('{sel} .docx-page').shadowRoot.querySelector('section')",
+        timeout=15000,
+    )
+    got = page.evaluate(
+        f"""() => {{
+        const root = document.querySelector('{sel} .docx-page').shadowRoot;
+        const bold = [...root.querySelectorAll('span')].find(s => s.textContent === 'CONTRACT TITLE');
+        const para = [...root.querySelectorAll('p')].find(p => p.textContent.startsWith('The parties'));
+        const img = root.querySelector('header img');
+        return {{
+          weight: bold ? getComputedStyle(bold).fontWeight : null,
+          align: para ? getComputedStyle(para).textAlign : null,
+          img: img ? {{ src: img.getAttribute('src').slice(0, 5), w: img.naturalWidth }} : null,
+          leaked: getComputedStyle(document.body).fontFamily,
+        }};
+      }}"""
+    )
+    check("docx: the bold title is bold", got["weight"] == "700", f"{got['weight']}")
+    check("docx: the justified paragraph is justified", got["align"] == "justify", f"{got['align']}")
+    img = got["img"]
+    check("docx: the header image draws from a blob address", bool(img) and img["src"] == "blob:" and img["w"] > 0, f"{img}")
+    errors = [w for w in warnings if "Content Security Policy" in w or "docx failed" in w]
+    check("docx: no policy error and no draw error", not errors, f"{errors[:1]}")
+    page.screenshot(path=str(SHOTS / "wb_viewer_docx.png"))
+
+
 def main():
     if os.environ.get("RALPHY_TEST_SKIP_BUILD") != "1":
         subprocess.run(["cargo", "build", "-p", "ralphy-cli", "--bin", "ralphy"], cwd=REPO_ROOT, check=True)
@@ -271,11 +375,12 @@ def main():
             check_pdf(page, slug)
             check_sheet(page, slug, warnings)
             check_audio(page, slug)
+            check_docx(page, slug, warnings)
             browser.close()
     finally:
         stop(proc)
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
-    sys.exit(0 if len(results) == 7 and all(results) else 1)
+    sys.exit(0 if len(results) == 11 and all(results) else 1)
 
 
 if __name__ == "__main__":

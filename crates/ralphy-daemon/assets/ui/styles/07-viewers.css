@@ -1014,3 +1014,15 @@
   margin: 0;
   pointer-events: none;
 }
+/* A docx drawn with its layout: white pages on the page ground.
+   The document's own styles stay inside the shadow root of `.docx-page`. */
+.docx-body {
+  overflow: auto;
+  background: var(--bg);
+}
+/* Inherited properties cross a shadow root: the host starts from the
+   browser defaults, so the workbench font never reaches the document. */
+.docx-page {
+  all: initial;
+  display: block;
+}

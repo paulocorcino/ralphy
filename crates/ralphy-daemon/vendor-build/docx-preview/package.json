@@ -1,0 +1,15 @@
+{
+  "private": true,
+  "name": "ralphy-vendor-docx-preview",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Builds assets/ui/vendor/docx-preview/docx-preview.js: docx-preview and jszip as one ES module for the document viewer (ADR-0091 D8). Never runs in CI; the artefact is committed.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "docx-preview": "0.4.1",
+    "esbuild": "0.28.2",
+    "jszip": "3.10.2"
+  }
+}
