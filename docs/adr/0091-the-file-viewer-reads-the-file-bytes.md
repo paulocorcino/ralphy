@@ -426,7 +426,10 @@ It reads the zip with the `CFB` reader that SheetJS exports.
 
 **D3, changed.** xls joins the list of kinds: its bytes must start with the
 OLE2 head (`D0 CF 11 E0 A1 B1 1A E1`). The cap of an xlsx, xls or ods file
-is 16 MiB. The viewer reads a file over 8 MiB in more than one answer of
+is 50 MiB (16 MiB at first; the operator raised it on 2026-11-24 for the
+sheets of a real project). SheetJS read an xlsx of 7.8 MB in 0.77 s, so a
+file at the cap takes about 5 s, and the pane shows the loading note
+meanwhile. The viewer reads a file over 8 MiB in more than one answer of
 D4.
 
 **D8, changed.** SheetJS (`vendor/sheetjs/xlsx.mjs`) is a vendored library

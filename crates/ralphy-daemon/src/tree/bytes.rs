@@ -12,8 +12,8 @@ use crate::confine;
 const MIB: u64 = 1024 * 1024;
 /// Cap on the whole file of an image, a document, a csv or a tsv file.
 pub(super) const MAX_WHOLE_FILE_BYTES: u64 = 32 * MIB;
-/// Cap on the whole file of an xlsx, xls or ods file (ADR-0091 D3, amended 2026-11-23).
-pub(super) const MAX_SHEET_BYTES: u64 = 16 * MIB;
+/// Cap on the whole file of an xlsx, xls or ods file (ADR-0091 D3, amended 2026-11-23/24).
+pub(super) const MAX_SHEET_BYTES: u64 = 50 * MIB;
 /// Cap on the whole file of a font.
 pub(super) const MAX_FONT_BYTES: u64 = 16 * MIB;
 /// Cap on the bytes of one answer.
