@@ -1,6 +1,91 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.45",
+      "date": "2026-11-24",
+      "announce": true,
+      "entries": [
+        {
+          "id": "982",
+          "kind": "feature",
+          "text": "Open an image file from the tree and see it drawn from the daemon, on this machine or on a peer.",
+          "headline": "🖼️ **Image files** — an image tab loads its picture from the file bytes route"
+        },
+        {
+          "id": "983",
+          "kind": "feature",
+          "text": "Open a zip, tar or tgz file from the tree and see the names and sizes of what it holds, without unpacking it.",
+          "headline": "🗜️ **Archive files** — a zip or tar tab lists its entries with their sizes"
+        },
+        {
+          "id": "984",
+          "kind": "feature",
+          "text": "Zoom and move an image in its tab, with the zoom bar, the wheel, a pinch or the keys `+`, `-` and `0`.",
+          "headline": "🔍 **Image zoom** — an image tab opens at Fit and zooms by bar, wheel, pinch and keys"
+        },
+        {
+          "id": "985",
+          "kind": "feature",
+          "text": "Open an audio or video file from the tree and play it in the workbench, seeking with ranged reads.",
+          "headline": "🎬 **Audio and video files** — play them in a file tab, with no download control"
+        },
+        {
+          "id": "986",
+          "kind": "feature",
+          "text": "Open a TrueType, OpenType or web font from the tree and see sample text at three sizes.",
+          "headline": "🔤 **Font files** — see a font file's sample text at three sizes in a file tab"
+        },
+        {
+          "id": "987",
+          "kind": "feature",
+          "text": "Open a PDF from the tree, search its text and zoom it; its scripts never run.",
+          "headline": "📄 **PDF files** — read a PDF page by page in a file tab, with search and zoom"
+        },
+        {
+          "id": "988",
+          "kind": "feature",
+          "text": "Open a docx or odt file from the tree and read its headings, lists, tables and images.",
+          "headline": "📄 **Documents** — docx and odt files open in a read-only pane"
+        },
+        {
+          "id": "989",
+          "kind": "feature",
+          "text": "Open an xlsx or ods file as a grid with its sheets and a filter, or switch a csv or tsv file between text and grid.",
+          "headline": "📊 **Sheets** — xlsx, ods, csv and tsv files show as a grid"
+        },
+        {
+          "id": "1020",
+          "kind": "feature",
+          "text": "An Antigravity console can let its agent switch branches, push and write pull requests; a run still cannot."
+        },
+        {
+          "id": "preview-on-a-peer",
+          "kind": "feature",
+          "text": "Run scripts now works on an HTML file of a project on another computer, such as the WSL peer."
+        },
+        {
+          "id": "touch-hold-context-menu",
+          "kind": "feature",
+          "text": "On a phone or tablet, holding a finger on a tab or a file opens its menu."
+        },
+        {
+          "id": "1027",
+          "kind": "fix",
+          "text": "The install script ends with the next steps in order, and on Windows it installs on ARM64 and stops with one clear line."
+        },
+        {
+          "id": "1030",
+          "kind": "fix",
+          "text": "On Windows, the daemon starts at sign-in from a Startup folder shortcut, with no registry tool and no hidden PowerShell."
+        },
+        {
+          "id": "fullscreen-titlebar-desktop",
+          "kind": "fix",
+          "text": "A console in full screen keeps its small title bar under a mouse; the large buttons are only for a touch screen."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.44",
       "date": "2026-11-16",
       "announce": true,
