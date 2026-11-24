@@ -6,7 +6,7 @@
 //! resident foreground process which must not block on stdin; `setup --name
 //! --avatar` reads nothing, so a remote shell over SSH can run it (ADR-0067).
 
-use std::io::{BufRead, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -22,6 +22,7 @@ pub(crate) mod describe;
 mod first_start;
 mod register;
 pub(crate) mod restart;
+mod setup;
 
 pub(crate) use describe::port_from_args;
 pub(crate) use register::register_repo;
@@ -104,6 +105,16 @@ pub(crate) enum DaemonCommand {
         /// must exist. Needs --init.
         #[arg(long, requires = "init")]
         create: bool,
+
+        /// Save NAME as `user.name` in your global git settings before the
+        /// first commit. Needs --init and --git-email.
+        #[arg(long, value_name = "NAME", requires_all = ["init", "git_email"])]
+        git_name: Option<String>,
+
+        /// Save EMAIL as `user.email` in your global git settings before the
+        /// first commit. Needs --init and --git-name.
+        #[arg(long, value_name = "EMAIL", requires_all = ["init", "git_name"])]
+        git_email: Option<String>,
     },
     /// Remove a repo from the daemon by its `owner/repo` name. Nothing changes
     /// when it is not there.
@@ -177,28 +188,18 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
             *avatar,
             &mut std::io::stdout(),
         ),
-        Some(DaemonCommand::Setup { .. }) => setup(args.port),
+        Some(DaemonCommand::Setup { .. }) => setup::setup(args.port),
         Some(DaemonCommand::Status) => status(args.port),
-        Some(DaemonCommand::Add { path, init, create }) => {
-            let repo = bootstrap::resolve_or_init_repo(path, *init, *create)?;
-            let registry_path = registry::repos_toml_path()?;
-            let reg = register::register_or_migrate(&registry_path, &repo)?;
-            let former = registry::load_from(&registry_path)?
-                .entry(&reg.slug)
-                .map(|e| e.former_slugs.clone())
-                .unwrap_or_default();
-            register::migrate_side_stores(&reg, &former);
-            for old in &reg.migrated_from {
-                outln!("migrated {old} → {}", reg.slug);
-            }
-            if let Some(hash) = &reg.declined {
-                outln!(
-                    "kept {} (origin no longer yields a forge slug; {hash} not inserted)",
-                    reg.slug
-                );
-            }
-            outln!("registered {} → {}", reg.slug, repo.display());
-            Ok(())
+        Some(DaemonCommand::Add {
+            path,
+            init,
+            create,
+            git_name,
+            git_email,
+        }) => {
+            let identity = git_name.as_deref().zip(git_email.as_deref());
+            let repo = bootstrap::resolve_or_init_repo(path, *init, *create, identity)?;
+            register::add_and_report(&repo)
         }
         Some(DaemonCommand::Remove { slug }) => {
             let removed = remove_repo_at(&registry::repos_toml_path()?, slug)?;
@@ -278,89 +279,6 @@ fn remove_repo_at(registry_path: &Path, slug: &str) -> Result<bool> {
     Ok(removed)
 }
 
-/// Interactive baptism: derive a default name from the hostname, run the console
-/// over real stdin/stdout, then persist the identity (mint-once) and echo the
-/// resulting status line.
-fn setup(port: u16) -> Result<()> {
-    let host = hostname::get()
-        .map(|h| h.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let suggested = identity::suggest_name(&host);
-
-    let stdin = std::io::stdin();
-    let mut locked = stdin.lock();
-    let mut stdout = std::io::stdout();
-    let (name, avatar) = baptize_console(&mut locked, &mut stdout, &suggested)?;
-
-    let id = identity::baptize(&identity::daemon_toml_path()?, name, avatar)?;
-    writeln!(stdout, "\nbaptized: {}", format_status_line(&id))?;
-
-    // Mint-once access token, independent of re-baptism: shown exactly once when
-    // freshly minted, never re-echoed (a re-`setup` keeps the existing token).
-    let (token, minted) = auth::ensure_token_at(&auth::token_path()?)?;
-    if minted {
-        writeln!(stdout, "access token (shown once): {token}")?;
-    } else {
-        writeln!(stdout, "access token: already set (not shown)")?;
-    }
-
-    // TOTP enrolment (issue #179): mint-once, shown exactly once; then the
-    // opt-in login password (blank = skip). Both are the recommended-but-opt-in
-    // hardening for a network bind (ADR-0032 §4).
-    enroll_totp(&mut stdout, &totp::seed_path()?, &id.name)?;
-    enroll_password(&mut locked, &mut stdout, &password::password_path()?)?;
-
-    writeln!(stdout, "listener: http://127.0.0.1:{port}")?;
-    Ok(())
-}
-
-/// Enrol the TOTP seed (mint-once) and, when freshly minted, print the
-/// `otpauth://` URI, its terminal QR, and the base32 secret EXACTLY once. A later
-/// `setup` finds the seed and prints only "already enrolled" — the secret never
-/// re-prints. Returns whether it was newly minted.
-fn enroll_totp<W: Write>(out: &mut W, seed_path: &Path, account: &str) -> Result<bool> {
-    let (seed, minted) = totp::ensure_seed_at(seed_path)?;
-    if minted {
-        let uri = seed.otpauth_uri("ralphy", account);
-        writeln!(
-            out,
-            "\nTOTP enrolled — scan this once with your authenticator:"
-        )?;
-        match qrcode::QrCode::new(uri.as_bytes()) {
-            Ok(code) => {
-                let rendered = code
-                    .render::<qrcode::render::unicode::Dense1x2>()
-                    .quiet_zone(true)
-                    .build();
-                writeln!(out, "{rendered}")?;
-            }
-            Err(e) => writeln!(out, "  (QR render unavailable: {e})")?,
-        }
-        writeln!(out, "  otpauth: {uri}")?;
-        writeln!(out, "  secret:  {}", seed.secret_base32())?;
-    } else {
-        writeln!(out, "TOTP: already enrolled (not shown)")?;
-    }
-    Ok(minted)
-}
-
-/// Prompt for the OPTIONAL login password over the console: an empty line skips;
-/// a non-blank line is PBKDF2-hashed and saved owner-only, overwriting any prior
-/// password. The password is the weakest, opt-in second factor (ADR-0032 §4).
-fn enroll_password<R: BufRead, W: Write>(input: &mut R, out: &mut W, path: &Path) -> Result<()> {
-    writeln!(out, "\nset a login password? (blank = skip):")?;
-    out.flush()?;
-    let line = read_line(input)?;
-    let pw = line.trim();
-    if pw.is_empty() {
-        writeln!(out, "password: skipped")?;
-    } else {
-        password::save_to(&password::Hash::hash_password(pw), path)?;
-        writeln!(out, "password: set")?;
-    }
-    Ok(())
-}
-
 /// Print the daemon's identity and listener hint, or a setup hint when the
 /// daemon has not been baptized yet.
 fn status(port: u16) -> Result<()> {
@@ -421,59 +339,6 @@ fn autostart_lines(st: ralphy_daemon::autostart::AutostartStatus) -> Vec<&'stati
         );
     }
     lines
-}
-
-/// Drive the interactive baptism over `input`/`out`: prompt for a name
-/// (defaulting to `suggested` on an empty line), re-prompting on any
-/// [`validate_name`] error; then present the numbered avatar list and read a
-/// number until [`avatar_by_number`] resolves. Returns the `(name, avatar)`.
-fn baptize_console<R: BufRead, W: Write>(
-    mut input: R,
-    out: &mut W,
-    suggested: &str,
-) -> Result<(String, String)> {
-    let name = loop {
-        writeln!(out, "daemon name [{suggested}]:")?;
-        out.flush()?;
-        let line = read_line(&mut input)?;
-        let raw = if line.trim().is_empty() {
-            suggested
-        } else {
-            line.trim()
-        };
-        match validate_name(raw) {
-            Ok(name) => break name,
-            Err(e) => writeln!(out, "  {e}")?,
-        }
-    };
-
-    writeln!(out, "\npick an avatar by number:")?;
-    for (i, emoji) in AVATARS.iter().enumerate() {
-        writeln!(out, "  {} {}", i + 1, emoji)?;
-    }
-    let avatar = loop {
-        writeln!(out, "avatar number:")?;
-        out.flush()?;
-        let line = read_line(&mut input)?;
-        match line.trim().parse::<usize>().ok().and_then(avatar_by_number) {
-            Some(emoji) => break emoji.to_owned(),
-            None => writeln!(out, "  pick a number from 1 to {}", AVATARS.len())?,
-        }
-    };
-
-    Ok((name, avatar))
-}
-
-/// Read one line. EOF (0 bytes) is an error, not an empty line, so an exhausted
-/// script cannot spin the prompt loop forever waiting for input that will never
-/// come.
-fn read_line<R: BufRead>(input: &mut R) -> Result<String> {
-    let mut buf = String::new();
-    let n = input.read_line(&mut buf).context("reading console input")?;
-    if n == 0 {
-        anyhow::bail!("unexpected end of input during baptism");
-    }
-    Ok(buf)
 }
 
 /// Foreground logs to stderr: raw INFO `fmt` lines with local timestamps (the

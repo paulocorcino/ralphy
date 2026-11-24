@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 
 use ralphy_core::git;
+use ralphy_daemon::dispatch::{valid_git_email, valid_git_name, GIT_IDENTITY_MISSING};
 
 /// Resolve `path`'s repository toplevel, offering to initialize one when the
 /// directory is not a repository. `force` (the `--init` flag) skips the question.
@@ -25,8 +26,13 @@ use ralphy_core::git;
 /// silently get a repository it never assented to. The flag is precisely the
 /// non-interactive path, which is why the decline is spelled here, as the
 /// answer channel, rather than as a second branch inside the core.
-pub(crate) fn resolve_or_init_repo(path: &Path, force: bool, create: bool) -> Result<PathBuf> {
-    resolve_or_init_repo_with(path, force, create, || {
+pub(crate) fn resolve_or_init_repo(
+    path: &Path,
+    force: bool,
+    create: bool,
+    identity: Option<(&str, &str)>,
+) -> Result<PathBuf> {
+    resolve_or_init_repo_with(path, force, create, identity, || {
         if std::io::stdin().is_terminal() {
             crate::init::ask_yes_no("Initialize a git repository here?", true)
         } else {
@@ -41,6 +47,7 @@ pub(crate) fn resolve_or_init_repo_with<F>(
     path: &Path,
     force: bool,
     create: bool,
+    identity: Option<(&str, &str)>,
     ask: F,
 ) -> Result<PathBuf>
 where
@@ -55,14 +62,11 @@ where
     // `--init` alone never creates a directory: a typing error must not leave
     // a new folder on the disk (same amendment, §2). `--create` makes the one
     // last folder the operator saw named, never a parent (§6).
-    if !path.is_dir() {
-        if !(create && force) {
-            bail!("this folder does not exist: {}", path.display());
-        }
-        std::fs::create_dir(path)
-            .with_context(|| format!("creating the folder {}", path.display()))?;
+    let exists = path.is_dir();
+    if !(exists || (create && force)) {
+        bail!("this folder does not exist: {}", path.display());
     }
-    if git::is_repo(path) {
+    if exists && git::is_repo(path) {
         return git::resolve_toplevel(path);
     }
     if !force && !crate::init::create_repo_decision(&ask()?) {
@@ -71,12 +75,19 @@ where
             path.display()
         );
     }
+    // Checked before anything is created: a missing identity would fail the
+    // first commit and leave an empty `.git` behind.
+    ensure_commit_identity(path, identity)?;
+    if !exists {
+        std::fs::create_dir(path)
+            .with_context(|| format!("creating the folder {}", path.display()))?;
+    }
     git::init(path)
         .with_context(|| format!("initializing a git repository at {}", path.display()))?;
     // A failure HERE leaves a `.git` this call created, with no commit in it —
     // say so, because the next `daemon add` will see a repository and take the
-    // unchanged path over a half-built one. `commit.gpgsign` and a missing
-    // `user.email` are the two that actually bite.
+    // unchanged path over a half-built one. `commit.gpgsign` is the one that
+    // still bites.
     git::initial_commit(path).with_context(|| {
         format!(
             "recording the initial commit in the repository just created at {} \
@@ -86,6 +97,24 @@ where
     })?;
     outln!("Initialized git repository.");
     git::resolve_toplevel(path)
+}
+
+/// Save `identity` in the global git config when given, then refuse with
+/// [`GIT_IDENTITY_MISSING`] when git still has no name and email for commits.
+fn ensure_commit_identity(path: &Path, identity: Option<(&str, &str)>) -> Result<()> {
+    // `git -C` needs a folder that exists; `path` may not exist yet.
+    let dir = path.ancestors().find(|p| p.is_dir()).unwrap_or(path);
+    if let Some((name, email)) = identity {
+        if !valid_git_name(name) || !valid_git_email(email) {
+            bail!("invalid git name or email");
+        }
+        git::set_global_identity(dir, name, email)
+            .context("saving the git name and email in the global git settings")?;
+    }
+    if !git::has_commit_identity(dir) {
+        bail!("{GIT_IDENTITY_MISSING}");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -123,8 +152,8 @@ mod tests {
         let dir = tmp.path().join("fresh");
         std::fs::create_dir_all(&dir).expect("mkdir");
 
-        let top =
-            resolve_or_init_repo_with(&dir, true, false, || panic!("must not ask")).expect("init");
+        let top = resolve_or_init_repo_with(&dir, true, false, None, || panic!("must not ask"))
+            .expect("init");
 
         assert!(dir.join(".git").exists(), "a repository was created");
         let head = std::process::Command::new("git")
@@ -153,7 +182,7 @@ mod tests {
             .expect("git init");
         assert!(status.success());
 
-        let got = resolve_or_init_repo_with(dir, false, false, || panic!("must not ask"))
+        let got = resolve_or_init_repo_with(dir, false, false, None, || panic!("must not ask"))
             .expect("resolve");
         let expected = git::resolve_toplevel(dir).expect("toplevel");
         assert_eq!(got, expected);
@@ -167,7 +196,7 @@ mod tests {
         let dir = tmp.path().join("fresh");
         std::fs::create_dir_all(&dir).expect("mkdir");
 
-        let err = resolve_or_init_repo_with(&dir, false, false, || Ok("n\n".to_owned()))
+        let err = resolve_or_init_repo_with(&dir, false, false, None, || Ok("n\n".to_owned()))
             .expect_err("declined");
         assert!(
             err.to_string().starts_with("not a git repository:"),
@@ -185,7 +214,7 @@ mod tests {
         let dir = tmp.path().join("fresh");
         std::fs::create_dir_all(&dir).expect("mkdir");
 
-        resolve_or_init_repo_with(&dir, false, false, || Ok("\n".to_owned()))
+        resolve_or_init_repo_with(&dir, false, false, None, || Ok("\n".to_owned()))
             .expect("empty answer means yes");
         assert!(dir.join(".git").exists());
     }
@@ -196,7 +225,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let dir = tmp.path().join("typo");
 
-        let err = resolve_or_init_repo_with(&dir, true, false, || panic!("must not ask"))
+        let err = resolve_or_init_repo_with(&dir, true, false, None, || panic!("must not ask"))
             .expect_err("refused");
 
         assert!(
@@ -213,7 +242,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let dir = tmp.path().join("my notes");
 
-        let top = resolve_or_init_repo_with(&dir, true, true, || panic!("must not ask"))
+        let top = resolve_or_init_repo_with(&dir, true, true, None, || panic!("must not ask"))
             .expect("created");
 
         assert!(dir.join(".git").exists());
@@ -230,7 +259,7 @@ mod tests {
         let parent = tmp.path().join("typo");
         let dir = parent.join("notes");
 
-        let err = resolve_or_init_repo_with(&dir, true, true, || panic!("must not ask"))
+        let err = resolve_or_init_repo_with(&dir, true, true, None, || panic!("must not ask"))
             .expect_err("refused");
 
         assert!(
@@ -244,10 +273,11 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_network_path_is_refused() {
-        let err = resolve_or_init_repo_with(Path::new(r"\\server\share\x"), true, false, || {
-            panic!("must not ask")
-        })
-        .expect_err("refused");
+        let err =
+            resolve_or_init_repo_with(Path::new(r"\\server\share\x"), true, false, None, || {
+                panic!("must not ask")
+            })
+            .expect_err("refused");
         assert!(
             err.to_string()
                 .starts_with("network paths are not supported:"),

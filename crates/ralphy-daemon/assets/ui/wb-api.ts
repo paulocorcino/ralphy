@@ -19,7 +19,7 @@
    data from outside (another window's message, stored data, an uploaded
    file) is `unknown`, and is narrowed where it is read.
    --------------------------------------------------------------------------- */
-import type { FleetPeer } from "./wb-fleet.ts";
+import type { FleetPeer, FleetThis } from "./wb-fleet.ts";
 import type { Desk, DeskReply } from "./wb-types.d.ts";
 import type { MissingUsage, SpendDoc, SpendRecord } from "./wb-spend-types.d.ts";
 import type { DeskVersion, VersionInfo } from "./wb-desk-history.ts";
@@ -72,7 +72,8 @@ export type FleetRepoRow = {
 };
 
 /** The reply of `/api/fleet`. */
-export type FleetReply = { peers: FleetPeer[]; repos: FleetRepoRow[] };
+/** `this` is absent from a daemon older than the field. */
+export type FleetReply = { peers: FleetPeer[]; repos: FleetRepoRow[]; this?: FleetThis };
 
 /** A row of the adapter roster (`AgentRow` in `roster.rs`). */
 type AgentRow = {

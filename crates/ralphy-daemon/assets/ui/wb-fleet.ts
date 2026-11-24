@@ -35,6 +35,8 @@ export type FleetPeer = {
   destination?: string;
   identity_file?: string;
 };
+/** This daemon as `/api/fleet` names it (`this` in `routes/api_fleet.rs`). */
+export type FleetThis = { daemon_id: string; daemon_name: string; environment: string; os: string };
 /** What a group knows of its environment before its rows. */
 type GroupSeed = {
   environment: string;
@@ -90,11 +92,14 @@ function isPeerRef(ref: string | null | undefined) {
 // rows still gets a group: an unreachable environment must be visible as an
 // environment, not vanish because it could not be asked for repos.
 //
+// `self` is this daemon (`/api/fleet` `this`); an older daemon sends none.
+//
 // Order: local first, then peers by environment then name — stable, so the
 // sidebar does not reshuffle between polls.
 function fleetGroups(
   repos: readonly Project[] | null | undefined,
   peers: readonly PeerIn[] | null | undefined,
+  self?: FleetThis | null,
 ) {
   const rows = repos ?? [];
   const peerList = peers ?? [];
@@ -111,6 +116,8 @@ function fleetGroups(
   for (const row of rows) ensure(groupKey(row), rowSeed(row)).rows.push(row);
 
   for (const p of peerList) applyPeer(ensure(p.daemon_id, peerSeed(p)), p);
+  // With peers, this computer keeps its header even when it has no project.
+  if (self && peerList.length > 0) ensure("local", selfSeed(self));
 
   const out = Array.from(groups.values());
   out.sort((a, b) => {
@@ -137,6 +144,21 @@ function rowSeed(row: Row): GroupSeed {
     nudgeable: false,
     tunnel: false,
     local: isLocal(row),
+  };
+}
+
+// What the local group knows of this daemon when it has no rows.
+function selfSeed(self: FleetThis): GroupSeed {
+  return {
+    environment: self.environment,
+    os: self.os,
+    daemon: "",
+    name: self.daemon_name,
+    state: "local",
+    diagnosis: "",
+    nudgeable: false,
+    tunnel: false,
+    local: true,
   };
 }
 

@@ -19,6 +19,8 @@ import {
 } from "./wb-add-project-path.ts";
 import { entries, listed } from "./wb-add-project-list.ts";
 import { nextMove, nextPick, nextReply, nextText } from "./wb-add-project-next.ts";
+import type { Identity } from "./wb-add-project-identity.ts";
+import { identityHelp, identityParams, identityReady } from "./wb-add-project-identity.ts";
 
 /** What the folder the text names would do when it is added. */
 type Target = {
@@ -49,7 +51,8 @@ export type Step =
   | { type: "pick"; name: string; up?: boolean }
   | { type: "adding" }
   | { type: "added" }
-  | { type: "addFailed"; message?: string };
+  | { type: "addFailed"; message?: string; needsIdentity?: boolean; place?: string }
+  | { type: "identity"; name?: string; email?: string };
 
 /** The Add a project dialog's state. */
 export type State = {
@@ -70,6 +73,8 @@ export type State = {
   wslMissing: string;
   adding: boolean;
   error: string;
+  /** The git name and email asked for, or `null` when git has them. */
+  identity: Identity | null;
 };
 
 function initial(): State {
@@ -103,6 +108,7 @@ function initial(): State {
     wslMissing: "",
     adding: false,
     error: "",
+    identity: null,
   };
 }
 
@@ -258,6 +264,10 @@ function primary(state: State) {
   const t = target(state);
   const clickable =
     t.action === "add" || t.action === "root" || t.action === "init" || t.action === "create";
+  if (state.identity && clickable) {
+    const label = state.adding ? "Saving…" : "Save and create";
+    return { label, disabled: state.adding || !identityReady(state.identity) };
+  }
   return { label: state.adding ? "Adding…" : t.label, disabled: !clickable || state.adding };
 }
 
@@ -270,6 +280,7 @@ function listable(state: State) {
 
 // The line under the field.
 function help(state: State) {
+  if (state.identity) return identityHelp(state.identity);
   if (state.wslMissing) {
     return `Add ${state.wslMissing} (WSL) as a host first.`;
   }
@@ -297,7 +308,7 @@ function addPayload(state: State) {
     init: t.init,
   };
   if (t.create === true) payload.create = true;
-  return payload;
+  return state.identity ? Object.assign(payload, identityParams(state.identity)) : payload;
 }
 
 function reset(state: State, patch: Partial<State>) {
@@ -316,9 +327,39 @@ function reset(state: State, patch: Partial<State>) {
       active: -1,
       wslMissing: "",
       error: "",
+      identity: null,
     },
     patch,
   );
+}
+
+// An add failed: git with no name and email opens the two fields, any other
+// reason is the error line.
+function nextAddFailed(state: State, ev: Extract<Step, { type: "addFailed" }>) {
+  if (ev.needsIdentity === true) {
+    const identity = state.identity ?? { name: "", email: "", place: ev.place ?? "" };
+    return Object.assign({}, state, { adding: false, error: "", identity });
+  }
+  return Object.assign({}, state, {
+    adding: false,
+    error: (ev.message ?? "") || "The project was not added.",
+  });
+}
+
+// The operator typed in the Name or the Email field.
+function nextIdentity(state: State, ev: Extract<Step, { type: "identity" }>) {
+  if (!state.identity || state.adding) return state;
+  const identity = Object.assign({}, state.identity);
+  if (ev.name !== undefined) identity.name = ev.name;
+  if (ev.email !== undefined) identity.email = ev.email;
+  return Object.assign({}, state, { identity });
+}
+
+// The folder list is slow. A reply that came first means there is nothing
+// to wait for.
+function nextSlow(state: State, ev: Extract<Step, { type: "slow" }>) {
+  if (ev.seq !== state.seq || state.answered === ev.seq) return state;
+  return Object.assign({}, state, { loading: true });
 }
 
 function next(state: State, ev: Step) {
@@ -338,9 +379,7 @@ function next(state: State, ev: Step) {
         sentText: state.needStart ? null : state.text,
       });
     case "slow":
-      // A reply that came first means there is nothing to wait for.
-      if (ev.seq !== state.seq || state.answered === ev.seq) return state;
-      return Object.assign({}, state, { loading: true });
+      return nextSlow(state, ev);
     case "reply":
       return nextReply(state, ev);
     case "move":
@@ -352,10 +391,9 @@ function next(state: State, ev: Step) {
     case "added":
       return Object.assign({}, state, { adding: false, open: false });
     case "addFailed":
-      return Object.assign({}, state, {
-        adding: false,
-        error: (ev.message ?? "") || "The project was not added.",
-      });
+      return nextAddFailed(state, ev);
+    case "identity":
+      return nextIdentity(state, ev);
     default:
       return state;
   }

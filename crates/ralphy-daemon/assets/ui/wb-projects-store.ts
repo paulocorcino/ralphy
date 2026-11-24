@@ -21,6 +21,7 @@ import { WBAgents } from "./wb-agents.ts";
 import { apiFetch } from "./wb-api.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBFleet } from "./wb-fleet.ts";
+import type { FleetThis } from "./wb-fleet.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { sendWindow } from "./wb-events.ts";
@@ -128,6 +129,8 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     // The local fleet's peers (ADR-0052 §5, #349), from `/api/fleet`. Empty: a
     // fleet of one, or a daemon too old to serve the route.
     fleetPeers: [] as FleetPeer[],
+    // This daemon as `/api/fleet` names it; null before a read or from an older daemon.
+    fleetThis: null as FleetThis | null,
     // Peers with a wake in flight, keyed by daemon_id: a second click sends no
     // second nudge.
     waking: {} as Record<string, boolean>,
@@ -392,7 +395,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     // The sidebar gives its filtered rows; a group's state comes from the
     // peer list, and the open row always passes the filter.
     fleetGroups(rows?: Project[]) {
-      return WBFleet.fleetGroups(rows ?? this.projects, this.fleetPeers);
+      return WBFleet.fleetGroups(rows ?? this.projects, this.fleetPeers, this.fleetThis);
     },
     // Each project's `live` dot from `/api/sessions` (#204). Never overrides
     // `offline`; a transport throw leaves the states untouched.
@@ -466,10 +469,13 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     // back when the peer does. Every project, not the filtered list: a search
     // in the sidebar must not change what a console says.
     shareFleet() {
-      window.WBConsole.ingestFleet(WBFleet.fleetGroups(this.projects, this.fleetPeers), {
-        wake: (daemonId) => this.wakePeer(daemonId),
-        read: () => void this.readFleetNow(),
-      });
+      window.WBConsole.ingestFleet(
+        WBFleet.fleetGroups(this.projects, this.fleetPeers, this.fleetThis),
+        {
+          wake: (daemonId) => this.wakePeer(daemonId),
+          read: () => void this.readFleetNow(),
+        },
+      );
     },
     clearReposError() {
       this.reposError = "";

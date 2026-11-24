@@ -97,6 +97,9 @@ pub struct PeerRepoRow {
     pub root: Option<String>,
 }
 
+/// This daemon's OS family, as each local row and `/api/fleet` name it.
+pub const THIS_OS: &str = std::env::consts::OS;
+
 /// A peer's repos, keyed by slug, as last served by that peer.
 pub type PeerRepoStore = BTreeMap<String, PeerRepoRow>;
 
@@ -124,7 +127,7 @@ pub fn aggregate(
             daemon_id: local_id.to_owned(),
             daemon_name: local_name.to_owned(),
             environment: local_env.to_owned(),
-            os: std::env::consts::OS.to_owned(),
+            os: THIS_OS.to_owned(),
             peer_state: LOCAL_STATE.to_owned(),
             slug: slug.clone(),
             name: crate::registry::project_name(slug, &entry.path),

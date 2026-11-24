@@ -77,7 +77,7 @@ const NOT_PEER_REPLIES: &[(&str, &str, &str)] = &[
 /// The new verb `file.entries` keeps version 5 (ADR-0091 D7): every field of
 /// its reply is optional in the page type, and an older peer answers it
 /// `unknown verb`, which the archive viewer shows as a failed listing.
-const PEER_REPLY_PIN: (u32, u64) = (5, 0xfa62_f65a_5e9c_f659);
+const PEER_REPLY_PIN: (u32, u64) = (5, 0x5e0c_9d7a_9c3c_f0f1);
 
 /// Where `PEER_PROTOCOL_VERSION` is, from the repo root.
 const PEER_RS: &str = "crates/ralphy-daemon/src/peer.rs";

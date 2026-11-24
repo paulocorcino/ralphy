@@ -348,3 +348,46 @@ test("close hides the dialog and keeps its fields; added also ends the adding", 
   assert.equal(done.adding, false);
   assert.equal(done.text, "C:\\Dev\\fincal");
 });
+
+test("git with no name and email asks for both, then sends them with the same folder", () => {
+  const P = load();
+  let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\my notes"), DEV);
+  s = P.next(s, { type: "adding" });
+  s = P.next(s, { type: "addFailed", message: "git has no name", needsIdentity: true, place: "ubuntu" });
+  assert.equal(s.error, "", "the fields explain it, not an error line");
+  assert.equal(
+    P.help(s),
+    "Git on ubuntu has no name and email for commits. " +
+      "Ralphy saves them in the git settings of that computer.",
+  );
+  assert.deepEqual(P.primary(s), { label: "Save and create", disabled: true });
+  s = P.next(s, { type: "identity", name: " Ana Lima " });
+  assert.equal(P.primary(s).disabled, true, "the email is still missing");
+  s = P.next(s, { type: "identity", email: "ana" });
+  assert.equal(P.primary(s).disabled, true, "an email needs an @");
+  s = P.next(s, { type: "identity", email: "ana@example.com" });
+  assert.deepEqual(P.primary(s), { label: "Save and create", disabled: false });
+  assert.deepEqual(P.addPayload(s), {
+    daemon: "",
+    path: "C:\\Dev\\my notes",
+    init: true,
+    create: true,
+    gitName: "Ana Lima",
+    gitEmail: "ana@example.com",
+  });
+
+  const other = P.next(s, { type: "addFailed", message: "disk full" });
+  assert.equal(other.error, "disk full");
+  assert.equal(other.identity.name, " Ana Lima ", "a later failure keeps what was typed");
+  assert.equal(P.next(s, { type: "where", daemon: WSL_ID }).identity, null, "a new place asks again");
+});
+
+test("a name with a control character or a leading dash is not sent", () => {
+  const P = load();
+  let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\notes"), DEV);
+  s = P.next(s, { type: "addFailed", needsIdentity: true, place: "this computer" });
+  s = P.next(s, { type: "identity", email: "ana@example.com" });
+  for (const name of ["-Ana", "An\u0007a", "", "a".repeat(257)]) {
+    assert.equal(P.primary(P.next(s, { type: "identity", name })).disabled, true, name);
+  }
+});

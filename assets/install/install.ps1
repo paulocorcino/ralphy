@@ -89,6 +89,16 @@ function Install-Ralphy {
         Remove-Item -Recurse -Force -LiteralPath $tmp -ErrorAction SilentlyContinue
     }
 
+    # The launcher starts the daemon at sign-in. An antivirus may remove it.
+    $launcher = Join-Path (Split-Path -Parent $ralphy) 'ralphyw.exe'
+    if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
+        Write-Warning "$launcher is missing, so the daemon cannot start at sign-in. An antivirus may have removed it: check its quarantine, then run this script again."
+        if ($WithDaemon) {
+            Write-Warning 'The daemon is not set to start at sign-in. When the launcher is back, run: ralphy daemon install'
+            $WithDaemon = $false
+        }
+    }
+
     if ($WithDaemon) {
         # From an administrator window, the binary registers the daemon and
         # does not start it.

@@ -17,6 +17,7 @@ mod changes;
 mod checkout_cwd;
 mod checkouts;
 mod config_get;
+mod daemon_add_identity;
 mod daemon_cli;
 mod doctor;
 mod failure;

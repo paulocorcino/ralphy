@@ -59,9 +59,8 @@ pub(crate) struct InstallArgs {
 /// and maybe as root (ADR-0056 §12).
 fn elevated_warning(elevated: bool) -> Option<&'static str> {
     elevated.then_some(
-        "warning: ralphy runs as root or as administrator. Ralphy does not need this: \
-         it installs for one user, and the files it writes now belong to that account. \
-         Use a normal user when you can.",
+        "note: ralphy runs as root or as administrator. This is allowed; the files it \
+         writes belong to this account. A normal user is enough next time.",
     )
 }
 
@@ -263,18 +262,33 @@ fn companions() -> &'static [&'static str] {
 }
 
 /// Copy each companion found in `from` into `to`, the way the main binary is
-/// replaced. A companion missing from `from` is left as it is in `to`.
-pub(crate) fn place_companions(from: &Path, to: &Path) -> Result<()> {
+/// replaced, and warn about each one that is not in `to` after. Returns the
+/// missing ones: a missing companion never fails the install.
+pub(crate) fn place_companions(from: &Path, to: &Path) -> Result<Vec<PathBuf>> {
+    let mut missing = Vec::new();
     for name in companions() {
         let src = from.join(name);
-        if !src.is_file() {
-            continue;
+        let dest = to.join(name);
+        if src.is_file() {
+            if let Some(parked) = replace_binary(&dest, &src)? {
+                report_parked(&parked);
+            }
         }
-        if let Some(parked) = replace_binary(&to.join(name), &src)? {
-            report_parked(&parked);
+        if !dest.is_file() {
+            eoutln!("{}", missing_companion_warning(&dest));
+            missing.push(dest);
         }
     }
-    Ok(())
+    Ok(missing)
+}
+
+/// The warning for a launcher that is not where the daemon's start at sign-in needs it.
+fn missing_companion_warning(dest: &Path) -> String {
+    format!(
+        "warning: {} is missing, so the daemon cannot start at sign-in. An antivirus \
+         may have removed it: check its quarantine, then install Ralphy again.",
+        dest.display()
+    )
 }
 
 /// Drop the parked file, or say where it is when it cannot go — on Windows that

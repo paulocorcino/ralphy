@@ -137,6 +137,28 @@ fn carry_events_sink(sources: &[&str], to: &str) {
     }
 }
 
+/// `daemon add` after the path resolved: register `repo` and print what changed.
+pub(crate) fn add_and_report(repo: &Path) -> Result<()> {
+    let registry_path = registry::repos_toml_path()?;
+    let reg = register_or_migrate(&registry_path, repo)?;
+    let former = registry::load_from(&registry_path)?
+        .entry(&reg.slug)
+        .map(|e| e.former_slugs.clone())
+        .unwrap_or_default();
+    migrate_side_stores(&reg, &former);
+    for old in &reg.migrated_from {
+        outln!("migrated {old} → {}", reg.slug);
+    }
+    if let Some(hash) = &reg.declined {
+        outln!(
+            "kept {} (origin no longer yields a forge slug; {hash} not inserted)",
+            reg.slug
+        );
+    }
+    outln!("registered {} → {}", reg.slug, repo.display());
+    Ok(())
+}
+
 /// Register `repo_root` in the registry at `registry_path` (registry only —
 /// the thin form `bootstrap`'s test and the passive path share).
 pub(crate) fn register_repo_at(registry_path: &Path, repo_root: &Path) -> Result<Registration> {

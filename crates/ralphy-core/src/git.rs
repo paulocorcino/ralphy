@@ -97,6 +97,22 @@ pub fn initial_commit(repo: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Whether git, run in `dir`, has a name and an email to record a commit.
+/// `git var` applies the same strict check as `git commit`.
+pub fn has_commit_identity(dir: &Path) -> bool {
+    ["GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"]
+        .iter()
+        .all(|var| raw(dir, &["var", var]).is_ok_and(|o| o.status.success()))
+}
+
+/// Save `name` and `email` as `user.name` and `user.email` in the user's
+/// global git config. The caller has checked that neither starts with `-`.
+pub fn set_global_identity(dir: &Path, name: &str, email: &str) -> Result<()> {
+    git(dir, &["config", "--global", "user.name", name])?;
+    git(dir, &["config", "--global", "user.email", email])?;
+    Ok(())
+}
+
 /// Best-effort `git fetch origin`. A missing remote is not fatal here.
 pub fn fetch_origin(repo: &Path) -> Result<()> {
     drop(raw(repo, &["fetch", "origin", "--quiet"])?);

@@ -14,7 +14,8 @@ import * as WBHosts from "./wb-hosts.ts";
 import { WBProject } from "./wb-project.ts";
 import type { Project } from "./wb-project.ts";
 import type { Messages } from "./wb-messages.ts";
-import type { ApiResponse, FleetRepoRow } from "./wb-api.ts";
+import type { ApiResponse, FleetReply, FleetRepoRow } from "./wb-api.ts";
+import type { FleetThis } from "./wb-fleet.ts";
 import type { FleetPeer, ReadState } from "./wb-shell-types.d.ts";
 
 // Run one `host` verb to its end. Resolves to null when it succeeded, else to
@@ -172,6 +173,7 @@ export async function updatePeer(store: UpdateStore, messages: Messages, daemonI
 type FleetStore = {
   projects: Project[];
   fleetPeers: FleetPeer[];
+  fleetThis: FleetThis | null;
   fleetRead: ReadState;
   fleetError: string;
   fleetRejectNote: string;
@@ -182,6 +184,13 @@ type FleetStore = {
   shareProjectNames(): void;
   shareFleet(): void;
 };
+
+// The daemons of a fleet read: its peers and this daemon.
+function keepFleetDaemons(store: FleetStore, fleet: FleetReply) {
+  store.fleetPeers = Array.isArray(fleet.peers) ? fleet.peers : [];
+  store.fleetThis = fleet.this ?? null;
+  store.fleetRejectNote = store.fleetRejectText(store.fleetPeers);
+}
 
 // The local fleet (ADR-0052 §5, #349): append every PEER's repos after the
 // local `/api/repos` pass. INVARIANT: a `/api/fleet` failure leaves the LOCAL
@@ -198,6 +207,7 @@ export async function readFleet(store: FleetStore) {
     if (r.status === 404) {
       // A daemon older than the fleet: a fleet of one, not a failure.
       store.fleetPeers = [];
+      store.fleetThis = null;
       store.fleetError = "";
       store.fleetRejectNote = "";
       return;
@@ -205,8 +215,7 @@ export async function readFleet(store: FleetStore) {
     if (!r.ok) throw new Error(`the daemon answered ${r.status}`);
     const fleet = await r.json();
     if (seq !== store._fleetSeq) return;
-    store.fleetPeers = Array.isArray(fleet.peers) ? fleet.peers : [];
-    store.fleetRejectNote = store.fleetRejectText(store.fleetPeers);
+    keepFleetDaemons(store, fleet);
     const { mine, peers } = fleetRows(fleet.repos);
     if (mine) stampLocalRows(store.projects, mine);
     store._fleetRows = peers;

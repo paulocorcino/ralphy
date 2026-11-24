@@ -224,6 +224,33 @@ test("the fleet row marked local stamps its environment, os and name on the loca
   );
 });
 
+test("with no local project, the fleet's own entry heads this computer's group", async () => {
+  const state = loadShell().state.$store.projects;
+  state.setProjects([]);
+  const restore = scriptedFetch([
+    {
+      status: 200,
+      body: {
+        peers: [{ daemon_id: "p1", name: "box", environment: "Ubuntu 24.04", state: "reachable" }],
+        repos: [{ key: "p1/setup", slug: "setup", daemon_id: "p1", reachable: true }],
+        this: { daemon_id: "me", daemon_name: "anvil", environment: "Windows 11", os: "windows" },
+      },
+    },
+  ]);
+  try {
+    await state.loadFleet();
+  } finally {
+    restore();
+  }
+  assert.deepEqual(
+    state.fleetGroups().map((g) => [g.environment, g.header, g.rows.map((r) => r.slug)]),
+    [
+      ["Windows 11", true, []],
+      ["Ubuntu 24.04", true, ["setup"]],
+    ],
+  );
+});
+
 test("an unreachable repo is offline, and an offline row that answers again is idle", async () => {
   const state = loadShell().state.$store.projects;
   state.loadFleet = () => {};

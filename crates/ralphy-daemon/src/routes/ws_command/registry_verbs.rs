@@ -81,7 +81,13 @@ async fn project_add_reply(
         Ok(argv) => argv,
         Err(e) => {
             tracing::warn!(error = %e, "refused a project.add with invalid params");
-            return serde_json::json!({ "status": "error", "message": "invalid folder path" });
+            let message = match e {
+                dispatch::ArgvError::BadParam("gitName" | "gitEmail") => {
+                    "invalid git name or email"
+                }
+                dispatch::ArgvError::BadParam(_) => "invalid folder path",
+            };
+            return serde_json::json!({ "status": "error", "message": message });
         }
     };
     let path = PathBuf::from(argv.last().expect("the argv ends with the path"));
@@ -92,10 +98,7 @@ async fn project_add_reply(
         .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
     match collect_config(argv, cwd, daemon_id.map(str::to_owned)).await {
         dispatch::Collected::Done(Some(0), _) => added_reply(registry_path, path).await,
-        dispatch::Collected::Done(_, output) => serde_json::json!({
-            "status": "error",
-            "message": cli_message(&output.merged()),
-        }),
+        dispatch::Collected::Done(_, output) => failed_reply(&cli_message(&output.merged())),
         dispatch::Collected::Failed(e) => {
             tracing::warn!(error = %format!("{e:#}"), "project.add failed to run");
             serde_json::json!({ "status": "error", "message": "project add failed to run" })
@@ -104,6 +107,24 @@ async fn project_add_reply(
             not_answered(&late).expect("a late answer has a reply")
         }
     }
+}
+
+/// The reply to a failed `daemon add`. A missing git identity becomes a
+/// question the dialog can answer, so it carries `needs` and plain text.
+fn failed_reply(message: &str) -> serde_json::Value {
+    let needs_identity = message.contains(dispatch::GIT_IDENTITY_MISSING);
+    let text = if needs_identity {
+        "git has no name and email for commits on this computer"
+    } else {
+        message
+    };
+    let mut reply = serde_json::json!({ "status": "error", "message": text });
+    if needs_identity {
+        if let Some(fields) = reply.as_object_mut() {
+            fields.insert("needs".to_owned(), serde_json::json!("gitIdentity"));
+        }
+    }
+    reply
 }
 
 /// The failing CLI's own text, without the `Error: ` that `main` prints first.
@@ -153,5 +174,22 @@ async fn added_reply(registry_path: &Path, requested: PathBuf) -> serde_json::Va
             tracing::warn!(error = %e, "the project.add read-back task did not finish");
             serde_json::json!({ "status": "error", "message": "repo registry unreadable" })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_missing_git_identity_asks_for_it() {
+        let printed = format!("Error: {}\n", dispatch::GIT_IDENTITY_MISSING);
+        let reply = failed_reply(&cli_message(printed.as_bytes()));
+        assert_eq!(reply["status"], "error");
+        assert_eq!(reply["needs"], "gitIdentity");
+
+        let other = failed_reply("this folder does not exist: /x");
+        assert_eq!(other["message"], "this folder does not exist: /x");
+        assert!(other.get("needs").is_none(), "{other}");
     }
 }
