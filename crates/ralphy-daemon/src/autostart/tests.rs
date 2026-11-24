@@ -29,24 +29,19 @@ fn wsl_spec(distro: &str) -> AutostartSpec {
 /// `daemon`; no shell, no `reg` and no script is anywhere in it.
 #[test]
 fn the_windows_shortcut_opens_the_launcher_with_the_log_and_daemon() {
-    let shortcut = windows_shortcut(
-        Path::new(r"C:\Users\me\.local\bin\ralphy.exe"),
-        Path::new(r"C:\Users\me\.ralphy\daemon.log"),
-        Path::new(r"C:\Users\me\Startup"),
-    );
-    assert_eq!(
-        shortcut.link,
-        Path::new(r"C:\Users\me\Startup").join(SHORTCUT_NAME)
-    );
-    assert_eq!(
-        shortcut.target,
-        Path::new(r"C:\Users\me\.local\bin").join(LAUNCHER_NAME)
-    );
+    // Built with `join`, so the paths are this host's: the rule is the same.
+    let home = Path::new("home").join("me");
+    let bin = home.join(".local").join("bin");
+    let log = home.join(".ralphy").join("daemon.log");
+    let startup = home.join("Startup");
+    let shortcut = windows_shortcut(&bin.join("ralphy.exe"), &log, &startup);
+    assert_eq!(shortcut.link, startup.join(SHORTCUT_NAME));
+    assert_eq!(shortcut.target, bin.join(LAUNCHER_NAME));
     assert_eq!(
         shortcut.arguments,
-        r#"--log "C:\Users\me\.ralphy\daemon.log" daemon"#
+        format!("--log \"{}\" daemon", log.display())
     );
-    assert_eq!(shortcut.working_dir, Path::new(r"C:\Users\me\.local\bin"));
+    assert_eq!(shortcut.working_dir, bin);
     let all = format!("{shortcut:?}").to_lowercase();
     for absent in ["pwsh", "powershell", "reg ", "conhost", "-command"] {
         assert!(!all.contains(absent), "{absent:?} in {all}");

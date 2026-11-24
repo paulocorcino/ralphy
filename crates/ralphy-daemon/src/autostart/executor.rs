@@ -233,6 +233,7 @@ pub fn status() -> Result<AutostartStatus> {
     // `reg query`; its text is verbose and not a contract.
     Ok(AutostartStatus {
         registered: argv_succeeds(&render_query(Platform::Launchd, &build_spec()?))?,
+        ..AutostartStatus::default()
     })
 }
 
@@ -272,5 +273,6 @@ pub fn status() -> Result<AutostartStatus> {
     let out = cmd.output().with_context(|| format!("running {prog}"))?;
     Ok(AutostartStatus {
         registered: systemd_is_enabled(&String::from_utf8_lossy(&out.stdout)),
+        ..AutostartStatus::default()
     })
 }
