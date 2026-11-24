@@ -110,13 +110,6 @@ fn a_restarted_daemon_leaves_the_job_of_its_launcher() {
     );
 }
 
-#[cfg(windows)]
-#[test]
-fn only_access_denied_means_the_job_refused_breakaway() {
-    assert!(breakaway_refused(&std::io::Error::from_raw_os_error(5)));
-    assert!(!breakaway_refused(&std::io::Error::from_raw_os_error(2)));
-}
-
 fn scratch(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("ralphy-restart-{}-{tag}", std::process::id()));
     remove_scratch(&dir);

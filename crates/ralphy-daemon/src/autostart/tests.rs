@@ -6,7 +6,6 @@ fn spec() -> AutostartSpec {
         log_path: PathBuf::from("/home/me/.ralphy/daemon.log"),
         wsl_distro: None,
         path: None,
-        shell: PowerShellFlavor::Pwsh,
         uid: Some(501),
         plist_path: PathBuf::from("/Users/me/Library/LaunchAgents/dev.ralphy.daemon.plist"),
     }
@@ -26,91 +25,42 @@ fn wsl_spec(distro: &str) -> AutostartSpec {
     }
 }
 
-/// The Windows Run-key commands, one row per command. The Run value names
-/// `pwsh` when PowerShell 7 is on PATH; a Windows without it registers Windows
-/// PowerShell instead of a command whose interpreter does not exist — same
-/// flags, same redirect: both accept `-NoProfile -WindowStyle Hidden -Command`
-/// and `*>>`.
+/// The shortcut opens the launcher beside `ralphy.exe`, with the log file and
+/// `daemon`; no shell, no `reg` and no script is anywhere in it.
 #[test]
-fn render_windows_commands() {
-    let windows_powershell = AutostartSpec {
-        shell: PowerShellFlavor::WindowsPowerShell,
-        ..spec()
-    };
-    // `&` is the call operator: without it PowerShell rejects the command.
-    let exe = "\"& '/usr/local/bin/ralphy' daemon *>>";
-    // (case, rendered argv, text it carries, text it must not carry)
-    let rows = [
-        (
-            "install with pwsh",
-            render_install(Platform::Windows, &spec()),
-            vec![
-                "reg",
-                "add",
-                RUN_KEY,
-                "/v",
-                TASK_NAME,
-                "REG_SZ",
-                "pwsh -NoProfile",
-                "-WindowStyle Hidden",
-                exe,
-            ],
-            vec!["schtasks", "ONLOGON", "powershell -NoProfile"],
-        ),
-        (
-            "install with Windows PowerShell",
-            render_install(Platform::Windows, &windows_powershell),
-            vec!["powershell -NoProfile", "-WindowStyle Hidden", exe],
-            vec!["pwsh"],
-        ),
-        (
-            "uninstall",
-            render_uninstall(Platform::Windows, &spec()),
-            vec!["reg", "delete", RUN_KEY, "/v", TASK_NAME, "/f"],
-            vec![],
-        ),
-        (
-            "query",
-            render_query(Platform::Windows, &spec()),
-            vec!["reg", "query", RUN_KEY, "/v", TASK_NAME],
-            vec![],
-        ),
-    ];
-    for (case, argv, present, absent) in rows {
-        let joined = argv.join(" ");
-        for needle in present {
-            assert!(
-                joined.contains(needle),
-                "{case}: missing {needle:?} in {joined:?}"
-            );
-        }
-        for needle in absent {
-            assert!(!joined.contains(needle), "{case}: {needle:?} in {joined:?}");
-        }
+fn the_windows_shortcut_opens_the_launcher_with_the_log_and_daemon() {
+    let shortcut = windows_shortcut(
+        Path::new(r"C:\Users\me\.local\bin\ralphy.exe"),
+        Path::new(r"C:\Users\me\.ralphy\daemon.log"),
+        Path::new(r"C:\Users\me\Startup"),
+    );
+    assert_eq!(
+        shortcut.link,
+        Path::new(r"C:\Users\me\Startup").join(SHORTCUT_NAME)
+    );
+    assert_eq!(
+        shortcut.target,
+        Path::new(r"C:\Users\me\.local\bin").join(LAUNCHER_NAME)
+    );
+    assert_eq!(
+        shortcut.arguments,
+        r#"--log "C:\Users\me\.ralphy\daemon.log" daemon"#
+    );
+    assert_eq!(shortcut.working_dir, Path::new(r"C:\Users\me\.local\bin"));
+    let all = format!("{shortcut:?}").to_lowercase();
+    for absent in ["pwsh", "powershell", "reg ", "conhost", "-command"] {
+        assert!(!all.contains(absent), "{absent:?} in {all}");
     }
 }
 
-/// The flavor probe walks PATH for `pwsh.exe` and never spawns.
+/// Task Manager stores 2 for an entry that is on and 3 for one that is off;
+/// an entry it never stored is on.
 #[test]
-fn powershell_flavor_walks_path_for_pwsh() {
-    let dir = std::env::temp_dir().join(format!("ralphy-pwsh-probe-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
-    let path = std::env::join_paths([dir.clone(), PathBuf::from("/nowhere")])
-        .expect("joinable")
-        .into_string()
-        .expect("utf-8 scratch path");
-
-    assert_eq!(
-        powershell_flavor(Some(&path)),
-        PowerShellFlavor::WindowsPowerShell,
-        "no pwsh.exe anywhere on this PATH"
-    );
-    assert_eq!(powershell_flavor(None), PowerShellFlavor::WindowsPowerShell);
-
-    std::fs::write(dir.join("pwsh.exe"), b"").expect("fake pwsh");
-    assert_eq!(powershell_flavor(Some(&path)), PowerShellFlavor::Pwsh);
-
-    std::fs::remove_dir_all(&dir).expect("scratch cleanup");
+fn a_startup_entry_is_off_only_when_its_first_byte_is_odd() {
+    assert!(!turned_off(None));
+    assert!(!turned_off(Some(&[])));
+    assert!(!turned_off(Some(&[2, 0, 0, 0])));
+    assert!(turned_off(Some(&[3, 0, 0, 0, 0x9a, 0x13])));
 }
 
 #[test]

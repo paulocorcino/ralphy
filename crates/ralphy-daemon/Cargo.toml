@@ -137,15 +137,25 @@ libc = "0.2"
 # observes ETX exactly as a real agent TUI does under ConPTY. The Security,
 # Threading and FileSystem features write (and the test reads back) the
 # owner-only DACL of the store files (`owner_only.rs`); features only, no new
-# crate. `SystemServices` gives the test the ACE type constant.
+# crate. `SystemServices` gives the test the ACE type constant. `Registry`
+# reads and deletes the autostart values with no `reg.exe`.
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Security_Authorization",
     "Win32_Storage_FileSystem",
     "Win32_System_Console",
+    "Win32_System_Registry",
     "Win32_System_SystemServices",
     "Win32_System_Threading",
+] }
+# The daemon's Startup shortcut (ADR-0032, amendment 2026-11-23) is written and
+# read through the shell's COM `IShellLinkW`, which `windows-sys` does not
+# bind; the known Startup folder comes from `SHGetKnownFolderPath`.
+windows = { version = "0.62", features = [
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_UI_Shell",
 ] }
 
 [features]

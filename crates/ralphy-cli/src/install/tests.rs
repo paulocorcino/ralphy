@@ -222,3 +222,21 @@ fn a_dangling_symlink_counts_as_occupied() {
         Ok(()) | Err(_) => {}
     }
 }
+
+/// On Windows the launcher travels beside `ralphy`; a folder without one
+/// leaves the destination as it is.
+#[cfg(windows)]
+#[test]
+fn the_launcher_is_copied_beside_ralphy_when_it_is_there() {
+    let from = scratch("companion-from");
+    let to = scratch("companion-to");
+    let launcher = ralphy_daemon::autostart::LAUNCHER_NAME;
+    place_companions(&from, &to).expect("nothing to copy");
+    assert!(!to.join(launcher).exists());
+    std::fs::write(from.join(launcher), b"new launcher").expect("a launcher");
+    place_companions(&from, &to).expect("copying the launcher");
+    assert_eq!(
+        std::fs::read(to.join(launcher)).expect("copied"),
+        b"new launcher"
+    );
+}

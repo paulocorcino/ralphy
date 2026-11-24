@@ -7,19 +7,25 @@ use anyhow::{Context, Result};
 
 #[cfg(target_os = "macos")]
 use super::launchd_plist;
+#[cfg(not(windows))]
+use super::{render_install, render_query, render_uninstall, Platform};
+#[cfg(windows)]
 use super::{
-    render_install, render_query, render_uninstall, AutostartSpec, Platform, PowerShellFlavor,
-    LAUNCHD_LABEL, UNIT_NAME,
+    startup, turned_off, windows_shortcut, LAUNCHER_NAME, RUN_SUBKEY, SHORTCUT_NAME,
+    STARTUP_APPROVED_SUBKEY, TASK_NAME,
 };
 #[cfg(all(unix, not(target_os = "macos")))]
 use super::{systemd_is_enabled, systemd_unit};
-#[cfg(windows)]
-use super::{RUN_KEY, TASK_NAME};
+use super::{AutostartSpec, LAUNCHD_LABEL, UNIT_NAME};
 
-/// Whether the daemon's autostart registration currently exists.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Whether the daemon's autostart registration currently exists, and on
+/// Windows two more facts: the user turned it off in Task Manager, and a
+/// registration of an earlier version is still there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct AutostartStatus {
     pub registered: bool,
+    pub turned_off: bool,
+    pub old_registration: bool,
 }
 
 fn home_dir() -> Result<PathBuf> {
@@ -29,8 +35,8 @@ fn home_dir() -> Result<PathBuf> {
     Ok(PathBuf::from(home))
 }
 
-/// `<home>/.ralphy/daemon.log` — where the Windows task appends daemon
-/// output (the systemd path relies on the journal instead).
+/// `<home>/.ralphy/daemon.log` — where the Windows launcher and launchd append
+/// daemon output (the systemd path relies on the journal instead).
 fn daemon_log_path() -> Result<PathBuf> {
     Ok(home_dir()?.join(".ralphy").join("daemon.log"))
 }
@@ -57,22 +63,6 @@ fn launch_agent_path() -> Result<PathBuf> {
 /// Mirrors `schedule.rs::current_exe`.
 fn current_exe() -> Result<PathBuf> {
     ralphy_proc_util::exe::running_exe()
-}
-
-/// Which PowerShell to register on Windows: `pwsh` when some `PATH` entry holds
-/// `pwsh.exe`, else Windows PowerShell, which every supported Windows ships.
-/// A `PATH` walk rather than a probe spawn — this is resolved at install time
-/// and spawning is the expensive thing on Windows.
-pub fn powershell_flavor(path: Option<&str>) -> PowerShellFlavor {
-    let found = path
-        .into_iter()
-        .flat_map(std::env::split_paths)
-        .any(|dir| dir.join("pwsh.exe").is_file());
-    if found {
-        PowerShellFlavor::Pwsh
-    } else {
-        PowerShellFlavor::WindowsPowerShell
-    }
 }
 
 /// The uid that owns this process — the launchd `gui/<uid>` domain.
@@ -102,7 +92,6 @@ fn build_spec() -> Result<AutostartSpec> {
         wsl_distro: std::env::var("WSL_DISTRO_NAME")
             .ok()
             .filter(|d| !d.is_empty()),
-        shell: powershell_flavor(path.as_deref()),
         uid: current_uid(),
         plist_path: launch_agent_path()?,
         // Same reasoning as the distro: the operator's shell is the one place
@@ -155,31 +144,39 @@ fn remove_registration(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Write the Startup shortcut and delete the `Run` value of an earlier
+/// version, so an upgraded machine does not start the daemon twice.
 #[cfg(windows)]
 pub fn install() -> Result<()> {
     let spec = build_spec()?;
-    run_argv(&render_install(Platform::Windows, &spec), false).with_context(|| {
-        format!(
-            "could not register daemon autostart (writing {RUN_KEY}\\{TASK_NAME}); \
-             this should not require elevation — check that the registry is writable"
-        )
-    })
+    let shortcut = windows_shortcut(&spec.program, &spec.log_path, &startup::startup_dir()?);
+    anyhow::ensure!(
+        shortcut.target.is_file(),
+        "{LAUNCHER_NAME} is missing beside {}; update Ralphy, then run this again",
+        spec.program.display()
+    );
+    startup::write_shortcut(&shortcut)
+        .context("could not write the daemon's shortcut in the Startup folder")?;
+    startup::delete_value(RUN_SUBKEY, TASK_NAME)?;
+    Ok(())
 }
 
+/// Delete the Startup shortcut and the `Run` value of an earlier version;
+/// either one already gone is the idempotent no-op.
 #[cfg(windows)]
 pub fn uninstall() -> Result<()> {
-    // `/F` on install already makes registration idempotent; tolerate a
-    // "task not found" exit here so a second uninstall is a clean no-op.
-    run_argv(&render_uninstall(Platform::Windows, &build_spec()?), true)
+    remove_registration(&startup::startup_dir()?.join(SHORTCUT_NAME))?;
+    startup::delete_value(RUN_SUBKEY, TASK_NAME)?;
+    Ok(())
 }
 
 #[cfg(windows)]
 pub fn status() -> Result<AutostartStatus> {
-    // `reg query` EXIT CODE only (0 = present, 1 = absent) — sidesteps the
-    // pt-BR localized label bug (KNOWLEDGE #139/#140) that misreported a real
-    // `schtasks` task as absent; `reg query` has no such localized text path.
+    let approved = startup::read_value(STARTUP_APPROVED_SUBKEY, SHORTCUT_NAME)?;
     Ok(AutostartStatus {
-        registered: argv_succeeds(&render_query(Platform::Windows, &build_spec()?))?,
+        registered: startup::startup_dir()?.join(SHORTCUT_NAME).is_file(),
+        turned_off: turned_off(approved.as_deref()),
+        old_registration: startup::read_value(RUN_SUBKEY, TASK_NAME)?.is_some(),
     })
 }
 
@@ -209,7 +206,7 @@ pub fn install() -> Result<()> {
             .with_context(|| format!("creating {}", parent.display()))?;
     }
     // `bootstrap` refuses a label that is already loaded, so a re-install
-    // would fail where the Run value (`/f`) and `systemctl enable` are
+    // would fail where the Windows shortcut and `systemctl enable` are
     // idempotent. Unload first, tolerating "not loaded": the plist on disk is
     // fresh, and what comes back up is what it describes.
     run_argv(&render_uninstall(Platform::Launchd, &spec), true)?;

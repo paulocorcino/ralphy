@@ -81,8 +81,9 @@ jobs:
         with:
           toolchain: "1.99.1"
 
+      # `ralphyw` is the launcher the daemon's Startup shortcut opens.
       - name: Build
-        run: cargo build --locked --bin ralphy
+        run: cargo build --locked --bin ralphy --bin ralphyw
 
       # A hosted Windows runner is elevated, so this is the administrator path:
       # it stops with no terminal, and with RALPHY_ALLOW_ROOT it registers the
@@ -96,7 +97,7 @@ jobs:
           RALPHY_INSTALL_DIR: ${{ runner.temp }}\bin
         run: |
           $release = Join-Path $env:RUNNER_TEMP 'release'
-          python .github/scripts/install-fixture.py target/debug/ralphy.exe windows-x64 $release
+          python .github/scripts/install-fixture.py target/debug/ralphy.exe windows-x64 $release target/debug/ralphyw.exe
           $server = Start-Process python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1', '--directory', $release -PassThru
           foreach ($i in 1..50) {
             try { Invoke-WebRequest -UseBasicParsing $env:RALPHY_RELEASES_URL | Out-Null; break } catch { Start-Sleep -Milliseconds 200 }
@@ -108,8 +109,9 @@ jobs:
           $installed = pwsh -NoProfile -File assets/install/install.ps1 -Daemon 2>&1 | Out-String
           if ($LASTEXITCODE -ne 0) { throw "install.ps1 failed ($LASTEXITCODE): $installed" }
           & "$env:RALPHY_INSTALL_DIR\ralphy.exe" --version
-          reg query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' /v ralphy-daemon
-          if ($LASTEXITCODE -ne 0) { throw 'the daemon autostart is not registered' }
+          $shortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'Ralphy daemon.lnk'
+          if (-not (Test-Path $shortcut)) { throw 'the daemon autostart is not registered' }
+          if (-not (Test-Path "$env:RALPHY_INSTALL_DIR\ralphyw.exe")) { throw 'the launcher was not installed' }
           if ($installed -notmatch 'not started from this administrator window') { throw "no refusal line: $installed" }
           if ($installed -notmatch 'Next steps:') { throw "no next steps: $installed" }
           $running = Get-CimInstance Win32_Process -Filter "Name = 'ralphy.exe'" |
@@ -303,6 +305,8 @@ jobs:
             target_name: windows-x64
             target: x86_64-pc-windows-msvc
             bin: ralphy.exe
+            # The launcher the daemon's Startup shortcut opens.
+            companion: ralphyw
             archive: zip
           - os: ubuntu-latest
             target_name: linux-x64
@@ -368,7 +372,10 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_min }}
           CC_x86_64_unknown_linux_musl: musl-gcc
           CC_aarch64_unknown_linux_musl: musl-gcc
-        run: cargo build --locked --release --bin ralphy --target ${{ matrix.target }}
+          TARGET: ${{ matrix.target }}
+          COMPANION: ${{ matrix.companion }}
+        shell: bash
+        run: cargo build --locked --release --bin ralphy ${COMPANION:+--bin "$COMPANION"} --target "$TARGET"
 
       - name: Determine version
         id: version
@@ -390,6 +397,7 @@ jobs:
           NAME: ${{ steps.version.outputs.name }}
           TARGET: ${{ matrix.target }}
           BIN: ${{ matrix.bin }}
+          COMPANION: ${{ matrix.companion }}
           ARCHIVE: ${{ matrix.archive }}
         run: |
           set -euo pipefail
@@ -399,6 +407,7 @@ jobs:
           # The binary embeds its prompts and skills at build time, so it is
           # self-contained — these are the docs a user needs alongside it.
           cp "target/$TARGET/release/$BIN" "$stage/"
+          if [[ -n "$COMPANION" ]]; then cp "target/$TARGET/release/$COMPANION.exe" "$stage/"; fi
           cp README.md LICENSE docs/BUILDING.md "$stage/"
           if [[ "$ARCHIVE" == "zip" ]]; then
             ( cd dist && 7z a -tzip "../out/$name.zip" "$name" >/dev/null )

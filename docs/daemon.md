@@ -185,12 +185,16 @@ git config --global core.longpaths true
 native OS mechanism for the running platform — ralphy never becomes the
 scheduler, it only writes and removes one registration:
 
-- **Windows**: a per-user registry value `ralphy-daemon` in
-  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, running
-  `pwsh -WindowStyle Hidden` → `ralphy daemon` (no visible console window) and
-  appending its output to `<home>/.ralphy/daemon.log`. No elevation required.
-  When PowerShell 7 (`pwsh`) is not on `PATH` the value runs Windows
-  PowerShell (`powershell`) instead — same flags, same log.
+- **Windows**: a shortcut `Ralphy daemon.lnk` in the user's Startup folder
+  (`shell:startup`). It opens `ralphyw.exe`, a small launcher installed beside
+  `ralphy.exe`, which starts `ralphy daemon` with no window and appends its
+  output to `<home>/.ralphy/daemon.log`. No elevation, no registry tool and no
+  PowerShell. The entry shows in Task Manager → Startup apps, where it can be
+  turned off; `ralphy daemon status` says so. `install` also removes the
+  registry value `ralphy-daemon` under
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` that earlier
+  versions wrote. This lowers the chance that security software flags the
+  autostart; it does not remove it.
 - **Linux / WSL**: a systemd **user** unit at
   `~/.config/systemd/user/ralphy-daemon.service`, `WantedBy=default.target`
   (starts at user login), enabled via `systemctl --user enable`.
