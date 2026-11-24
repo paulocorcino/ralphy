@@ -21,7 +21,7 @@ export const TABULATOR_PATH = "./vendor/tabulator/tabulator_esm.min.mjs";
 const TABULATOR_CSS_PATH = "vendor/tabulator/tabulator.min.css";
 /** The most rows a sheet draws (ADR-0091 D11, D14). */
 export const MAX_SHEET_ROWS = 500_000;
-export const SHEET_TOO_LARGE_TEXT = "This sheet is too large to show: the limit is 16 megabytes.";
+export const SHEET_TOO_LARGE_TEXT = "This sheet is too large to show: the limit is 50 megabytes.";
 export const SHEET_ERROR_TEXT = "This file could not be read as a sheet.";
 
 export type { Sheet } from "./wb-sheet-read.ts";
