@@ -5,6 +5,7 @@ fn only_an_elevated_run_is_warned() {
     assert_eq!(elevated_warning(false), None);
     let warning = elevated_warning(true).expect("an elevated run is warned");
     assert!(warning.contains("root or as administrator"), "{warning}");
+    assert!(warning.starts_with("note:"), "{warning}");
 }
 
 fn scratch(tag: &str) -> PathBuf {
@@ -224,17 +225,19 @@ fn a_dangling_symlink_counts_as_occupied() {
 }
 
 /// On Windows the launcher travels beside `ralphy`; a folder without one
-/// leaves the destination as it is.
+/// is reported missing and does not fail the install.
 #[cfg(windows)]
 #[test]
 fn the_launcher_is_copied_beside_ralphy_when_it_is_there() {
     let from = scratch("companion-from");
     let to = scratch("companion-to");
     let launcher = ralphy_daemon::autostart::LAUNCHER_NAME;
-    place_companions(&from, &to).expect("nothing to copy");
+    let missing = place_companions(&from, &to).expect("nothing to copy");
+    assert_eq!(missing, vec![to.join(launcher)]);
     assert!(!to.join(launcher).exists());
     std::fs::write(from.join(launcher), b"new launcher").expect("a launcher");
-    place_companions(&from, &to).expect("copying the launcher");
+    let missing = place_companions(&from, &to).expect("copying the launcher");
+    assert!(missing.is_empty(), "{missing:?}");
     assert_eq!(
         std::fs::read(to.join(launcher)).expect("copied"),
         b"new launcher"

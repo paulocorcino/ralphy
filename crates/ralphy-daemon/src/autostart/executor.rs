@@ -11,8 +11,8 @@ use super::launchd_plist;
 use super::{render_install, render_query, render_uninstall, Platform};
 #[cfg(windows)]
 use super::{
-    startup, turned_off, windows_shortcut, LAUNCHER_NAME, RUN_SUBKEY, SHORTCUT_NAME,
-    STARTUP_APPROVED_SUBKEY, TASK_NAME,
+    startup, turned_off, windows_shortcut, RUN_SUBKEY, SHORTCUT_NAME, STARTUP_APPROVED_SUBKEY,
+    TASK_NAME,
 };
 #[cfg(all(unix, not(target_os = "macos")))]
 use super::{systemd_is_enabled, systemd_unit};
@@ -152,13 +152,25 @@ pub fn install() -> Result<()> {
     let shortcut = windows_shortcut(&spec.program, &spec.log_path, &startup::startup_dir()?);
     anyhow::ensure!(
         shortcut.target.is_file(),
-        "{LAUNCHER_NAME} is missing beside {}; update Ralphy, then run this again",
-        spec.program.display()
+        "{}",
+        missing_launcher_message(&shortcut.target)
     );
     startup::write_shortcut(&shortcut)
         .context("could not write the daemon's shortcut in the Startup folder")?;
     startup::delete_value(RUN_SUBKEY, TASK_NAME)?;
     Ok(())
+}
+
+/// The error for a launcher that is not beside `ralphy`: where it should be,
+/// why it may be gone, and the command that puts it back.
+#[cfg(windows)]
+fn missing_launcher_message(launcher: &Path) -> String {
+    format!(
+        "{} is missing; an antivirus may have removed it. Install Ralphy again: \
+         irm https://raw.githubusercontent.com/paulocorcino/ralphy/main/assets/install/install.ps1 \
+         | iex",
+        launcher.display()
+    )
 }
 
 /// Delete the Startup shortcut and the `Run` value of an earlier version;
@@ -275,4 +287,18 @@ pub fn status() -> Result<AutostartStatus> {
         registered: systemd_is_enabled(&String::from_utf8_lossy(&out.stdout)),
         ..AutostartStatus::default()
     })
+}
+
+#[cfg(test)]
+#[cfg(windows)]
+mod tests {
+    #[test]
+    fn the_missing_launcher_error_names_the_path_and_the_repair() {
+        let message = super::missing_launcher_message(std::path::Path::new(r"C:\bin\ralphyw.exe"));
+        assert!(
+            message.starts_with(r"C:\bin\ralphyw.exe is missing"),
+            "{message}"
+        );
+        assert!(message.contains("install.ps1 | iex"), "{message}");
+    }
 }
