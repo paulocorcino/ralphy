@@ -136,7 +136,15 @@ pub(crate) async fn fleet_route(
     repos.sort_by(|a, b| {
         (&a.environment, &a.daemon_id, &a.slug).cmp(&(&b.environment, &b.daemon_id, &b.slug))
     });
-    Json(serde_json::json!({ "peers": peer_views, "repos": repos })).into_response()
+    // `this` names this daemon even when it serves no local repo, so the
+    // sidebar can head its own group.
+    let this = serde_json::json!({
+        "daemon_id": probe_id,
+        "daemon_name": identity.as_ref().map(|i| i.name.as_str()).unwrap_or_default(),
+        "environment": environment,
+        "os": fleet::THIS_OS,
+    });
+    Json(serde_json::json!({ "peers": peer_views, "repos": repos, "this": this })).into_response()
 }
 
 /// Probe every peer, each in its own task; the slot of a peer whose task

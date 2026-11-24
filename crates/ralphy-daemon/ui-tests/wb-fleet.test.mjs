@@ -215,6 +215,22 @@ test("a missing repos or peers list is not a crash", () => {
   assert.equal(fleet.fleetGroups(null, [PEER]).length, 1);
 });
 
+const SELF = { daemon_id: "01ME", daemon_name: "anvil", environment: "Windows 11", os: "windows" };
+
+test("with peers and no local row, this daemon still has its headed group", () => {
+  const groups = load().fleetGroups([PEER_ROW], [PEER], SELF);
+  assert.deepEqual(
+    groups.map((g) => [g.local, g.environment, g.os, g.header, g.rows.length]),
+    [
+      [true, "Windows 11", "windows", true, 0],
+      [false, "WSL: Ubuntu-22.04", "", true, 1],
+    ],
+  );
+  // CONTROLS: alone, this daemon gets no group; an older daemon sends no self.
+  assert.deepEqual(load().fleetGroups([], [], SELF), []);
+  assert.equal(load().fleetGroups([PEER_ROW], [PEER]).length, 1);
+});
+
 test("repo refs keep local slugs and use peer keys", () => {
   const fleet = load();
   assert.equal(fleet.repoRef({ slug: "owner/repo" }), "owner/repo");

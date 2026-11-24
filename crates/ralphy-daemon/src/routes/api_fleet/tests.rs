@@ -168,3 +168,20 @@ async fn a_probe_task_that_fails_is_an_unreachable_row() {
     );
     assert_eq!(input.len(), 2, "both peers reach the repo rows");
 }
+
+/// With no local repo and no peer, the reply still names this daemon.
+#[tokio::test]
+async fn the_reply_names_this_daemon_with_no_local_repo() {
+    let dir = tempfile::tempdir().unwrap();
+    let body = fleet(dir.path(), &PeerRepoCache::default()).await;
+    assert_eq!(body["repos"], serde_json::json!([]), "got: {body}");
+    assert_eq!(
+        body["this"],
+        serde_json::json!({
+            "daemon_id": ulid::Ulid::nil().to_string(),
+            "daemon_name": "anvil",
+            "environment": "Windows",
+            "os": std::env::consts::OS,
+        })
+    );
+}
