@@ -10,6 +10,12 @@ description = "Ralphy command-line entry point."
 name = "ralphy"
 path = "src/main.rs"
 
+# The Windows launcher of the daemon's Startup shortcut: a GUI-subsystem
+# program, so logon opens no console window (ADR-0032, amendment 2026-11-23).
+[[bin]]
+name = "ralphyw"
+path = "src/bin/ralphyw.rs"
+
 [dependencies]
 anyhow.workspace = true
 thiserror.workspace = true

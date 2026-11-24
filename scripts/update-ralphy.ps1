@@ -602,8 +602,9 @@ try {
     $mark = Get-LogLineCount
     # The scroll probe is a Cargo feature that no release turns on (ADR-0084).
     $features = if ($ScrollProbe) { @('--features', 'scroll-probe') } else { @() }
-    $code = Invoke-Logged ("cargo build --release --locked -p ralphy-cli --bin ralphy $($features -join ' ')".Trim()) {
-        & cargo build --release --locked -p ralphy-cli --bin ralphy @features --manifest-path (Join-Path $Repo 'Cargo.toml')
+    # `ralphyw` is the launcher the daemon's Startup shortcut opens.
+    $code = Invoke-Logged ("cargo build --release --locked -p ralphy-cli --bin ralphy --bin ralphyw $($features -join ' ')".Trim()) {
+        & cargo build --release --locked -p ralphy-cli --bin ralphy --bin ralphyw @features --manifest-path (Join-Path $Repo 'Cargo.toml')
     }
     if ($code -ne 0) {
         [UpdateRalphyWatchdog]::Disarm()
@@ -653,6 +654,8 @@ try {
             Move-Item -LiteralPath $Bin -Destination (Get-ParkName) -Force
         }
         Copy-Item -LiteralPath $built -Destination $Bin -Force
+        # The launcher runs only for a moment at sign-in, so it is not in use here.
+        Copy-Item -LiteralPath (Join-Path (Split-Path $built) 'ralphyw.exe') -Destination (Split-Path $Bin) -Force
         Write-LogEntry "installed $newVersion at $Bin (previous kept at $prev)"
     }
 

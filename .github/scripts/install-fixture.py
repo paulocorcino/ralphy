@@ -1,10 +1,11 @@
 """Build a fake release for the install scripts to read.
 
-    python install-fixture.py <ralphy binary> <target> <out folder>
+    python install-fixture.py <ralphy binary> <target> <out folder> [<companion>...]
 
 The out folder then holds what the scripts read from GitHub: `releases` (the
 release list) and `download/<tag>/<archive>` with its `.sha256`, laid out as
-the release workflow packs them. Serve it with `python -m http.server`.
+the release workflow packs them, with each companion binary (the Windows
+`ralphyw.exe`) beside `ralphy`. Serve it with `python -m http.server`.
 """
 
 import hashlib
@@ -19,6 +20,7 @@ TAG = "v0.0.0-fixture"
 
 def main() -> None:
     binary, target, out = pathlib.Path(sys.argv[1]), sys.argv[2], pathlib.Path(sys.argv[3])
+    companions = [pathlib.Path(p) for p in sys.argv[4:]]
     name = f"ralphy-{TAG}-{target}"
     folder = out / "download" / TAG
     folder.mkdir(parents=True, exist_ok=True)
@@ -27,6 +29,8 @@ def main() -> None:
         archive = folder / f"{name}.zip"
         with zipfile.ZipFile(archive, "w") as z:
             z.write(binary, f"{name}/{inner}")
+            for companion in companions:
+                z.write(companion, f"{name}/{companion.name}")
     else:
         archive = folder / f"{name}.tar.gz"
         with tarfile.open(archive, "w:gz") as t:

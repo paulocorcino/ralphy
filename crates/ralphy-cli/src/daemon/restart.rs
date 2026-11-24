@@ -330,32 +330,19 @@ pub(crate) fn spawn_outside_job(
     what: &str,
     spawn: impl Fn(u32) -> std::io::Result<std::process::Child>,
 ) -> std::io::Result<std::process::Child> {
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+    use ralphy_proc_util::detach::{spawn_detached, Placement};
 
     // Otherwise the child also inherits this command's own stdout, and a
     // caller that reads it (a pipe, an SSH session) waits until the child ends.
     ralphy_proc_util::keep_std_handles_from_children();
-    let detached = CREATE_NO_WINDOW | DETACHED_PROCESS;
-    match spawn(detached | CREATE_BREAKAWAY_FROM_JOB) {
-        Err(e) if breakaway_refused(&e) => {
-            eoutln!(
-                "warning: {what} stays inside the job of the program that started it, \
-                 so it stops when that program closes"
-            );
-            spawn(detached)
-        }
-        spawned => spawned,
+    let (child, placement) = spawn_detached(spawn)?;
+    if placement == Placement::InsideJob {
+        eoutln!(
+            "warning: {what} stays inside the job of the program that started it, \
+             so it stops when that program closes"
+        );
     }
-}
-
-/// A job that does not allow breakaway makes `CreateProcess` fail with
-/// `ERROR_ACCESS_DENIED`; any other error is a real spawn failure.
-#[cfg(windows)]
-fn breakaway_refused(error: &std::io::Error) -> bool {
-    const ERROR_ACCESS_DENIED: i32 = 5;
-    error.raw_os_error() == Some(ERROR_ACCESS_DENIED)
+    Ok(child)
 }
 
 #[cfg(not(windows))]

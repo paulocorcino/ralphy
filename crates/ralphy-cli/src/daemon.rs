@@ -112,9 +112,9 @@ pub(crate) enum DaemonCommand {
         #[arg(value_name = "SLUG")]
         slug: String,
     },
-    /// Start the daemon automatically when you log in: a value under the
-    /// Windows Run key, a systemd user unit on Linux, or a launchd agent on
-    /// macOS.
+    /// Start the daemon automatically when you log in: a shortcut in the
+    /// Windows Startup folder, a systemd user unit on Linux, or a launchd agent
+    /// on macOS.
     Install,
     /// Stop starting the daemon automatically when you log in. Nothing changes
     /// when it was not set up.
@@ -394,14 +394,33 @@ fn status(port: u16) -> Result<()> {
     );
     outln!("listener: http://127.0.0.1:{port}");
     match ralphy_daemon::autostart::status() {
-        Ok(st) if st.registered => outln!("autostart: registered"),
-        Ok(_) => outln!("autostart: not registered"),
+        Ok(st) => {
+            for line in autostart_lines(st) {
+                outln!("{line}");
+            }
+        }
         Err(e) => {
             tracing::warn!(error = %e, "failed to probe daemon autostart status");
             outln!("autostart: unknown");
         }
     }
     Ok(())
+}
+
+/// The status lines of the autostart registration.
+fn autostart_lines(st: ralphy_daemon::autostart::AutostartStatus) -> Vec<&'static str> {
+    let mut lines = vec![match (st.registered, st.turned_off) {
+        (true, true) => "autostart: turned off in Task Manager (Startup apps)",
+        (true, false) => "autostart: registered",
+        (false, _) => "autostart: not registered",
+    }];
+    if st.old_registration {
+        lines.push(
+            "autostart: an entry from an earlier version is still in the registry; \
+             run `ralphy daemon install` to remove it",
+        );
+    }
+    lines
 }
 
 /// Drive the interactive baptism over `input`/`out`: prompt for a name

@@ -1,7 +1,8 @@
 //! Autostart registration for the resident daemon (ADR-0032 §10): a native OS
 //! mechanism that starts `ralphy daemon` at logon, without ralphy ever becoming
-//! the scheduler. Windows: a per-user HKCU `…\CurrentVersion\Run` value,
-//! launched hidden via `pwsh -WindowStyle Hidden` — no elevation. Linux/WSL: a
+//! the scheduler. Windows: a shortcut in the user's Startup folder that opens
+//! the `ralphyw.exe` launcher, so logon shows no window (ADR-0032, amendment
+//! 2026-11-23) — no elevation, no `reg.exe`, no PowerShell. Linux/WSL: a
 //! systemd user unit, `WantedBy=default.target`. macOS: a per-user launchd
 //! agent under `~/Library/LaunchAgents`, loaded into the `gui/<uid>` domain
 //! (ADR-0032, amendment 2026-09-15). Registration/removal is resolved with the
@@ -9,7 +10,8 @@
 //! passthrough in v1 (ADR-0032 §4).
 //!
 //! Every renderer below is host-independent and takes an explicit [`Platform`]
-//! so a single host unit-tests ALL THREE backends' output without a live
+//! (or, for Windows, plain paths) so a single host unit-tests every backend's
+//! output without a live
 //! scheduler (mirrors `schedule::platform`'s injected-`Platform` pattern). Only
 //! the executor (`executor.rs`) is `#[cfg]`-gated to the running platform.
 
@@ -18,7 +20,7 @@
 // exercised only from tests, which dead-code analysis ignores). The unused
 // arms are live on the other OSes: expect the dead code rather than lose them.
 // Every build leaves one helper unused, with or without `cfg(test)`: Windows
-// and macOS never call `unit_path`, Linux never calls `argv_succeeds`, and the
+// and macOS never call `unit_path`, Windows never calls `run_argv`, and the
 // tests call only the `pub` items. So the expectation is met on all three OSes.
 #![expect(
     dead_code,
@@ -26,20 +28,19 @@
 )]
 
 use std::fmt::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod executor;
+#[cfg(windows)]
+mod startup;
 
-pub use executor::{
-    install, launchd_reload_needed, powershell_flavor, status, uninstall, AutostartStatus,
-};
+pub use executor::{install, launchd_reload_needed, status, uninstall, AutostartStatus};
 
 /// Which autostart backend to render for. Explicit (not `#[cfg]`) so every
 /// output is testable from any host; only the executor binds this to the
 /// running platform.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Platform {
-    Windows,
     Systemd,
     Launchd,
 }
@@ -61,41 +62,68 @@ pub enum LaunchctlVerb {
     Print,
 }
 
-/// Which PowerShell the Windows Run value invokes. `pwsh` (PowerShell 7) is
-/// preferred; a Windows without it still has Windows PowerShell 5.1 as
-/// `powershell.exe`, and both accept the same `-NoProfile -WindowStyle Hidden
-/// -Command` shape and the `*>>` all-stream redirect. Registering a command
-/// whose interpreter is absent would register a daemon that never starts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PowerShellFlavor {
-    Pwsh,
-    WindowsPowerShell,
-}
-
-impl PowerShellFlavor {
-    fn program(self) -> &'static str {
-        match self {
-            PowerShellFlavor::Pwsh => "pwsh",
-            PowerShellFlavor::WindowsPowerShell => "powershell",
-        }
-    }
-}
-
-/// Autostart registration handle (Run-key value name), the systemd user unit
-/// name, and the launchd agent label. Fixed — one daemon autostart
-/// registration per machine (ADR-0032 §10).
+/// The value name of the Windows `Run` registration before 2026-11-23, the
+/// systemd user unit name, and the launchd agent label. Fixed — one daemon
+/// autostart registration per machine (ADR-0032 §10).
 pub const TASK_NAME: &str = "ralphy-daemon";
 pub const UNIT_NAME: &str = "ralphy-daemon.service";
 pub const LAUNCHD_LABEL: &str = "dev.ralphy.daemon";
 
-/// The per-user Run key Windows autostart writes to. No elevation required —
-/// HKCU is writable by the owning user (ADR-0032 §10).
-pub const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+/// The per-user `Run` key, under HKCU, where Windows autostart was registered
+/// before the Startup shortcut. `install` deletes the old value there.
+pub const RUN_SUBKEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+
+/// Where Explorer records, by shortcut file name, a Startup entry the user
+/// turned on or off in Task Manager → Startup apps.
+pub const STARTUP_APPROVED_SUBKEY: &str =
+    r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder";
+
+/// The file name of the daemon's shortcut in the Startup folder.
+pub const SHORTCUT_NAME: &str = "Ralphy daemon.lnk";
+
+/// The GUI-subsystem launcher the shortcut opens, beside `ralphy.exe`.
+pub const LAUNCHER_NAME: &str = "ralphyw.exe";
+
+/// The daemon's Windows Startup shortcut, as it is written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Shortcut {
+    /// The `.lnk` file in the Startup folder.
+    pub link: PathBuf,
+    /// The launcher it opens.
+    pub target: PathBuf,
+    /// What the launcher gets: the log file, then `daemon`.
+    pub arguments: String,
+    pub working_dir: PathBuf,
+    pub description: String,
+}
+
+/// The shortcut that starts `ralphy daemon` through the launcher beside
+/// `program`, its output appended to `log`.
+pub fn windows_shortcut(program: &Path, log: &Path, startup_dir: &Path) -> Shortcut {
+    let folder = program.parent().map(Path::to_path_buf).unwrap_or_default();
+    Shortcut {
+        link: startup_dir.join(SHORTCUT_NAME),
+        target: folder.join(LAUNCHER_NAME),
+        // A Windows path cannot hold a double quote, so quoting is enough.
+        arguments: format!("--log \"{}\" daemon", log.display()),
+        working_dir: folder,
+        description: "Starts the Ralphy daemon when you sign in".to_owned(),
+    }
+}
+
+/// Whether Task Manager → Startup apps has the entry turned off. Explorer
+/// stores flags whose first byte is odd when the entry is off (2 on, 3 off);
+/// no value means the user never touched it, which is on.
+pub fn turned_off(approved: Option<&[u8]>) -> bool {
+    approved
+        .and_then(|bytes| bytes.first())
+        .is_some_and(|flags| flags & 1 == 1)
+}
 
 /// A fully-resolved autostart registration: the program to invoke, where it
 /// appends its log, and — inside WSL only — the distro name to carry into the
-/// unit. Platform-neutral; the renderers below turn it into a `reg` argv, a
-/// systemd unit body, or a launchd plist.
+/// unit. Platform-neutral; it becomes a Windows shortcut, a systemd unit
+/// body, or a launchd plist.
 #[derive(Debug, Clone)]
 pub struct AutostartSpec {
     pub program: PathBuf,
@@ -111,8 +139,6 @@ pub struct AutostartSpec {
     /// launchd has the same gap: a launch agent's `PATH` is the login item's,
     /// not the shell's, so [`launchd_plist`] pins it too.
     pub path: Option<String>,
-    /// Which PowerShell the Windows Run value invokes. Meaningless off Windows.
-    pub shell: PowerShellFlavor,
     /// The owning user's uid — the launchd `gui/<uid>` domain the agent is
     /// bootstrapped into. Resolved by the executor; carried here so the
     /// `launchctl` argv renders (and unit-tests) on any host. Meaningless off
@@ -125,85 +151,37 @@ pub struct AutostartSpec {
 
 /// Render the install command for `spec` on `p`.
 ///
-/// - Windows: `reg add` writing the per-user Run key, each element one
-///   argument. The `/d` value wraps the invocation in
-///   `<pwsh|powershell> -NoProfile -WindowStyle Hidden -Command "…"` so the
-///   daemon starts with no visible console window and the `*>>` all-stream log
-///   redirect is preserved (mirrors `schedule::platform`'s log-capture fix). No
-///   elevation: HKCU is writable by the owning user. The interpreter is
-///   `spec.shell` — see [`PowerShellFlavor`].
 /// - Systemd: the `systemctl --user enable ralphy-daemon.service` argv. The
 ///   unit body itself is written to disk by the executor via [`systemd_unit`],
 ///   not rendered as an argv.
 /// - Launchd: the `launchctl bootstrap gui/<uid> <plist>` argv. The plist body
 ///   is written by the executor via [`launchd_plist`], like the unit.
+///
+/// Windows has no command: see [`windows_shortcut`].
 pub fn render_install(p: Platform, spec: &AutostartSpec) -> Vec<String> {
     match p {
-        Platform::Windows => {
-            let exe = spec.program.display();
-            let log = spec.log_path.display();
-            let shell = spec.shell.program();
-            // Single-quote the paths so PowerShell tolerates spaces; the outer
-            // double-quotes belong to the `-Command` argument, not to `reg`
-            // shell-quoting (we pass this argv straight to CreateProcess).
-            // The `&` call operator is required: a quoted path followed by
-            // arguments is a ParserError in pwsh 7 and Windows PowerShell 5.1.
-            let tr = format!(
-                "{shell} -NoProfile -WindowStyle Hidden -Command \"& '{exe}' daemon *>> '{log}'\""
-            );
-            vec![
-                "reg".into(),
-                "add".into(),
-                RUN_KEY.into(),
-                "/v".into(),
-                TASK_NAME.into(),
-                "/t".into(),
-                "REG_SZ".into(),
-                "/d".into(),
-                tr,
-                "/f".into(),
-            ]
-        }
         Platform::Systemd => render_systemctl(SystemctlVerb::Enable),
         Platform::Launchd => render_launchctl(LaunchctlVerb::Bootstrap, spec),
     }
 }
 
-/// Render the uninstall command. Windows: `reg delete <RUN_KEY> /v <task> /f`.
-/// Systemd: `systemctl --user disable ralphy-daemon.service` (the unit FILE
-/// removal is the executor's job, not rendered here). Launchd: `launchctl
+/// Render the uninstall command. Systemd: `systemctl --user disable
+/// ralphy-daemon.service` (the unit FILE removal is the executor's job, not
+/// rendered here). Launchd: `launchctl
 /// bootout gui/<uid>/<label>` (the plist removal is likewise the executor's).
 pub fn render_uninstall(p: Platform, spec: &AutostartSpec) -> Vec<String> {
     match p {
-        Platform::Windows => vec![
-            "reg".into(),
-            "delete".into(),
-            RUN_KEY.into(),
-            "/v".into(),
-            TASK_NAME.into(),
-            "/f".into(),
-        ],
         Platform::Systemd => render_systemctl(SystemctlVerb::Disable),
         Platform::Launchd => render_launchctl(LaunchctlVerb::Bootout, spec),
     }
 }
 
-/// Render the registration-query command. Windows: `reg query <RUN_KEY> /v
-/// <task>` — the executor reads only its EXIT CODE (0 when the value exists,
-/// 1 when absent; never localized text — see the module-level pt-BR trap this
-/// sidesteps). Systemd: `systemctl --user is-enabled ralphy-daemon.service`,
-/// whose stdout [`systemd_is_enabled`] parses. Launchd: `launchctl print
-/// gui/<uid>/<label>` — exit code only, like `reg query`; `launchctl`'s text is
-/// not a contract.
+/// Render the registration-query command. Systemd: `systemctl --user
+/// is-enabled ralphy-daemon.service`, whose stdout [`systemd_is_enabled`]
+/// parses. Launchd: `launchctl print gui/<uid>/<label>` — exit code only;
+/// `launchctl`'s text is not a contract.
 pub fn render_query(p: Platform, spec: &AutostartSpec) -> Vec<String> {
     match p {
-        Platform::Windows => vec![
-            "reg".into(),
-            "query".into(),
-            RUN_KEY.into(),
-            "/v".into(),
-            TASK_NAME.into(),
-        ],
         Platform::Systemd => render_systemctl(SystemctlVerb::IsEnabled),
         Platform::Launchd => render_launchctl(LaunchctlVerb::Print, spec),
     }
@@ -330,7 +308,7 @@ pub fn systemd_is_enabled(output: &str) -> bool {
 /// under `~/.local/bin` or Homebrew would resolve wrong or not at all.
 ///
 /// Both output streams append to `spec.log_path` — launchd has no journal;
-/// the Windows Run value uses the same file.
+/// the Windows launcher writes to the same file.
 ///
 /// Values are XML-escaped rather than dropped when unsafe (the systemd arm's
 /// `unit_safe` rule): a plist is XML, so escaping is lossless and a path

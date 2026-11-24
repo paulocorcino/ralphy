@@ -140,6 +140,9 @@ fn install_release(release: &Release, say: &mut dyn FnMut(&str)) -> Result<Insta
     // The same primitive `ralphy install` places through, so both replace a
     // running image the same way.
     let parked = crate::install::replace_binary(&dest, &staged)?;
+    if let (Some(from), Some(to)) = (staged.parent(), dest.parent()) {
+        crate::install::place_companions(from, to)?;
+    }
     // the scratch directory may be gone
     if let Err(rm_err) = std::fs::remove_dir_all(&staging) {
         tracing::debug!(

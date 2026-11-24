@@ -101,7 +101,7 @@ fn daemon_install_help_names_the_real_mechanisms() {
         .expect("the `daemon install` subcommand");
     let help = install.render_long_help().to_string();
     let help = help.split_whitespace().collect::<Vec<_>>().join(" ");
-    for mechanism in ["Run key", "systemd user unit", "launchd agent"] {
+    for mechanism in ["Startup folder", "systemd user unit", "launchd agent"] {
         assert!(
             help.contains(mechanism),
             "`daemon install --help` must name {mechanism:?}: {help}"

@@ -116,6 +116,9 @@ pub(crate) fn run(args: &InstallArgs) -> Result<()> {
     if let Some(parked) = parked {
         report_parked(&parked);
     }
+    if let Some(from) = exe.parent() {
+        place_companions(from, &dir)?;
+    }
 
     put_on_path(&dir, args.no_modify_path);
     Ok(())
@@ -247,6 +250,31 @@ pub(crate) fn replace_binary(dest: &Path, src: &Path) -> Result<Option<PathBuf>>
             Err(e).with_context(|| format!("putting the new binary at {}", dest.display()))
         }
     }
+}
+
+/// The binaries that travel beside `ralphy`: on Windows, the launcher the
+/// daemon's Startup shortcut opens.
+fn companions() -> &'static [&'static str] {
+    if cfg!(windows) {
+        &[ralphy_daemon::autostart::LAUNCHER_NAME]
+    } else {
+        &[]
+    }
+}
+
+/// Copy each companion found in `from` into `to`, the way the main binary is
+/// replaced. A companion missing from `from` is left as it is in `to`.
+pub(crate) fn place_companions(from: &Path, to: &Path) -> Result<()> {
+    for name in companions() {
+        let src = from.join(name);
+        if !src.is_file() {
+            continue;
+        }
+        if let Some(parked) = replace_binary(&to.join(name), &src)? {
+            report_parked(&parked);
+        }
+    }
+    Ok(())
 }
 
 /// Drop the parked file, or say where it is when it cannot go — on Windows that

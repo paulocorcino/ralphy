@@ -6,6 +6,7 @@ use std::process::{Child, Command};
 
 pub mod antigravity;
 pub mod cursor;
+pub mod detach;
 pub mod elevated;
 pub mod exe;
 pub mod hook_form;
