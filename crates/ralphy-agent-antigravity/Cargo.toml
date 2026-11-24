@@ -1,6 +1,6 @@
 [package]
 name = "ralphy-agent-antigravity"
-version = "0.1.0-rc.45"
+version = "0.1.0-rc.46"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
