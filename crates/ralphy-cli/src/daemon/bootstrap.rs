@@ -255,6 +255,7 @@ mod tests {
     /// `--create` never makes a parent: a missing parent is a typing error.
     #[test]
     fn create_never_makes_a_parent() {
+        git_identity();
         let tmp = tempfile::tempdir().expect("tempdir");
         let parent = tmp.path().join("typo");
         let dir = parent.join("notes");
