@@ -134,6 +134,7 @@
             <template x-for="p in g.rows" :key="p.key || p.slug">
               <!-- part: wb-project-row.part.html -->
             </template>
+            <p class="empty-note env-empty" x-show="groupEmptyNote(g)" x-text="groupEmptyNote(g)"></p>
           </div>
         </template>
         <!-- part: wb-files.part.html -->
