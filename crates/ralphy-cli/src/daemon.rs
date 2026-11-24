@@ -182,24 +182,7 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
         Some(DaemonCommand::Status) => status(args.port),
         Some(DaemonCommand::Add { path, init, create }) => {
             let repo = bootstrap::resolve_or_init_repo(path, *init, *create)?;
-            let registry_path = registry::repos_toml_path()?;
-            let reg = register::register_or_migrate(&registry_path, &repo)?;
-            let former = registry::load_from(&registry_path)?
-                .entry(&reg.slug)
-                .map(|e| e.former_slugs.clone())
-                .unwrap_or_default();
-            register::migrate_side_stores(&reg, &former);
-            for old in &reg.migrated_from {
-                outln!("migrated {old} → {}", reg.slug);
-            }
-            if let Some(hash) = &reg.declined {
-                outln!(
-                    "kept {} (origin no longer yields a forge slug; {hash} not inserted)",
-                    reg.slug
-                );
-            }
-            outln!("registered {} → {}", reg.slug, repo.display());
-            Ok(())
+            register::add_and_report(&repo)
         }
         Some(DaemonCommand::Remove { slug }) => {
             let removed = remove_repo_at(&registry::repos_toml_path()?, slug)?;
