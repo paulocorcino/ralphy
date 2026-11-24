@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.46",
+      "date": "2026-11-24",
+      "announce": true,
+      "entries": [
+        {
+          "id": "setup-steps",
+          "kind": "feature",
+          "text": "`ralphy daemon setup` walks through four numbered steps, checks a code from your authenticator app, and hides the password as you type."
+        },
+        {
+          "id": "add-project-git-identity",
+          "kind": "fix",
+          "text": "Add a project asks for a git name and email when the computer has none, and no longer leaves an empty repository."
+        },
+        {
+          "id": "install-launcher-missing",
+          "kind": "fix",
+          "text": "When an antivirus removes the sign-in launcher, the Windows install warns and says how to put it back."
+        },
+        {
+          "id": "sidebar-local-header",
+          "kind": "fix",
+          "text": "With no local project and a remote host, the sidebar shows this computer's header and the host's header."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.45",
       "date": "2026-11-24",
       "announce": true,
