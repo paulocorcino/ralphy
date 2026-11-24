@@ -345,6 +345,11 @@ export function shell() {
       );
     },
 
+    // The note under a machine's header when no project row shows there.
+    groupEmptyNote(g: Group) {
+      return WBFleet.emptyNote(g, this.projectQuery.trim() !== "");
+    },
+
     // Sidebar row label: the repo name, UPPERCASED (wb-project.ts).
     repoLabel(p: Project) {
       return WBProject.repoLabel(p);

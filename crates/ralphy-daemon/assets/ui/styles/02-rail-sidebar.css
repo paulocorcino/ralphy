@@ -358,8 +358,14 @@
 }
 /* An open project claims the whole column, so the headers step aside with the
    collapsed rows — a lone header over one row reads like a broken list. */
-.projects.has-open .env-group {
+.projects.has-open .env-group,
+.projects.has-open .env-empty {
   display: none;
+}
+.env-empty {
+  margin: 0;
+  padding: var(--space-6) var(--space-6) var(--space-8);
+  opacity: 0.7;
 }
 .env-group .env-label {
   overflow: hidden;

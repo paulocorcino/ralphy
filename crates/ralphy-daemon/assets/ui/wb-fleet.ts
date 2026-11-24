@@ -366,8 +366,16 @@ function peerRoot(row: { root?: string | null; path?: string | null }) {
   return textOr(row.root, row.path ?? "");
 }
 
+// The note under a headed group with no row: "" when it has rows or no
+// header. A search that hides every row is not an empty machine.
+function emptyNote(group: Group, searching: boolean) {
+  if (group.header !== true || group.rows.length > 0) return "";
+  return searching ? "No matching projects" : "No projects";
+}
+
 export const WBFleet = {
   peerRoot: peerRoot,
+  emptyNote: emptyNote,
   stateWord: stateWord,
   fleetGroups: fleetGroups,
   system: system,

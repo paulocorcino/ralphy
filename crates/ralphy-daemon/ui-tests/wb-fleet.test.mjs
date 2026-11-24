@@ -412,3 +412,12 @@ test("a row with no environment, OS or daemon name gives a group of empty words"
   assert.deepEqual(seed(local), { environment: "", os: "", daemon: "", name: "", state: "local", local: true });
   assert.deepEqual(seed(peer), { environment: "", os: "", daemon: "01XYZ", name: "", state: "", local: false });
 });
+
+test("a headed group with no row says it has no projects", () => {
+  const wb = load();
+  const empty = { header: true, rows: [] };
+  assert.equal(wb.emptyNote(empty, false), "No projects");
+  assert.equal(wb.emptyNote(empty, true), "No matching projects");
+  assert.equal(wb.emptyNote({ header: true, rows: [LOCAL_ROW] }, false), "");
+  assert.equal(wb.emptyNote({ header: false, rows: [] }, false), "", "a fleet of one has no header");
+});
