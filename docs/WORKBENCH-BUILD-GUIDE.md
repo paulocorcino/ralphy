@@ -158,19 +158,6 @@ shows `text` in its pane; the next open tries again. To add such a library:
 3. Pass the path to `loadVendor` as a string. The build leaves a dynamic
    `import()` as it is, so the path is the served path.
 
-### anydoc-wasm (pinned `@firecrawl/anydoc-wasm` `0.2.5`)
-
-The reader of docx, odt, xlsx and ods files. `vendor/anydoc/` holds
-`anydoc_wasm.js`, `anydoc_wasm_bg.wasm`, `anydoc_wasm.d.ts` and `LICENSE` of
-the npm tarball, byte for byte. The `.d.ts` file gives the model types to
-the modules and is not served, so the manifest does not list it. Only
-`wb-anydoc-worker.ts` imports the glue, inside a module worker that
-`wb-anydoc.ts` starts on the first read and ends when it is idle. The glue
-fetches the `.wasm` file next to itself; the daemon serves it gzipped
-(6.7 MB, 2.9 MB after gzip). WebAssembly compiles under the page policy
-through `'unsafe-eval'`. The glue has no `eval` and no `new Function`; check
-this again after a bump.
-
 ### docx-preview (pinned `0.4.1`, with jszip `3.10.2`), built
 
 The docx viewer (ADR-0091 D10, amendment of 2026-11-23). It is built, as
@@ -195,6 +182,19 @@ every `media-*` element. Imported as a module, its one top-level name
 `customElements`. The file has no `eval` and no `new Function`; check this
 again after a bump. Its last line names a source map that is not vendored, so
 the browser's developer tools show one missing file.
+
+### SheetJS (pinned `0.20.3`)
+
+The reader of xlsx and ods files, and the zip reader of the odt viewer
+(ADR-0091, amendment of 2026-11-23). `vendor/sheetjs/` holds `xlsx.mjs` and
+`LICENSE` of the tarball at `https://cdn.sheetjs.com/xlsx-0.20.3/`, byte for
+byte. Take a bump from that site, not from npm: the `xlsx` package on npm
+stopped at 0.18.5, which has known vulnerabilities. `xlsx.mjs` is one ES
+module with no import (1.0 MB, 254 KB after gzip); `wb-sheet-read.ts` loads
+it the first time a sheet or an odt opens. It has no `eval` and no `new
+Function`; check this again after a bump. The odt reader opens the zip with
+its exported `CFB` and reads `content.xml` with the browser's `DOMParser`
+(`wb-odt.ts`).
 
 ### Tabulator (pinned `tabulator-tables` `6.7.1`)
 

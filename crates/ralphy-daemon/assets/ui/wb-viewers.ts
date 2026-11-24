@@ -45,7 +45,7 @@ export const VIEWERS: Record<string, ViewerEntry> = {
     build: buildDocument,
   },
   sheet: {
-    extensions: ["xlsx", "ods"],
+    extensions: ["xlsx", "xls", "ods"],
     build: buildSheet,
   },
   pdf: {

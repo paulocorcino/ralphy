@@ -3,7 +3,7 @@
 // A font the browser refuses shows the message. The pane saves nothing.
 import { setMarkup } from "./wb-html.ts";
 import { need, required } from "./wb-dom-need.ts";
-import { fileBytesUrl } from "./wb-file-bytes.ts";
+import { fileBytesUrl, readWholeFile } from "./wb-file-bytes.ts";
 import { devError } from "./wb-log.ts";
 import type { ViewerReadOnlyDeps } from "./wb-file-viewer-read-only.ts";
 import type { BytesRecord } from "./wb-file-viewer-records.ts";
@@ -21,44 +21,17 @@ export type FontDeps = {
 /** The browser's own fetch and FontFace; a test passes its own. */
 export function liveFontDeps(document: Pick<Document, "fonts">): FontDeps {
   return {
-    fetchBytes: (url) => readFrom(url, 0, []).then(joined),
+    fetchBytes: async (url) => {
+      const bytes = await readWholeFile(url);
+      if (bytes === "too large") throw new Error("the font file is over its cap");
+      return bytes;
+    },
     addFace: async (family, bytes) => {
       const face = new FontFace(family, bytes);
       await face.load();
       document.fonts.add(face);
     },
   };
-}
-
-// The route answers at most 8 MiB at a time (ADR-0091 D4), so the rest of a
-// larger font is asked again from the next byte.
-async function readFrom(url: string, offset: number, parts: ArrayBuffer[]): Promise<ArrayBuffer[]> {
-  const reply = await fetch(url, { headers: { Range: `bytes=${offset}-` } });
-  if (!reply.ok) throw new Error(`the file bytes route answered ${reply.status}`);
-  const part = await reply.arrayBuffer();
-  const next = [...parts, part];
-  const end = offset + part.byteLength;
-  const total = totalOf(reply.headers.get("Content-Range"));
-  if (reply.status !== 206 || part.byteLength === 0 || end >= total) return next;
-  return readFrom(url, end, next);
-}
-
-// The size after the slash of `bytes 0-8388607/9000000`; 0 when it is absent,
-// which ends the reading.
-function totalOf(range: string | null) {
-  const match = /\/(\d+)$/u.exec(range ?? "");
-  return match ? Number(match[1]) : 0;
-}
-
-function joined(parts: ArrayBuffer[]) {
-  const size = parts.reduce((sum, part) => sum + part.byteLength, 0);
-  const out = new Uint8Array(new ArrayBuffer(size));
-  let at = 0;
-  for (const part of parts) {
-    out.set(new Uint8Array(part), at);
-    at += part.byteLength;
-  }
-  return out;
 }
 
 function sampleLine(document: Document, family: string, size: number) {

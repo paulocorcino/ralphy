@@ -1,20 +1,19 @@
-// The sheet pane (ADR-0091 D11, amended 2026-11-20): an xlsx or ods file is
-// read by the document worker, a csv or tsv text by Tabulator's own importer,
-// and both draw in a virtual Tabulator grid. Only the filter, column and
-// import modules are registered, so the grid has no download (D12). A cell
-// draws with the `plaintext` formatter: text from the file never becomes markup.
+// The sheet pane (ADR-0091 D11, amended 2026-11-23): an xlsx or ods file is
+// read by SheetJS, a csv or tsv text by `wb-sheet-csv.ts`, and both draw in a
+// virtual Tabulator grid. The download module is never registered, so the
+// grid has no download (D12). A cell draws with the `plaintext` formatter:
+// text from the file never becomes markup.
 import { setMarkup } from "./wb-html.ts";
 import { need, required } from "./wb-dom-need.ts";
-import { fileBytesUrl } from "./wb-file-bytes.ts";
+import { fileBytesUrl, readWholeFile } from "./wb-file-bytes.ts";
 import { devError } from "./wb-log.ts";
 import { showLoading } from "./wb-viewer-loading.ts";
 import { guessSeparator, parseDelimited, SEPARATORS } from "./wb-sheet-csv.ts";
 import type { Separator } from "./wb-sheet-csv.ts";
-import { readAnydoc } from "./wb-anydoc.ts";
+import { loadSheetJs, readSheets } from "./wb-sheet-read.ts";
+import type { Sheet } from "./wb-sheet-read.ts";
 import { loadVendor } from "./wb-vendor-load.ts";
-import type { AnydocFormat, AnydocResult } from "./wb-anydoc.ts";
 import type { VendorLoad } from "./wb-vendor-load.ts";
-import type { Block, Document as DocModel, Inline, Table } from "./vendor/anydoc/anydoc_wasm.js";
 import type { ViewerReadOnlyDeps } from "./wb-file-viewer-read-only.ts";
 import type { BytesRecord } from "./wb-file-viewer-records.ts";
 
@@ -22,11 +21,10 @@ export const TABULATOR_PATH = "./vendor/tabulator/tabulator_esm.min.mjs";
 const TABULATOR_CSS_PATH = "vendor/tabulator/tabulator.min.css";
 /** The most rows a sheet draws (ADR-0091 D11, D14). */
 export const MAX_SHEET_ROWS = 500_000;
-export const SHEET_TOO_LARGE_TEXT = "This sheet is too large to show: the limit is 2 megabytes.";
+export const SHEET_TOO_LARGE_TEXT = "This sheet is too large to show: the limit is 16 megabytes.";
 export const SHEET_ERROR_TEXT = "This file could not be read as a sheet.";
 
-/** One sheet: its name and its rows of cell text. */
-export type Sheet = { name: string; rows: string[][] };
+export type { Sheet } from "./wb-sheet-read.ts";
 
 type GridRow = Record<string, string>;
 type GridColumn = { title: string; field: string; formatter: "plaintext" };
@@ -135,33 +133,6 @@ export function applyFilter(grid: Grid, term: string) {
     return;
   }
   grid.setFilter((row) => Object.values(row).some((cell) => cell.toLowerCase().includes(needle)));
-}
-
-function inlineText(items: Inline[] | undefined): string {
-  return (items ?? []).map((one) => one.text ?? inlineText(one.content)).join("");
-}
-
-function blockText(items: Block[] | undefined): string {
-  return (items ?? [])
-    .map((block) => block.text ?? (inlineText(block.content) || blockText(block.blocks)))
-    .join("\n");
-}
-
-function tableRows(table: Table | undefined): string[][] {
-  return (table?.grid ?? []).map((row) => row.map((slot) => blockText(slot.cell?.blocks)));
-}
-
-/** The sheets of a read xlsx or ods: a heading names the table after it. */
-export function sheetsOf(model: DocModel): Sheet[] {
-  const sheets: Sheet[] = [];
-  let name: string | null = null;
-  for (const block of model.blocks) {
-    if (block.kind === "heading") name = inlineText(block.content);
-    if (block.kind !== "table") continue;
-    sheets.push({ name: name ?? `Sheet ${sheets.length + 1}`, rows: tableRows(block.table) });
-    name = null;
-  }
-  return sheets;
 }
 
 // The separator selector of a csv grid: its first value is the guess.
@@ -302,31 +273,13 @@ function sheetView(document: Document, kit: TabulatorKit): SheetView & { close: 
   return { bar, holder, show, close };
 }
 
-/** The steps of a sheet pane: the file's bytes, their model, and the grid library. */
+/** The steps of a sheet pane: the file's bytes, and the libraries. */
 export type SheetDeps = {
   fetchBytes: (url: string) => Promise<Uint8Array | "too large">;
-  read: (bytes: Uint8Array, format: AnydocFormat) => Promise<AnydocResult>;
   load: (path: string) => Promise<VendorLoad>;
 };
 
-// An xlsx or ods file is at most 2 MiB (ADR-0091 D3), under one answer of the
-// route, so one request reads it whole. A larger file is refused with 413.
-async function fetchSheetBytes(url: string): Promise<Uint8Array | "too large"> {
-  const reply = await fetch(url);
-  if (reply.status === 413) return "too large";
-  if (!reply.ok) throw new Error(`the file bytes route answered ${reply.status}`);
-  return new Uint8Array(await reply.arrayBuffer());
-}
-
-export const liveSheetDeps: SheetDeps = {
-  fetchBytes: fetchSheetBytes,
-  read: readAnydoc,
-  load: loadVendor,
-};
-
-function formatOf(path: string): AnydocFormat {
-  return path.toLowerCase().endsWith(".ods") ? "ods" : "xlsx";
-}
+export const liveSheetDeps: SheetDeps = { fetchBytes: readWholeFile, load: loadVendor };
 
 async function loadKit(load: SheetDeps["load"]): Promise<TabulatorKit | string> {
   const outcome = await load(TABULATOR_PATH);
@@ -334,7 +287,7 @@ async function loadKit(load: SheetDeps["load"]): Promise<TabulatorKit | string> 
   return isKit(outcome.module) ? outcome.module : SHEET_ERROR_TEXT;
 }
 
-type Shown = { meta: HTMLElement; toolbar: HTMLElement; body: HTMLElement; path: string };
+type Shown = { meta: HTMLElement; toolbar: HTMLElement; body: HTMLElement };
 
 async function showFile(document: Document, deps: SheetDeps, url: string, at: Shown) {
   const bytes = await deps.fetchBytes(url);
@@ -342,19 +295,20 @@ async function showFile(document: Document, deps: SheetDeps, url: string, at: Sh
     at.meta.textContent = SHEET_TOO_LARGE_TEXT;
     return;
   }
-  const [result, kit] = await Promise.all([
-    deps.read(bytes, formatOf(at.path)),
-    loadKit(deps.load),
-  ]);
+  const [xlsx, kit] = await Promise.all([loadSheetJs(deps.load), loadKit(deps.load)]);
+  if (typeof xlsx === "string") {
+    at.meta.textContent = xlsx;
+    return;
+  }
   if (typeof kit === "string") {
     at.meta.textContent = kit;
     return;
   }
-  if (!result.ok) throw new Error(`the sheet reader failed: ${result.code}`);
+  const sheets = readSheets(xlsx, bytes);
   const view = sheetView(document, kit);
   at.toolbar.insertBefore(view.bar, at.meta);
   at.body.append(view.holder);
-  view.show(sheetsOf(result.document));
+  view.show(sheets);
 }
 
 export function buildSheet(
@@ -387,7 +341,7 @@ export function buildSheet(
   const at = { meta, toolbar: need(el, ".viewer-toolbar"), body: need(el, ".sheet-body") };
   const url = fileBytesUrl(rec.project, rec.path, rec.checkout);
   const loaded = showLoading(document, at.body);
-  void showFile(document, deps, url, { ...at, path: rec.path }).then(loaded, (err: unknown) => {
+  void showFile(document, deps, url, at).then(loaded, (err: unknown) => {
     loaded();
     devError("[workbench] sheet failed to load", err);
     meta.textContent = SHEET_ERROR_TEXT;
