@@ -34,6 +34,19 @@ fn bytes_that_disagree_with_the_extension_are_not_found() {
 }
 
 #[test]
+fn an_xls_is_served_only_with_the_ole2_head() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("old.xls"), [OLE2, &[0; 64]].concat()).expect("write");
+    let ok = read_range(dir.path(), "old.xls", whole()).expect("an xls");
+    assert_eq!(ok.media_type, "application/vnd.ms-excel");
+    fs::write(dir.path().join("fake.xls"), b"<html>not a sheet</html>").expect("write");
+    assert_eq!(
+        read_range(dir.path(), "fake.xls", whole()),
+        Err(BytesError::NotFound)
+    );
+}
+
+#[test]
 fn a_range_reads_only_its_bytes() {
     let dir = tempfile::tempdir().expect("tempdir");
     let file = png_of(100);

@@ -1,0 +1,15 @@
+# Advisories osv-scanner reports for the vendored UI libraries (security.yml)
+# that do not apply. Each entry names the fix and expires, so it is read again.
+
+# SheetJS stopped publishing to npm at 0.18.5. The npm entries of these two
+# advisories therefore have no fixed version and match every `xlsx` version.
+# vendor/sheetjs/xlsx.mjs is 0.20.3 from cdn.sheetjs.com, which has both fixes.
+[[IgnoredVulns]]
+id = "GHSA-4r6h-8v6p-xvw6"
+ignoreUntil = 2027-05-24
+reason = "CVE-2023-30533, prototype pollution: fixed in SheetJS 0.19.3; the vendored copy is 0.20.3"
+
+[[IgnoredVulns]]
+id = "GHSA-5pgg-2g8v-p4x9"
+ignoreUntil = 2027-05-24
+reason = "CVE-2024-22363, ReDoS: fixed in SheetJS 0.20.2; the vendored copy is 0.20.3"

@@ -4,8 +4,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as XLSX from "../assets/ui/vendor/sheetjs/xlsx.mjs";
 import { loadSheetJs, readSheets, zipFile, zipPaths } from "../assets/ui/wb-sheet-read.ts";
+import { VIEWERS, viewerKindOf } from "../assets/ui/wb-viewers.ts";
 
-function workbook() {
+function workbook(bookType = "xlsx") {
   const book = XLSX.utils.book_new();
   const data = XLSX.utils.aoa_to_sheet([
     ["name", "amount"],
@@ -15,7 +16,7 @@ function workbook() {
   data["!ref"] = "A1:C2";
   XLSX.utils.book_append_sheet(book, data, "Relatório");
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([["only"]]), "Second");
-  return new Uint8Array(XLSX.write(book, { type: "array", bookType: "xlsx" }));
+  return new Uint8Array(XLSX.write(book, { type: "array", bookType }));
 }
 
 test("the sheets keep their names, and a formula shows its stored value", async () => {
@@ -46,4 +47,18 @@ test("a file of a zip is found by its path, and the paths have no root", () => {
   assert.equal(zipFile(zip, "missing.xml"), null);
   assert.ok(zipPaths(zip).includes("xl/workbook.xml"));
   assert.equal(zipPaths(zip).some((path) => path.startsWith("Root Entry")), false);
+});
+
+test("an xls (Excel 97-2003) reads like an xlsx, and opens in the sheet viewer", async () => {
+  const xlsx = await loadSheetJs((path) =>
+    import(path.replace("./", "../assets/ui/")).then((module) => ({ ok: true, module })),
+  );
+  const sheets = readSheets(xlsx, workbook("biff8"));
+  assert.deepEqual(
+    sheets.map((sheet) => sheet.name),
+    ["Relatório", "Second"],
+  );
+  assert.deepEqual(sheets[0].rows[1], ["fig", "1.5", "3"]);
+  assert.equal(viewerKindOf("xls"), "sheet");
+  assert.ok(VIEWERS.sheet.extensions.includes("xls"));
 });

@@ -424,8 +424,10 @@ a real odt of 52 KB in 32 ms in Chromium: paragraphs, bold, italics,
 indents, a numbered list and an image, close to the PDF that Word exported.
 It reads the zip with the `CFB` reader that SheetJS exports.
 
-**D3, changed.** The cap of an xlsx or an ods file is 16 MiB. The viewer
-reads a file over 8 MiB in more than one answer of D4.
+**D3, changed.** xls joins the list of kinds: its bytes must start with the
+OLE2 head (`D0 CF 11 E0 A1 B1 1A E1`). The cap of an xlsx, xls or ods file
+is 16 MiB. The viewer reads a file over 8 MiB in more than one answer of
+D4.
 
 **D8, changed.** SheetJS (`vendor/sheetjs/xlsx.mjs`) is a vendored library
 of the sheet and document viewers. anydoc-wasm and its worker are removed.
@@ -437,5 +439,6 @@ in a new tab with `noopener noreferrer`. A style gives only a closed list
 of properties, each checked against its own pattern (weight, style,
 underline, alignment, size, color, background, margin, font family).
 
-**D11, changed.** An xlsx or ods file is read by SheetJS. A cell shows its
-formatted value, as the file stored it. No formula runs.
+**D11, changed.** An xlsx, xls (Excel 97–2003) or ods file is read by
+SheetJS, which reads cell values only: a macro of an xls never runs. A cell
+shows its formatted value, as the file stored it. No formula runs.

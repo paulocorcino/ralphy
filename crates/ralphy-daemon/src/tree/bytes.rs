@@ -12,7 +12,7 @@ use crate::confine;
 const MIB: u64 = 1024 * 1024;
 /// Cap on the whole file of an image, a document, a csv or a tsv file.
 pub(super) const MAX_WHOLE_FILE_BYTES: u64 = 32 * MIB;
-/// Cap on the whole file of an xlsx or an ods file (ADR-0091 D3, amended 2026-11-23).
+/// Cap on the whole file of an xlsx, xls or ods file (ADR-0091 D3, amended 2026-11-23).
 pub(super) const MAX_SHEET_BYTES: u64 = 16 * MIB;
 /// Cap on the whole file of a font.
 pub(super) const MAX_FONT_BYTES: u64 = 16 * MIB;
@@ -27,6 +27,7 @@ enum Check {
     Image(ImageType),
     Pdf,
     Zip,
+    Ole2,
     OpenDoc(&'static [u8]),
     Text,
     Mp4,
@@ -64,6 +65,7 @@ fn kind_of(ext: &str) -> Option<Kind> {
         "docx" => Some(row(DOCX, Check::Zip, whole)),
         "odt" => Some(row(ODT, Check::OpenDoc(ODT_MIME), whole)),
         "xlsx" => Some(row(XLSX, Check::Zip, Some(MAX_SHEET_BYTES))),
+        "xls" => Some(row(XLS, Check::Ole2, Some(MAX_SHEET_BYTES))),
         "ods" => Some(row(ODS, Check::OpenDoc(ODS_MIME), Some(MAX_SHEET_BYTES))),
         "csv" => Some(row("text/csv", Check::Text, whole)),
         "tsv" => Some(row("text/tab-separated-values", Check::Text, whole)),
@@ -87,6 +89,9 @@ fn kind_of(ext: &str) -> Option<Kind> {
 
 const DOCX: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const XLSX: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const XLS: &str = "application/vnd.ms-excel";
+/// The first bytes of every OLE2 compound file, the container of an xls.
+const OLE2: &[u8] = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1";
 const ODT: &str = "application/vnd.oasis.opendocument.text";
 const ODS: &str = "application/vnd.oasis.opendocument.spreadsheet";
 
@@ -96,6 +101,7 @@ impl Check {
             Check::Image(image) => image.matches(head),
             Check::Pdf => head.starts_with(b"%PDF-"),
             Check::Zip => head.starts_with(b"PK\x03\x04"),
+            Check::Ole2 => head.starts_with(OLE2),
             Check::OpenDoc(mime) => open_doc_mimetype_is(head, mime),
             Check::Text => !head.contains(&0),
             Check::Mp4 => head.get(4..8) == Some(b"ftyp"),
