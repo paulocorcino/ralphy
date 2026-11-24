@@ -66,3 +66,51 @@ fn the_registry_family_is_exactly_the_two_verbs() {
         .collect();
     assert_eq!(family, [Verb::DirList, Verb::ProjectAdd]);
 }
+
+#[test]
+fn project_add_argv_adds_the_git_identity_after_init() {
+    let payload = json!({
+        "path": absolute(), "init": true, "gitName": "Ana Lima", "gitEmail": "ana@example.com"
+    });
+    let argv = project_add_argv(&payload).expect("valid");
+    assert_eq!(
+        argv,
+        [
+            "daemon",
+            "add",
+            "--init",
+            "--git-name",
+            "Ana Lima",
+            "--git-email",
+            "ana@example.com",
+            "--",
+            absolute()
+        ]
+    );
+}
+
+#[test]
+fn project_add_argv_refuses_a_bad_git_identity() {
+    let long = "a".repeat(257);
+    for (name, email) in [
+        (json!("Ana"), json!(null)),
+        (json!(null), json!("ana@example.com")),
+        (json!(""), json!("ana@example.com")),
+        (json!(" Ana"), json!("ana@example.com")),
+        (json!("-Ana"), json!("ana@example.com")),
+        (json!("An\na"), json!("ana@example.com")),
+        (json!(long), json!("ana@example.com")),
+        (json!(7), json!("ana@example.com")),
+        (json!("Ana"), json!("ana")),
+        (json!("Ana"), json!("@example.com")),
+        (json!("Ana"), json!("ana@")),
+        (json!("Ana"), json!("ana lima@example.com")),
+        (json!("Ana"), json!("<ana@example.com>")),
+    ] {
+        let payload =
+            json!({ "path": absolute(), "init": true, "gitName": name, "gitEmail": email });
+        assert!(project_add_argv(&payload).is_err(), "{payload}");
+    }
+    let without_init = json!({ "path": absolute(), "gitName": "Ana", "gitEmail": "a@b.c" });
+    assert!(project_add_argv(&without_init).is_err(), "needs --init");
+}

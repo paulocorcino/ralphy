@@ -96,6 +96,25 @@ test("dialog: a refused add keeps the dialog open with the reason", async () => 
   assert.deepEqual(toggled, []);
 });
 
+test("dialog: git with no name and email asks for them, and the next add sends them", async () => {
+  const { state, calls, replies } = dialog();
+  ready(state, "C:\\Dev\\notes");
+  replies["project.add"] = { status: "error", message: "git has no name", needs: "gitIdentity" };
+  await state.addProjectSubmit();
+  assert.equal(state.addProjectAsksIdentity(), true);
+  assert.equal(state.addProject.error, "");
+  assert.match(state.addProjectHelp(), /^Git on this computer has no name and email/u);
+  state.addProjectIdentity("name", "Ana");
+  state.addProjectIdentity("email", "ana@example.com");
+  assert.equal(state.addProjectGitName(), "Ana");
+  replies["project.add"] = { status: "ok", slug: "o/notes", path: "C:/Dev/notes" };
+  await state.addProjectSubmit();
+  assert.deepEqual(calls[1], [
+    "project.add",
+    { daemon: "", path: "C:\\Dev\\notes", init: true, gitName: "Ana", gitEmail: "ana@example.com" },
+  ]);
+});
+
 test("dialog: a WSL path with no peer calls no verb", () => {
   const { state, calls } = dialog();
   const listings = [];

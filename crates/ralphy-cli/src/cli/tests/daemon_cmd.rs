@@ -26,7 +26,10 @@ fn daemon_add_init_flag_parses() {
     let Command::Daemon(args) = cli.command else {
         panic!("expected the `daemon` subcommand");
     };
-    let Some(daemon::DaemonCommand::Add { path, init, create }) = args.command else {
+    let Some(daemon::DaemonCommand::Add {
+        path, init, create, ..
+    }) = args.command
+    else {
         panic!("expected `daemon add`");
     };
     assert_eq!(path, PathBuf::from("."));
@@ -45,6 +48,25 @@ fn daemon_add_init_flag_parses() {
     // A new folder always gets a repository: `--create` needs `--init`.
     assert!(Cli::try_parse_from(["ralphy", "daemon", "add", "--create", "x"]).is_err());
     assert!(Cli::try_parse_from(["ralphy", "daemon", "add", "--init", "--create", "x"]).is_ok());
+
+    // The git name and email come together, and only with `--init`.
+    let both = ["--git-name", "Ana", "--git-email", "a@b.c"];
+    let parse = |args: &[&str]| {
+        let mut words = vec!["ralphy", "daemon", "add"];
+        words.extend_from_slice(args);
+        words.push("x");
+        Cli::try_parse_from(words).is_ok()
+    };
+    assert!(parse(&[&["--init"][..], &both[..]].concat()));
+    assert!(!parse(&both), "needs --init");
+    assert!(
+        !parse(&["--init", "--git-name", "Ana"]),
+        "needs --git-email"
+    );
+    assert!(
+        !parse(&["--init", "--git-email", "a@b.c"]),
+        "needs --git-name"
+    );
 }
 
 #[test]

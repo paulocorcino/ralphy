@@ -133,7 +133,13 @@ interface DaemonReplies {
   "config.get": DaemonReply & { config?: { [key: string]: JsonValue | undefined } };
   "host.aliases": DaemonReply & { aliases?: import("./wb-hosts.ts").Alias[] };
   "host.key": DaemonReply & { key?: import("./wb-hosts.ts").KeyReply };
-  "project.add": DaemonReply & { slug?: string; name?: string; path?: string };
+  /** `needs` is set when git on that computer has no name and email. */
+  "project.add": DaemonReply & {
+    slug?: string;
+    name?: string;
+    path?: string;
+    needs?: "gitIdentity";
+  };
   "dir.list": DaemonReply & {
     entries?: { name: string; repo: boolean; added: boolean; error?: string }[];
     /** How many folders the list left out. */

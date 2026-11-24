@@ -47,7 +47,7 @@ pub use argv::{
     worktree_list_argv, worktree_remove_argv, ArgvError,
 };
 pub use host::{host_argv, host_password};
-pub use registry::project_add_argv;
+pub use registry::{project_add_argv, valid_git_email, valid_git_name, GIT_IDENTITY_MISSING};
 #[cfg(test)]
 pub(crate) use spawn::MAX_COLLECT_CHILDREN;
 pub use spawn::{collect, collect_apart, dispatch, ralphy_exe, Child, CollectedOutput};

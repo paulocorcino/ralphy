@@ -105,6 +105,16 @@ pub(crate) enum DaemonCommand {
         /// must exist. Needs --init.
         #[arg(long, requires = "init")]
         create: bool,
+
+        /// Save NAME as `user.name` in your global git settings before the
+        /// first commit. Needs --init and --git-email.
+        #[arg(long, value_name = "NAME", requires_all = ["init", "git_email"])]
+        git_name: Option<String>,
+
+        /// Save EMAIL as `user.email` in your global git settings before the
+        /// first commit. Needs --init and --git-name.
+        #[arg(long, value_name = "EMAIL", requires_all = ["init", "git_name"])]
+        git_email: Option<String>,
     },
     /// Remove a repo from the daemon by its `owner/repo` name. Nothing changes
     /// when it is not there.
@@ -180,8 +190,15 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
         ),
         Some(DaemonCommand::Setup { .. }) => setup::setup(args.port),
         Some(DaemonCommand::Status) => status(args.port),
-        Some(DaemonCommand::Add { path, init, create }) => {
-            let repo = bootstrap::resolve_or_init_repo(path, *init, *create)?;
+        Some(DaemonCommand::Add {
+            path,
+            init,
+            create,
+            git_name,
+            git_email,
+        }) => {
+            let identity = git_name.as_deref().zip(git_email.as_deref());
+            let repo = bootstrap::resolve_or_init_repo(path, *init, *create, identity)?;
             register::add_and_report(&repo)
         }
         Some(DaemonCommand::Remove { slug }) => {

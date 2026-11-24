@@ -26,6 +26,17 @@
           <p class="run-help" x-show="addProjectHelp()" x-text="addProjectHelp()"></p>
           <p class="side-error" role="alert" x-show="addProject.error" x-text="addProject.error"></p>
 
+          <label class="run-label" for="add-project-git-name" x-show="addProjectAsksIdentity()">Name</label>
+          <input type="text" id="add-project-git-name" class="host-input" x-show="addProjectAsksIdentity()"
+                 :value="addProjectGitName()" :disabled="addProject.adding"
+                 @input="addProjectIdentity('name', $event.target.value)" @keydown.enter="addProjectSubmit()"
+                 autocomplete="name" spellcheck="false" />
+          <label class="run-label" for="add-project-git-email" x-show="addProjectAsksIdentity()">Email</label>
+          <input type="email" id="add-project-git-email" class="host-input" x-show="addProjectAsksIdentity()"
+                 :value="addProjectGitEmail()" :disabled="addProject.adding"
+                 @input="addProjectIdentity('email', $event.target.value)" @keydown.enter="addProjectSubmit()"
+                 autocomplete="email" spellcheck="false" />
+
           <ul id="add-project-list" class="add-project-list" role="listbox" aria-label="Folders" x-show="addProjectListable()"
               @pointerdown="_addProjectTouch = $event.pointerType !== 'mouse'">
             <template x-for="(e, i) in addProjectEntries()" :key="e.name">

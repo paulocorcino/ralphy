@@ -68,6 +68,25 @@ export function addProjectDialog() {
     addProjectListable() {
       return WBAddProject.listable(this.addProject);
     },
+    // The chosen Where, as the list shows it: "this computer" or a peer.
+    addProjectPlaceName() {
+      const place = this.addProjectPlaces().find((p) => p.id === this.addProject.daemon);
+      return !place || place.id === "" ? "this computer" : place.label;
+    },
+    addProjectAsksIdentity() {
+      return this.addProject.identity !== null;
+    },
+    addProjectGitName() {
+      return this.addProject.identity?.name ?? "";
+    },
+    addProjectGitEmail() {
+      return this.addProject.identity?.email ?? "";
+    },
+    addProjectIdentity(field: "name" | "email", value: string) {
+      this.addProjectStep(
+        field === "name" ? { type: "identity", name: value } : { type: "identity", email: value },
+      );
+    },
     addProjectWhere(daemon: string) {
       this.addProjectStep({ type: "where", daemon });
       this.addProjectList(0);
@@ -154,6 +173,8 @@ export function addProjectDialog() {
         this.addProjectStep({
           type: "addFailed",
           message: WBFail.failed(reply, "Could not add the project: the daemon gave no reason."),
+          needsIdentity: reply.needs === "gitIdentity",
+          place: this.addProjectPlaceName(),
         });
         void this.$store.projects.loadRepos({ git: false });
         return;
