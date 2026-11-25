@@ -2,16 +2,18 @@
 
 use std::fs;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use ralphy_adapter_support::{run_exec_session, run_plan_session, ExecCfg, PlanCfg};
 use ralphy_core::{git, plan, Agent, Execution, Issue, Plan, Workspace};
+use ralphy_proc_util::opencode::OpenCodeMajor;
+use regex::Regex;
 use tracing::info;
 
 use crate::events::{
-    is_opencode_auth_error, parse_opencode_events, parse_opencode_limit, parse_opencode_log_limit,
-    usage_limit_regex, OpencodeLimit, OPENCODE_AUTH_ERROR_MSG,
+    is_opencode_auth_error, no_route_message, usage_limit_regex, OpencodeLimit,
+    OPENCODE_AUTH_ERROR_MSG,
 };
-use crate::outcome::{classify_opencode_outcome, Reported};
+use crate::outcome::{classify_opencode_outcome, CallRead};
 use crate::skills::materialize_opencode_skills;
 use crate::usage::{opencode_usage, resolved_model_label, session_id_from_stream};
 use crate::{OpenCodeAgent, PROMPT_PLAN_OPENCODE};
@@ -40,12 +42,14 @@ impl Agent for OpenCodeAgent {
             // No early-kill on plan: plan surfaces no usage limit today (the detector
             // below is `|_log| None`), so there is nothing for a kill to hand off to.
             // The call still streams the log live, like execute.
+            let major = self.located()?.version.major;
             let r = self.run_watched(
                 &skills_dir,
                 ws.repo_root(),
                 ralphy_adapter_support::PLAN_CHARTER,
                 |_| false,
             )?;
+            stop_on_no_route(major, &r.stdout)?;
             let stdout = r.stdout.clone();
             Ok((r, stdout))
         };
@@ -113,25 +117,21 @@ impl Agent for OpenCodeAgent {
                 "",
                 self.variant.as_deref().unwrap_or(""),
             );
-            // Early-kill: a provider quota block only ever prints to `--print-logs`
-            // stderr (never the JSON stream), then the child idles in silent backoff
-            // until the wall timeout (FinCal #71/#73, glm-5.2). Match the same
-            // usage-limit shape the post-run `parse_opencode_log_limit` keys on, so an
-            // early-killed run classifies as `Limit` identically — only ~sub-second
-            // instead of burning the whole per-issue budget.
-            let limit_re = usage_limit_regex();
+            let major = self.located()?.version.major;
+            let early_kill = stderr_early_kill(major);
             let r = self.run_watched(
                 &skills_dir,
                 ws.repo_root(),
                 ralphy_adapter_support::PROMPT_EXECUTE,
-                move |line| limit_re.is_match(line),
+                move |line| early_kill.as_ref().is_some_and(|re| re.is_match(line)),
             )?;
+            stop_on_no_route(major, &r.stdout)?;
             let stdout = r.stdout.clone();
-            Ok((r, stdout))
+            Ok((r, (stdout, major)))
         };
 
         let ralphy_dir = ws.ralphy_dir();
-        let (r, stdout_text) = run_exec_session(
+        let (r, (stdout_text, major)) = run_exec_session(
             ExecCfg {
                 ralphy_dir: &ralphy_dir,
                 run_dir: &self.run_dir,
@@ -144,13 +144,7 @@ impl Agent for OpenCodeAgent {
 
         let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
         let committed = before_sha != after_sha;
-        let (text, saw_error) = parse_opencode_events(&stdout_text);
-        // Prefer the JSON-event limit (structured, carries reset hints); fall back to
-        // the logfmt scan over the combined stdout+stderr log for providers whose
-        // quota block only prints to `--print-logs` stderr and never reaches the JSON
-        // stream (Z.ai `zai-coding-plan`/GLM, kimi — D9, FinCal #71).
-        let detected =
-            parse_opencode_limit(&stdout_text).or_else(|| parse_opencode_log_limit(&r.log));
+        let read = CallRead::new(major, &stdout_text, &r.log);
         // OpenCode fronts N providers whose reset strings are unreliable: a "5 hour"
         // limit reporting a reset ~12h out (FinCal #73, glm-5.2) is internally
         // impossible, yet parses cleanly and would park the run on a bogus instant.
@@ -158,7 +152,7 @@ impl Agent for OpenCodeAgent {
         // the hint so the runner falls to the ~30-min synthetic cadence (ADR-0030 D1)
         // instead of honouring it. Trustworthiness is a per-vendor extraction decision
         // (the `classify` seam, ADR-0023); Claude/Codex are stable and keep their hints.
-        if let Some(OpencodeLimit { reset: Some(reset) }) = &detected {
+        if let Some(OpencodeLimit { reset: Some(reset) }) = &read.limit {
             info!(
                 %reset,
                 "opencode reported a usage-limit reset — discarding \
@@ -166,16 +160,8 @@ impl Agent for OpenCodeAgent {
             );
         }
 
-        let outcome = classify_opencode_outcome(
-            r.exited_cleanly,
-            r.timed_out,
-            committed,
-            Reported {
-                text: &text,
-                saw_error,
-                limit: detected.as_ref(),
-            },
-        );
+        let outcome =
+            classify_opencode_outcome(r.exited_cleanly, r.timed_out, committed, read.reported());
         let usage = opencode_usage(&stdout_text);
         info!(
             ?outcome,
@@ -183,7 +169,7 @@ impl Agent for OpenCodeAgent {
             exited_cleanly = r.exited_cleanly,
             timed_out = r.timed_out,
             committed,
-            saw_error,
+            saw_error = read.saw_error(),
             "opencode execution ended"
         );
         Ok(Execution {
@@ -192,6 +178,31 @@ impl Agent for OpenCodeAgent {
             session_id: session_id_from_stream(&stdout_text),
         })
     }
+}
+
+/// The stderr early kill of an execute. On 1.x a provider quota block prints
+/// only to `--print-logs` stderr, then the child idles in silent backoff until
+/// the wall timeout (`FinCal` #71/#73, glm-5.2); the match is the shape the
+/// post-run `parse_opencode_log_limit` keys on, so a killed run still ends
+/// `Limit`. On 2.x the limit is a stdout event that ends the run, and stderr
+/// holds the server's `level=INFO` lines (ADR-0094 D4g).
+fn stderr_early_kill(major: OpenCodeMajor) -> Option<Regex> {
+    match major {
+        OpenCodeMajor::V1 => Some(usage_limit_regex()),
+        OpenCodeMajor::V2 => None,
+    }
+}
+
+/// Stop a 2.x call whose model has no route, before the shared classifier
+/// (ADR-0094 D4d): its two causes are a missing login or a wrong model id.
+fn stop_on_no_route(major: OpenCodeMajor, stdout: &str) -> Result<()> {
+    if let Some(message) = no_route_message(major, stdout) {
+        bail!(
+            "opencode cannot run the model ({message}): log in to the model's provider \
+             with `opencode auth login`, or check the model id with `opencode models`"
+        );
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -268,5 +279,12 @@ mod tests {
             .expect_err("a refused version fails the execute");
         assert!(format!("{err:#}").contains(&want), "{err:#}");
         assert_eq!(spawns.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn the_stderr_early_kill_is_for_1x_only() {
+        let v1 = stderr_early_kill(OpenCodeMajor::V1).expect("1.x has a stderr early kill");
+        assert!(v1.is_match(r#"error.error="AI_APICallError: Usage limit reached""#));
+        assert!(stderr_early_kill(OpenCodeMajor::V2).is_none());
     }
 }

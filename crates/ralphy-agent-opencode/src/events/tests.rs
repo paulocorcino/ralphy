@@ -1,4 +1,5 @@
 use super::*;
+use ralphy_proc_util::opencode::OpenCodeMajor::V1;
 
 // ── is_opencode_auth_error ──────────────────────────────────────────────
 
@@ -48,22 +49,25 @@ fn degraded_matches_retryable_error_event() {
     // degraded clock should track it.
     let line =
         r#"{"type":"error","name":"APIError","statusCode":500,"message":"internal server error"}"#;
-    assert!(is_opencode_api_degraded(line));
+    assert!(is_opencode_api_degraded(V1, line));
 }
 
 #[test]
 fn degraded_ignores_healthy_and_terminal_lines() {
     // Healthy JSON event lines and plain assistant text are not degraded.
     assert!(!is_opencode_api_degraded(
+        V1,
         r#"{"type":"text","text":"working on it"}"#
     ));
-    assert!(!is_opencode_api_degraded("just some assistant prose"));
+    assert!(!is_opencode_api_degraded(V1, "just some assistant prose"));
     // A terminal usage limit (429) is NOT degraded — it is handled as a limit.
     assert!(!is_opencode_api_degraded(
+        V1,
         r#"{"type":"error","name":"APIError","statusCode":429,"message":"rate limited"}"#
     ));
     // A terminal auth error is NOT degraded either.
     assert!(!is_opencode_api_degraded(
+        V1,
         r#"{"type":"error","name":"ProviderAuthError","message":"Not authenticated"}"#
     ));
 }
@@ -81,7 +85,7 @@ fn parse_limit_apierror_429_with_reset_hint() {
         "\n",
     );
     assert_eq!(
-        parse_opencode_limit(stream),
+        parse_opencode_limit(V1, stream),
         Some(OpencodeLimit {
             reset: Some("2026-06-10T18:00:00Z".into())
         })
@@ -96,7 +100,7 @@ fn parse_limit_reads_a_numeric_retry_after() {
         "\n",
     );
     assert_eq!(
-        parse_opencode_limit(stream),
+        parse_opencode_limit(V1, stream),
         Some(OpencodeLimit {
             reset: Some("120".into())
         })
@@ -111,7 +115,7 @@ fn parse_limit_reads_a_retry_after_header_in_the_message() {
         "\n",
     );
     assert_eq!(
-        parse_opencode_limit(stream),
+        parse_opencode_limit(V1, stream),
         Some(OpencodeLimit {
             reset: Some("45".into())
         })
@@ -126,7 +130,7 @@ fn parse_limit_reads_try_again_in_from_the_message() {
         "\n",
     );
     assert_eq!(
-        parse_opencode_limit(stream),
+        parse_opencode_limit(V1, stream),
         Some(OpencodeLimit {
             reset: Some("20 minutes".into())
         })
@@ -141,7 +145,7 @@ fn parse_limit_apierror_429_without_reset_hint() {
         "\n",
     );
     assert_eq!(
-        parse_opencode_limit(stream),
+        parse_opencode_limit(V1, stream),
         Some(OpencodeLimit { reset: None })
     );
 }
@@ -155,7 +159,7 @@ fn parse_limit_retryable_literal_string() {
         "\n",
     );
     // Should detect as limit and extract a reset hint from the message.
-    let result = parse_opencode_limit(stream);
+    let result = parse_opencode_limit(V1, stream);
     assert!(result.is_some(), "must detect as limit: {result:?}");
     // The reset hint is extracted from "try again at <value>".
     assert_eq!(
@@ -172,7 +176,7 @@ fn parse_limit_zen_usage_limit_error() {
     let stream = r#"{"type":"error","name":"KimiUsageLimitError","message":"usage limit reached"}
 "#;
     assert_eq!(
-        parse_opencode_limit(stream),
+        parse_opencode_limit(V1, stream),
         Some(OpencodeLimit { reset: None }),
         "must detect Zen *UsageLimitError, with no reset hint"
     );
@@ -188,12 +192,12 @@ fn parse_limit_ignores_real_unknown_error_envelope() {
         r#"server logs for details.","ref":"err_7391de1e"}}}"#,
     );
     assert_eq!(
-        parse_opencode_limit(stream),
+        parse_opencode_limit(V1, stream),
         None,
         "an UnknownError backend blip is not a usage limit"
     );
     // But it IS an error event (downgrades a Done claim to Stuck on execute).
-    let (_t, saw_error) = parse_opencode_events(stream);
+    let (_t, saw_error) = parse_opencode_events(V1, stream);
     assert!(saw_error, "the real error envelope must flag saw_error");
 }
 
@@ -206,7 +210,7 @@ fn parse_limit_detects_429_in_real_error_data_envelope() {
         r#""message":"rate limit exceeded","retryAfter":"2026-06-10T20:00:00Z"}}}"#,
     );
     assert_eq!(
-        parse_opencode_limit(stream),
+        parse_opencode_limit(V1, stream),
         Some(OpencodeLimit {
             reset: Some("2026-06-10T20:00:00Z".into())
         }),
@@ -225,7 +229,7 @@ fn parse_limit_detects_kimi_403_billing_cycle_block() {
         r#""statusCode":403,"isRetryable":false}}}"#,
     );
     assert_eq!(
-        parse_opencode_limit(stream),
+        parse_opencode_limit(V1, stream),
         Some(OpencodeLimit { reset: None }),
         "Kimi's 403 billing-cycle block is a usage limit with no reset hint"
     );
@@ -239,7 +243,7 @@ fn parse_limit_plain_403_is_not_a_limit() {
         r#"{"type":"error","error":{"name":"APIError","data":{"message":"forbidden: model not "#,
         r#"available","statusCode":403}}}"#,
     );
-    assert_eq!(parse_opencode_limit(stream), None);
+    assert_eq!(parse_opencode_limit(V1, stream), None);
 }
 
 #[test]
@@ -249,7 +253,7 @@ fn parse_limit_non_limit_status_500() {
         r#"{"type":"error","name":"APIError","statusCode":500,"message":"internal server error"}"#,
         "\n",
     );
-    assert_eq!(parse_opencode_limit(stream), None);
+    assert_eq!(parse_opencode_limit(V1, stream), None);
 }
 
 #[test]
@@ -259,7 +263,7 @@ fn parse_limit_clean_stream_no_limit() {
 {"type":"text","text":"RALPHY_DONE_EXIT"}
 {"type":"step_finish","reason":"stop"}
 "#;
-    assert_eq!(parse_opencode_limit(stream), None);
+    assert_eq!(parse_opencode_limit(V1, stream), None);
 }
 
 // ── parse_opencode_log_limit ─────────────────────────────────────────────
@@ -376,7 +380,7 @@ fn parse_extracts_text_parts() {
                   {\"type\":\"text\",\"text\":\"working on it\"}\n\
                   {\"type\":\"text\",\"text\":\"RALPHY_DONE_EXIT\"}\n\
                   {\"type\":\"step_finish\",\"reason\":\"stop\"}\n";
-    let (text, saw_error) = parse_opencode_events(stream);
+    let (text, saw_error) = parse_opencode_events(V1, stream);
     assert!(text.contains("working on it"), "text: {text:?}");
     assert!(text.contains("RALPHY_DONE_EXIT"), "text: {text:?}");
     assert!(!saw_error);
@@ -386,7 +390,7 @@ fn parse_extracts_text_parts() {
 fn parse_flags_error_event() {
     let stream = "{\"type\":\"text\",\"text\":\"trying\"}\n\
                   {\"type\":\"error\",\"name\":\"APIError\",\"statusCode\":500}\n";
-    let (text, saw_error) = parse_opencode_events(stream);
+    let (text, saw_error) = parse_opencode_events(V1, stream);
     assert!(text.contains("trying"));
     assert!(saw_error, "an error event must set the flag");
 }
@@ -410,7 +414,7 @@ fn parse_extracts_text_from_nested_part_envelope() {
         r#"{"type":"step_finish","sessionID":"s","part":{"type":"step-finish","reason":"stop"}}"#,
         "\n",
     );
-    let (text, saw_error) = parse_opencode_events(stream);
+    let (text, saw_error) = parse_opencode_events(V1, stream);
     assert!(
         text.contains("RALPHY_DONE_EXIT"),
         "must extract the sentinel from part.text: {text:?}"
@@ -430,7 +434,7 @@ fn parse_flags_error_event_in_nested_part() {
         r#"{"type":"error","sessionID":"s","part":{"type":"error","name":"APIError","#,
         r#""statusCode":500}}"#,
     );
-    let (_text, saw_error) = parse_opencode_events(stream);
+    let (_text, saw_error) = parse_opencode_events(V1, stream);
     assert!(saw_error, "a nested error part must flag saw_error");
 }
 
@@ -443,7 +447,7 @@ fn parse_limit_detects_429_in_nested_part() {
         "\n",
     );
     assert_eq!(
-        parse_opencode_limit(stream),
+        parse_opencode_limit(V1, stream),
         Some(OpencodeLimit {
             reset: Some("2026-06-10T18:00:00Z".into())
         }),
@@ -456,7 +460,23 @@ fn parse_tolerates_unparseable_lines() {
     let stream = "not json at all\n\
                   {\"type\":\"text\",\"text\":\"kept\"}\n\
                   \n";
-    let (text, saw_error) = parse_opencode_events(stream);
+    let (text, saw_error) = parse_opencode_events(V1, stream);
     assert_eq!(text.trim(), "kept");
     assert!(!saw_error);
+}
+
+#[test]
+fn v1_fixtures_classify_as_before() {
+    use ralphy_core::Outcome::{Done, Stuck};
+    use v2::tests::{fixture, verdict, Verdict::Ends};
+    for (name, exited, want) in [
+        ("v1/execute-win.jsonl", true, Ends(Done)),
+        ("v1/execute-wsl.jsonl", true, Ends(Done)),
+        ("v1/plan-win.jsonl", true, Ends(Done)),
+        ("v1/auth-bad-key-win.jsonl", false, Ends(Stuck)),
+        ("v1/no-login-win.jsonl", false, Ends(Stuck)),
+    ] {
+        let stdout = fixture(name);
+        assert_eq!(verdict(V1, &stdout, &stdout, exited), want, "{name}");
+    }
 }
