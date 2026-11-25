@@ -466,7 +466,10 @@ fn a_denied_call_is_refused_under_auto_on_2x() {
     let root = tempfile::tempdir().expect("a scratch folder");
     let init = Command::new("git").arg("init").arg(root.path()).output();
     assert!(init.is_ok_and(|o| o.status.success()), "git init");
-    let run = run_args(Some("opencode/big-pickle"), None, root.path(), None);
+    // A free model can hit its usage limit; the operator names a model of a provider instead.
+    let model = std::env::var("RALPHY_LIVE_OPENCODE_MODEL")
+        .unwrap_or_else(|_| "opencode/big-pickle".to_owned());
+    let run = run_args(Some(&model), None, root.path(), None);
     let mut child = build_opencode_command(&located, run)
         .spawn()
         .expect("opencode runs");
