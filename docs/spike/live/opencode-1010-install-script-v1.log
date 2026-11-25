@@ -1,0 +1,15 @@
+$ curl -sL https://opencode.ai/install | grep -n -E 'INSTALL_DIR=|only installs OpenCode 1|v2/install|opencode-ai|releases/download|BASH_REMATCH|add_to_path .*export'
+70:# This installer only installs OpenCode 1. OpenCode 1 clients run it with VERSION set when upgrading,
+72:if [[ "$requested_version" =~ ^([0-9]+)\. ]] && [ "${BASH_REMATCH[1]}" -ge 2 ]; then
+74:    echo -e "${MUTED}To install OpenCode 2, run: ${NC}curl -fsSL https://opencode.ai/v2/install | bash"
+80:INSTALL_DIR=$HOME/.opencode/bin
+196:        # The opencode-ai npm package only contains OpenCode 1 (OpenCode 2 ships as @opencode/cli). npm is
+199:        specific_version=$(curl -fsSL --max-time 10 "https://registry.npmjs.org/opencode-ai/latest" 2>/dev/null | grep -o '"version": *"[^"]*"' | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/' || true)
+201:            asset_status=$(curl -sIL --max-time 10 -o /dev/null -w "%{http_code}" "https://github.com/anomalyco/opencode/releases/download/v${specific_version}/$filename" || true)
+216:        url="https://github.com/anomalyco/opencode/releases/download/v${specific_version}/$filename"
+218:        url="https://github.com/anomalyco/opencode/releases/download/v${requested_version}/$filename"
+445:                add_to_path "$config_file" "export PATH=$INSTALL_DIR:\$PATH"
+448:                add_to_path "$config_file" "export PATH=$INSTALL_DIR:\$PATH"
+451:                add_to_path "$config_file" "export PATH=$INSTALL_DIR:\$PATH"
+454:                add_to_path "$config_file" "export PATH=$INSTALL_DIR:\$PATH"
+[exit 0]

@@ -1,0 +1,13 @@
+$ bash /tmp/ralphy-1010/skills3.sh <home>/AppData/Roaming/npm/node_modules/@opencode/cli/bin/opencode.exe /tmp/ralphy-1010/xdg-v2 /tmp/ralphy-1010/repos/a <home>/AppData/Local/Temp/ralphy-1010 <home>/AppData/Local/Temp/ralphy-1010/status-v2.jsonl --standalone
+--- exit 0
+probe-skill-1010 mentions in the full output: 1
+--- log lines that mention plugin (first 15):
+timestamp=2026-11-25T00:56:21.430Z level=INFO run=d58660a9 message="watcher subscribe" path="C:\\Users\\<user>\\AppData\\Local\\Temp\\ralphy-1010\\probe-plugin-dir" type=directory ignores=0 http.span=261 role=server
+timestamp=2026-11-25T00:56:21.431Z level=INFO run=d58660a9 message="watcher started" path="C:\\Users\\<user>\\AppData\\Local\\Temp\\ralphy-1010\\probe-plugin-dir" type=directory backend=windows ignores=0 http.span=262 role=server
+timestamp=2026-11-25T00:56:21.433Z level=INFO run=d58660a9 msg="loading plugin" id="C:\\Users\\<user>\\AppData\\Local\\Temp\\ralphy-1010\\probe-plugin-dir" entrypoint=file:///<home>/AppData/Local/Temp/ralphy-1010/probe-plugin-dir/index.js http.span=264 role=server
+timestamp=2026-11-25T00:56:21.437Z level=INFO run=d58660a9 message="watcher subscribe" path="C:\\Users\\<user>\\AppData\\Local\\Temp\\ralphy-1010\\probe-plugin-dir\\index.js" type=file ignores=0 http.span=268 role=server
+timestamp=2026-11-25T00:56:21.438Z level=INFO run=d58660a9 message="watcher started" path="C:\\Users\\<user>\\AppData\\Local\\Temp\\ralphy-1010\\probe-plugin-dir\\index.js" type=file backend=node ignores=0 http.span=269 role=server
+timestamp=2026-11-25T00:56:21.439Z level=WARN run=d58660a9 message="failed to load plugin" target="C:\\Users\\<user>\\AppData\\Local\\Temp\\ralphy-1010\\probe-plugin-dir" ref=err_470590fb cause="Cause([Fail(PluginModule.LoadError: Plugin must export a default definition with an id and an effect or s
+--- status file:
+cat: '<home>/AppData/Local/Temp/ralphy-1010/status-v2.jsonl': No such file or directory
+[exit 0]

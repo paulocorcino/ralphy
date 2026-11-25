@@ -1,0 +1,171 @@
+$ wsl -d Ubuntu-22.04 -e python3 -I - /tmp/ralphy-1010/copy-wsl/opencode.db < /tmp/ralphy-1010/dbdump.py
+user_version: 0
+journal_mode: wal
+## tables (name: rows)
+account: 0
+account_state: 0
+automation: 0
+blob: 0
+blob_ref: 0
+control_account: 0
+credential: 1
+event: 0
+event_sequence: 14
+instruction_blob: 8
+instruction_entry: 0
+instruction_state: 2
+job: 0
+kv: 3
+message: 44
+migration: 62
+part: 137
+permission: 0
+project: 7
+project_directory: 3
+session: 10
+session_inbox: 0
+session_message: 53
+session_part: 0
+session_share: 0
+session_v2: 12
+todo: 0
+workspace: 0
+worktree: 5
+## DDL of the tables the usage scan reads
+CREATE TABLE `message` (
+          `id` text PRIMARY KEY,
+          `session_id` text NOT NULL,
+          `time_created` integer NOT NULL,
+          `time_updated` integer NOT NULL,
+          `data` text NOT NULL,
+          CONSTRAINT `fk_message_session_id_session_id_fk` FOREIGN KEY (`session_id`) REFERENCES `session`(`id`) ON DELETE CASCADE
+        )
+CREATE TABLE `session` (
+          `id` text PRIMARY KEY,
+          `project_id` text NOT NULL,
+          `workspace_id` text,
+          `parent_id` text,
+          `slug` text NOT NULL,
+          `directory` text NOT NULL,
+          `path` text,
+          `title` text NOT NULL,
+          `version` text NOT NULL,
+          `share_url` text,
+          `summary_additions` integer,
+          `summary_deletions` integer,
+          `summary_files` integer,
+          `summary_diffs` text,
+          `metadata` text,
+          `cost` real DEFAULT 0 NOT NULL,
+          `tokens_input` integer DEFAULT 0 NOT NULL,
+          `tokens_output` integer DEFAULT 0 NOT NULL,
+          `tokens_reasoning` integer DEFAULT 0 NOT NULL,
+          `tokens_cache_read` integer DEFAULT 0 NOT NULL,
+          `tokens_cache_write` integer DEFAULT 0 NOT NULL,
+          `revert` text,
+          `permission` text,
+          `agent` text,
+          `model` text,
+          `time_created` integer NOT NULL,
+          `time_updated` integer NOT NULL,
+          `time_compacting` integer,
+          `time_archived` integer,
+          CONSTRAINT `fk_session_project_id_project_id_fk` FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON DELETE CASCADE
+        )
+## message columns (cid, name, type, notnull, default, pk)
+(0, 'id', 'TEXT', 0, None, 1)
+(1, 'session_id', 'TEXT', 1, None, 0)
+(2, 'time_created', 'INTEGER', 1, None, 0)
+(3, 'time_updated', 'INTEGER', 1, None, 0)
+(4, 'data', 'TEXT', 1, None, 0)
+## session columns (cid, name, type, notnull, default, pk)
+(0, 'id', 'TEXT', 0, None, 1)
+(1, 'project_id', 'TEXT', 1, None, 0)
+(2, 'workspace_id', 'TEXT', 0, None, 0)
+(3, 'parent_id', 'TEXT', 0, None, 0)
+(4, 'slug', 'TEXT', 1, None, 0)
+(5, 'directory', 'TEXT', 1, None, 0)
+(6, 'path', 'TEXT', 0, None, 0)
+(7, 'title', 'TEXT', 1, None, 0)
+(8, 'version', 'TEXT', 1, None, 0)
+(9, 'share_url', 'TEXT', 0, None, 0)
+(10, 'summary_additions', 'INTEGER', 0, None, 0)
+(11, 'summary_deletions', 'INTEGER', 0, None, 0)
+(12, 'summary_files', 'INTEGER', 0, None, 0)
+(13, 'summary_diffs', 'TEXT', 0, None, 0)
+(14, 'metadata', 'TEXT', 0, None, 0)
+(15, 'cost', 'REAL', 1, '0', 0)
+(16, 'tokens_input', 'INTEGER', 1, '0', 0)
+(17, 'tokens_output', 'INTEGER', 1, '0', 0)
+(18, 'tokens_reasoning', 'INTEGER', 1, '0', 0)
+(19, 'tokens_cache_read', 'INTEGER', 1, '0', 0)
+(20, 'tokens_cache_write', 'INTEGER', 1, '0', 0)
+(21, 'revert', 'TEXT', 0, None, 0)
+(22, 'permission', 'TEXT', 0, None, 0)
+(23, 'agent', 'TEXT', 0, None, 0)
+(24, 'model', 'TEXT', 0, None, 0)
+(25, 'time_created', 'INTEGER', 1, None, 0)
+(26, 'time_updated', 'INTEGER', 1, None, 0)
+(27, 'time_compacting', 'INTEGER', 0, None, 0)
+(28, 'time_archived', 'INTEGER', 0, None, 0)
+## message.data of the newest assistant row: key shapes
+{
+ "agent": "str",
+ "cost": "int",
+ "finish": "str",
+ "mode": "str",
+ "modelID": "str",
+ "parentID": "str",
+ "path": {
+  "cwd": "str",
+  "root": "str"
+ },
+ "providerID": "str",
+ "role": "str",
+ "time": {
+  "completed": "int",
+  "created": "int"
+ },
+ "tokens": {
+  "cache": {
+   "read": "int",
+   "write": "int"
+  },
+  "input": "int",
+  "output": "int",
+  "reasoning": "int",
+  "total": "int"
+ }
+}
+tokens: {"total": 15493, "input": 3202, "output": 3, "reasoning": 0, "cache": {"write": 0, "read": 12288}}
+## newest session row (directory only, other text redacted)
+id = str
+project_id = str
+workspace_id = NoneType
+parent_id = NoneType
+slug = str
+directory = str
+path = str
+title = str
+version = str
+share_url = NoneType
+summary_additions = int
+summary_deletions = int
+summary_files = int
+summary_diffs = NoneType
+metadata = NoneType
+cost = float
+tokens_input = int
+tokens_output = int
+tokens_reasoning = int
+tokens_cache_read = int
+tokens_cache_write = int
+revert = NoneType
+permission = str
+agent = str
+model = str
+time_created = int
+time_updated = int
+time_compacting = NoneType
+time_archived = NoneType
+[exit 0]

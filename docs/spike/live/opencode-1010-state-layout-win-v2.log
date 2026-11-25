@@ -1,0 +1,72 @@
+$ bash /tmp/ralphy-1010/layout.sh <home>/AppData/Roaming/npm/node_modules/@opencode/cli/bin/opencode.exe
+### debug paths (operator state)
+home       <home>
+data       <home>\.local\share\opencode
+cache      <home>\.cache\opencode
+config     <home>\.config\opencode
+state      <home>\.local\state\opencode
+tmp        <home>\AppData\Local\Temp\opencode
+bin        <home>\.cache\opencode\bin
+log        <home>\.local\share\opencode\log
+repos      <home>\.local\share\opencode\repos
+db         <home>\.local\share\opencode\opencode.db
+### ls ~/.local/share/opencode
+total   
+drwxr-xr-x 0 2026-11-22 .
+drwxr-xr-x 0 2026-06-09 ..
+-rw-r--r-- 407 2026-06-25 account.json
+-rw-r--r-- 343 2026-10-12 auth.json
+drwxr-xr-x 0 2026-11-24 log
+-rw-r--r-- 218054656 2026-11-24 opencode.db
+-rw-r--r-- 32768 2026-11-22 opencode.db-shm
+-rw-r--r-- 15651912 2026-11-24 opencode.db-wal
+drwxr-xr-x 0 2026-06-09 repos
+drwxr-xr-x 0 2026-11-22 shell
+drwxr-xr-x 0 2026-11-16 snapshot
+drwxr-xr-x 0 2026-07-22 tool-output
+### ls ~/.local/state/opencode
+total   
+drwxr-xr-x 0 2026-11-22 .
+drwxr-xr-x 0 2026-06-09 ..
+drwxr-xr-x 0 2026-11-22 latest
+drwxr-xr-x 0 2026-11-24 locks
+-rw-r--r-- 1016 2026-11-22 model.json
+-rw-r--r-- 77 2026-11-24 prompt-history.jsonl
+-rw-r--r-- 163 2026-11-22 service.json
+### ls ~/.config/opencode
+total   
+drwxr-xr-x 0 2026-11-22 .
+drwxr-xr-x 0 2026-04-24 ..
+-rw-r--r-- 63 2026-04-24 .gitignore
+drwxr-xr-x 0 2026-04-24 node_modules
+-rw-r--r-- 50 2026-06-09 opencode.jsonc
+-rw-r--r-- 13748 2026-04-24 package-lock.json
+-rw-r--r-- 65 2026-04-24 package.json
+-rw-r--r-- 64 2026-11-22 service.json
+### ls ~/.cache/opencode
+total   
+drwxr-xr-x 0 2026-11-22 .
+drwxr-xr-x 0 2026-09-28 ..
+drwxr-xr-x 0 2026-04-24 bin
+-rw-r--r-- 6794361 2026-11-22 models.json
+-rwxr-xr-x 259702664 2026-11-22 opencode-service-44232-fa346490.exe
+-rw-r--r-- 2 2026-04-24 version
+### ls ~/.local/share/opencode/log (newest 3)
+opencode.log
+2026-06-26T011219.log
+2026-06-26T000244.log
+### ls ~/.local/share/opencode/snapshot | head
+0241001bc197e0cffc42d36e84498ec87bdbb6b9
+0d5354d0f11d5e5b2527f123447e93fbd36bd9ca
+1aedf17a6198f6674f538ad993a5ec8cf16cd4f2
+### state/opencode/latest
+<home>/.local/state/opencode/latest:
+locks
+tui
+
+<home>/.local/state/opencode/latest/locks:
+
+<home>/.local/state/opencode/latest/tui:
+highlights.json
+tabs.json
+[exit 0]

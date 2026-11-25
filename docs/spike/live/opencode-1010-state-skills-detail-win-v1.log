@@ -1,0 +1,11 @@
+$ LL=DEBUG bash /tmp/ralphy-1010/skills2.sh /tmp/ralphy-1010/v1/node_modules/opencode-windows-x64/bin/opencode.exe /tmp/ralphy-1010/xdg-v1 /tmp/ralphy-1010/repos/a <home>/AppData/Local/Temp/ralphy-1010 <home>/AppData/Local/Temp/ralphy-1010/status-v1.jsonl
+--- exit 0
+probe-skill-1010 mentions in the full output: 1
+--- log lines that mention plugin (first 15):
+--- status file:
+{"event":"plugin.loaded","ts":"2026-11-25T00:56:13.656Z"}
+{"event":"session.created","session_id":"ses_defcbfb48ffe6wd8qO0WGDAVfi","ts":"2026-11-25T00:56:14.276Z"}
+{"event":"session.status","session_id":"ses_defcbfb48ffe6wd8qO0WGDAVfi","ts":"2026-11-25T00:56:15.272Z"}
+{"event":"session.status","session_id":"ses_defcbfb48ffe6wd8qO0WGDAVfi","ts":"2026-11-25T00:56:16.951Z"}
+{"event":"session.status","session_id":"ses_defcbfb48ffe6wd8qO0WGDAVfi","ts":"2026-11-25T00:56:20.048Z"}
+[exit 0]

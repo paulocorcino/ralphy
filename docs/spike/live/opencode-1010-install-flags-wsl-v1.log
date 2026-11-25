@@ -1,0 +1,89 @@
+$ wsl -d Ubuntu-22.04 -e bash -l -s -- /tmp/ralphy-1010/v1/node_modules/opencode-linux-x64/bin/opencode /tmp/ralphy-1010/xdg-v1 /tmp/ralphy-1010/repos/a < /tmp/ralphy-1010/flags.sh
+=== opencode run  --no-such-flag-xyz
+opencode run [message..]
+
+run opencode with a message
+
+Positionals:
+  message  message to send                                                     [array] [default: []]
+
+Options:
+  -h, --help         show help                                                             [boolean]
+  -v, --version      show version number                                                   [boolean]
+      --print-logs   print logs to stderr                                                  [boolean]
+      --log-level    log level                  [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+--- exit 1
+=== opencode run  --dangerously-skip-permissions -m nosuch/nosuch
+[91m[1mError: [0m{
+  "name": "UnknownError",
+  "data": {
+    "message": "Unexpected server error. Check server logs for details.",
+    "ref": "err_319dea36"
+  }
+}
+--- exit 1
+=== opencode run  --auto -m nosuch/nosuch
+[91m[1mError: [0m{
+  "name": "UnknownError",
+  "data": {
+    "message": "Unexpected server error. Check server logs for details.",
+    "ref": "err_fa41621d"
+  }
+}
+--- exit 1
+=== opencode run  --format json -m nosuch/nosuch
+{"type":"error","timestamp":1795567856096,"sessionID":"ses_defd0da47ffehLaX1AdlXdj4z6","error":{"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":
+--- exit 1
+=== opencode run  --print-logs --log-level ERROR -m nosuch/nosuch
+timestamp=2026-11-25T00:50:58.870Z level=ERROR run=58dadd2e message="share subscriber failed" type=message.updated cause="Cause([Fail(ProviderModelNotFoundError: Model not found: nosuch/nosuch.)])"
+timestamp=2026-11-25T00:50:58.887Z level=ERROR run=58dadd2e message=failed ref=err_8fa10f4f error="ProviderModelNotFoundError: Model not found: nosuch/nosuch." cause="ProviderModelNotFoundError: Model
+[91m[1mError: [0m{
+  "name": "UnknownError",
+  "data": {
+    "message": "Unexpected server error. Check server logs for details.",
+    "ref": "err_8fa10f4f"
+  }
+}
+--- exit 1
+=== opencode run  --print-logs --log-level error -m nosuch/nosuch
+opencode run [message..]
+
+run opencode with a message
+
+Positionals:
+  message  message to send                                                     [array] [default: []]
+
+Options:
+  -h, --help         show help                                                             [boolean]
+  -v, --version      show version number                                                   [boolean]
+      --print-logs   print logs to stderr                                                  [boolean]
+      --log-level    log level                  [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+--- exit 1
+=== opencode run  --variant high -m nosuch/nosuch
+[91m[1mError: [0m{
+  "name": "UnknownError",
+  "data": {
+    "message": "Unexpected server error. Check server logs for details.",
+    "ref": "err_b04a9a31"
+  }
+}
+--- exit 1
+=== opencode run  -m nosuch/nosuch#high
+[91m[1mError: [0m{
+  "name": "UnknownError",
+  "data": {
+    "message": "Unexpected server error. Check server logs for details.",
+    "ref": "err_cdc9467f"
+  }
+}
+--- exit 1
+=== opencode run  --dir . -m nosuch/nosuch
+[91m[1mError: [0m{
+  "name": "UnknownError",
+  "data": {
+    "message": "Unexpected server error. Check server logs for details.",
+    "ref": "err_0db02248"
+  }
+}
+--- exit 1
+[exit 0]

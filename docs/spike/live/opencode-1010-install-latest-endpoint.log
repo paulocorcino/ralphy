@@ -1,0 +1,5 @@
+$ curl -sL https://opencode.ai/update/api/latest/cli/npm; echo; curl -sL https://registry.npmjs.org/opencode-ai/latest | grep -o '"version": *"[^"]*"' | head -1; curl -sL https://registry.npmjs.org/@opencode%2fcli/latest | grep -o '"version": *"[^"]*"' | head -1
+{"channel":"latest","name":"cli","distribution":"npm","version":"2.4.1","metadata":{"package":"@opencode/cli","github":{"sha":"698800f59cf3808e3a670b91e35ba1eb14d92411","run_id":"45199365658","run_attempt":"1","actor":"rekram1-node","ref":"refs/heads/dev"}},"active":true,"minimum":false,"time_created":1795449325032,"time_updated":1795449325032}
+"version":"1.19.6"
+"version":"2.4.1"
+[exit 0]

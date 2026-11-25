@@ -1,0 +1,46 @@
+$ bash /tmp/ralphy-1010/cfg.sh /tmp/ralphy-1010/v1/node_modules/opencode-windows-x64/bin/opencode.exe /tmp/ralphy-1010/xdg-v1 /tmp/ralphy-1010/repos/a v1
+### debug paths
+home       <home>
+data       <home>\AppData\Local\Temp\ralphy-1010\xdg-v1\data\opencode
+bin        <home>\AppData\Local\Temp\ralphy-1010\xdg-v1\cache\opencode\bin
+log        <home>\AppData\Local\Temp\ralphy-1010\xdg-v1\data\opencode\log
+repos      <home>\AppData\Local\Temp\ralphy-1010\xdg-v1\data\opencode\repos
+cache      <home>\AppData\Local\Temp\ralphy-1010\xdg-v1\cache\opencode
+config     <home>\AppData\Local\Temp\ralphy-1010\xdg-v1\config\opencode
+state      <home>\AppData\Local\Temp\ralphy-1010\xdg-v1\state\opencode
+tmp        <home>\AppData\Local\Temp\opencode
+### debug config
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {},
+  "mode": {},
+  "plugin": [
+    "file:///tmp/ralphy-1010/probe-plugin.js"
+  ],
+  "command": {},
+  "skills": {
+    "paths": [
+      "/tmp/ralphy-1010/probe-skills"
+    ]
+  },
+  "permission": {
+    "bash": {
+      "git push": "deny"
+    }
+  },
+  "plugin_origins": [
+    {
+      "spec": "file:///tmp/ralphy-1010/probe-plugin.js",
+      "source": "OPENCODE_CONFIG_CONTENT",
+      "scope": "local"
+    }
+  ],
+  "username": "<user>"
+}
+### debug config (1.x form: resolved config)
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {},
+  "mode": {},
+  "plugin": [
+[exit 0]

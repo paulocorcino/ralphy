@@ -1,0 +1,6 @@
+$ bash /tmp/ralphy-1010/stdin.sh /tmp/ralphy-1010/v1/node_modules/opencode-windows-x64/bin/opencode.exe /tmp/ralphy-1010/xdg-v1 /tmp/ralphy-1010/repos/a
+{"type":"step_start","timestamp":1795568005731,"sessionID":"ses_defce9e15ffe1dYDBvqvBsnzOh","part":{"id":"prt_210317260001uSKVsB13G8YBE0","messageID":"msg_21031650b001LZJBNqinMVIL9Z","sessionID":"ses_defce9e15ffe1dYDBvqvBsnzOh","snapshot":"8747338fef90d7ba80dddb49263515f13af50715","type":"step-start"}}
+{"type":"text","timestamp":1795568005754,"sessionID":"ses_defce9e15ffe1dYDBvqvBsnzOh","part":{"id":"prt_210317271001tfyuT6teFyLnW1","messageID":"msg_21031650b001LZJBNqinMVIL9Z","sessionID":"ses_defce9e15ffe1dYDBvqvBsnzOh","type":"text","text":"OK","time":{"start":1795568005745,"end":1795568005749}}}
+{"type":"step_finish","timestamp":1795568005916,"sessionID":"ses_defce9e15ffe1dYDBvqvBsnzOh","part":{"id":"prt_210317316001emJfJ5Sj7xM3jJ","reason":"stop","snapshot":"8747338fef90d7ba80dddb49263515f13af50715","messageID":"msg_21031650b001LZJBNqinMVIL9Z","sessionID":"ses_defce9e15ffe1dYDBvqvBsnzOh","type":"step-finish","tokens":{"total":24058,"input":22263,"output":3,"reasoning":0,"cache":{"write":0,"read":1792}},"cost":0}}
+--- exit 0
+[exit 0]

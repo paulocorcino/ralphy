@@ -1,0 +1,11 @@
+$ wsl -d Ubuntu-22.04 -e env LL=DEBUG bash -l -s -- /tmp/ralphy-1010/v1/node_modules/opencode-linux-x64/bin/opencode /tmp/ralphy-1010/xdg-v1 /tmp/ralphy-1010/repos/a /tmp/ralphy-1010 /tmp/ralphy-1010/status-v1.jsonl  < /tmp/ralphy-1010/skills2.sh
+--- exit 0
+probe-skill-1010 mentions in the full output: 1
+--- log lines that mention plugin (first 15):
+--- status file:
+{"event":"plugin.loaded","ts":"2026-11-25T00:57:05.695Z"}
+{"event":"session.created","session_id":"ses_defcb31a6ffek8ZRfEFmzA6x1r","ts":"2026-11-25T00:57:05.890Z"}
+{"event":"session.status","session_id":"ses_defcb31a6ffek8ZRfEFmzA6x1r","ts":"2026-11-25T00:57:07.707Z"}
+{"event":"session.status","session_id":"ses_defcb31a6ffek8ZRfEFmzA6x1r","ts":"2026-11-25T00:57:12.021Z"}
+{"event":"session.status","session_id":"ses_defcb31a6ffek8ZRfEFmzA6x1r","ts":"2026-11-25T00:57:16.113Z"}
+[exit 0]

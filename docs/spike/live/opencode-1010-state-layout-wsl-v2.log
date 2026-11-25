@@ -1,0 +1,65 @@
+$ wsl -d Ubuntu-22.04 -e bash -l -s -- <home>/.opencode/bin/opencode < /tmp/ralphy-1010/layout.sh
+### debug paths (operator state)
+home       <home>
+data       <home>/.local/share/opencode
+cache      <home>/.cache/opencode
+config     <home>/.config/opencode
+state      <home>/.local/state/opencode
+tmp        /tmp/opencode
+bin        <home>/.cache/opencode/bin
+log        <home>/.local/share/opencode/log
+repos      <home>/.local/share/opencode/repos
+db         <home>/.local/share/opencode/opencode.db
+### ls ~/.local/share/opencode
+total   
+drwxr-xr-x 4096 2026-11-22 .
+drwx------ 4096 2026-10-28 ..
+drwxr-xr-x 4096 2026-11-24 log
+-rw------- 27848704 2026-11-22 opencode.db
+-rw------- 32768 2026-11-22 opencode.db-shm
+-rw------- 15425312 2026-11-22 opencode.db-wal
+drwxr-xr-x 4096 2026-07-22 repos
+drwxr-xr-x 4096 2026-11-22 shell
+drwxr-xr-x 4096 2026-11-22 snapshot
+### ls ~/.local/state/opencode
+total   
+drwxr-xr-x 4096 2026-11-22 .
+drwxr-xr-x 4096 2026-07-22 ..
+drwxr-xr-x 4096 2026-11-22 latest
+drwxr-xr-x 4096 2026-11-22 locks
+-rw-r--r-- 289 2026-11-22 model.json
+-rw-r--r-- 77 2026-11-22 prompt-history.jsonl
+-rw------- 165 2026-11-22 service.json
+### ls ~/.config/opencode
+total   
+drwxr-xr-x 4096 2026-11-22 .
+drwxr-xr-x 4096 2026-11-17 ..
+-rw-r--r-- 63 2026-07-22 .gitignore
+drwxr-xr-x 4096 2026-07-22 node_modules
+-rw-r--r-- 311 2026-07-22 opencode.json
+-rw-r--r-- 14625 2026-07-22 package-lock.json
+-rw-r--r-- 64 2026-07-22 package.json
+-rw------- 64 2026-11-22 service.json
+### ls ~/.cache/opencode
+total   
+drwxr-xr-x 4096 2026-10-28 .
+drwx------ 4096 2026-11-19 ..
+drwxr-xr-x 4096 2026-07-22 bin
+-rw-r--r-- 5925408 2026-10-28 models.json
+### ls ~/.local/share/opencode/log (newest 3)
+opencode.log
+### ls ~/.local/share/opencode/snapshot | head
+0d5354d0f11d5e5b2527f123447e93fbd36bd9ca
+df2dda52705e73f68bfb545ab550f6e0aee8ee84
+ecc4b055c3b28b7f83976bd6f62446afc2353276
+### state/opencode/latest
+<home>/.local/state/opencode/latest:
+locks
+tui
+
+<home>/.local/state/opencode/latest/locks:
+
+<home>/.local/state/opencode/latest/tui:
+highlights.json
+tabs.json
+[exit 0]

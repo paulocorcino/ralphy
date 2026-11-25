@@ -1,0 +1,44 @@
+$ bash /tmp/ralphy-1010/cfg.sh <home>/AppData/Roaming/npm/node_modules/@opencode/cli/bin/opencode.exe /tmp/ralphy-1010/xdg-v2 /tmp/ralphy-1010/repos/a v2
+### debug paths
+home       <home>
+data       <home>\AppData\Local\Temp\ralphy-1010\xdg-v2\data\opencode
+cache      <home>\AppData\Local\Temp\ralphy-1010\xdg-v2\cache\opencode
+config     <home>\AppData\Local\Temp\ralphy-1010\xdg-v2\config\opencode
+state      <home>\AppData\Local\Temp\ralphy-1010\xdg-v2\state\opencode
+tmp        <home>\AppData\Local\Temp\opencode
+bin        <home>\AppData\Local\Temp\ralphy-1010\xdg-v2\cache\opencode\bin
+log        <home>\AppData\Local\Temp\ralphy-1010\xdg-v2\data\opencode\log
+repos      <home>\AppData\Local\Temp\ralphy-1010\xdg-v2\data\opencode\repos
+db         <home>\AppData\Local\Temp\ralphy-1010\xdg-v2\data\opencode\opencode.db
+### debug config
+[
+  {
+    "type": "directory",
+    "path": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ralphy-1010\\xdg-v2\\config\\opencode"
+  },
+  {
+    "type": "document",
+    "info": {
+      "permissions": [
+        {
+          "action": "shell",
+          "resource": "git push",
+          "effect": "deny"
+        }
+      ],
+      "skills": [
+        "/tmp/ralphy-1010/probe-skills"
+      ],
+      "plugins": [
+        "file:///tmp/ralphy-1010/probe-plugin.js"
+      ]
+    }
+  }
+]
+### debug config (1.x form: resolved config)
+Error: Server process exited with code 1
+Error: Managed service port 28894 on 127.0.0.1 is already in use by another process. Configure another port with `opencode service set port <port>` and start the service again.
+    at <anonymous> (B:/~BUN/root/chunk-dz6p5s56.js:3:7733) {
+  [cause]: ServeError: 
+      at R (B:/~BUN/root/chunk-qqvj4jwz.js:52:10000)
+[exit 0]
