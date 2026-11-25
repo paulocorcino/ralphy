@@ -5,7 +5,6 @@
 //! the operator confirms.
 
 use std::path::Path;
-use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
@@ -17,7 +16,7 @@ use ralphy_core::{
     DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Usage, Workspace, PROMPT_CONSOLIDATE,
 };
 
-use crate::command::{build_opencode_command, resolve_opencode_program};
+use crate::command::{build_models_command, build_opencode_command, checked_opencode, RunArgs};
 use crate::events::{is_opencode_auth_error, OPENCODE_AUTH_ERROR_MSG};
 use crate::usage::opencode_usage;
 
@@ -47,7 +46,16 @@ pub fn diagnose_repo(
     let out_path = neutral_cwd.join("diagnosis.json");
     let prompt = build_diagnose_prompt(repo, &out_path);
     info!(?model, "diagnosing repo with opencode run");
-    let cmd = build_opencode_command(model, None, neutral_cwd, NO_SKILLS);
+    let located = checked_opencode()?;
+    let cmd = build_opencode_command(
+        &located,
+        RunArgs {
+            model,
+            variant: None,
+            root: neutral_cwd,
+            skills_dir: NO_SKILLS,
+        },
+    );
     let log_path = neutral_cwd.join("diagnose.log");
     run_init_session(
         JsonSession {
@@ -101,7 +109,16 @@ pub fn draft_issues(
         mode = req.mode.as_str(),
         "drafting issues with opencode run"
     );
-    let cmd = build_opencode_command(model, None, repo, NO_SKILLS);
+    let located = checked_opencode()?;
+    let cmd = build_opencode_command(
+        &located,
+        RunArgs {
+            model,
+            variant: None,
+            root: repo,
+            skills_dir: NO_SKILLS,
+        },
+    );
     let log_path = repo.join(".ralphy").join("init-issues.log");
     run_init_session(
         JsonSession {
@@ -153,7 +170,16 @@ pub fn triage_issues(
         req.attachments_manifest
     );
     info!(?model, "triaging issues with opencode run");
-    let cmd = build_opencode_command(model, None, repo, NO_SKILLS);
+    let located = checked_opencode()?;
+    let cmd = build_opencode_command(
+        &located,
+        RunArgs {
+            model,
+            variant: None,
+            root: repo,
+            skills_dir: NO_SKILLS,
+        },
+    );
     let log_path = repo.join(".ralphy").join("triage.log");
     run_init_session(
         JsonSession {
@@ -205,7 +231,16 @@ pub fn consolidate_knowledge(
     std::fs::create_dir_all(run_dir).context("creating the run directory")?;
 
     info!(?model, "consolidating knowledge with opencode run");
-    let cmd = build_opencode_command(model, None, ws.repo_root(), NO_SKILLS);
+    let located = checked_opencode()?;
+    let cmd = build_opencode_command(
+        &located,
+        RunArgs {
+            model,
+            variant: None,
+            root: ws.repo_root(),
+            skills_dir: NO_SKILLS,
+        },
+    );
     let log = run_text_session(
         TextSession {
             cmd,
@@ -224,12 +259,46 @@ pub fn consolidate_knowledge(
 /// List available models by passing through to `opencode models`.
 /// Stdio is inherited so the output streams directly to the operator.
 pub fn list_models() -> Result<()> {
-    let status = Command::new(resolve_opencode_program())
-        .arg("models")
+    let status = build_models_command(&checked_opencode()?)
         .status()
         .context("failed to spawn `opencode models` (is opencode installed and on PATH?)")?;
     if !status.success() {
         bail!("`opencode models` exited with {status}");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::command::build_models_command;
+    use crate::command::tests::{argv, located, squeezed, strings};
+    use ralphy_proc_util::opencode::OpenCodeMajor;
+
+    #[test]
+    fn the_models_command_follows_the_version() {
+        let v1 = build_models_command(&located(OpenCodeMajor::V1));
+        assert_eq!(argv(&v1), strings("models"));
+        // The live check of `opencode models --standalone` on 2.3.2 answered `accepted`.
+        let v2 = build_models_command(&located(OpenCodeMajor::V2));
+        assert_eq!(argv(&v2), strings("models --standalone"));
+    }
+
+    /// Every one-shot and `opencode models` build from the checked version.
+    #[test]
+    fn the_one_shots_use_the_checked_version() {
+        let source = include_str!("tasks.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or_default();
+        let tasks = squeezed(production);
+        let builds = tasks.matches("build_opencode_command(&located,").count();
+        assert_eq!(builds, 4, "diagnose, draft, triage and consolidate");
+        assert_eq!(
+            tasks.matches("letlocated=checked_opencode()?;").count(),
+            builds
+        );
+        assert!(tasks.contains("build_models_command(&checked_opencode()?)"));
+        assert!(
+            !tasks.contains("Command::new("),
+            "no command outside the builder"
+        );
+    }
 }

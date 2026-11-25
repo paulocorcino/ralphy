@@ -51,7 +51,10 @@ mod usage;
 /// input)` (ADR-0025 §4). A future vision `OpenCode` flips this in its own crate.
 pub const ACCEPTS_IMAGES: bool = false;
 
-use command::{build_watched_opencode_command, StatePlugin};
+use command::{
+    build_opencode_command, build_watched_opencode_command, checked_opencode, RunArgs, StatePlugin,
+};
+use ralphy_proc_util::opencode::{LocatedOpenCode, OpenCodeMajor};
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, list_models, triage_issues};
 
 /// The `OpenCode` planning prompt, embedded so the binary is self-contained as a
@@ -101,7 +104,13 @@ pub struct OpenCodeAgent {
     run_hook: Option<
         std::sync::Arc<dyn Fn() -> Result<ralphy_adapter_support::HeadlessRun> + Send + Sync>,
     >,
+    #[cfg(test)]
+    version_seam: Option<std::sync::Arc<dyn Fn() -> VersionRead + Send + Sync>>,
 }
+
+#[cfg(test)]
+type VersionRead =
+    std::result::Result<LocatedOpenCode, ralphy_proc_util::opencode::OpenCodeVersionError>;
 
 impl OpenCodeAgent {
     pub fn new(model: Option<String>, run_dir: PathBuf) -> Self {
@@ -114,23 +123,50 @@ impl OpenCodeAgent {
             budget: IssueBudget::new(ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE),
             #[cfg(test)]
             run_hook: None,
+            #[cfg(test)]
+            version_seam: None,
         }
     }
 
     /// A stand-in for the `opencode run` child, so a test drives a plan or an
-    /// execute with no `OpenCode` installed.
+    /// execute with no `OpenCode` installed. The version read becomes a 1.x
+    /// one unless [`Self::with_version`] sets another.
     #[cfg(test)]
     fn with_run_hook(
         mut self,
         hook: impl Fn() -> Result<ralphy_adapter_support::HeadlessRun> + Send + Sync + 'static,
     ) -> Self {
         self.run_hook = Some(std::sync::Arc::new(hook));
+        if self.version_seam.is_none() {
+            self = self.with_version(|| Ok(command::tests::located(OpenCodeMajor::V1)));
+        }
         self
     }
 
-    /// One `opencode run` call with the state plugin loaded: the plugin and
-    /// the status file are written in the run dir before the child starts,
-    /// and the status file is tailed while it runs (ADR-0085 D2).
+    /// A stand-in for the version read of a plan or an execute.
+    #[cfg(test)]
+    fn with_version(mut self, read: impl Fn() -> VersionRead + Send + Sync + 'static) -> Self {
+        self.version_seam = Some(std::sync::Arc::new(read));
+        self
+    }
+
+    /// The checked `OpenCode`; a test may stand in for the version read.
+    #[cfg_attr(
+        not(test),
+        expect(clippy::unused_self, reason = "the test build reads its version seam")
+    )]
+    fn located(&self) -> Result<LocatedOpenCode> {
+        #[cfg(test)]
+        if let Some(seam) = &self.version_seam {
+            return seam().map_err(anyhow::Error::new);
+        }
+        checked_opencode()
+    }
+
+    /// One `opencode run` call. The version is read first, so a refused
+    /// version spawns nothing. On 1.x the state plugin and the status file
+    /// are written in the run dir before the child starts, and the status
+    /// file is tailed while it runs (ADR-0085 D2); 2.x loads no plugin file.
     fn run_watched(
         &self,
         skills_dir: &std::path::Path,
@@ -138,20 +174,31 @@ impl OpenCodeAgent {
         prompt: &str,
         kill_on_stderr_line: impl Fn(&str) -> bool + Send + Sync + 'static,
     ) -> Result<ralphy_adapter_support::HeadlessRun> {
+        let located = self.located()?;
         // Clock the budget at the spawn, not method entry, so the run_deadline
         // clamp isn't eroded by the preceding dir/skills setup.
         let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
-        let status = status::Watcher::start(&self.run_dir)?;
-        let cmd = build_watched_opencode_command(
-            self.model.as_deref(),
-            self.variant.as_deref(),
+        let status = match located.version.major {
+            OpenCodeMajor::V1 => Some(status::Watcher::start(&self.run_dir)?),
+            OpenCodeMajor::V2 => None,
+        };
+        let run = RunArgs {
+            model: self.model.as_deref(),
+            variant: self.variant.as_deref(),
             root,
-            Some(skills_dir),
-            &StatePlugin {
-                plugin: status.plugin(),
-                status: status.path(),
-            },
-        );
+            skills_dir: Some(skills_dir),
+        };
+        let cmd = match &status {
+            Some(s) => build_watched_opencode_command(
+                &located,
+                run,
+                &StatePlugin {
+                    plugin: s.plugin(),
+                    status: s.path(),
+                },
+            ),
+            None => build_opencode_command(&located, run),
+        };
         #[cfg(test)]
         let r = match &self.run_hook {
             Some(hook) => hook(),
@@ -159,7 +206,9 @@ impl OpenCodeAgent {
         };
         #[cfg(not(test))]
         let r = self.run_opencode(cmd, prompt, timeout, kill_on_stderr_line);
-        status.stop();
+        if let Some(status) = status {
+            status.stop();
+        }
         r
     }
 

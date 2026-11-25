@@ -193,3 +193,80 @@ impl Agent for OpenCodeAgent {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    use ralphy_proc_util::opencode::OpenCodeVersionError;
+
+    use super::*;
+
+    /// An agent whose version read gives `error`, and a count of its spawns.
+    fn refused(
+        run_dir: std::path::PathBuf,
+        error: OpenCodeVersionError,
+    ) -> (OpenCodeAgent, Arc<AtomicUsize>) {
+        let spawns = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&spawns);
+        let agent = OpenCodeAgent::new(None, run_dir)
+            .with_version(move || Err(error.clone()))
+            .with_run_hook(move || {
+                counted.fetch_add(1, Ordering::SeqCst);
+                anyhow::bail!("the run hook must not be called")
+            });
+        (agent, spawns)
+    }
+
+    fn workspace(temp: &tempfile::TempDir) -> Workspace {
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).expect("a scratch repo");
+        Workspace::new(&repo)
+    }
+
+    #[test]
+    fn a_third_major_stops_the_run_before_the_spawn() {
+        let temp = tempfile::tempdir().expect("a scratch folder");
+        let ws = workspace(&temp);
+        let error = OpenCodeVersionError::Unsupported {
+            text: "3.0.0".into(),
+        };
+        let (agent, spawns) = refused(temp.path().join("run"), error);
+        let issue = Issue {
+            number: 1,
+            title: "t".into(),
+            body: String::new(),
+            labels: Vec::new(),
+            comments: Vec::new(),
+        };
+        let err = agent
+            .plan(&issue, &ws)
+            .expect_err("a refused version fails the plan");
+        assert!(format!("{err:#}").contains("3.0.0"), "{err:#}");
+        assert_eq!(spawns.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn an_unreadable_version_stops_the_run_before_the_spawn() {
+        let temp = tempfile::tempdir().expect("a scratch folder");
+        let ws = workspace(&temp);
+        let error = OpenCodeVersionError::Unreadable {
+            program: "opencode".into(),
+        };
+        let want = error.to_string();
+        let (agent, spawns) = refused(temp.path().join("run"), error);
+        let plan = Plan {
+            path: ws.plan_path(),
+            open_steps: 1,
+            recommended_model: None,
+            usage: ralphy_core::Usage::default(),
+            session_id: None,
+        };
+        let err = agent
+            .execute(&plan, &ws)
+            .expect_err("a refused version fails the execute");
+        assert!(format!("{err:#}").contains(&want), "{err:#}");
+        assert_eq!(spawns.load(Ordering::SeqCst), 0);
+    }
+}

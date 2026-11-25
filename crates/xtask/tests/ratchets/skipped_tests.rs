@@ -8,8 +8,10 @@ use super::*;
 /// The `#[ignore` attributes in the Rust sources under `crates/`, doc comments
 /// and `//` comments that name the attribute not counted. Lower it in the same
 /// change that removes an ignored test: the count is exact, so it cannot grow
-/// back. 12 at 11f28d4e.
-const IGNORED_TESTS: usize = 12;
+/// back. 12 at 11f28d4e; 14 with the two `OpenCode` 2.x live tests in
+/// `ralphy-agent-opencode/src/command/tests.rs`, which need the real 2.x and a
+/// model that answers, so they run by hand before a release, not in the gate.
+const IGNORED_TESTS: usize = 14;
 
 /// The `.rs` files under `dir`, `target/`, `node_modules/` and hidden folders
 /// excepted. Unlike `collect_rs`, it reads the test files too.

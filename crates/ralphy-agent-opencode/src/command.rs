@@ -1,34 +1,36 @@
 //! Building the headless `opencode run` invocation both `plan` and `execute`
 //! go through.
 
-use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use ralphy_adapter_support::DENIED_FORGE_WRITES;
+use ralphy_proc_util::opencode::{LocatedOpenCode, OpenCodeMajor};
+use tracing::info;
 
-/// The located `opencode` (its installer folder included), else the bare name so
-/// a spawn error names the vendor.
-pub(crate) fn resolve_opencode_program() -> OsString {
-    ralphy_proc_util::opencode::locate_opencode()
-        .map_or_else(|| OsString::from("opencode"), PathBuf::into_os_string)
+/// The `OpenCode` of this host and its checked version: the program comes from
+/// the shared locator, and a version Ralphy does not support is an error.
+pub(crate) fn checked_opencode() -> anyhow::Result<LocatedOpenCode> {
+    ralphy_proc_util::opencode::located_opencode().map_err(anyhow::Error::new)
 }
 
-/// Build the headless `opencode run` command both `plan` and `execute` go through
-/// — the single point that fixes the invocation, always passes
-/// `--dangerously-skip-permissions` (the headless-hang guard, ADR-0005 D5) and
-/// `--format json`, omits `-m` unless the operator set one (D4), passes
-/// `--variant` only when set (D3), injects `OPENCODE_CONFIG_CONTENT` (see
-/// [`opencode_config`]), runs in `root`, and defensively removes both
-/// `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` so an inherited key can't switch
-/// the run to metered API billing (D6). The prompt is written on stdin.
-pub(crate) fn build_opencode_command(
-    model: Option<&str>,
-    variant: Option<&str>,
-    root: &Path,
-    skills_dir: Option<&Path>,
-) -> Command {
-    command_with(model, variant, root, skills_dir, None)
+/// The model and variant the operator set, and the session's folder and skills.
+#[derive(Clone, Copy)]
+pub(crate) struct RunArgs<'a> {
+    pub(crate) model: Option<&'a str>,
+    pub(crate) variant: Option<&'a str>,
+    pub(crate) root: &'a Path,
+    pub(crate) skills_dir: Option<&'a Path>,
+}
+
+/// Build the headless `opencode run` command of a session, with the argv of
+/// the located major (ADR-0094 D3): the JSON stream, the permission flag
+/// (`--dangerously-skip-permissions` on 1.x, `--standalone --auto` on 2.x),
+/// the logs on stderr, `-m` only when set, the deny map and skills in
+/// `OPENCODE_CONFIG_CONTENT`, the folder, and both API keys removed (ADR-0005
+/// D6). The prompt is written on stdin.
+pub(crate) fn build_opencode_command(located: &LocatedOpenCode, run: RunArgs<'_>) -> Command {
+    command_with(located, run, None)
 }
 
 /// The state plugin of a run (ADR-0085 D2): the plugin file `OpenCode` loads,
@@ -38,59 +40,55 @@ pub(crate) struct StatePlugin<'a> {
     pub(crate) status: &'a Path,
 }
 
-/// [`build_opencode_command`] for a plan or an execute, which also loads the
-/// state plugin and points it at the status file.
+/// [`build_opencode_command`] for a plan or an execute. On 1.x it also loads
+/// the state plugin and points it at the status file; 2.x loads no plugin
+/// file (ADR-0094 D5a).
 pub(crate) fn build_watched_opencode_command(
-    model: Option<&str>,
-    variant: Option<&str>,
-    root: &Path,
-    skills_dir: Option<&Path>,
+    located: &LocatedOpenCode,
+    run: RunArgs<'_>,
     state: &StatePlugin<'_>,
 ) -> Command {
-    command_with(model, variant, root, skills_dir, Some(state))
+    command_with(located, run, Some(state))
+}
+
+/// `opencode models`; on 2.x with `--standalone`, measured to start no
+/// service (ADR-0094 D6e).
+pub(crate) fn build_models_command(located: &LocatedOpenCode) -> Command {
+    let mut cmd = Command::new(&located.program);
+    cmd.arg("models");
+    match located.version.major {
+        OpenCodeMajor::V1 => {}
+        OpenCodeMajor::V2 => {
+            cmd.arg("--standalone");
+        }
+    }
+    cmd
 }
 
 fn command_with(
-    model: Option<&str>,
-    variant: Option<&str>,
-    root: &Path,
-    skills_dir: Option<&Path>,
+    located: &LocatedOpenCode,
+    run: RunArgs<'_>,
     state: Option<&StatePlugin<'_>>,
 ) -> Command {
-    // The located path: on Windows `opencode` ships as an npm `.cmd` shim with no
-    // `.exe`, which a bare `Command::new("opencode")` cannot find.
-    let mut cmd = Command::new(resolve_opencode_program());
-    cmd.arg("run")
-        .arg("--format")
-        .arg("json")
-        .arg("--dangerously-skip-permissions")
-        // Route opencode's own logs (logfmt) onto stderr at ERROR level. Some
-        // providers (Z.ai `zai-coding-plan`/GLM) never emit a `{type:"error"}`
-        // JSON event on a quota block: their ai-sdk treats the `AI_APICallError:
-        // Usage limit reached` as a *retryable* stream error and loops on backoff,
-        // printing it only to the server log — so the `--format json` stream stays
-        // silent and the run stalls until the wall timeout. `--print-logs` brings
-        // that line onto the stderr we already drain, where `parse_opencode_log_limit`
-        // can see it and classify the run as `Limit` instead of a mute `Timeout`
-        // (observed live 2026-07-11, FinCal #71, glm-5.2). ERROR keeps the combined
-        // log lean; the quota line is logged at ERROR.
-        .arg("--print-logs")
-        .arg("--log-level")
-        .arg("ERROR");
-    if let Some(m) = model {
-        cmd.arg("-m").arg(m);
-    }
-    if let Some(v) = variant {
-        cmd.arg("--variant").arg(v);
-    }
-    cmd.current_dir(root)
-        .env("PWD", root)
+    let mut cmd = Command::new(&located.program);
+    let state = match located.version.major {
+        OpenCodeMajor::V1 => {
+            v1_args(&mut cmd, run);
+            state
+        }
+        OpenCodeMajor::V2 => {
+            v2_args(&mut cmd, run);
+            None
+        }
+    };
+    cmd.current_dir(run.root)
+        .env("PWD", run.root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env(
             "OPENCODE_CONFIG_CONTENT",
-            opencode_config(skills_dir, state.map(|s| s.plugin)),
+            opencode_config(run.skills_dir, state.map(|s| s.plugin)),
         )
         .env_remove("ANTHROPIC_API_KEY")
         .env_remove("OPENAI_API_KEY");
@@ -98,6 +96,39 @@ fn command_with(
         cmd.env(crate::status::STATUS_ENV, state.status);
     }
     cmd
+}
+
+// `--print-logs` brings a provider quota block that never reaches the JSON
+// stream onto stderr, where `parse_opencode_log_limit` sees it (FinCal #71).
+fn v1_args(cmd: &mut Command, run: RunArgs<'_>) {
+    cmd.args(["run", "--format", "json", "--dangerously-skip-permissions"])
+        .args(["--print-logs", "--log-level", "ERROR"]);
+    if let Some(m) = run.model {
+        cmd.arg("-m").arg(m);
+    }
+    if let Some(v) = run.variant {
+        cmd.arg("--variant").arg(v);
+    }
+}
+
+fn v2_args(cmd: &mut Command, run: RunArgs<'_>) {
+    cmd.args(["run", "--format", "json", "--standalone", "--auto"])
+        .args(["--print-logs", "--log-level", "error"]);
+    match (run.model, run.variant) {
+        (Some(m), Some(v)) => {
+            cmd.arg("-m").arg(format!("{m}#{v}"));
+        }
+        (Some(m), None) => {
+            cmd.arg("-m").arg(m);
+        }
+        (None, Some(v)) => {
+            info!(
+                variant = v,
+                "OpenCode 2 takes a variant only with a model; not passed"
+            );
+        }
+        (None, None) => {}
+    }
 }
 
 // The daemon names a console's plugin the same way, in
@@ -118,8 +149,10 @@ pub(crate) fn plugin_entry(path: &Path) -> String {
 /// (ADR-0072 D6, ADR-0005 D5 amendment). opencode applies an explicit `deny`
 /// even under `--dangerously-skip-permissions`, and the refused call reaches
 /// the model as a tool error; the run goes on (measured with opencode 1.18.32).
+/// 2.x reads the same key as its `shell` rules and refuses the call under
+/// `--auto` (measured with 2.3.2 on Windows).
 /// The map has no `"*"` entry, so the operator's own bash rules still apply.
-/// A plan or an execute also names Ralphy's state plugin under `plugin`;
+/// A 1.x plan or execute also names Ralphy's state plugin under `plugin`;
 /// `OpenCode` joins that list with the operator's own plugins.
 fn opencode_config(skills_dir: Option<&Path>, plugin: Option<&Path>) -> String {
     let mut bash = serde_json::Map::new();
@@ -142,4 +175,4 @@ fn opencode_config(skills_dir: Option<&Path>, plugin: Option<&Path>) -> String {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
