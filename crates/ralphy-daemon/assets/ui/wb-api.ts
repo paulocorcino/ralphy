@@ -82,6 +82,7 @@ type AgentRow = {
   accelerator: string;
   available: boolean;
   reason: string | null;
+  version?: string;
 };
 
 /** A refusal that names its cause. */

@@ -10,6 +10,7 @@ export type RosterRow = {
   accelerator?: string;
   available?: boolean;
   reason?: string | null;
+  version?: string;
 };
 /** A live session, as the menu counts it. */
 export type Session = { agent?: string; repo?: string };
@@ -22,6 +23,12 @@ const NOT_INSTALLED = "Not installed here.";
 function shownReason(reason: string | null | undefined): string {
   if (reason === null || reason === undefined || reason === "") return NOT_INSTALLED;
   return reason === "not installed here" ? NOT_INSTALLED : reason;
+}
+
+function rowLabel(row: RosterRow): string {
+  const label = (row.label ?? "") || row.id;
+  const version = row.version ?? "";
+  return version === "" ? label : `${label} ${version}`;
 }
 
 function rowTitle(needsRepo: boolean, unavailable: boolean, reason: string | null | undefined) {
@@ -76,7 +83,7 @@ function menuRows({
   const rows = (roster ?? []).map((r) =>
     rowFor({
       kind: r.id,
-      label: (r.label ?? "") || r.id,
+      label: rowLabel(r),
       plain: false,
       digit: r.accelerator,
       available: r.available,

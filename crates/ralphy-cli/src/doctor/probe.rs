@@ -9,6 +9,7 @@ use ralphy_adapter_support::{find_program, locate_program, run_headless};
 use ralphy_daemon::agent_state::StateSource;
 use ralphy_daemon::telegram_state::{self, FleetTelegram};
 use ralphy_proc_util::hook_form::{self, HookCheck};
+use ralphy_proc_util::opencode::{read_opencode_version, OpenCodeVersion, OpenCodeVersionError};
 
 use super::{gh_signed_in, source_of, LingerRead, MachineFacts};
 use crate::init::Agent;
@@ -24,7 +25,7 @@ pub(crate) fn probe() -> MachineFacts {
         let python = scope.spawn(|| version(on_path("python").or_else(|| on_path("python3"))));
         let agents: Vec<_> = Agent::ALL
             .iter()
-            .map(|a| scope.spawn(move || agent_program(*a).map(|p| (*a, version_of(&p)))))
+            .map(|a| scope.spawn(move || agent_program(*a).map(|p| (*a, agent_version(*a, &p)))))
             .collect();
         let agy_signed_in = scope.spawn(|| {
             agent_program(Agent::Antigravity)
@@ -182,6 +183,30 @@ pub(super) fn probe_output(mut cmd: std::process::Command) -> Option<String> {
         .then_some(out.stdout)
 }
 
+/// The version text of `agent`. `OpenCode` goes through the one reader of its
+/// version; the others print the first line of `--version`.
+fn agent_version(agent: Agent, program: &Path) -> String {
+    match agent {
+        Agent::Opencode => opencode_version_text(read_opencode_version(program)),
+        Agent::Claude
+        | Agent::Codex
+        | Agent::Copilot
+        | Agent::Cursor
+        | Agent::Kimi
+        | Agent::Antigravity => version_of(program),
+    }
+}
+
+/// The text of an `OpenCode` version: its number, or the refusal that says
+/// the version is not supported. Empty when the version could not be read.
+pub(super) fn opencode_version_text(read: Result<OpenCodeVersion, OpenCodeVersionError>) -> String {
+    match read {
+        Ok(version) => version.text,
+        Err(refused @ OpenCodeVersionError::Unsupported { .. }) => refused.to_string(),
+        Err(OpenCodeVersionError::Unreadable { .. }) => String::new(),
+    }
+}
+
 /// The first non-empty line `<program> --version` prints, or an empty string.
 fn version_of(program: &Path) -> String {
     let mut cmd = std::process::Command::new(program);
@@ -248,4 +273,42 @@ pub(super) fn parse_linger(text: &str) -> Option<bool> {
         "Linger=no" => Some(false),
         _ => None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{evaluate, print_report, MachineFacts};
+    use super::*;
+
+    #[test]
+    fn doctor_reads_the_opencode_version_through_proc_util() {
+        let body: String = include_str!("probe.rs").split_whitespace().collect();
+        let wanted = concat!(
+            "Agent::Opencode=>",
+            "opencode_version_text(read_opencode_version(program))"
+        );
+        assert!(
+            body.contains(wanted),
+            "the OpenCode version must come from the one reader"
+        );
+    }
+
+    #[test]
+    fn doctor_shows_a_refused_opencode_version() {
+        let text = opencode_version_text(Err(OpenCodeVersionError::Unsupported {
+            text: "3.0.0".to_owned(),
+        }));
+        let facts = MachineFacts {
+            agents: vec![(Agent::Opencode, text)],
+            ..MachineFacts::default()
+        };
+        let mut out = Vec::new();
+        print_report(&evaluate(&facts, false), &mut out).expect("printing");
+        let out = String::from_utf8(out).expect("utf-8");
+        let row = out.lines().find(|l| l.contains("opencode:")).expect(&out);
+        assert!(
+            row.contains("3.0.0") && row.contains("not supported"),
+            "{row}"
+        );
+    }
 }
