@@ -47,22 +47,18 @@ fn scan(db_path: &Path, repos: &[RegisteredRepo], since: Option<&str>) -> Vec<In
 }
 
 #[test]
-fn opencode_maps_tokens_ignoring_cost_and_reasoning() {
+fn opencode_maps_tokens_ignoring_cost() {
     let tmp = tempfile::tempdir().unwrap();
     let data = concat!(
         r#"{"role":"assistant","cost":999.0,"modelID":"k2p6","tokens":{"input":2168,"#,
-        r#""output":100,"reasoning":40,"cache":{"write":0,"read":11264}}}"#
+        r#""output":100,"reasoning":0,"cache":{"write":0,"read":11264}}}"#
     );
     let db = seed_db(tmp.path(), &[("ses_1", data)], &[]);
     let records = scan(&db, &[], None);
     assert_eq!(records.len(), 1);
     let r = &records[0];
     assert_eq!(r.tokens.as_ref().unwrap().input, 2168);
-    assert_eq!(
-        r.tokens.as_ref().unwrap().output,
-        100,
-        "reasoning NOT folded (would be 140)"
-    );
+    assert_eq!(r.tokens.as_ref().unwrap().output, 100);
     assert_eq!(r.tokens.as_ref().unwrap().cache_read, 11264);
     assert_eq!(r.tokens.as_ref().unwrap().cache_creation, 0);
     assert_eq!(r.model, "k2p6");
@@ -71,6 +67,19 @@ fn opencode_maps_tokens_ignoring_cost_and_reasoning() {
         !r.lower_bound,
         "OpenCode writes every token to disk — this is a total, not a floor"
     );
+}
+
+#[test]
+fn opencode_scan_counts_reasoning_tokens() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = concat!(
+        r#"{"role":"assistant","modelID":"k2p6","tokens":{"input":22336,"#,
+        r#""output":86,"reasoning":13,"cache":{"write":0,"read":1792}}}"#
+    );
+    let db = seed_db(tmp.path(), &[("ses_1", data)], &[]);
+    let records = scan(&db, &[], None);
+    let t = records[0].tokens.as_ref().unwrap();
+    assert_eq!(t.output, 86 + 13);
 }
 
 #[test]
@@ -261,4 +270,74 @@ fn opencode_rows_of_one_session_and_model_sum_and_span_their_times() {
     );
     assert_eq!(r.first_ts, ms_to_rfc3339(Some(1_782_000_000_000)));
     assert_eq!(r.last_ts, ms_to_rfc3339(Some(1_783_000_000_000)));
+}
+
+const V1_SESSION: &str = "ses_dedb89c6affe2Bf0J714lbuYfg";
+const V2_FRESH_SESSION: &str = concat!("ses_dedb6c267ffe6qnJHwBc9o", "t2DX");
+const V2_UPGRADED_SESSION: &str = "ses_dedb7a25dffeoEMhN9M3UVV92v";
+
+fn load(dir: &Path, dump: &str) -> PathBuf {
+    let path = dir.join("opencode.db");
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    // The dump lists a table before its parent table.
+    conn.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
+    conn.execute_batch(dump).unwrap();
+    path
+}
+
+fn tokens_of(r: &InteractiveRecord) -> (u64, u64, u64, u64) {
+    let t = r.tokens.as_ref().unwrap();
+    (t.input, t.output, t.cache_read, t.cache_creation)
+}
+
+#[test]
+fn opencode_scan_reads_both_table_sets() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dump = include_str!("../../../ralphy-agent-opencode/tests/fixtures/db/v2-upgraded.sql");
+    let db = load(tmp.path(), dump);
+    let records = scan(&db, &[], None);
+    // The 1.x session is in both table sets and is counted once.
+    assert_eq!(records.len(), 2, "{records:?}");
+    let old = records.iter().find(|r| r.session_id == V1_SESSION).unwrap();
+    assert_eq!(tokens_of(old), (23840, 17, 0, 0));
+    assert_eq!(old.model, "big-pickle");
+    let new = records
+        .iter()
+        .find(|r| r.session_id == V2_UPGRADED_SESSION)
+        .unwrap();
+    assert_eq!(tokens_of(new), (13981, 16, 1536, 0));
+    assert_eq!(new.model, "big-pickle");
+}
+
+#[test]
+fn opencode_scan_attributes_a_2x_session_by_its_directory() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dump = include_str!("../../../ralphy-agent-opencode/tests/fixtures/db/v2-fresh.sql");
+    let db = load(tmp.path(), dump);
+    let repos = vec![RegisteredRepo {
+        slug: "o/fx-v2f".into(),
+        path: "<scratch>/repos/fx-v2f".into(),
+    }];
+    let records = scan(&db, &repos, None);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].session_id, V2_FRESH_SESSION);
+    assert_eq!(records[0].project.as_deref(), Some("o/fx-v2f"));
+    assert_eq!(tokens_of(&records[0]), (10217, 14, 4096, 0));
+}
+
+#[test]
+fn opencode_scan_failed_query_is_an_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("opencode.db");
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute("CREATE TABLE unrelated (id TEXT)", [])
+        .unwrap();
+    drop(conn);
+    let input = OpenCodeScan {
+        db_path: &path,
+        run_session_ids: &no_runs(),
+        repos: &[],
+        since: None,
+    };
+    assert!(read_opencode(&input).is_err());
 }
