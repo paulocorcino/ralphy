@@ -1,0 +1,80 @@
+$ MODEL=opencode/hy4-flash-free bash run.sh /home/<user>/.opencode/bin/opencode /tmp/ralphy-1042/xdg-v2b /tmp/ralphy-1042/repos/a file:///tmp/ralphy-1042/plugin-v2 /tmp/ralphy-1042/st-v2-wsl.jsonl info --standalone
+config: {"plugin":["file:///tmp/ralphy-1042/plugin-v2"]}
+timestamp=2026-11-25T13:26:47.340Z level=INFO run=417d82dd message="cli starting" version=2.3.2 channel=latest local=false args="[\"serve\",\"--stdio\",\"--port\",\"0\"]" role=cli
+timestamp=2026-11-25T13:26:48.637Z level=INFO run=417d82dd message="database schema bootstrap started" migrations=62 role=server
+timestamp=2026-11-25T13:26:48.655Z level=INFO run=417d82dd message="database schema bootstrap completed" migrations=62 durationMs=18 role=server
+timestamp=2026-11-25T13:26:50.388Z level=INFO run=417d82dd message="watcher subscribe" path=/tmp/ralphy-1042/xdg-v2b/config/opencode type=directory ignores=6 http.span=1693 role=server
+timestamp=2026-11-25T13:26:50.391Z level=INFO run=417d82dd message="watcher subscribe" path=/etc type=entries ignores=0 http.span=1696 role=server
+timestamp=2026-11-25T13:26:50.392Z level=INFO run=417d82dd message="watcher started" path=/etc type=entries backend=node ignores=0 http.span=1697 role=server
+timestamp=2026-11-25T13:26:50.392Z level=INFO run=417d82dd message="watcher subscribe" path=/ type=entries ignores=0 http.span=1697 role=server
+timestamp=2026-11-25T13:26:50.393Z level=INFO run=417d82dd message="watcher started" path=/ type=entries backend=node ignores=0 http.span=1698 role=server
+timestamp=2026-11-25T13:26:50.393Z level=INFO run=417d82dd message="watcher subscribe" path=/tmp type=entries ignores=0 http.span=1698 role=server
+timestamp=2026-11-25T13:26:50.393Z level=INFO run=417d82dd message="watcher started" path=/tmp type=entries backend=node ignores=0 http.span=1698 role=server
+timestamp=2026-11-25T13:26:50.393Z level=INFO run=417d82dd message="watcher subscribe" path=/tmp/ralphy-1042 type=entries ignores=0 http.span=1698 role=server
+timestamp=2026-11-25T13:26:50.393Z level=INFO run=417d82dd message="watcher started" path=/tmp/ralphy-1042 type=entries backend=node ignores=0 http.span=1698 role=server
+timestamp=2026-11-25T13:26:50.394Z level=INFO run=417d82dd message="watcher subscribe" path=/tmp/ralphy-1042/repos type=entries ignores=0 http.span=1699 role=server
+timestamp=2026-11-25T13:26:50.394Z level=INFO run=417d82dd message="watcher started" path=/tmp/ralphy-1042/repos type=entries backend=node ignores=0 http.span=1699 role=server
+timestamp=2026-11-25T13:26:50.394Z level=INFO run=417d82dd message="watcher subscribe" path=/tmp/ralphy-1042/repos/a type=entries ignores=0 http.span=1699 role=server
+timestamp=2026-11-25T13:26:50.395Z level=INFO run=417d82dd message="watcher started" path=/tmp/ralphy-1042/repos/a type=entries backend=node ignores=0 http.span=1700 role=server
+timestamp=2026-11-25T13:26:50.395Z level=INFO run=417d82dd message="watcher subscribe" path=<home> type=entries ignores=0 http.span=1700 role=server
+timestamp=2026-11-25T13:26:50.395Z level=INFO run=417d82dd message="watcher started" path=<home> type=entries backend=node ignores=0 http.span=1700 role=server
+timestamp=2026-11-25T13:26:50.403Z level=INFO run=417d82dd message="watcher started" path=/tmp/ralphy-1042/xdg-v2b/config/opencode type=directory backend=inotify ignores=6 http.span=1708 role=server
+timestamp=2026-11-25T13:26:50.422Z level=INFO run=417d82dd message="location services booted" directory=/tmp/ralphy-1042/repos/a workspaceID=undefined durationMs=76 http.span=1727 role=server
+timestamp=2026-11-25T13:26:50.427Z level=INFO run=417d82dd message="watcher subscribe" path=/tmp/ralphy-1042/plugin-v2 type=directory ignores=0 http.span=1732 role=server
+timestamp=2026-11-25T13:26:50.428Z level=INFO run=417d82dd message="watcher started" path=/tmp/ralphy-1042/plugin-v2 type=directory backend=inotify ignores=0 http.span=1733 role=server
+timestamp=2026-11-25T13:26:50.428Z level=INFO run=417d82dd msg="loading plugin" id=/tmp/ralphy-1042/plugin-v2 entrypoint=file:///tmp/ralphy-1042/plugin-v2/index.js http.span=1733 role=server
+timestamp=2026-11-25T13:26:50.438Z level=INFO run=417d82dd message="watcher subscribe" path=/tmp/ralphy-1042/plugin-v2/index.js type=file ignores=0 http.span=1743 role=server
+timestamp=2026-11-25T13:26:50.438Z level=INFO run=417d82dd message="watcher started" path=/tmp/ralphy-1042/plugin-v2/index.js type=file backend=node ignores=0 http.span=1743 role=server
+timestamp=2026-11-25T13:26:51.148Z level=INFO run=417d82dd message="watcher subscribe" path=/tmp/ralphy-1042/xdg-v2b/config/opencode/AGENTS.md type=file ignores=0
+timestamp=2026-11-25T13:26:51.148Z level=INFO run=417d82dd message="watcher started" path=/tmp/ralphy-1042/xdg-v2b/config/opencode/AGENTS.md type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T13:26:51.149Z level=INFO run=417d82dd message="watcher subscribe" path=<home>/.claude/CLAUDE.md type=file ignores=0
+timestamp=2026-11-25T13:26:51.149Z level=INFO run=417d82dd message="watcher started" path=<home>/.claude/CLAUDE.md type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T13:26:51.150Z level=INFO run=417d82dd message="watcher subscribe" path=/tmp/ralphy-1042/repos/a/AGENTS.md type=file ignores=0
+timestamp=2026-11-25T13:26:51.150Z level=INFO run=417d82dd message="watcher started" path=/tmp/ralphy-1042/repos/a/AGENTS.md type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T13:26:51.150Z level=INFO run=417d82dd message="watcher subscribe" path=/tmp/ralphy-1042/repos/a/CLAUDE.md type=file ignores=0
+timestamp=2026-11-25T13:26:51.150Z level=INFO run=417d82dd message="watcher started" path=/tmp/ralphy-1042/repos/a/CLAUDE.md type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T13:26:51.164Z level=INFO run=417d82dd message="watcher subscribe" path=<home>/.claude/skills type=directory ignores=8
+timestamp=2026-11-25T13:26:51.930Z level=INFO run=417d82dd message="watcher started" path=<home>/.claude/skills type=directory backend=inotify ignores=8 role=server
+timestamp=2026-11-25T13:26:52.004Z level=INFO run=417d82dd message="watcher subscribe" path=<home>/.agents/skills type=directory ignores=8
+timestamp=2026-11-25T13:26:52.005Z level=INFO run=417d82dd message="watcher started" path=<home>/.agents/skills type=directory backend=inotify ignores=8 role=server
+timestamp=2026-11-25T13:26:52.008Z level=INFO run=417d82dd message="watcher subscribe" path=/tmp/ralphy-1042/xdg-v2b/config/opencode/skill type=file ignores=0
+timestamp=2026-11-25T13:26:52.008Z level=INFO run=417d82dd message="watcher started" path=/tmp/ralphy-1042/xdg-v2b/config/opencode/skill type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T13:26:52.009Z level=INFO run=417d82dd message="watcher subscribe" path=/tmp/ralphy-1042/xdg-v2b/config/opencode/skills type=file ignores=0
+timestamp=2026-11-25T13:26:52.009Z level=INFO run=417d82dd message="watcher started" path=/tmp/ralphy-1042/xdg-v2b/config/opencode/skills type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T13:26:52.090Z level=INFO run=417d82dd message=event event.id=evt_212e33dba001kI4xszMRdPlazs event.created=1795613212090 event.type=provider.updated event.location.directory=/tmp/ralphy-1042/repos/a event.location.workspaceID=undefined event.data={} http.span=3395 role=server
+timestamp=2026-11-25T13:26:52.097Z level=INFO run=417d82dd message=event event.id=evt_212e33dc1001RocFBkxNa5i1Fu event.created=1795613212097 event.type=model.updated event.location.directory=/tmp/ralphy-1042/repos/a event.location.workspaceID=undefined event.data={} http.span=3402 role=server
+timestamp=2026-11-25T13:26:52.126Z level=INFO run=417d82dd message=event event.id=evt_212e33dde002TZvJxjcMqVStVn event.created=1795613212126 event.type=agent.updated event.location.directory=/tmp/ralphy-1042/repos/a event.location.workspaceID=undefined event.data={} http.span=3431 role=server
+timestamp=2026-11-25T13:26:52.127Z level=INFO run=417d82dd message=event event.id=evt_212e33ddf001ekzTQoVACfdvU1 event.created=1795613212127 event.type=command.updated event.location.directory=/tmp/ralphy-1042/repos/a event.location.workspaceID=undefined event.data={} http.span=3432 role=server
+timestamp=2026-11-25T13:26:52.185Z level=INFO run=417d82dd message="watcher subscribe" path=/tmp/ralphy-1042/repos/a/.git/HEAD type=file ignores=0 http.span=3490 role=server
+timestamp=2026-11-25T13:26:52.186Z level=INFO run=417d82dd message="watcher started" path=/tmp/ralphy-1042/repos/a/.git/HEAD type=file backend=node ignores=0 http.span=3491 role=server
+{"type":"step_start","timestamp":1795613212603,"sessionID":"ses_ded1cc8c6ffeK3wnbKsN61FKoW","part":{"id":"prt_212e33fbb001CHTY0OKu3kLteT","sessionID":"ses_ded1cc8c6ffeK3wnbKsN61FKoW","messageID":"msg_212e33e3b001J2iFyW05SnUA6C","type":"step-start","snapshot":"46fa518f85512546ad32ff5a909f97ac1e8471c9"}}
+timestamp=2026-11-25T13:26:52.618Z level=ERROR run=417d82dd message="Failed to drain Session" cause="AI.Error: Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go\n    at Ffe (/$bunfs/root/chunk-bk2wx8d4.js:3:3000)\n    at <anonymous> (/$bunfs/root/chunk-bk2wx8d4.js:3:2692)\n    at SessionStep.attempt (/$bunfs/root/chunk-drcjxvj2.js:494:4020)\n    at SessionStep.attempt (definition) (/$bunfs/root/chunk-drcjxvj2.js:479:304)\n    at SessionRunner.runStep (/$bunfs/root/chunk-drcjxvj2.js:494:2914)\n    at SessionRunner.runStep (definition) (/$bunfs/root/chunk-drcjxvj2.js:494:3114)\n    at SessionRunner.drain (/$bunfs/root/chunk-drcjxvj2.js:494:6653)\n    at SessionRunner.drain (definition) (/$bunfs/root/chunk-drcjxvj2.js:494:438)\n    at ServerProcess.start (/$bunfs/root/chunk-p078cz2y.js:3:6119)\n    at ServerProcess.start (definition) (/$bunfs/root/chunk-drcjxvj2.js:596:37325) {\n  [cause]: AI.Error.QuotaExceeded: Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go\n      at fp (/$bunfs/root/chunk-bk2wx8d4.js:3:523)\n      at Ffe (/$bunfs/root/chunk-bk2wx8d4.js:3:3011)\n      at <anonymous> (/$bunfs/root/chunk-bk2wx8d4.js:3:2692)\n}" role=server sessionID=ses_ded1cc8c6ffeK3wnbKsN61FKoW
+{"type":"error","timestamp":1795613212631,"sessionID":"ses_ded1cc8c6ffeK3wnbKsN61FKoW","error":{"type":"provider.free-limit","message":"Free usage limit reached. Connect a provider or subscribe to OpenCode Go to keep going, or switch models.","status":429,"response":{"body":"{\"type\":\"error\",\"error\":{\"type\":\"FreeUsageLimitError\",\"message\":\"Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go\"}}"},"retryAfterMs":39503000}}
+timestamp=2026-11-25T13:26:52.632Z level=INFO run=417d82dd message="Sent HTTP response" http.span=1917 role=server http.method=GET http.url=/api/event http.status=200
+timestamp=2026-11-25T13:26:52.640Z level=INFO run=417d82dd message="shutdown started" signal=SIGTERM role=cli
+timestamp=2026-11-25T13:26:52.640Z level=INFO run=417d82dd message="watcher stopped" path=/tmp/ralphy-1042/repos/a/.git/HEAD type=file http.span=3945 role=server
+timestamp=2026-11-25T13:26:52.656Z level=INFO run=417d82dd message="watcher stopped" path=/tmp/ralphy-1042/plugin-v2/index.js type=file http.span=3961 role=server
+timestamp=2026-11-25T13:26:52.657Z level=INFO run=417d82dd message="watcher stopped" path=/tmp/ralphy-1042/plugin-v2 type=directory http.span=3962 role=server
+timestamp=2026-11-25T13:26:52.659Z level=INFO run=417d82dd message="watcher stopped" path=/tmp/ralphy-1042/xdg-v2b/config/opencode/skill type=file role=server
+timestamp=2026-11-25T13:26:52.659Z level=INFO run=417d82dd message="watcher stopped" path=/tmp/ralphy-1042/xdg-v2b/config/opencode/skills type=file role=server
+timestamp=2026-11-25T13:26:52.660Z level=INFO run=417d82dd message="watcher stopped" path=<home>/.claude/skills type=directory role=server
+timestamp=2026-11-25T13:26:52.660Z level=INFO run=417d82dd message="watcher stopped" path=<home>/.agents/skills type=directory role=server
+timestamp=2026-11-25T13:26:52.663Z level=INFO run=417d82dd message="watcher stopped" path=/tmp/ralphy-1042/repos/a/CLAUDE.md type=file role=server
+timestamp=2026-11-25T13:26:52.663Z level=INFO run=417d82dd message="watcher stopped" path=/tmp/ralphy-1042/repos/a/AGENTS.md type=file role=server
+timestamp=2026-11-25T13:26:52.663Z level=INFO run=417d82dd message="watcher stopped" path=<home>/.claude/CLAUDE.md type=file role=server
+timestamp=2026-11-25T13:26:52.663Z level=INFO run=417d82dd message="watcher stopped" path=/tmp/ralphy-1042/xdg-v2b/config/opencode/AGENTS.md type=file role=server
+timestamp=2026-11-25T13:26:52.677Z level=INFO run=417d82dd message="watcher stopped" path=/etc type=entries http.span=3982 role=server
+timestamp=2026-11-25T13:26:52.677Z level=INFO run=417d82dd message="watcher stopped" path=/ type=entries http.span=3982 role=server
+timestamp=2026-11-25T13:26:52.677Z level=INFO run=417d82dd message="watcher stopped" path=/tmp type=entries http.span=3982 role=server
+timestamp=2026-11-25T13:26:52.677Z level=INFO run=417d82dd message="watcher stopped" path=/tmp/ralphy-1042 type=entries http.span=3982 role=server
+timestamp=2026-11-25T13:26:52.677Z level=INFO run=417d82dd message="watcher stopped" path=/tmp/ralphy-1042/repos type=entries http.span=3982 role=server
+timestamp=2026-11-25T13:26:52.677Z level=INFO run=417d82dd message="watcher stopped" path=/tmp/ralphy-1042/repos/a type=entries http.span=3982 role=server
+timestamp=2026-11-25T13:26:52.677Z level=INFO run=417d82dd message="watcher stopped" path=<home> type=entries http.span=3982 role=server
+timestamp=2026-11-25T13:26:52.683Z level=INFO run=417d82dd message="watcher stopped" path=/tmp/ralphy-1042/xdg-v2b/config/opencode type=directory http.span=3988 role=server
+--- exit 1
+--- status file:
+{"event":"plugin.loaded","ts":"2026-11-25T13:26:51.146Z"}
+{"event":"session.created","session_id":"ses_ded1cc8c6ffeK3wnbKsN61FKoW","ts":"2026-11-25T13:26:52.209Z"}
+{"event":"session.status","session_id":"ses_ded1cc8c6ffeK3wnbKsN61FKoW","ts":"2026-11-25T13:26:52.209Z"}
+{"event":"session.status","session_id":"ses_ded1cc8c6ffeK3wnbKsN61FKoW","ts":"2026-11-25T13:26:52.605Z"}
+{"event":"session.idle","session_id":"ses_ded1cc8c6ffeK3wnbKsN61FKoW","ts":"2026-11-25T13:26:52.622Z"}

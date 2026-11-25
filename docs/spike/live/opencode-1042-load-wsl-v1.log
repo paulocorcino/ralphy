@@ -1,0 +1,13 @@
+$ MODEL=opencode/hy4-flash-free bash run.sh /tmp/ralphy-1042/v1/node_modules/opencode-linux-x64/bin/opencode /tmp/ralphy-1042/xdg-v1 /tmp/ralphy-1042/repos/a file:///tmp/ralphy-1042/ralphy-state-plugin.js /tmp/ralphy-1042/st-v1-wsl.jsonl ERROR
+config: {"plugin":["file:///tmp/ralphy-1042/ralphy-state-plugin.js"]}
+{"type":"step_start","timestamp":1795609732603,"sessionID":"ses_ded51fc86ffefSIXKLvybS1JDE","part":{"id":"prt_212ae25ef001aw0lNQJnwU2Dy3","messageID":"msg_212ae073d001kCF7W7FjRi8UVS","sessionID":"ses_ded51fc86ffefSIXKLvybS1JDE","snapshot":"46fa518f85512546ad32ff5a909f97ac1e8471c9","type":"step-start"}}
+{"type":"text","timestamp":1795609732738,"sessionID":"ses_ded51fc86ffefSIXKLvybS1JDE","part":{"id":"prt_212ae2627001pdK9GfT0dzaQ1t","messageID":"msg_212ae073d001kCF7W7FjRi8UVS","sessionID":"ses_ded51fc86ffefSIXKLvybS1JDE","type":"text","text":"ok","time":{"start":1795609732647,"end":1795609732730}}}
+{"type":"step_finish","timestamp":1795609732764,"sessionID":"ses_ded51fc86ffefSIXKLvybS1JDE","part":{"id":"prt_212ae2692001LxX0qXw8tGXs99","reason":"stop","snapshot":"46fa518f85512546ad32ff5a909f97ac1e8471c9","messageID":"msg_212ae073d001kCF7W7FjRi8UVS","sessionID":"ses_ded51fc86ffefSIXKLvybS1JDE","type":"step-finish","tokens":{"total":21655,"input":18823,"output":3,"reasoning":13,"cache":{"write":0,"read":2816}},"cost":0}}
+--- exit 0
+--- status file:
+{"event":"plugin.loaded","ts":"2026-11-25T12:28:43.453Z"}
+{"event":"session.created","session_id":"ses_ded51fc86ffefSIXKLvybS1JDE","ts":"2026-11-25T12:28:43.777Z"}
+{"event":"session.status","session_id":"ses_ded51fc86ffefSIXKLvybS1JDE","ts":"2026-11-25T12:28:44.729Z"}
+{"event":"session.status","session_id":"ses_ded51fc86ffefSIXKLvybS1JDE","ts":"2026-11-25T12:28:45.762Z"}
+{"event":"session.status","session_id":"ses_ded51fc86ffefSIXKLvybS1JDE","ts":"2026-11-25T12:28:52.812Z"}
+{"event":"session.idle","session_id":"ses_ded51fc86ffefSIXKLvybS1JDE","ts":"2026-11-25T12:28:52.815Z"}
