@@ -194,6 +194,27 @@ fn cursor_resolves_off_path_through_the_vendor_locator() {
     // helper bin through `agent=cursor`.
 }
 
+/// `OpenCode`'s installer puts the binary in `~/.opencode/bin`, which is on no
+/// `PATH`, so the arm must go through the shared locator, as Cursor's does.
+#[test]
+fn opencode_resolves_through_the_shared_locator() {
+    let code: String = include_str!("../spec.rs").split_whitespace().collect();
+    let code = code.split("#[cfg(test)]mod").next().unwrap_or_default();
+    let body = code
+        .split_once("pubfnlocate_program(self)")
+        .and_then(|(_, rest)| rest.split_once("fnresolve_program"))
+        .map(|(body, _)| body)
+        .expect("Agent::locate_program");
+    let arm = body
+        .split_once("Agent::OpenCode=>")
+        .map(|(_, rest)| rest.split(',').next().unwrap_or(rest))
+        .expect("locate_program has an OpenCode arm");
+    assert!(
+        arm.contains("opencode::locate_opencode()"),
+        "the OpenCode arm must resolve through the shared locator: {arm}"
+    );
+}
+
 /// `ALL` is hand-written, so a seventh variant added to the enum and to
 /// `agent_flag` — but forgotten here — would leave every pin that iterates it
 /// silently vacuous, which is exactly the ADR-0040 Tier 4 drift those pins

@@ -118,15 +118,16 @@ impl Agent {
         }
     }
 
-    /// What a `Command` should be constructed with. Every vendor but Cursor is
-    /// found on `PATH` (plus the `~/.local/bin` fallback); Cursor needs its own
-    /// locator, shared with the run path so detection and execution cannot
-    /// disagree (ADR-0042 D14/D19).
+    /// What a `Command` should be constructed with. Antigravity, Cursor and
+    /// `OpenCode` have their own locators, shared with the run path so detection
+    /// and execution cannot disagree (ADR-0042 D14/D19); every other vendor is
+    /// found on `PATH` (plus the `~/.local/bin` fallback).
     pub fn locate_program(self) -> Option<PathBuf> {
         match self {
             Agent::Antigravity => ralphy_proc_util::antigravity::locate_agy(),
             Agent::Cursor => ralphy_proc_util::cursor::locate_cursor(),
-            Agent::Claude | Agent::Codex | Agent::Copilot | Agent::Kimi | Agent::OpenCode => {
+            Agent::OpenCode => ralphy_proc_util::opencode::locate_opencode(),
+            Agent::Claude | Agent::Codex | Agent::Copilot | Agent::Kimi => {
                 ralphy_proc_util::locate_program(self.program_name())
             }
         }
