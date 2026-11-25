@@ -527,8 +527,12 @@ earlier versions.
 _Avoid_: secret, item, record.
 
 **Vault secret**:
-A name and a value the operator keeps in a **vault** with no file on disk. The
-operator reads and copies it; no agent or console receives it.
+A named record of the project the operator keeps in a **vault** with no file
+on disk, such as an API key or the login of a service the project uses. It
+holds one or more fields that the operator names; each field is text (shown)
+or hidden (masked until the operator reveals or copies it). A command can
+run with the hidden fields in its environment, and their values are masked
+in its output.
 _Avoid_: password, credential, key (the vault's own key).
 
 **Card**:
