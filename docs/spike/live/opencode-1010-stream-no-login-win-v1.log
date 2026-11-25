@@ -1,0 +1,10 @@
+cd /tmp/ralphy-1010/repos/a && echo <prompt> | <home>/AppData/Local/Temp/ralphy-1010/v1/node_modules/opencode-ai/bin/opencode.exe run --format json --dangerously-skip-permissions --print-logs --log-level ERROR -m anthropic/claude-haiku-4-5
+# env: XDG_* under <home>/AppData/Local/Temp/ralphy-1010/xdg-v1-empty2; ANTHROPIC_API_KEY and OPENAI_API_KEY removed; OPENCODE_CONFIG_CONTENT = a permission.bash deny map
+# prompt on stdin, shape ok
+--- exit, HEAD after, git status
+exit=1 seconds=3
+a3063749 feat: add TypeScript build info and new test bytecode files
+--- stdout: 1 lines, in crates/ralphy-agent-opencode/tests/fixtures/v1/no-login-win.jsonl
+--- stderr
+timestamp=2026-11-25T01:51:51.481Z level=ERROR run=0db76188 message="share subscriber failed" type=message.updated cause="Cause([Fail(ProviderModelNotFoundError: Model not found: anthropic/claude-haiku-4-5. Did you mean: claude-haiku-4-5, claude-haiku-4-5-20251001?)])"
+timestamp=2026-11-25T01:51:51.503Z level=ERROR run=0db76188 message=failed ref=err_c66f2b02 error="ProviderModelNotFoundError: Model not found: anthropic/claude-haiku-4-5. Did you mean: claude-haiku-4-5, claude-haiku-4-5-20251001?" cause="ProviderModelNotFoundError: Model not found: anthropic/claude-haiku-4-5. Did you mean: claude-haiku-4-5, claude-haiku-4-5-20251001?\n    at <anonymous> (B:/~BUN/root/chunk-kvr676zm.js:439:94416)\n    at SessionPrompt.getModel (B:/~BUN/root/chunk-8dmfybbv.js:1142:11505)\n    at SessionPrompt.getModel (definition) (B:/~BUN/root/chunk-8dmfybbv.js:1142:908)\n    at SessionPrompt.run (B:/~BUN/root/chunk-8dmfybbv.js:1142:15339)\n    at SessionPrompt.run (definition) (B:/~BUN/root/chunk-8dmfybbv.js:1142:10503)\n    at SessionRunState.ensureRunning (B:/~BUN/root/chunk-8dmfybbv.js:1142:15308)\n    at SessionRunState.ensureRunning (definition) (B:/~BUN/root/chunk-8dmfybbv.js:2:8188)\n    at SessionPrompt.loop (B:/~BUN/root/chunk-8dmfybbv.js:1142:10225)\n    at SessionPrompt.loop (definition) (B:/~BUN/root/chunk-8dmfybbv.js:1142:15244)\n    at SessionPrompt.prompt (B:/~BUN/root/chunk-w0bj7tch.js:4:13324)\n    at SessionPrompt.prompt (definition) (B:/~BUN/root/chunk-8dmfybbv.js:1142:9844)"

@@ -1,0 +1,37 @@
+python -X utf8 -I s4logscan.py <home>/.local/share/opencode/log/opencode.log   # Windows operator log, read only; groups WARN/ERROR lines by the version of the run (a 2.x run logs 'cli starting version=2.3.2', a 1.x run does not)
+first 2.x run: timestamp=2026-11-22T23:10:34.123Z level
+versions: [('2.3.2', 23)]
+limit-regex lines by version: {'unknown': 150}
+761 ('u', 'WARN', '"duplicate skill name"')
+183 ('u', 'ERROR', '"stream error"')
+20 ('u', 'ERROR', 'process')
+5 ('u', 'ERROR', '"Failed to fetch models.dev"')
+1 ('u', 'ERROR', '"failed to load plugin"')
+1 ('2', 'ERROR', '"Failed to drain Session"')
+SAMPLE ('2', 'ERROR', '"Failed to drain Session"') timestamp=2026-11-22T23:10:58.510Z level=ERROR run=ef337b66 message="Failed to drain Session" cause="AI.Error: Insufficient balance or no resource package. Please recharge.\n    at Rfe (B:/~BUN/root/chunk-qgs619eb.js:3:3000)\n    at <anonymous> (B:/~BUN/root/chunk-qgs619eb.js:3:2692)\n    at Session
+
+--- the 1.x form of the same kind of event (a Kimi quota block, 2026-07-09), first match:
+timestamp=2026-07-09T23:19:01.732Z level=ERROR run=ef42c72e message="stream error" providerID=kimi-for-coding modelID=k2p6 session.id=ses_0b6d29755ffevsu4fvnyJ5xHxM small=true agent=title mode=primary error.error="AI_APICallError: You've reached your usage limit for this billing cycle. Your quota will be refreshed in the next cycle. Upgrade to get more: https://www.kimi.com/code/console?from=quota-upgrade"
+
+--- python -X utf8 -I s4logscan.py <WSL operator log ~/.local/share/opencode/log/opencode.log, copied by cat>
+first 2.x run: timestamp=2026-11-22T09:09:27.327Z level
+versions: [('2.3.2', 15)]
+limit-regex lines by version: {}
+33 ('2', 'WARN', '"update check failed"')
+6 ('u', 'WARN', '"server unavailable"')
+4 ('2', 'WARN', '"mcp connect failed"')
+1 ('u', 'WARN', '"duplicate skill name"')
+1 ('u', 'WARN', '"failed to initialize fff"')
+1 ('u', 'ERROR', 'process')
+1 ('2', 'ERROR', '"Failed to drain Session"')
+SAMPLE ('2', 'WARN', '"mcp connect failed"') timestamp=2026-11-22T09:09:28.779Z level=WARN run=4cbd5396 message="mcp connect failed" server=pencil status.status=failed status.error="NotFound: ChildProcess.spawn (<home>/.vscode-server/extensions/highagency.pencildev-0.6.47/out/mcp-server-linux-x64 --app visual_studio_code)" http.span=101
+SAMPLE ('2', 'ERROR', '"Failed to drain Session"') timestamp=2026-11-22T09:15:39.265Z level=ERROR run=4cbd5396 message="Failed to drain Session" cause="AI.Error: Insufficient balance or no resource package. Please recharge.\n    at Ffe (/$bunfs/root/chunk-bk2wx8d4.js:3:3000)\n    at <anonymous> (/$bunfs/root/chunk-bk2wx8d4.js:3:2692)\n    at Session
+SAMPLE ('2', 'WARN', '"update check failed"') timestamp=2026-11-22T16:01:23.332Z level=WARN run=97fdffb8 message="update check failed" error="UpgradeError: The operation timed out. (cause: TimeoutError: The operation timed out.)" role=cli
+
+--- python -X utf8 -I s4db.py <scratch copy of the Windows operator opencode.db, made in the state stage>   # session_message rows that carry an error, newest first
+['id', 'session_id', 'type', 'seq', 'time_created', 'time_updated', 'data']
+{"type": null, "error": {"type": "provider.quota", "message": "Insufficient balance or no resource package. Please recharge.", "status": 429, "response": {"body": "{\"error\":{\"code\":\"1113\",\"message\":\"Insufficient balance or no resource package. Please recharge.\"}}"}}, "finish": null, "model": null}
+{"type": null, "error": {"type": "provider.quota", "message": "Insufficient balance or no resource package. Please recharge.", "status": 429, "response": {"body": "{\"error\":{\"code\":\"1113\",\"message\":\"Insufficient balance or no resource package. Please recharge.\"}}"}}, "finish": "error", "model": {"id": "glm-5.3", "providerID": "zai-coding-plan", "variant": "high"}}
+{"type": null, "error": {"type": "provider.error", "message": "The API Key appears to be invalid or may have expired. Please verify your credentials and try again."}, "finish": null, "model": {"providerID": "kimi-for-coding", "id": "k3", "variant": "default"}}
+{"type": null, "error": {"type": "provider.error", "message": "Authentication Failed"}, "finish": null, "model": {"providerID": "zai-coding-plan", "id": "glm-5.2", "variant": "default"}}
+{"type": null, "error": {"type": "provider.error", "message": "\u8eab\u4efd\u9a8c\u8bc1\u5931\u8d25\u3002"}, "finish": null, "model": {"providerID": "zai-coding-plan", "id": "glm-5.2", "variant": "default"}}

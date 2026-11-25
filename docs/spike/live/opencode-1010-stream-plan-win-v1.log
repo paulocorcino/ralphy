@@ -1,0 +1,9 @@
+cd /tmp/ralphy-1010/repos/w1p && echo <prompt> | <home>/AppData/Local/Temp/ralphy-1010/v1/node_modules/opencode-ai/bin/opencode.exe run --format json --dangerously-skip-permissions --print-logs --log-level ERROR -m opencode/deepseek-v4.1-flash-free
+# env: XDG_* under <home>/AppData/Local/Temp/ralphy-1010/xdg-v1; ANTHROPIC_API_KEY and OPENAI_API_KEY removed; OPENCODE_CONFIG_CONTENT = a permission.bash deny map
+# prompt on stdin, shape plan
+--- exit, HEAD after, git status
+exit=0 seconds=39
+a3063749 feat: add TypeScript build info and new test bytecode files
+--- stdout: 9 lines, in crates/ralphy-agent-opencode/tests/fixtures/v1/plan-win.jsonl
+--- stderr
+(empty)

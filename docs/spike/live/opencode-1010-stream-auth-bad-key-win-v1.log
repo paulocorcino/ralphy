@@ -1,0 +1,11 @@
+cd /tmp/ralphy-1010/repos/a && echo <prompt> | <home>/AppData/Local/Temp/ralphy-1010/v1/node_modules/opencode-ai/bin/opencode.exe run --format json --dangerously-skip-permissions --print-logs --log-level ERROR -m anthropic/claude-haiku-4-5
+# env: XDG_* under <home>/AppData/Local/Temp/ralphy-1010/xdg-v1-empty; ANTHROPIC_API_KEY and OPENAI_API_KEY removed; ANTHROPIC_API_KEY=<redacted fake key>; OPENCODE_CONFIG_CONTENT = a permission.bash deny map
+# prompt on stdin, shape ok
+--- exit, HEAD after, git status
+exit=1 seconds=7
+a3063749 feat: add TypeScript build info and new test bytecode files
+--- stdout: 1 lines, in crates/ralphy-agent-opencode/tests/fixtures/v1/auth-bad-key-win.jsonl
+--- stderr
+timestamp=2026-11-25T01:51:38.483Z level=ERROR run=b3a85cad message="stream error" providerID=anthropic modelID=claude-haiku-5-5 session.id=ses_def99476bffeB1h58R8LjEjxt1 small=true agent=title mode=primary error.error="AI_APICallError: invalid x-api-key"
+timestamp=2026-11-25T01:51:40.923Z level=ERROR run=b3a85cad message="stream error" providerID=anthropic modelID=claude-haiku-4-5 session.id=ses_def99476bffeB1h58R8LjEjxt1 small=false agent=build mode=primary error.error="AI_APICallError: invalid x-api-key"
+timestamp=2026-11-25T01:51:40.926Z level=ERROR run=b3a85cad message=process session.id=ses_def99476bffeB1h58R8LjEjxt1 messageID=msg_21066bbf8001Wc2lXZQVK7cMJS error="invalid x-api-key" stack="AI_APICallError: invalid x-api-key\n    at <anonymous> (B:/~BUN/root/chunk-k4cbdn68.js:6:14527)\n    at async <anonymous> (B:/~BUN/root/chunk-k4cbdn68.js:6:12658)\n    at processTicksAndRejections (native:7:39)"

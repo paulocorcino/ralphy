@@ -1,0 +1,9 @@
+cd /tmp/ralphy-1010/repos/l2s && echo <prompt> | <home>/.opencode/bin/opencode run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/deepseek-v4.1-flash-free
+# env: the operator's own state (no XDG_*); ANTHROPIC_API_KEY and OPENAI_API_KEY removed; OPENCODE_CONFIG_CONTENT = a permission.bash deny map
+# prompt on stdin, shape execute
+--- exit, HEAD after, git status
+exit=0 seconds=15
+c520da78 spike: add SPIKE.md
+--- stdout: 12 lines, in crates/ralphy-agent-opencode/tests/fixtures/v2/execute-service-wsl.jsonl
+--- stderr
+(empty)
