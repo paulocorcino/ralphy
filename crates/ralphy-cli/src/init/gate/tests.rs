@@ -193,3 +193,27 @@ result: 3 blocker(s)
 ";
     assert_eq!(format_report(&f, &evaluate_gate(&f)), want);
 }
+
+#[test]
+fn the_opencode_login_probe_uses_the_shared_locator() {
+    let source = include_str!("../gate.rs");
+    let start = source
+        .find("fn login_probe_program(")
+        .expect("login_probe_program is defined");
+    let rest = source.split_at(start).1;
+    let end = rest
+        .find(
+            "
+}",
+        )
+        .expect("login_probe_program has a closing brace");
+    let body: String = rest.split_at(end).0.split_whitespace().collect();
+    assert!(
+        body.contains("Agent::Opencode=>ralphy_proc_util::opencode::locate_opencode()"),
+        "the OpenCode login probe must spawn the located program: {body}"
+    );
+    assert!(
+        source.contains("login_probe_program(a)"),
+        "agent_logged_in must build its command from login_probe_program"
+    );
+}

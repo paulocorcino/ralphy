@@ -1,0 +1,84 @@
+$ bash /tmp/ralphy-1010/flags.sh <home>/AppData/Roaming/npm/node_modules/@opencode/cli/bin/opencode.exe /tmp/ralphy-1010/xdg-v2 /tmp/ralphy-1010/repos/a --standalone
+=== opencode run --standalone --no-such-flag-xyz
+DESCRIPTION
+  Run OpenCode with a message
+
+USAGE
+  opencode run [flags] [<message...>]
+
+ARGUMENTS
+  message... string    Message to send (optional)
+
+FLAGS
+  --continue, -c            Continue the last session
+  --session, -s string      Session ID to continue, or to create if it does not exist
+--- exit 1
+=== opencode run --standalone --dangerously-skip-permissions -m nosuch/nosuch
+[91m[1mError: [0mModel unavailable: nosuch/nosuch
+--- exit 1
+=== opencode run --standalone --auto -m nosuch/nosuch
+[91m[1mError: [0mModel unavailable: nosuch/nosuch
+--- exit 1
+=== opencode run --standalone --format json -m nosuch/nosuch
+{"type":"error","timestamp":1795567722281,"sessionID":"ses_defd2e5c5ffeMa2yvLYfZ8klnp","error":{"type":"provider.no-route","message":"Model unavailable: nosuch/nosuch"}}
+--- exit 1
+=== opencode run --standalone --print-logs --log-level ERROR -m nosuch/nosuch
+DESCRIPTION
+  Run OpenCode with a message
+
+USAGE
+  opencode run [flags] [<message...>]
+
+ARGUMENTS
+  message... string    Message to send (optional)
+
+FLAGS
+  --continue, -c            Continue the last session
+  --session, -s string      Session ID to continue, or to create if it does not exist
+--- exit 1
+=== opencode run --standalone --print-logs --log-level error -m nosuch/nosuch
+timestamp=2026-11-25T00:48:43.101Z level=INFO run=24d20e74 message="cli starting" version=2.3.2 channel=latest local=false args="[\"serve\",\"--stdio\",\"--port\",\"0\"]" role=cli
+timestamp=2026-11-25T00:48:43.556Z level=INFO run=24d20e74 message="watcher subscribe" path="C:\\Users\\<user>\\AppData\\Local\\Temp\\ralphy-1010\\xdg-v2\\config\\opencode" type=directory ignores=6 ht
+timestamp=2026-11-25T00:48:43.560Z level=INFO run=24d20e74 message="watcher subscribe" path="C:\\ProgramData" type=entries ignores=0 http.span=176 role=server
+timestamp=2026-11-25T00:48:43.561Z level=INFO run=24d20e74 message="watcher started" path="C:\\ProgramData" type=entries backend=node ignores=0 http.span=177 role=server
+timestamp=2026-11-25T00:48:43.562Z level=INFO run=24d20e74 message="watcher subscribe" path="C:\\" type=entries ignores=0 http.span=178 role=server
+timestamp=2026-11-25T00:48:43.562Z level=INFO run=24d20e74 message="watcher started" path="C:\\" type=entries backend=node ignores=0 http.span=178 role=server
+timestamp=2026-11-25T00:48:43.563Z level=INFO run=24d20e74 message="watcher subscribe" path="C:\\Users" type=entries ignores=0 http.span=179 role=server
+timestamp=2026-11-25T00:48:43.564Z level=INFO run=24d20e74 message="watcher started" path="C:\\Users" type=entries backend=node ignores=0 http.span=180 role=server
+timestamp=2026-11-25T00:48:43.564Z level=INFO run=24d20e74 message="watcher subscribe" path="C:\\Users\\<user>" type=entries ignores=0 http.span=180 role=server
+timestamp=2026-11-25T00:48:43.565Z level=INFO run=24d20e74 message="watcher started" path="C:\\Users\\<user>" type=entries backend=node ignores=0 http.span=181 role=server
+timestamp=2026-11-25T00:48:43.565Z level=INFO run=24d20e74 message="watcher subscribe" path="C:\\Users\\<user>\\AppData" type=entries ignores=0 http.span=181 role=server
+timestamp=2026-11-25T00:48:43.566Z level=INFO run=24d20e74 message="watcher started" path="C:\\Users\\<user>\\AppData" type=entries backend=node ignores=0 http.span=182 role=server
+--- exit 1
+=== opencode run --standalone --variant high -m nosuch/nosuch
+DESCRIPTION
+  Run OpenCode with a message
+
+USAGE
+  opencode run [flags] [<message...>]
+
+ARGUMENTS
+  message... string    Message to send (optional)
+
+FLAGS
+  --continue, -c            Continue the last session
+  --session, -s string      Session ID to continue, or to create if it does not exist
+--- exit 1
+=== opencode run --standalone -m nosuch/nosuch#high
+[91m[1mError: [0mModel unavailable: nosuch/nosuch
+--- exit 1
+=== opencode run --standalone --dir . -m nosuch/nosuch
+DESCRIPTION
+  Run OpenCode with a message
+
+USAGE
+  opencode run [flags] [<message...>]
+
+ARGUMENTS
+  message... string    Message to send (optional)
+
+FLAGS
+  --continue, -c            Continue the last session
+  --session, -s string      Session ID to continue, or to create if it does not exist
+--- exit 1
+[exit 0]

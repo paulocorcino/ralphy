@@ -1,0 +1,33 @@
+$ python -I <home>/AppData/Local/Temp/ralphy-1010/dbdump.py <home>/AppData/Local/Temp/ralphy-1010/xdg-v2/data/opencode/opencode.db show
+user_version: 0
+journal_mode: wal
+## tables (name: rows)
+account: 0
+account_state: 0
+automation: 0
+blob: 0
+blob_ref: 0
+control_account: 0
+credential: 0
+event: 0
+event_sequence: 7
+instruction_blob: 4
+instruction_entry: 0
+instruction_state: 6
+job: 0
+kv: 2
+migration: 62
+permission: 0
+project: 1
+project_directory: 0
+session_inbox: 0
+session_message: 13
+session_part: 0
+session_v2: 6
+workspace: 0
+worktree: 1
+## DDL of the tables the usage scan reads
+-- message: no such table
+-- session: no such table
+## message.data of the newest assistant row: key shapes
+[exit 0]

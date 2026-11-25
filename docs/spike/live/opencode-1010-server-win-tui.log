@@ -1,0 +1,15 @@
+Start-Process <home>\AppData\Roaming\npm\opencode.cmd (no arguments) -WorkingDirectory <home>\AppData\Local\Temp\ralphy-1010\repos\w5t, a console window of its own; after 20 s the tree is ended by PID, root first
+--- processes before : pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+started pid 32216
+--- processes during (t+20s) : pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+13088 32216 conhost.exe \??\C:\WINDOWS\system32\conhost.exe 0x4
+20872 32216 opencode.exe "<home>\AppData\Roaming\npm\\node_modules\@opencode\cli\bin\opencode.exe"    
+32216 32688 cmd.exe C:\WINDOWS\system32\cmd.exe /c ""<home>\AppData\Roaming\npm\opencode.cmd" "
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+kill: pids 32216, 13088, 20872
+--- processes after the kill (t+25s) : pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service

@@ -1,0 +1,10 @@
+cd /tmp/ralphy-1010/repos/l5t && timeout 12 script -qfc "env PWD=/tmp/ralphy-1010/repos/a <home>/.opencode/bin/opencode" /dev/null (script runs the command through the shell, which resets PWD, so env sets it after); then the new lines of the service log that say location services booted
+exit 124
+folders named by the new service-log lines (directory= and event.location.directory=), with counts:
+=== the folder the TUI shows: text of the screen (script output, escape codes removed) that names a folder
+--- wsl-tui (PWD left alone)
+▀▀▀▀ /tmp/ralphy-1010/repos/l5t shift+tab agents ctrl+p comma
+┃ …/ralp…/repos/l5t:capstone/opencode-273 ⊙ 1 MCP faile
+--- wsl-tui-pwd (PWD =/tmp/ralphy-1010/repos/a)
+▀▀▀▀ /tmp/ralphy-1010/r...pstone/opencode-273 shift+tab agent
+┃ …/ralp…/repos/l5t:ca ⊙ 1 MCP failed /mcps / u p d a t

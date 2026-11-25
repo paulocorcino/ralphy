@@ -1,0 +1,80 @@
+cd /tmp/ralphy-1010/repos/a && echo <prompt> | <home>/AppData/Roaming/npm/node_modules/@opencode/cli/bin/opencode.exe run --format json --dangerously-skip-permissions --print-logs --standalone --log-level error -m anthropic/claude-haiku-4-5
+# env: XDG_* under <home>/AppData/Local/Temp/ralphy-1010/xdg-v2-empty; ANTHROPIC_API_KEY and OPENAI_API_KEY removed; OPENCODE_CONFIG_CONTENT = a permission.bash deny map
+# prompt on stdin, shape ok
+--- exit, HEAD after, git status
+exit=1 seconds=4
+a3063749 feat: add TypeScript build info and new test bytecode files
+--- stdout: 1 lines, in crates/ralphy-agent-opencode/tests/fixtures/v2/no-login-win.jsonl
+--- stderr
+timestamp=2026-11-25T01:51:18.201Z level=INFO run=cd9b1da2 message="cli starting" version=2.3.2 channel=latest local=false args="[\"serve\",\"--stdio\",\"--port\",\"0\"]" role=cli
+timestamp=2026-11-25T01:51:18.427Z level=INFO run=cd9b1da2 message="database schema bootstrap started" migrations=62 role=server
+timestamp=2026-11-25T01:51:18.446Z level=INFO run=cd9b1da2 message="database schema bootstrap completed" migrations=62 durationMs=19 role=server
+timestamp=2026-11-25T01:51:18.666Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\xdg-v2-empty\\config\\opencode" type=directory ignores=6 http.span=178 role=server
+timestamp=2026-11-25T01:51:18.670Z level=INFO run=cd9b1da2 message="watcher subscribe" path="C:\\ProgramData" type=entries ignores=0 http.span=182 role=server
+timestamp=2026-11-25T01:51:18.671Z level=INFO run=cd9b1da2 message="watcher started" path="C:\\ProgramData" type=entries backend=node ignores=0 http.span=183 role=server
+timestamp=2026-11-25T01:51:18.671Z level=INFO run=cd9b1da2 message="watcher subscribe" path="C:\\" type=entries ignores=0 http.span=183 role=server
+timestamp=2026-11-25T01:51:18.672Z level=INFO run=cd9b1da2 message="watcher started" path="C:\\" type=entries backend=node ignores=0 http.span=184 role=server
+timestamp=2026-11-25T01:51:18.672Z level=INFO run=cd9b1da2 message="watcher subscribe" path="C:\\Users" type=entries ignores=0 http.span=184 role=server
+timestamp=2026-11-25T01:51:18.673Z level=INFO run=cd9b1da2 message="watcher started" path="C:\\Users" type=entries backend=node ignores=0 http.span=185 role=server
+timestamp=2026-11-25T01:51:18.673Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>" type=entries ignores=0 http.span=185 role=server
+timestamp=2026-11-25T01:51:18.674Z level=INFO run=cd9b1da2 message="watcher started" path="<home>" type=entries backend=node ignores=0 http.span=186 role=server
+timestamp=2026-11-25T01:51:18.674Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData" type=entries ignores=0 http.span=186 role=server
+timestamp=2026-11-25T01:51:18.675Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData" type=entries backend=node ignores=0 http.span=187 role=server
+timestamp=2026-11-25T01:51:18.675Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local" type=entries ignores=0 http.span=187 role=server
+timestamp=2026-11-25T01:51:18.676Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local" type=entries backend=node ignores=0 http.span=188 role=server
+timestamp=2026-11-25T01:51:18.676Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp" type=entries ignores=0 http.span=188 role=server
+timestamp=2026-11-25T01:51:18.677Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\Temp" type=entries backend=node ignores=0 http.span=189 role=server
+timestamp=2026-11-25T01:51:18.677Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1010" type=entries ignores=0 http.span=189 role=server
+timestamp=2026-11-25T01:51:18.678Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1010" type=entries backend=node ignores=0 http.span=190 role=server
+timestamp=2026-11-25T01:51:18.679Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos" type=entries ignores=0 http.span=191 role=server
+timestamp=2026-11-25T01:51:18.680Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos" type=entries backend=node ignores=0 http.span=192 role=server
+timestamp=2026-11-25T01:51:18.680Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\a" type=entries ignores=0 http.span=192 role=server
+timestamp=2026-11-25T01:51:18.682Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\a" type=entries backend=node ignores=0 http.span=194 role=server
+timestamp=2026-11-25T01:51:18.690Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\xdg-v2-empty\\config\\opencode" type=directory backend=windows ignores=6 http.span=202 role=server
+timestamp=2026-11-25T01:51:18.710Z level=INFO run=cd9b1da2 message="location services booted" directory="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\a" workspaceID=undefined durationMs=221 http.span=222 role=server
+timestamp=2026-11-25T01:51:20.301Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\xdg-v2-empty\\config\\opencode\\AGENTS.md" type=file ignores=0
+timestamp=2026-11-25T01:51:20.303Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\xdg-v2-empty\\config\\opencode\\AGENTS.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.303Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\.claude\\CLAUDE.md" type=file ignores=0
+timestamp=2026-11-25T01:51:20.304Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\.claude\\CLAUDE.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.304Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\a\\AGENTS.md" type=file ignores=0
+timestamp=2026-11-25T01:51:20.304Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\a\\AGENTS.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.304Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\a\\CLAUDE.md" type=file ignores=0
+timestamp=2026-11-25T01:51:20.304Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\a\\CLAUDE.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.305Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\AGENTS.md" type=file ignores=0
+timestamp=2026-11-25T01:51:20.305Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\AGENTS.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.305Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\CLAUDE.md" type=file ignores=0
+timestamp=2026-11-25T01:51:20.305Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\CLAUDE.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.305Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\AGENTS.md" type=file ignores=0
+timestamp=2026-11-25T01:51:20.306Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\AGENTS.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.306Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\CLAUDE.md" type=file ignores=0
+timestamp=2026-11-25T01:51:20.306Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\CLAUDE.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.306Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\AGENTS.md" type=file ignores=0
+timestamp=2026-11-25T01:51:20.307Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\Temp\\AGENTS.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.307Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\CLAUDE.md" type=file ignores=0
+timestamp=2026-11-25T01:51:20.307Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\Temp\\CLAUDE.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.307Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\AGENTS.md" type=file ignores=0
+timestamp=2026-11-25T01:51:20.307Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\AGENTS.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.307Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\CLAUDE.md" type=file ignores=0
+timestamp=2026-11-25T01:51:20.307Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\CLAUDE.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.308Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\AGENTS.md" type=file ignores=0
+timestamp=2026-11-25T01:51:20.308Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\AGENTS.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.308Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\CLAUDE.md" type=file ignores=0
+timestamp=2026-11-25T01:51:20.308Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\CLAUDE.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.308Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AGENTS.md" type=file ignores=0
+timestamp=2026-11-25T01:51:20.309Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AGENTS.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.309Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\CLAUDE.md" type=file ignores=0
+timestamp=2026-11-25T01:51:20.309Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\CLAUDE.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.331Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\.claude\\skills" type=directory ignores=8
+timestamp=2026-11-25T01:51:20.332Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\.claude\\skills" type=directory backend=windows ignores=8 role=server
+timestamp=2026-11-25T01:51:20.390Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\xdg-v2-empty\\config\\opencode\\skill" type=file ignores=0
+timestamp=2026-11-25T01:51:20.391Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\xdg-v2-empty\\config\\opencode\\skill" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.391Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\xdg-v2-empty\\config\\opencode\\skills" type=file ignores=0
+timestamp=2026-11-25T01:51:20.392Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\xdg-v2-empty\\config\\opencode\\skills" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:51:20.412Z level=INFO run=cd9b1da2 message=event event.id=evt_21066775c001htffIVx1hX4IJt event.created=1795571480412 event.type=provider.updated event.location.directory="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\a" event.location.workspaceID=undefined event.data={} http.span=1924 role=server
+timestamp=2026-11-25T01:51:20.423Z level=INFO run=cd9b1da2 message=event event.id=evt_2106677670016NZwQYrHYofnEv event.created=1795571480423 event.type=model.updated event.location.directory="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\a" event.location.workspaceID=undefined event.data={} http.span=1935 role=server
+timestamp=2026-11-25T01:51:20.519Z level=INFO run=cd9b1da2 message=event event.id=evt_2106677c7001DotX1McuPcST54 event.created=1795571480519 event.type=agent.updated event.location.directory="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\a" event.location.workspaceID=undefined event.data={} http.span=2031 role=server
+timestamp=2026-11-25T01:51:20.519Z level=INFO run=cd9b1da2 message=event event.id=evt_2106677c70027PLkpXKdrOcMSg event.created=1795571480519 event.type=command.updated event.location.directory="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\a" event.location.workspaceID=undefined event.data={} http.span=2031 role=server
+timestamp=2026-11-25T01:51:20.623Z level=INFO run=cd9b1da2 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\a\\.git\\HEAD" type=file ignores=0 http.span=2135 role=server
+timestamp=2026-11-25T01:51:20.625Z level=INFO run=cd9b1da2 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\a\\.git\\HEAD" type=file backend=node ignores=0 http.span=2137 role=server
+timestamp=2026-11-25T01:51:20.667Z level=ERROR run=cd9b1da2 message="Failed to drain Session" cause="SessionRunnerModel.ModelUnavailableError: Model unavailable: anthropic/claude-haiku-4-5\n    at <anonymous> (B:/~BUN/root/chunk-t5ews8ew.js:33:21288)\n    at SessionRunnerModel.select (B:/~BUN/root/chunk-t5ews8ew.js:33:21625)\n    at SessionRunnerModel.select (definition) (B:/~BUN/root/chunk-t5ews8ew.js:33:21062)\n    at SessionRunnerModel.resolve (B:/~BUN/root/chunk-41r1gxg9.js:83:8862)\n    at SessionRunnerModel.resolve (definition) (B:/~BUN/root/chunk-t5ews8ew.js:33:21564)\n    at SessionContext.load (B:/~BUN/root/chunk-qqvj4jwz.js:492:2815)\n    at SessionContext.load (definition) (B:/~BUN/root/chunk-41r1gxg9.js:83:8812)\n    at SessionRunner.advanceToStep (B:/~BUN/root/chunk-qqvj4jwz.js:492:2870)\n    at SessionRunner.advanceToStep (definition) (B:/~BUN/root/chunk-qqvj4jwz.js:492:859)\n    at SessionRunner.drain (B:/~BUN/root/chunk-qqvj4jwz.js:492:6653)\n    at SessionRunner.drain (definition) (B:/~BUN/root/chunk-qqvj4jwz.js:492:438)" role=server sessionID=ses_def998f45ffe7Dxkp0nBXX1uTV
+timestamp=2026-11-25T01:51:20.711Z level=INFO run=cd9b1da2 message="Sent HTTP response" http.span=1340 role=server http.method=GET http.url=/api/event http.status=200

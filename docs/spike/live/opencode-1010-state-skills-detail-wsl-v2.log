@@ -1,0 +1,8 @@
+$ wsl -d Ubuntu-22.04 -e env LL=debug bash -l -s -- <home>/.opencode/bin/opencode /tmp/ralphy-1010/xdg-v2 /tmp/ralphy-1010/repos/a /tmp/ralphy-1010 /tmp/ralphy-1010/status-v2.jsonl --standalone < /tmp/ralphy-1010/skills2.sh
+--- exit 0
+probe-skill-1010 mentions in the full output: 1
+--- log lines that mention plugin (first 15):
+timestamp=2026-11-25T00:57:17.237Z level=WARN run=0fcd84af message="configured plugin path must be a directory" target=//tmp/ralphy-1010/probe-plugin.js http.span=124 role=server
+--- status file:
+cat: /tmp/ralphy-1010/status-v2.jsonl: No such file or directory
+[exit 0]

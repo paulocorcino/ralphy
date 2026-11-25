@@ -10,6 +10,7 @@ pub mod detach;
 pub mod elevated;
 pub mod exe;
 pub mod hook_form;
+pub mod opencode;
 pub mod pid;
 mod stop;
 pub mod stop_signal;

@@ -1,0 +1,49 @@
+<home>\AppData\Roaming\npm\opencode.cmd run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/deepseek-v4.1-flash-free   (cwd=<home>\AppData\Local\Temp\ralphy-1010\repos\w5k PWD=<home>\AppData\Local\Temp\ralphy-1010\repos\w5k prompt=slow40 on stdin; kill=tree by pid mid-run) [win32]
+service.json pid: 44232
+--- processes before (t+1s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+started pid 31224
+--- processes during (t+8s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+23936 33676 conhost.exe \??\C:\WINDOWS\system32\conhost.exe 0x4
+31224 20872 cmd.exe C:\WINDOWS\system32\cmd.exe /c <home>\AppData\Roaming\npm\opencode.cmd run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/deepseek-v4.1-flash-free
+31812 31224 opencode.exe "<home>\AppData\Roaming\npm\\node_modules\@opencode\cli\bin\opencode.exe"    run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/deepseek-v4.1-flash-fr
+33676 4484 pwsh.exe "C:\Program Files\PowerShell\7\pwsh.EXE" -NoLogo -NoProfile -NonInteractive -Command "Start-Sleep -Seconds 40"
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+tool process seen: 33676 parent 4484 "C:\Program Files\PowerShell\7\pwsh.EXE" -NoLogo -NoProfile -NonInteractive -Command "Start-Sleep -Seconds 40"
+kill trigger: a sleep process; session before kill: ses_def69a8bbffe2LSB6YpdS3dlux; repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []
+kill: TerminateProcess root first, pids [31224, 31812]
+client exit after kill: 1
+log opencode.log lines with the session id at kill: 0
+t+10s after kill: repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []; AFTER.md exists=False; log lines with session id: 1
+--- processes t+10s after kill (t+19s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+23936 33676 conhost.exe \??\C:\WINDOWS\system32\conhost.exe 0x4
+33676 4484 pwsh.exe "C:\Program Files\PowerShell\7\pwsh.EXE" -NoLogo -NoProfile -NonInteractive -Command "Start-Sleep -Seconds 40"
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+t+21s after kill: repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []; AFTER.md exists=False; log lines with session id: 1
+--- processes t+21s after kill (t+30s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+23936 33676 conhost.exe \??\C:\WINDOWS\system32\conhost.exe 0x4
+33676 4484 pwsh.exe "C:\Program Files\PowerShell\7\pwsh.EXE" -NoLogo -NoProfile -NonInteractive -Command "Start-Sleep -Seconds 40"
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+t+31s after kill: repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []; AFTER.md exists=False; log lines with session id: 1
+--- processes t+31s after kill (t+40s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+23936 33676 conhost.exe \??\C:\WINDOWS\system32\conhost.exe 0x4
+33676 4484 pwsh.exe "C:\Program Files\PowerShell\7\pwsh.EXE" -NoLogo -NoProfile -NonInteractive -Command "Start-Sleep -Seconds 40"
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+t+42s after kill: repo HEAD 19e9946f spike: add AFTER.md | status []; AFTER.md exists=True; log lines with session id: 1
+--- processes t+42s after kill (t+51s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+t+52s after kill: repo HEAD 19e9946f spike: add AFTER.md | status []; AFTER.md exists=True; log lines with session id: 1
+--- processes t+53s after kill (t+62s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+t+63s after kill: repo HEAD 19e9946f spike: add AFTER.md | status []; AFTER.md exists=True; log lines with session id: 1
+--- processes t+63s after kill (t+72s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+stderr bytes: 0

@@ -1,0 +1,17 @@
+two at once: <home>/.opencode/bin/opencode run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/hy4-flash-free   (A cwd=/tmp/ralphy-1010/repos/l5p1 prompt name:PA; B cwd=/tmp/ralphy-1010/repos/l5p2 prompt name:PB) [linux]
+--- processes before (t+0s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+started A pid 4024166, B pid 4024167
+--- processes during (t+10s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+4024166 4024165 opencode <home>/.opencode/bin/opencode run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/hy4-flash-free
+4024167 4024165 opencode <home>/.opencode/bin/opencode run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/hy4-flash-free
+A exit 0 session ses_def62a98bffenALVTS1RPD6q55; repo HEAD 99551f6c spike: add PA.md | status []; files PA=True PB=False
+B exit 0 session ses_def62a98cffeTq6sPMdnWMEKrd; repo HEAD 7aa86230 spike: add PB.md | status []; files PA=False PB=True
+stream A: 13 events; mentions the other repo folder l5p2: False; mentions PB.md: False
+stream B: 13 events; mentions the other repo folder l5p1: False; mentions PA.md: False
+--- processes 5s after both exit (t+17s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871

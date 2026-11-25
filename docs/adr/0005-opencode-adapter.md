@@ -23,6 +23,8 @@ live against a real OpenCode install (see
 default was later amended by [ADR-0010](./0010-settings-and-opencode-model-default.md);
 D9's limit handling was substantially amended (see *Amendment 2026-07-13* below).
 
+Amended by [ADR-0094](./0094-opencode-1-and-2.md) (OpenCode 1.x and 2.x: the version read, the argv and outcomes per version, 2.x runs use `--standalone`).
+
 ## D1 — Selection is per run, via `--agent`; the core is untouched
 
 `main.rs` adds `OpenCode` to the `CliAgent` enum and boxes `OpenCodeAgent` as

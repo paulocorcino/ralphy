@@ -421,11 +421,10 @@ pub(crate) fn preflight_agents(executor: CliAgent, planner: CliAgent) -> Result<
     check_agents_present(executor, planner, |a| match a {
         CliAgent::Cursor => ralphy_agent_cursor::locate_cursor().is_some(),
         CliAgent::Antigravity => ralphy_proc_util::antigravity::locate_agy().is_some(),
-        CliAgent::Claude
-        | CliAgent::Codex
-        | CliAgent::Copilot
-        | CliAgent::Kimi
-        | CliAgent::OpenCode => ralphy_adapter_support::locate_program(a.cli_name()).is_some(),
+        CliAgent::OpenCode => ralphy_proc_util::opencode::locate_opencode().is_some(),
+        CliAgent::Claude | CliAgent::Codex | CliAgent::Copilot | CliAgent::Kimi => {
+            ralphy_adapter_support::locate_program(a.cli_name()).is_some()
+        }
     })
     .map_err(|e| anyhow::anyhow!(e))
 }

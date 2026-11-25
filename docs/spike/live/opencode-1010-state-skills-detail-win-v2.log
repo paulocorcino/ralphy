@@ -1,0 +1,8 @@
+$ bash /tmp/ralphy-1010/skills2.sh <home>/AppData/Roaming/npm/node_modules/@opencode/cli/bin/opencode.exe /tmp/ralphy-1010/xdg-v2 /tmp/ralphy-1010/repos/a <home>/AppData/Local/Temp/ralphy-1010 <home>/AppData/Local/Temp/ralphy-1010/status-v2.jsonl --standalone
+--- exit 0
+probe-skill-1010 mentions in the full output: 1
+--- log lines that mention plugin (first 15):
+timestamp=2026-11-25T00:55:38.362Z level=WARN run=883d7deb message="configured plugin path must be a directory" target="C:\\Users\\<user>\\AppData\\Local\\Temp\\ralphy-1010\\probe-plugin.js" http.span=193 role=server
+--- status file:
+cat: '<home>/AppData/Local/Temp/ralphy-1010/status-v2.jsonl': No such file or directory
+[exit 0]

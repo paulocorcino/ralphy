@@ -1,0 +1,18 @@
+<home>/.opencode/bin/opencode run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/deepseek-v4.1-flash-free   (cwd=/tmp/ralphy-1010/repos/l5a PWD=/tmp/ralphy-1010/repos/l5a prompt=slow15 on stdin; kill=no) [linux]
+service.json pid: 2216799
+--- processes before (t+0s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+started pid 4019977
+--- processes during (t+8s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+4019977 4019976 opencode <home>/.opencode/bin/opencode run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/deepseek-v4.1-flash-free
+4020075 3980080 sleep sleep 15
+tool process seen: 4020075 parent 3980080 sleep 15
+exit 0 after 34s; session ses_def670716ffexC6Vw59P3QvMSq
+repo HEAD d9bd5a52 spike: add AFTER.md | status []
+--- processes 5s after exit (t+39s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+stderr bytes: 0

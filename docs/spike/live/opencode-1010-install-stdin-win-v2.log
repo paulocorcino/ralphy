@@ -1,0 +1,6 @@
+$ bash /tmp/ralphy-1010/stdin.sh <home>/AppData/Roaming/npm/node_modules/@opencode/cli/bin/opencode.exe /tmp/ralphy-1010/xdg-v2 /tmp/ralphy-1010/repos/a --standalone
+{"type":"step_start","timestamp":1795568010169,"sessionID":"ses_defce86afffe4fdIbO2ALngayQ","part":{"id":"prt_2103183b90015wJeKxGsi9Q40c","sessionID":"ses_defce86afffe4fdIbO2ALngayQ","messageID":"msg_210317c0d001bggU9BIcGs93BE","type":"step-start","snapshot":"8747338fef90d7ba80dddb49263515f13af50715"}}
+{"type":"text","timestamp":1795568010189,"sessionID":"ses_defce86afffe4fdIbO2ALngayQ","part":{"id":"prt_2103183c8001BmQvNlPRB6tsnd","sessionID":"ses_defce86afffe4fdIbO2ALngayQ","messageID":"msg_210317c0d001bggU9BIcGs93BE","type":"text","text":"OK","time":{"start":1795568010184,"end":1795568010189}}}
+{"type":"step_finish","timestamp":1795568010246,"sessionID":"ses_defce86afffe4fdIbO2ALngayQ","part":{"id":"prt_210318406001wx8sNb0Y7dJySp","sessionID":"ses_defce86afffe4fdIbO2ALngayQ","messageID":"msg_210317c0d001bggU9BIcGs93BE","type":"step-finish","reason":"stop","snapshot":"8747338fef90d7ba80dddb49263515f13af50715","cost":0,"tokens":{"input":13967,"output":3,"reasoning":0,"cache":{"read":1792,"write":0}}}}
+--- exit 0
+[exit 0]

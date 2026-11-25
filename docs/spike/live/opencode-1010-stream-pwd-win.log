@@ -1,0 +1,17 @@
+opencode run --print-logs --format json -m nosuch/nosuch x, from git-bash on Windows, with and without a PWD that differs from the process folder (OpenCode 2.3.2 --standalone and 1.19.0; no model is called)
+=== v2: cd <scratch>/repos/w2e && opencode run --standalone --log-level error --print-logs --format json -m nosuch/nosuch x   (PWD left alone)
+timestamp=2026-11-25T01:59:14.578Z level=INFO run=b730bab1 message="location services booted" directory="C:\\Users\\<user>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\w2e" workspaceID=undefined durationMs=963 http.span=965 role=server
+timestamp=2026-11-25T01:59:15.966Z level=INFO run=b730bab1 message=event event.id=evt_2106db8fe00177nZme6Jr2HFBl event.created=1795571955966 event.type=provider.updated event.location.directory="C:\\Users\\<user>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\w2e"
+--- exit 1
+=== v2: cd <scratch>/repos/w2e && env PWD=<scratch>/repos/a opencode run --standalone --log-level error --print-logs --format json -m nosuch/nosuch x
+timestamp=2026-11-25T01:59:17.599Z level=INFO run=ecdada39 message="location services booted" directory="C:\\Users\\<user>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\a" workspaceID=undefined durationMs=256 http.span=258 role=server
+timestamp=2026-11-25T01:59:19.062Z level=INFO run=ecdada39 message=event event.id=evt_2106dc515001QR6qardEyLGxfr event.created=1795571959061 event.type=provider.updated event.location.directory="C:\\Users\\<user>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\a" e
+--- exit 1
+=== v1: cd <scratch>/repos/w2e && opencode run --log-level INFO --print-logs --format json -m nosuch/nosuch x   (PWD left alone)
+timestamp=2026-11-25T01:59:21.416Z level=INFO run=394a47e8 message="creating instance" directory="C:\\Users\\<user>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\w2e"
+timestamp=2026-11-25T01:59:21.419Z level=INFO run=394a47e8 message=fromDirectory directory="C:\\Users\\<user>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\w2e"
+--- exit 1
+=== v1: cd <scratch>/repos/w2e && env PWD=<scratch>/repos/a opencode run --log-level INFO --print-logs --format json -m nosuch/nosuch x
+timestamp=2026-11-25T01:59:28.095Z level=INFO run=f48bc1b0 message="creating instance" directory="C:\\Users\\<user>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\w2e"
+timestamp=2026-11-25T01:59:28.100Z level=INFO run=f48bc1b0 message=fromDirectory directory="C:\\Users\\<user>\\AppData\\Local\\Temp\\ralphy-1010\\repos\\w2e"
+--- exit 1

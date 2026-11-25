@@ -1,0 +1,43 @@
+<home>/.opencode/bin/opencode run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/hy4-flash-free --standalone   (cwd=/tmp/ralphy-1010/repos/l5j PWD=/tmp/ralphy-1010/repos/l5j prompt=slow40 on stdin; kill=tree by pid mid-run) [linux]
+service.json pid: 2216799
+--- processes before (t+0s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+started pid 4023674
+--- processes during (t+6s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+4023674 4023673 opencode <home>/.opencode/bin/opencode run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/hy4-flash-free --standalone
+4023684 4023674 opencode <home>/.opencode/bin/opencode serve --stdio --port 0
+4023756 4023684 opencode-pty /tmp/ralphy-1010/xdg-v2/cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir /tmp/ralphy-1010/xdg-v2/state/opencode/pty --name 2e4a4ef4-ae1a-4c96-9d22-b4e72b3f5efb
+4023762 4023756 sleep sleep 40
+tool process seen: 4023762 parent 4023756 sleep 40
+kill trigger: a sleep process; session before kill: ses_def63b70bffe0t5dYCJmuURFSF; repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []
+kill: SIGKILL to process group -4023674
+client exit after kill: -9
+log opencode.log lines with the session id at kill: 0
+t+10s after kill: repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []; AFTER.md exists=False; log lines with session id: 1
+--- processes t+10s after kill (t+16s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+t+20s after kill: repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []; AFTER.md exists=False; log lines with session id: 1
+--- processes t+20s after kill (t+26s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+t+32s after kill: repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []; AFTER.md exists=False; log lines with session id: 1
+--- processes t+32s after kill (t+38s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+t+42s after kill: repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []; AFTER.md exists=False; log lines with session id: 1
+--- processes t+42s after kill (t+48s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+t+52s after kill: repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []; AFTER.md exists=False; log lines with session id: 1
+--- processes t+52s after kill (t+58s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+t+63s after kill: repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []; AFTER.md exists=False; log lines with session id: 1
+--- processes t+63s after kill (t+69s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+stderr bytes: 10075

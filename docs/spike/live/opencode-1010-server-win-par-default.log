@@ -1,0 +1,17 @@
+two at once: <home>\AppData\Roaming\npm\opencode.cmd run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/deepseek-v4.1-flash-free   (A cwd=<home>\AppData\Local\Temp\ralphy-1010\repos\w5p1 prompt name:PA; B cwd=<home>\AppData\Local\Temp\ralphy-1010\repos\w5p2 prompt name:PB) [win32]
+--- processes before (t+1s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+started A pid 5608, B pid 46664
+--- processes during (t+11s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+45396 46664 opencode.exe "<home>\AppData\Roaming\npm\\node_modules\@opencode\cli\bin\opencode.exe"    run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/deepseek-v4.1-flash-fr
+46664 13296 cmd.exe C:\WINDOWS\system32\cmd.exe /c <home>\AppData\Roaming\npm\opencode.cmd run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/deepseek-v4.1-flash-free
+A exit 0 session ses_def6703abffedtaEW7Amd82Sg6; repo HEAD 0eef0f72 spike: add PA.md | status []; files PA=True PB=False
+B exit 0 session ses_def6703a1ffe5a3sGfaUGKZQnr; repo HEAD e54eae13 spike: add PB.md | status []; files PA=False PB=True
+stream A: 10 events; mentions the other repo folder w5p2: False; mentions PB.md: False
+stream B: 13 events; mentions the other repo folder w5p1: False; mentions PA.md: False
+--- processes 5s after both exit (t+20s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service

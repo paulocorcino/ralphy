@@ -1,0 +1,67 @@
+cd /tmp/ralphy-1010/repos/l2e && echo <prompt> | <home>/.opencode/bin/opencode run --format json --dangerously-skip-permissions --print-logs --standalone --log-level error -m opencode/deepseek-v4.1-flash-free
+# env: XDG_* under /tmp/ralphy-1010/xdg-v2; ANTHROPIC_API_KEY and OPENAI_API_KEY removed; OPENCODE_CONFIG_CONTENT = a permission.bash deny map
+# prompt on stdin, shape execute
+--- exit, HEAD after, git status
+exit=0 seconds=10
+d6352a0e spike: add SPIKE.md
+--- stdout: 13 lines, in crates/ralphy-agent-opencode/tests/fixtures/v2/execute-wsl.jsonl
+--- stderr
+timestamp=2026-11-25T01:55:02.164Z level=INFO run=07eff118 message="cli starting" version=2.3.2 channel=latest local=false args="[\"serve\",\"--stdio\",\"--port\",\"0\"]" role=cli
+timestamp=2026-11-25T01:55:02.506Z level=INFO run=07eff118 message="watcher subscribe" path=/tmp/ralphy-1010/xdg-v2/config/opencode type=directory ignores=6 http.span=58 role=server
+timestamp=2026-11-25T01:55:02.512Z level=INFO run=07eff118 message="watcher subscribe" path=/etc type=entries ignores=0 http.span=64 role=server
+timestamp=2026-11-25T01:55:02.513Z level=INFO run=07eff118 message="watcher started" path=/etc type=entries backend=node ignores=0 http.span=65 role=server
+timestamp=2026-11-25T01:55:02.514Z level=INFO run=07eff118 message="watcher subscribe" path=/ type=entries ignores=0 http.span=66 role=server
+timestamp=2026-11-25T01:55:02.514Z level=INFO run=07eff118 message="watcher started" path=/ type=entries backend=node ignores=0 http.span=66 role=server
+timestamp=2026-11-25T01:55:02.514Z level=INFO run=07eff118 message="watcher subscribe" path=/tmp type=entries ignores=0 http.span=66 role=server
+timestamp=2026-11-25T01:55:02.515Z level=INFO run=07eff118 message="watcher started" path=/tmp type=entries backend=node ignores=0 http.span=67 role=server
+timestamp=2026-11-25T01:55:02.515Z level=INFO run=07eff118 message="watcher subscribe" path=/tmp/ralphy-1010 type=entries ignores=0 http.span=67 role=server
+timestamp=2026-11-25T01:55:02.515Z level=INFO run=07eff118 message="watcher started" path=/tmp/ralphy-1010 type=entries backend=node ignores=0 http.span=67 role=server
+timestamp=2026-11-25T01:55:02.515Z level=INFO run=07eff118 message="watcher subscribe" path=/tmp/ralphy-1010/repos type=entries ignores=0 http.span=67 role=server
+timestamp=2026-11-25T01:55:02.516Z level=INFO run=07eff118 message="watcher started" path=/tmp/ralphy-1010/repos type=entries backend=node ignores=0 http.span=68 role=server
+timestamp=2026-11-25T01:55:02.516Z level=INFO run=07eff118 message="watcher subscribe" path=/tmp/ralphy-1010/repos/l2e type=entries ignores=0 http.span=68 role=server
+timestamp=2026-11-25T01:55:02.516Z level=INFO run=07eff118 message="watcher started" path=/tmp/ralphy-1010/repos/l2e type=entries backend=node ignores=0 http.span=68 role=server
+timestamp=2026-11-25T01:55:02.516Z level=INFO run=07eff118 message="watcher subscribe" path=<home> type=entries ignores=0 http.span=68 role=server
+timestamp=2026-11-25T01:55:02.517Z level=INFO run=07eff118 message="watcher started" path=<home> type=entries backend=node ignores=0 http.span=69 role=server
+timestamp=2026-11-25T01:55:02.525Z level=INFO run=07eff118 message="watcher started" path=/tmp/ralphy-1010/xdg-v2/config/opencode type=directory backend=inotify ignores=6 http.span=77 role=server
+timestamp=2026-11-25T01:55:02.572Z level=INFO run=07eff118 message="location services booted" directory=/tmp/ralphy-1010/repos/l2e workspaceID=undefined durationMs=122 http.span=124 role=server
+timestamp=2026-11-25T01:55:03.497Z level=INFO run=07eff118 message="watcher subscribe" path=/tmp/ralphy-1010/xdg-v2/config/opencode/AGENTS.md type=file ignores=0
+timestamp=2026-11-25T01:55:03.497Z level=INFO run=07eff118 message="watcher started" path=/tmp/ralphy-1010/xdg-v2/config/opencode/AGENTS.md type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:55:03.497Z level=INFO run=07eff118 message="watcher subscribe" path=<home>/.claude/CLAUDE.md type=file ignores=0
+timestamp=2026-11-25T01:55:03.497Z level=INFO run=07eff118 message="watcher started" path=<home>/.claude/CLAUDE.md type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:55:03.498Z level=INFO run=07eff118 message="watcher subscribe" path=/tmp/ralphy-1010/repos/l2e/AGENTS.md type=file ignores=0
+timestamp=2026-11-25T01:55:03.498Z level=INFO run=07eff118 message="watcher started" path=/tmp/ralphy-1010/repos/l2e/AGENTS.md type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:55:03.498Z level=INFO run=07eff118 message="watcher subscribe" path=/tmp/ralphy-1010/repos/l2e/CLAUDE.md type=file ignores=0
+timestamp=2026-11-25T01:55:03.498Z level=INFO run=07eff118 message="watcher started" path=/tmp/ralphy-1010/repos/l2e/CLAUDE.md type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:55:03.517Z level=INFO run=07eff118 message="watcher subscribe" path=<home>/.claude/skills type=directory ignores=8
+timestamp=2026-11-25T01:55:03.554Z level=INFO run=07eff118 message="watcher started" path=<home>/.claude/skills type=directory backend=inotify ignores=8 role=server
+timestamp=2026-11-25T01:55:04.235Z level=INFO run=07eff118 message="watcher subscribe" path=<home>/.agents/skills type=directory ignores=8
+timestamp=2026-11-25T01:55:04.236Z level=INFO run=07eff118 message="watcher started" path=<home>/.agents/skills type=directory backend=inotify ignores=8 role=server
+timestamp=2026-11-25T01:55:04.238Z level=INFO run=07eff118 message="watcher subscribe" path=/tmp/ralphy-1010/xdg-v2/config/opencode/skill type=file ignores=0
+timestamp=2026-11-25T01:55:04.238Z level=INFO run=07eff118 message="watcher started" path=/tmp/ralphy-1010/xdg-v2/config/opencode/skill type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:55:04.240Z level=INFO run=07eff118 message="watcher subscribe" path=/tmp/ralphy-1010/xdg-v2/config/opencode/skills type=file ignores=0
+timestamp=2026-11-25T01:55:04.240Z level=INFO run=07eff118 message="watcher started" path=/tmp/ralphy-1010/xdg-v2/config/opencode/skills type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T01:55:04.341Z level=INFO run=07eff118 message=event event.id=evt_21069e215001DSLnTX1viF50yv event.created=1795571704341 event.type=provider.updated event.location.directory=/tmp/ralphy-1010/repos/l2e event.location.workspaceID=undefined event.data={} http.span=1893 role=server
+timestamp=2026-11-25T01:55:04.349Z level=INFO run=07eff118 message=event event.id=evt_21069e21d001QcRXCgR5BU1lX3 event.created=1795571704349 event.type=model.updated event.location.directory=/tmp/ralphy-1010/repos/l2e event.location.workspaceID=undefined event.data={} http.span=1901 role=server
+timestamp=2026-11-25T01:55:04.362Z level=INFO run=07eff118 message=event event.id=evt_21069e22a00264akPKRwk8nkTQ event.created=1795571704362 event.type=agent.updated event.location.directory=/tmp/ralphy-1010/repos/l2e event.location.workspaceID=undefined event.data={} http.span=1914 role=server
+timestamp=2026-11-25T01:55:04.363Z level=INFO run=07eff118 message=event event.id=evt_21069e22b00130us1jvlb1D0MJ event.created=1795571704363 event.type=command.updated event.location.directory=/tmp/ralphy-1010/repos/l2e event.location.workspaceID=undefined event.data={} http.span=1915 role=server
+timestamp=2026-11-25T01:55:04.433Z level=INFO run=07eff118 message="watcher subscribe" path=/tmp/ralphy-1010/repos/l2e/.git/HEAD type=file ignores=0 http.span=1985 role=server
+timestamp=2026-11-25T01:55:04.434Z level=INFO run=07eff118 message="watcher started" path=/tmp/ralphy-1010/repos/l2e/.git/HEAD type=file backend=node ignores=0 http.span=1986 role=server
+timestamp=2026-11-25T01:55:10.885Z level=INFO run=07eff118 message="Sent HTTP response" http.span=7500 role=server http.method=GET http.url=/api/event http.status=200
+timestamp=2026-11-25T01:55:10.911Z level=INFO run=07eff118 message="shutdown started" signal=SIGTERM role=cli
+timestamp=2026-11-25T01:55:10.912Z level=INFO run=07eff118 message="watcher stopped" path=/tmp/ralphy-1010/repos/l2e/.git/HEAD type=file http.span=8464 role=server
+timestamp=2026-11-25T01:55:11.008Z level=INFO run=07eff118 message="watcher stopped" path=/tmp/ralphy-1010/xdg-v2/config/opencode/skill type=file role=server
+timestamp=2026-11-25T01:55:11.009Z level=INFO run=07eff118 message="watcher stopped" path=/tmp/ralphy-1010/xdg-v2/config/opencode/skills type=file role=server
+timestamp=2026-11-25T01:55:11.037Z level=INFO run=07eff118 message="watcher stopped" path=<home>/.claude/skills type=directory role=server
+timestamp=2026-11-25T01:55:11.037Z level=INFO run=07eff118 message="watcher stopped" path=<home>/.agents/skills type=directory role=server
+timestamp=2026-11-25T01:55:11.053Z level=INFO run=07eff118 message="watcher stopped" path=/tmp/ralphy-1010/repos/l2e/CLAUDE.md type=file role=server
+timestamp=2026-11-25T01:55:11.053Z level=INFO run=07eff118 message="watcher stopped" path=/tmp/ralphy-1010/repos/l2e/AGENTS.md type=file role=server
+timestamp=2026-11-25T01:55:11.054Z level=INFO run=07eff118 message="watcher stopped" path=<home>/.claude/CLAUDE.md type=file role=server
+timestamp=2026-11-25T01:55:11.054Z level=INFO run=07eff118 message="watcher stopped" path=/tmp/ralphy-1010/xdg-v2/config/opencode/AGENTS.md type=file role=server
+timestamp=2026-11-25T01:55:11.128Z level=INFO run=07eff118 message="watcher stopped" path=/etc type=entries http.span=8680 role=server
+timestamp=2026-11-25T01:55:11.128Z level=INFO run=07eff118 message="watcher stopped" path=/ type=entries http.span=8680 role=server
+timestamp=2026-11-25T01:55:11.128Z level=INFO run=07eff118 message="watcher stopped" path=/tmp type=entries http.span=8680 role=server
+timestamp=2026-11-25T01:55:11.128Z level=INFO run=07eff118 message="watcher stopped" path=/tmp/ralphy-1010 type=entries http.span=8680 role=server
+timestamp=2026-11-25T01:55:11.128Z level=INFO run=07eff118 message="watcher stopped" path=/tmp/ralphy-1010/repos type=entries http.span=8680 role=server
+timestamp=2026-11-25T01:55:11.128Z level=INFO run=07eff118 message="watcher stopped" path=/tmp/ralphy-1010/repos/l2e type=entries http.span=8680 role=server
+timestamp=2026-11-25T01:55:11.128Z level=INFO run=07eff118 message="watcher stopped" path=<home> type=entries http.span=8680 role=server
+timestamp=2026-11-25T01:55:11.132Z level=INFO run=07eff118 message="watcher stopped" path=/tmp/ralphy-1010/xdg-v2/config/opencode type=directory http.span=8684 role=server

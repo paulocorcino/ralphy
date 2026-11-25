@@ -1,0 +1,31 @@
+$ export XDG_DATA_HOME=/tmp/ralphy-1010/xdg-v1/data XDG_CONFIG_HOME=/tmp/ralphy-1010/xdg-v1/config XDG_STATE_HOME=/tmp/ralphy-1010/xdg-v1/state XDG_CACHE_HOME=/tmp/ralphy-1010/xdg-v1/cache; echo '### 1.19.0 models'; /tmp/ralphy-1010/v1/node_modules/opencode-windows-x64/bin/opencode.exe models 2>&1 | head -5; echo "rows: $(/tmp/ralphy-1010/v1/node_modules/opencode-windows-x64/bin/opencode.exe models 2>&1 | wc -l)"; unset XDG_DATA_HOME XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME; echo '### 2.3.2 models'; <home>/AppData/Roaming/npm/node_modules/@opencode/cli/bin/opencode.exe models 2>&1 | head -5; echo "rows: $(<home>/AppData/Roaming/npm/node_modules/@opencode/cli/bin/opencode.exe models 2>&1 | wc -l)"; echo '### 2.3.2 models --help'; <home>/AppData/Roaming/npm/node_modules/@opencode/cli/bin/opencode.exe models --help 2>&1 | sed -n 1,14p
+### 1.19.0 models
+opencode/big-pickle
+opencode/exo-free
+opencode/ling-3.0-flash-fin-free
+opencode/ling-3.1-flash-free
+opencode/longcat-2.5-preview-free
+rows: 10
+### 2.3.2 models
+opencode/beam-free
+opencode/big-pickle
+opencode/deepseek-v4.1-flash-free
+opencode/flint-40b-free
+opencode/hy4-flash-free
+rows: 36
+### 2.3.2 models --help
+DESCRIPTION
+  List all available models
+
+USAGE
+  opencode models [flags]
+
+GLOBAL FLAGS
+  --help, -h                                                          Show help information
+  --version, -v                                                       Show version information
+  --wizard                                                            Start wizard mode for a command
+  --completions <bash|zsh|fish|powershell|sh|pwsh>                    Print shell completion script (choices: bash, zsh, fish, powershell, sh, pwsh)
+  --log-level <all|trace|debug|info|warn|warning|error|fatal|none>    Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)
+  --print-logs                                                        Print logs to stderr (server logs require --standalone)
+  --standalone                                                        Run with a private server instead of the background service
+[exit 0]

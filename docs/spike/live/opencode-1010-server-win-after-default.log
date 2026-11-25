@@ -1,0 +1,20 @@
+<home>\AppData\Roaming\npm\opencode.cmd run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/deepseek-v4.1-flash-free   (cwd=<home>\AppData\Local\Temp\ralphy-1010\repos\w5a PWD=<home>\AppData\Local\Temp\ralphy-1010\repos\w5a prompt=slow15 on stdin; kill=no) [win32]
+service.json pid: 44232
+--- processes before (t+1s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+started pid 31560
+--- processes during (t+8s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+12356 4484 pwsh.exe "C:\Program Files\PowerShell\7\pwsh.EXE" -NoLogo -NoProfile -NonInteractive -Command "sleep 15"
+30380 12356 conhost.exe \??\C:\WINDOWS\system32\conhost.exe 0x4
+31560 42820 cmd.exe C:\WINDOWS\system32\cmd.exe /c <home>\AppData\Roaming\npm\opencode.cmd run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/deepseek-v4.1-flash-free
+33884 31560 opencode.exe "<home>\AppData\Roaming\npm\\node_modules\@opencode\cli\bin\opencode.exe"    run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/deepseek-v4.1-flash-fr
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+tool process seen: 12356 parent 4484 "C:\Program Files\PowerShell\7\pwsh.EXE" -NoLogo -NoProfile -NonInteractive -Command "sleep 15"
+exit 0 after 28s; session ses_def6b0347ffeAr3POVWaSxEZZ1
+repo HEAD 3831c38d spike: add AFTER.md | status []
+--- processes 5s after exit (t+33s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+stderr bytes: 0

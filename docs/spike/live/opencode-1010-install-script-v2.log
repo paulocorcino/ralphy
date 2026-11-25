@@ -1,0 +1,48 @@
+$ curl -sL https://opencode.ai/v2/install | grep -n -E 'INSTALL_DIR=|package_scope=|registry.npmjs|installed_binary=|opencode2|legacy_shim|no-modify-path|darwin|windows-x64'; echo ---shim; curl -sL https://opencode.ai/v2/install | sed -n 374,396p
+21:        --no-modify-path    Don't modify shell config files (.zshrc, .bashrc, etc.)
+58:        --no-modify-path)
+69:INSTALL_DIR=$HOME/.opencode/bin
+83:      Darwin*) os="darwin" ;;
+96:    if [ "$os" = "darwin" ] && [ "$arch" = "x64" ]; then
+113:      linux-x64|linux-arm64|darwin-x64|darwin-arm64|windows-x64|windows-arm64)
+142:      if [ "$os" = "darwin" ]; then
+177:    package_scope="@opencode"
+187:        package_scope="${package%/cli}"
+195:    http_status=$(curl -s -o /dev/null -w "%{http_code}" "https://registry.npmjs.org/$package_scope%2fcli-$target/$specific_version" || true)
+199:        http_status=$(curl -s -o /dev/null -w "%{http_code}" "https://registry.npmjs.org/@opencode-ai%2fcli-$target/$specific_version" || true)
+212:    url="https://registry.npmjs.org/$package_name/-/$filename"
+355:    local installed_binary="$APP"
+357:        installed_binary="$APP.exe"
+366:    local installed_binary="$APP"
+368:        MINGW*|MSYS*|CYGWIN*) installed_binary="$APP.exe" ;;
+374:install_legacy_shim() {
+381:    rm -f "$INSTALL_DIR/opencode2" "$INSTALL_DIR/opencode2.exe" "$INSTALL_DIR/opencode2.cmd"
+383:        cat > "$INSTALL_DIR/opencode2.cmd" <<'EOF'
+390:    cat > "$INSTALL_DIR/opencode2" <<'EOF'
+394:    chmod 755 "$INSTALL_DIR/opencode2"
+403:install_legacy_shim
+---shim
+install_legacy_shim() {
+    local shim_os="${os:-}"
+    if [[ -z "$shim_os" ]]; then
+        case "$(uname -s)" in
+            MINGW*|MSYS*|CYGWIN*) shim_os="windows" ;;
+        esac
+    fi
+    rm -f "$INSTALL_DIR/opencode2" "$INSTALL_DIR/opencode2.exe" "$INSTALL_DIR/opencode2.cmd"
+    if [[ "$shim_os" == "windows" ]]; then
+        cat > "$INSTALL_DIR/opencode2.cmd" <<'EOF'
+@echo off
+"%~dp0opencode.exe" %*
+exit /b %errorlevel%
+EOF
+        return
+    fi
+    cat > "$INSTALL_DIR/opencode2" <<'EOF'
+#!/bin/sh
+exec "$(dirname "$0")/opencode" "$@"
+EOF
+    chmod 755 "$INSTALL_DIR/opencode2"
+}
+
+[exit 0]

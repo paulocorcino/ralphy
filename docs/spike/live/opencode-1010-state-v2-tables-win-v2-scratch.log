@@ -1,0 +1,168 @@
+$ python -I <home>/AppData/Local/Temp/ralphy-1010/dbdump2.py <home>/AppData/Local/Temp/ralphy-1010/xdg-v2/data/opencode/opencode.db show
+## DDL session_v2
+CREATE TABLE `session_v2` (
+          `id` text PRIMARY KEY,
+          `project_id` text NOT NULL,
+          `workspace_id` text,
+          `parent_id` text,
+          `fork_session_id` text,
+          `fork_boundary` text,
+          `slug` text NOT NULL,
+          `directory` text NOT NULL,
+          `path` text,
+          `title` text,
+          `version` text NOT NULL,
+          `share_url` text,
+          `summary_additions` integer,
+          `summary_deletions` integer,
+          `summary_files` integer,
+          `summary_diffs` text,
+          `metadata` text,
+          `cost` real DEFAULT 0 NOT NULL,
+          `tokens_input` integer DEFAULT 0 NOT NULL,
+          `tokens_output` integer DEFAULT 0 NOT NULL,
+          `tokens_reasoning` integer DEFAULT 0 NOT NULL,
+          `tokens_cache_read` integer DEFAULT 0 NOT NULL,
+          `tokens_cache_write` integer DEFAULT 0 NOT NULL,
+          `revert` text,
+          `permission` text,
+          `agent` text,
+          `model` text,
+          `time_created` integer NOT NULL,
+          `time_updated` integer NOT NULL,
+          `time_busy` integer,
+          `time_idle` integer,
+          `time_viewed` integer,
+          `idle_outcome` text,
+          `time_compacting` integer,
+          `time_archived` integer,
+          `time_suspended` integer,
+          `resume_attempts` integer DEFAULT 0 NOT NULL,
+          CONSTRAINT `fk_session_v2_project_id_project_id_fk` FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON DELETE CASCADE
+        )
+## DDL session_message
+CREATE TABLE `session_message` (
+          `id` text PRIMARY KEY,
+          `session_id` text NOT NULL,
+          `type` text NOT NULL,
+          `seq` integer NOT NULL,
+          `time_created` integer NOT NULL,
+          `time_updated` integer NOT NULL,
+          `data` text NOT NULL,
+          CONSTRAINT `fk_session_message_session_id_session_v2_id_fk` FOREIGN KEY (`session_id`) REFERENCES `session_v2`(`id`) ON DELETE CASCADE
+        )
+## DDL session_part
+CREATE TABLE `session_part` (
+          `message_id` text NOT NULL,
+          `session_id` text NOT NULL,
+          `ordinal` integer NOT NULL,
+          `type` text NOT NULL,
+          `call_id` text,
+          `time_created` integer NOT NULL,
+          `time_updated` integer NOT NULL,
+          `data` text NOT NULL,
+          CONSTRAINT `session_part_pk` PRIMARY KEY(`message_id`, `ordinal`),
+          CONSTRAINT `fk_session_part_message_id_session_message_id_fk` FOREIGN KEY (`message_id`) REFERENCES `session_message`(`id`) ON DELETE CASCADE,
+          CONSTRAINT `fk_session_part_session_id_session_v2_id_fk` FOREIGN KEY (`session_id`) REFERENCES `session_v2`(`id`) ON DELETE CASCADE
+        )
+## DDL event
+CREATE TABLE `event` (
+          `id` text PRIMARY KEY,
+          `aggregate_id` text NOT NULL,
+          `seq` integer NOT NULL,
+          `created` integer DEFAULT 0 NOT NULL,
+          `type` text NOT NULL,
+          `data` text NOT NULL,
+          CONSTRAINT `fk_event_aggregate_id_event_sequence_aggregate_id_fk` FOREIGN KEY (`aggregate_id`) REFERENCES `event_sequence`(`aggregate_id`) ON DELETE CASCADE
+        )
+## newest/oldest time_created per table (unix ms)
+message error: no such table: message
+session error: no such table: session
+session_v2 1795567716003 1795568007751
+session_message 1795567717382 1795568010252
+## session_message: distinct type values and columns
+['id', 'session_id', 'type', 'seq', 'time_created', 'time_updated', 'data']
+('user', 6)
+('idle', 6)
+('assistant', 1)
+## session_message data key shapes per type (newest row of each type)
+- assistant {"agent": "str", "content": [{"text": "str", "type": "str"}], "cost": "int", "finish": "str", "model": {"id": "str", "providerID": "str", "variant": "str"}, "rawFinish": "str", "snapshot": {"end": "str", "files": [], "start": "str"}, "time": {"completed": "int", "created": "int", "firstToken": "int", "streamed": "int"}, "tokens": {"cache": {"read": "int", "write": "int"}, "input": "int", "output": "int", "reasoning": "int"}}
+- idle {"outcome": "str", "time": {"created": "int"}}
+- user {"files": [], "text": "str", "time": {"created": "int"}}
+## session_v2 columns
+(0, 'id', 'TEXT', 0, None, 1)
+(1, 'project_id', 'TEXT', 1, None, 0)
+(2, 'workspace_id', 'TEXT', 0, None, 0)
+(3, 'parent_id', 'TEXT', 0, None, 0)
+(4, 'fork_session_id', 'TEXT', 0, None, 0)
+(5, 'fork_boundary', 'TEXT', 0, None, 0)
+(6, 'slug', 'TEXT', 1, None, 0)
+(7, 'directory', 'TEXT', 1, None, 0)
+(8, 'path', 'TEXT', 0, None, 0)
+(9, 'title', 'TEXT', 0, None, 0)
+(10, 'version', 'TEXT', 1, None, 0)
+(11, 'share_url', 'TEXT', 0, None, 0)
+(12, 'summary_additions', 'INTEGER', 0, None, 0)
+(13, 'summary_deletions', 'INTEGER', 0, None, 0)
+(14, 'summary_files', 'INTEGER', 0, None, 0)
+(15, 'summary_diffs', 'TEXT', 0, None, 0)
+(16, 'metadata', 'TEXT', 0, None, 0)
+(17, 'cost', 'REAL', 1, '0', 0)
+(18, 'tokens_input', 'INTEGER', 1, '0', 0)
+(19, 'tokens_output', 'INTEGER', 1, '0', 0)
+(20, 'tokens_reasoning', 'INTEGER', 1, '0', 0)
+(21, 'tokens_cache_read', 'INTEGER', 1, '0', 0)
+(22, 'tokens_cache_write', 'INTEGER', 1, '0', 0)
+(23, 'revert', 'TEXT', 0, None, 0)
+(24, 'permission', 'TEXT', 0, None, 0)
+(25, 'agent', 'TEXT', 0, None, 0)
+(26, 'model', 'TEXT', 0, None, 0)
+(27, 'time_created', 'INTEGER', 1, None, 0)
+(28, 'time_updated', 'INTEGER', 1, None, 0)
+(29, 'time_busy', 'INTEGER', 0, None, 0)
+(30, 'time_idle', 'INTEGER', 0, None, 0)
+(31, 'time_viewed', 'INTEGER', 0, None, 0)
+(32, 'idle_outcome', 'TEXT', 0, None, 0)
+(33, 'time_compacting', 'INTEGER', 0, None, 0)
+(34, 'time_archived', 'INTEGER', 0, None, 0)
+(35, 'time_suspended', 'INTEGER', 0, None, 0)
+(36, 'resume_attempts', 'INTEGER', 1, '0', 0)
+## newest session_v2 row (types; directory shown for scratch only)
+id = str
+project_id = str
+workspace_id = NoneType
+parent_id = NoneType
+fork_session_id = NoneType
+fork_boundary = NoneType
+slug = str
+directory = <home>/AppData/Local/Temp/ralphy-1010/repos/a
+path = 
+title = NoneType
+version = 2.3.2
+share_url = NoneType
+summary_additions = NoneType
+summary_deletions = NoneType
+summary_files = NoneType
+summary_diffs = NoneType
+metadata = NoneType
+cost = float
+tokens_input = int
+tokens_output = int
+tokens_reasoning = int
+tokens_cache_read = int
+tokens_cache_write = int
+revert = NoneType
+permission = NoneType
+agent = None
+model = {"id":"deepseek-v4.1-flash-free","providerID":"opencode"}
+time_created = int
+time_updated = int
+time_busy = int
+time_idle = int
+time_viewed = NoneType
+idle_outcome = str
+time_compacting = NoneType
+time_archived = NoneType
+time_suspended = NoneType
+resume_attempts = int
+[exit 0]

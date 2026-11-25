@@ -1,0 +1,21 @@
+two at once: <home>/.opencode/bin/opencode run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/hy4-flash-free --standalone   (A cwd=/tmp/ralphy-1010/repos/l5q1 prompt name:PA; B cwd=/tmp/ralphy-1010/repos/l5q2 prompt name:PB) [linux]
+--- processes before (t+0s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+started A pid 4024473, B pid 4024474
+--- processes during (t+12s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+4024473 4024472 opencode <home>/.opencode/bin/opencode run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/hy4-flash-free --standalone
+4024474 4024472 opencode <home>/.opencode/bin/opencode run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/hy4-flash-free --standalone
+4024491 4024473 opencode <home>/.opencode/bin/opencode serve --stdio --port 0
+4024492 4024474 opencode <home>/.opencode/bin/opencode serve --stdio --port 0
+4024694 4024491 opencode-pty /tmp/ralphy-1010/xdg-v2/cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir /tmp/ralphy-1010/xdg-v2/state/opencode/pty --name e9e2ea0d-c463-40f5-9bab-534ff5923a08
+4024708 4024492 opencode-pty /tmp/ralphy-1010/xdg-v2/cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir /tmp/ralphy-1010/xdg-v2/state/opencode/pty --name 8b155962-e8f8-4489-8e84-62e8142ecdff
+A exit 0 session ses_def6261f3ffeHN5t83hAr4ETDb; repo HEAD 9e2d52c5 spike: add PA.md | status []; files PA=True PB=False
+B exit 0 session ses_def6261eaffeUBQg26kTlD3ctH; repo HEAD 8b5ff423 spike: add PB.md | status []; files PA=False PB=True
+stream A: 14 events; mentions the other repo folder l5q2: False; mentions PB.md: False
+stream B: 14 events; mentions the other repo folder l5q1: False; mentions PA.md: False
+--- processes 5s after both exit (t+21s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871

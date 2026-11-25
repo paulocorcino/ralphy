@@ -1,0 +1,49 @@
+grep of the WSL background-service log (<home>/.local/share/opencode/log/opencode.log, OpenCode 2.3.2), read in place, for the kill probe (repos/l5k) and the two TUI probes (repos/l5t); watcher lines left out
+=== kill probe (l5k, session ses_def64c9c1ffeAj8g81ln6rfqCm)
+timestamp=2026-11-25T02:47:16.926Z level=INFO run=4cbd5396 message="location services booted" directory=/tmp/ralphy-1010/repos/l5k workspaceID=undefined durationMs=45 http.span=45 role=server
+timestamp=2026-11-25T02:47:17.265Z level=INFO run=4cbd5396 message=event event.id=evt_21099b0110014MQ40Hp4E3hW1W event.created=1795574837265 event.type=provider.updated event.location.directory=/tmp/ralphy-1010/repos/l5k event.location.workspaceID=undefined event.data={} http.span=384 role=server
+timestamp=2026-11-25T02:47:17.274Z level=INFO run=4cbd5396 message=event event.id=evt_21099b01a001pJZSDVVsc0BOrw event.created=1795574837274 event.type=model.updated event.location.directory=/tmp/ralphy-1010/repos/l5k event.location.workspaceID=undefined event.data={} http.span=393 role=server
+timestamp=2026-11-25T02:47:17.279Z level=WARN run=4cbd5396 message="mcp connect failed" server=pencil status.status=failed status.error="NotFound: ChildProcess.spawn (<home>/.vscode-server/extensions/highagency.pencildev-0.6.47/out/mcp-server-linux-x64 --app visual_studio_code)" http.span=398 role=server server=pencil directory=/tmp/ralphy-1010/repos/l5k connectionID=98d0f5c5-928b-47a4-bbc9
+timestamp=2026-11-25T02:47:17.284Z level=INFO run=4cbd5396 message=event event.id=evt_21099b0240013GX1TvYXdaj0m7 event.created=1795574837284 event.type=agent.updated event.location.directory=/tmp/ralphy-1010/repos/l5k event.location.workspaceID=undefined event.data={} http.span=403 role=server
+timestamp=2026-11-25T02:47:17.284Z level=INFO run=4cbd5396 message=event event.id=evt_21099b024002jApRHOgzZfClaT event.created=1795574837284 event.type=command.updated event.location.directory=/tmp/ralphy-1010/repos/l5k event.location.workspaceID=undefined event.data={} http.span=403 role=server
+timestamp=2026-11-25T02:49:03.598Z level=INFO run=4cbd5396 message="Sent HTTP response" http.span=6383 role=server http.method=POST http.url=/api/experimental/session/ses_def64c9c1ffeAj8g81ln6rfqCm/wait http.status=499
+=== TUI probes (role=cli is the TUI process; role=server is the background service)
+timestamp=2026-11-25T02:52:01.232Z level=INFO run=4cbd5396 message="Sent HTTP response" http.span=5614 role=server http.method=GET http.url=/api/event http.status=200
+timestamp=2026-11-25T02:52:28.308Z level=INFO run=4cbd5396 message="watcher started" path=/tmp/ralphy-1010/repos/l5t type=entries backend=node ignores=0 http.span=29 role=server
+timestamp=2026-11-25T02:52:28.325Z level=INFO run=4cbd5396 message="location services booted" directory=/tmp/ralphy-1010/repos/l5t workspaceID=undefined durationMs=46 http.span=46 role=server
+timestamp=2026-11-25T02:52:28.615Z level=INFO run=4cbd5396 message="watcher started" path=/tmp/ralphy-1010/repos/l5t/AGENTS.md type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T02:52:28.615Z level=INFO run=4cbd5396 message="watcher started" path=/tmp/ralphy-1010/repos/l5t/CLAUDE.md type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T02:52:28.730Z level=INFO run=4cbd5396 message=event event.id=evt_2109e70ba001ZuFSIu4sglnXim event.created=1795575148730 event.type=provider.updated event.location.directory=/tmp/ralphy-1010/repos/l5t event.location.workspaceID=undefined event.data={} http.span=451 role=server
+timestamp=2026-11-25T02:52:28.738Z level=INFO run=4cbd5396 message=event event.id=evt_2109e70c2001acgJbCLlhW6yXf event.created=1795575148738 event.type=model.updated event.location.directory=/tmp/ralphy-1010/repos/l5t event.location.workspaceID=undefined event.data={} http.span=459 role=server
+timestamp=2026-11-25T02:52:28.742Z level=WARN run=4cbd5396 message="mcp connect failed" server=pencil status.status=failed status.error="NotFound: ChildProcess.spawn (<home>/.vscode-server/extensions/highagency.pencildev-0.6.47/out/mcp-server-linux-x64 --app visual_studio_code)" http.span=463 role=server server=pencil directory=/tmp/ralphy-1010/repos/l5t connectionID=be3a651d-5b07-42f6-97ca
+timestamp=2026-11-25T02:52:28.747Z level=INFO run=4cbd5396 message=event event.id=evt_2109e70cb002FTQkz1D5IBn38t event.created=1795575148747 event.type=agent.updated event.location.directory=/tmp/ralphy-1010/repos/l5t event.location.workspaceID=undefined event.data={} http.span=468 role=server
+timestamp=2026-11-25T02:52:28.747Z level=INFO run=4cbd5396 message=event event.id=evt_2109e70cb003AfvwT7dzUZT19Y event.created=1795575148747 event.type=command.updated event.location.directory=/tmp/ralphy-1010/repos/l5t event.location.workspaceID=undefined event.data={} http.span=468 role=server
+timestamp=2026-11-25T02:52:28.787Z level=INFO run=4cbd5396 message="watcher started" path=/tmp/ralphy-1010/repos/l5t/.git/HEAD type=file backend=node ignores=0 http.span=508 role=server
+timestamp=2026-11-25T02:52:28.188Z level=INFO run=8f26213b message="cli starting" version=2.3.2 channel=latest local=false args=[] role=cli
+timestamp=2026-11-25T02:52:28.419Z level=INFO run=8f26213b message="update check" current=2.3.2 latest=2.4.1 role=cli
+timestamp=2026-11-25T02:52:28.419Z level=INFO run=8f26213b message="OpenCode update available" current=2.3.2 latest=2.4.1 action=notify role=cli
+timestamp=2026-11-25T02:52:29.358Z level=INFO run=8f26213b message="event stream connecting" component=client attempt=0 role=cli
+timestamp=2026-11-25T02:52:29.369Z level=INFO run=8f26213b message="event stream connected" component=client role=cli
+timestamp=2026-11-25T02:52:29.400Z level=INFO run=8f26213b message="plugin reconciliation started" component=plugin id=1 role=cli
+timestamp=2026-11-25T02:52:29.416Z level=INFO run=8f26213b message="plugin reconciliation completed" component=plugin id=1 durationMs=16 plugins=14 role=cli
+timestamp=2026-11-25T02:52:29.485Z level=INFO run=8f26213b message="plugin reconciliation started" component=plugin id=2 role=cli
+timestamp=2026-11-25T02:52:29.507Z level=INFO run=8f26213b message="plugin reconciliation completed" component=plugin id=2 durationMs=22 plugins=14 role=cli
+timestamp=2026-11-25T02:52:29.525Z level=INFO run=8f26213b message="plugin reconciliation started" component=plugin id=3 role=cli
+timestamp=2026-11-25T02:52:29.544Z level=INFO run=8f26213b message="plugin reconciliation completed" component=plugin id=3 durationMs=19 plugins=14 role=cli
+timestamp=2026-11-25T02:52:29.544Z level=INFO run=8f26213b message="plugin reconciliation started" component=plugin id=4 role=cli
+timestamp=2026-11-25T02:52:29.545Z level=INFO run=8f26213b message="plugin reconciliation completed" component=plugin id=4 durationMs=1 plugins=14 role=cli
+timestamp=2026-11-25T02:52:49.686Z level=INFO run=4cbd5396 message="Sent HTTP response" http.span=20327 role=server http.method=GET http.url=/api/event http.status=200
+timestamp=2026-11-25T02:53:04.785Z level=INFO run=976ff3e6 message="cli starting" version=2.3.2 channel=latest local=false args=[] role=cli
+timestamp=2026-11-25T02:53:05.005Z level=INFO run=976ff3e6 message="update check" current=2.3.2 latest=2.4.1 role=cli
+timestamp=2026-11-25T02:53:05.005Z level=INFO run=976ff3e6 message="OpenCode update available" current=2.3.2 latest=2.4.1 action=notify role=cli
+timestamp=2026-11-25T02:53:05.876Z level=INFO run=976ff3e6 message="event stream connecting" component=client attempt=0 role=cli
+timestamp=2026-11-25T02:53:05.886Z level=INFO run=976ff3e6 message="event stream connected" component=client role=cli
+timestamp=2026-11-25T02:53:05.909Z level=INFO run=976ff3e6 message="plugin reconciliation started" component=plugin id=1 role=cli
+timestamp=2026-11-25T02:53:05.923Z level=INFO run=976ff3e6 message="plugin reconciliation completed" component=plugin id=1 durationMs=14 plugins=14 role=cli
+timestamp=2026-11-25T02:53:05.990Z level=INFO run=976ff3e6 message="plugin reconciliation started" component=plugin id=2 role=cli
+timestamp=2026-11-25T02:53:05.999Z level=INFO run=976ff3e6 message="plugin reconciliation completed" component=plugin id=2 durationMs=10 plugins=14 role=cli
+timestamp=2026-11-25T02:53:05.999Z level=INFO run=976ff3e6 message="plugin reconciliation started" component=plugin id=3 role=cli
+timestamp=2026-11-25T02:53:06.003Z level=INFO run=976ff3e6 message="plugin reconciliation completed" component=plugin id=3 durationMs=4 plugins=14 role=cli
+timestamp=2026-11-25T02:53:06.003Z level=INFO run=976ff3e6 message="plugin reconciliation started" component=plugin id=4 role=cli
+timestamp=2026-11-25T02:53:06.017Z level=INFO run=976ff3e6 message="plugin reconciliation completed" component=plugin id=4 durationMs=14 plugins=14 role=cli
+timestamp=2026-11-25T02:53:18.248Z level=INFO run=4cbd5396 message="Sent HTTP response" http.span=12371 role=server http.method=GET http.url=/api/event http.status=200

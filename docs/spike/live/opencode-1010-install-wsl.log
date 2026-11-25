@@ -1,0 +1,71 @@
+$ wsl -d Ubuntu-22.04 -e bash -l < /tmp/ralphy-1010/wsl-install.sh
+--- v1 scratch
+v1@ /tmp/ralphy-1010/v1
+└── opencode-ai@1.19.0
+
+1.19.0
+/tmp/ralphy-1010/v1/node_modules/opencode-ai/bin/opencode.exe
+{
+  "name": "opencode-ai",
+  "bin": {
+    "opencode": "./bin/opencode.exe"
+  },
+  "scripts": {
+    "postinstall": "node ./postinstall.mjs"
+  },
+  "version": "1.19.0",
+  "license": "MIT",
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "arm64",
+    "x64"
+  ],
+  "optionalDependencies": {
+    "opencode-linux-x64-musl": "1.19.0",
+    "opencode-linux-arm64": "1.19.0",
+    "opencode-darwin-x64-baseline": "1.19.0",
+    "opencode-windows-arm64": "1.19.0",
+    "opencode-linux-x64-baseline": "1.19.0",
+    "opencode-darwin-arm64": "1.19.0",
+    "opencode-windows-x64": "1.19.0",
+    "opencode-darwin-x64": "1.19.0",
+    "opencode-linux-x64": "1.19.0",
+    "opencode-linux-arm64-musl": "1.19.0",
+total 181408
+drwxr-xr-x 2 <user> <user>      4096 Nov 24 21:44 .
+drwxr-xr-x 3 <user> <user>      4096 Nov 24 21:44 ..
+-rwxr-xr-x 2 <user> <user> 185747584 Nov 24 21:44 opencode.exe
+--- v2 operator
+<home>/.opencode:
+total 40
+drwxr-xr-x  4 <user> <user>  4096 Jul 22 16:38 .
+drwxr-x--- 74 <user> <user>  4096 Nov 24 21:33 ..
+-rw-r--r--  1 <user> <user>    63 Jul 22 16:38 .gitignore
+drwxr-xr-x  2 <user> <user>  4096 Nov 22 06:08 bin
+drwxr-xr-x 29 <user> <user>  4096 Jul 22 16:38 node_modules
+-rw-r--r--  1 <user> <user> 14626 Jul 22 16:38 package-lock.json
+-rw-r--r--  1 <user> <user>    64 Jul 22 16:38 package.json
+
+<home>/.opencode/bin:
+total 246940
+drwxr-xr-x 2 <user> <user>      4096 Nov 22 06:08 .
+drwxr-xr-x 4 <user> <user>      4096 Jul 22 16:38 ..
+-rwxr-xr-x 1 <user> <user> 252848304 Oct 26  1985 opencode
+-rwxr-xr-x 1 <user> <user>        47 Nov 22 06:08 opencode2
+#!/bin/sh
+exec "$(dirname "$0")/opencode" "$@"
+
+opencode v2.3.2
+opencode v2.3.2
+<home>/.opencode/bin/opencode: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 3.2.0, BuildID[sha1]=588d7307f333293c728b74df19b7323c20736899, not stripped
+<home>/.bashrc:134:# opencode
+<home>/.bashrc:135:export PATH=<home>/.opencode/bin:$PATH
+grep: <home>/.zshrc: No such file or directory
+PATH has: 
+<home>/AppData/Roaming/npm/opencode
+<home>/AppData/Roaming/npm/opencode2
+[exit 0]

@@ -1,0 +1,51 @@
+$ npm ls --prefix <home>/AppData/Local/Temp/ralphy-1010/v1 2>&1; env XDG_DATA_HOME=/tmp/ralphy-1010/xdg-v1/data XDG_CONFIG_HOME=/tmp/ralphy-1010/xdg-v1/config XDG_STATE_HOME=/tmp/ralphy-1010/xdg-v1/state XDG_CACHE_HOME=/tmp/ralphy-1010/xdg-v1/cache /tmp/ralphy-1010/v1/node_modules/.bin/opencode.cmd --version; head -30 /tmp/ralphy-1010/v1/node_modules/opencode-ai/package.json; ls -la /tmp/ralphy-1010/v1/node_modules/opencode-ai/bin /tmp/ralphy-1010/v1/node_modules/opencode-windows-x64/bin; ls /tmp/ralphy-1010/v1/node_modules/.bin; /tmp/ralphy-1010/v1/node_modules/opencode-windows-x64/bin/opencode.exe --version
+v1@ <home>\AppData\Local\Temp\ralphy-1010\v1
+`-- opencode-ai@1.19.0
+
+1.19.0
+{
+  "name": "opencode-ai",
+  "bin": {
+    "opencode": "./bin/opencode.exe"
+  },
+  "scripts": {
+    "postinstall": "node ./postinstall.mjs"
+  },
+  "version": "1.19.0",
+  "license": "MIT",
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "arm64",
+    "x64"
+  ],
+  "optionalDependencies": {
+    "opencode-linux-x64-musl": "1.19.0",
+    "opencode-linux-arm64": "1.19.0",
+    "opencode-darwin-x64-baseline": "1.19.0",
+    "opencode-windows-arm64": "1.19.0",
+    "opencode-linux-x64-baseline": "1.19.0",
+    "opencode-darwin-arm64": "1.19.0",
+    "opencode-windows-x64": "1.19.0",
+    "opencode-darwin-x64": "1.19.0",
+    "opencode-linux-x64": "1.19.0",
+    "opencode-linux-arm64-musl": "1.19.0",
+/tmp/ralphy-1010/v1/node_modules/opencode-ai/bin:
+total 176484
+drwxr-xr-x 1 <user> 197121         0 Nov 24 21:44 .
+drwxr-xr-x 1 <user> 197121         0 Nov 24 21:44 ..
+-rwxr-xr-x 2 <user> 197121 180714888 Nov 24 21:44 opencode.exe
+
+/tmp/ralphy-1010/v1/node_modules/opencode-windows-x64/bin:
+total 176480
+drwxr-xr-x 1 <user> 197121         0 Nov 24 21:44 .
+drwxr-xr-x 1 <user> 197121         0 Nov 24 21:44 ..
+-rwxr-xr-x 2 <user> 197121 180714888 Nov 24 21:44 opencode.exe
+opencode
+opencode.cmd
+opencode.ps1
+1.19.0
+[exit 0]
