@@ -1,0 +1,128 @@
+$ (cwd=<home>\AppData\Local\Temp\ralphy-1009\repos\fx-v2u) <home>\AppData\Roaming\npm\opencode.cmd run --standalone --format json --print-logs --log-level error -m opencode/big-pickle
+### stdin
+Reply with the word ok.
+### exit 0 after 28.6s
+### stdout
+{"type":"step_start","timestamp":1795603075161,"sessionID":"ses_dedb7a25dffeoEMhN9M3UVV92v","part":{"id":"prt_212489059001BfA7LWlKaChEhc","sessionID":"ses_dedb7a25dffeoEMhN9M3UVV92v","messageID":"msg_21248748a001RLXEGPpGQxDbS6","type":"step-start","snapshot":"57b37e28e41047d9d375f22a6144934bb658ccde"}}
+{"type":"text","timestamp":1795603075279,"sessionID":"ses_dedb7a25dffeoEMhN9M3UVV92v","part":{"id":"prt_2124890c7002ApveqWDMpr7Mxi","sessionID":"ses_dedb7a25dffeoEMhN9M3UVV92v","messageID":"msg_21248748a001RLXEGPpGQxDbS6","type":"text","text":"ok","time":{"start":1795603075271,"end":1795603075279}}}
+{"type":"step_finish","timestamp":1795603075900,"sessionID":"ses_dedb7a25dffeoEMhN9M3UVV92v","part":{"id":"prt_21248933b001W607gn4Aq4D3FR","sessionID":"ses_dedb7a25dffeoEMhN9M3UVV92v","messageID":"msg_21248748a001RLXEGPpGQxDbS6","type":"step-finish","reason":"stop","snapshot":"57b37e28e41047d9d375f22a6144934bb658ccde","cost":0,"tokens":{"input":13981,"output":3,"reasoning":13,"cache":{"read":1536,"write":0}}}}
+
+### stderr
+timestamp=2026-11-25T10:37:36.866Z level=INFO run=d5ce6078 message="cli starting" version=2.3.2 channel=latest local=false args="[\"serve\",\"--stdio\",\"--port\",\"0\"]" role=cli
+timestamp=2026-11-25T10:37:37.940Z level=INFO run=d5ce6078 message="database migration started" migration=20260804233008_loose_psylocke role=server
+timestamp=2026-11-25T10:37:37.964Z level=INFO run=d5ce6078 message="database migration completed" migration=20260804233008_loose_psylocke durationMs=24 role=server
+timestamp=2026-11-25T10:37:37.965Z level=INFO run=d5ce6078 message="database migration started" migration=20260805200742_import_legacy_credentials role=server
+timestamp=2026-11-25T10:37:37.968Z level=INFO run=d5ce6078 message="database migration completed" migration=20260805200742_import_legacy_credentials durationMs=3 role=server
+timestamp=2026-11-25T10:37:37.968Z level=INFO run=d5ce6078 message="database migration started" migration=20260808023530_workspace_domain role=server
+timestamp=2026-11-25T10:37:37.969Z level=INFO run=d5ce6078 message="database migration completed" migration=20260808023530_workspace_domain durationMs=1 role=server
+timestamp=2026-11-25T10:37:37.970Z level=INFO run=d5ce6078 message="database migration started" migration=20260811161259_execution_claim_attempts role=server
+timestamp=2026-11-25T10:37:37.972Z level=INFO run=d5ce6078 message="database migration completed" migration=20260811161259_execution_claim_attempts durationMs=2 role=server
+timestamp=2026-11-25T10:37:37.972Z level=INFO run=d5ce6078 message="database migration started" migration=20260812181746_session_inbox role=server
+timestamp=2026-11-25T10:37:37.973Z level=INFO run=d5ce6078 message="database migration completed" migration=20260812181746_session_inbox durationMs=1 role=server
+timestamp=2026-11-25T10:37:37.973Z level=INFO run=d5ce6078 message="database migration started" migration=20260812213948_worktree role=server
+timestamp=2026-11-25T10:37:37.975Z level=INFO run=d5ce6078 message="database migration completed" migration=20260812213948_worktree durationMs=2 role=server
+timestamp=2026-11-25T10:37:37.975Z level=INFO run=d5ce6078 message="database migration started" migration=20260819222447_session_viewed_state role=server
+timestamp=2026-11-25T10:37:37.977Z level=INFO run=d5ce6078 message="database migration completed" migration=20260819222447_session_viewed_state durationMs=2 role=server
+timestamp=2026-11-25T10:37:37.978Z level=INFO run=d5ce6078 message="database migration started" migration=20260823191254_nullable_workspace_binding role=server
+timestamp=2026-11-25T10:37:37.981Z level=INFO run=d5ce6078 message="database migration completed" migration=20260823191254_nullable_workspace_binding durationMs=3 role=server
+timestamp=2026-11-25T10:37:37.982Z level=INFO run=d5ce6078 message="database migration started" migration=20260910120000_clear_v1_session_permission role=server
+timestamp=2026-11-25T10:37:37.982Z level=INFO run=d5ce6078 message="database migration completed" migration=20260910120000_clear_v1_session_permission durationMs=0 role=server
+timestamp=2026-11-25T10:37:37.982Z level=INFO run=d5ce6078 message="database migration started" migration=20260923013825_project_time_active role=server
+timestamp=2026-11-25T10:37:37.993Z level=INFO run=d5ce6078 message="database migration completed" migration=20260923013825_project_time_active durationMs=11 role=server
+timestamp=2026-11-25T10:37:37.993Z level=INFO run=d5ce6078 message="database migration started" migration=20261007190000_azure_cli_external_credential role=server
+timestamp=2026-11-25T10:37:37.994Z level=INFO run=d5ce6078 message="database migration completed" migration=20261007190000_azure_cli_external_credential durationMs=1 role=server
+timestamp=2026-11-25T10:37:37.994Z level=INFO run=d5ce6078 message="database migration started" migration=20261010180456_project_time_archived role=server
+timestamp=2026-11-25T10:37:37.995Z level=INFO run=d5ce6078 message="database migration completed" migration=20261010180456_project_time_archived durationMs=1 role=server
+timestamp=2026-11-25T10:37:37.995Z level=INFO run=d5ce6078 message="database migration started" migration=20261024002554_session_allowance role=server
+timestamp=2026-11-25T10:37:37.996Z level=INFO run=d5ce6078 message="database migration completed" migration=20261024002554_session_allowance durationMs=1 role=server
+timestamp=2026-11-25T10:37:37.996Z level=INFO run=d5ce6078 message="database migration started" migration=20261024175301_drop_session_allowance role=server
+timestamp=2026-11-25T10:37:37.998Z level=INFO run=d5ce6078 message="database migration completed" migration=20261024175301_drop_session_allowance durationMs=2 role=server
+timestamp=2026-11-25T10:37:37.998Z level=INFO run=d5ce6078 message="database migration started" migration=20261025123711_blob role=server
+timestamp=2026-11-25T10:37:37.999Z level=INFO run=d5ce6078 message="database migration completed" migration=20261025123711_blob durationMs=1 role=server
+timestamp=2026-11-25T10:37:38.000Z level=INFO run=d5ce6078 message="database migration started" migration=20261025154125_drop_session_pending role=server
+timestamp=2026-11-25T10:37:38.000Z level=INFO run=d5ce6078 message="database migration completed" migration=20261025154125_drop_session_pending durationMs=0 role=server
+timestamp=2026-11-25T10:37:38.001Z level=INFO run=d5ce6078 message="database migration started" migration=20261026223005_schedule role=server
+timestamp=2026-11-25T10:37:38.001Z level=INFO run=d5ce6078 message="database migration completed" migration=20261026223005_schedule durationMs=0 role=server
+timestamp=2026-11-25T10:37:38.001Z level=INFO run=d5ce6078 message="database migration started" migration=20261029002625_session_part role=server
+timestamp=2026-11-25T10:37:38.002Z level=INFO run=d5ce6078 message="database migration completed" migration=20261029002625_session_part durationMs=1 role=server
+timestamp=2026-11-25T10:37:38.002Z level=INFO run=d5ce6078 message="database migration started" migration=20261029073502_session_time_busy role=server
+timestamp=2026-11-25T10:37:38.003Z level=INFO run=d5ce6078 message="database migration completed" migration=20261029073502_session_time_busy durationMs=1 role=server
+timestamp=2026-11-25T10:37:38.003Z level=INFO run=d5ce6078 message="database migration started" migration=20261029165540_schedule_checks role=server
+timestamp=2026-11-25T10:37:38.006Z level=INFO run=d5ce6078 message="database migration completed" migration=20261029165540_schedule_checks durationMs=3 role=server
+timestamp=2026-11-25T10:37:38.006Z level=INFO run=d5ce6078 message="database migration started" migration=20261030054400_job role=server
+timestamp=2026-11-25T10:37:38.007Z level=INFO run=d5ce6078 message="database migration completed" migration=20261030054400_job durationMs=1 role=server
+timestamp=2026-11-25T10:37:38.007Z level=INFO run=d5ce6078 message="database migration started" migration=20261116043204_automation role=server
+timestamp=2026-11-25T10:37:38.029Z level=INFO run=d5ce6078 message="database migration completed" migration=20261116043204_automation durationMs=22 role=server
+timestamp=2026-11-25T10:37:38.029Z level=INFO run=d5ce6078 message="database migration started" migration=20261116181958_automation_event_position role=server
+timestamp=2026-11-25T10:37:38.030Z level=INFO run=d5ce6078 message="database migration completed" migration=20261116181958_automation_event_position durationMs=1 role=server
+timestamp=2026-11-25T10:37:38.031Z level=INFO run=d5ce6078 message="database migration started" migration=20261116213417_automation_active_index role=server
+timestamp=2026-11-25T10:37:38.032Z level=INFO run=d5ce6078 message="database migration completed" migration=20261116213417_automation_active_index durationMs=1 role=server
+timestamp=2026-11-25T10:37:40.096Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\xdg-v2-upgraded\\config\\opencode" type=directory ignores=6 http.span=1765 role=server
+timestamp=2026-11-25T10:37:40.183Z level=INFO run=d5ce6078 message="watcher subscribe" path="C:\\ProgramData" type=entries ignores=0 http.span=1852 role=server
+timestamp=2026-11-25T10:37:40.184Z level=INFO run=d5ce6078 message="watcher started" path="C:\\ProgramData" type=entries backend=node ignores=0 http.span=1853 role=server
+timestamp=2026-11-25T10:37:40.185Z level=INFO run=d5ce6078 message="watcher subscribe" path="C:\\" type=entries ignores=0 http.span=1854 role=server
+timestamp=2026-11-25T10:37:40.185Z level=INFO run=d5ce6078 message="watcher started" path="C:\\" type=entries backend=node ignores=0 http.span=1854 role=server
+timestamp=2026-11-25T10:37:40.186Z level=INFO run=d5ce6078 message="watcher subscribe" path="C:\\Users" type=entries ignores=0 http.span=1855 role=server
+timestamp=2026-11-25T10:37:40.187Z level=INFO run=d5ce6078 message="watcher started" path="C:\\Users" type=entries backend=node ignores=0 http.span=1856 role=server
+timestamp=2026-11-25T10:37:40.187Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>" type=entries ignores=0 http.span=1856 role=server
+timestamp=2026-11-25T10:37:40.188Z level=INFO run=d5ce6078 message="watcher started" path="<home>" type=entries backend=node ignores=0 http.span=1857 role=server
+timestamp=2026-11-25T10:37:40.188Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData" type=entries ignores=0 http.span=1857 role=server
+timestamp=2026-11-25T10:37:40.190Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData" type=entries backend=node ignores=0 http.span=1859 role=server
+timestamp=2026-11-25T10:37:40.190Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local" type=entries ignores=0 http.span=1859 role=server
+timestamp=2026-11-25T10:37:40.191Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local" type=entries backend=node ignores=0 http.span=1860 role=server
+timestamp=2026-11-25T10:37:40.192Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp" type=entries ignores=0 http.span=1861 role=server
+timestamp=2026-11-25T10:37:40.193Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\Temp" type=entries backend=node ignores=0 http.span=1862 role=server
+timestamp=2026-11-25T10:37:40.193Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1009" type=entries ignores=0 http.span=1862 role=server
+timestamp=2026-11-25T10:37:40.198Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1009" type=entries backend=node ignores=0 http.span=1867 role=server
+timestamp=2026-11-25T10:37:40.198Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos" type=entries ignores=0 http.span=1867 role=server
+timestamp=2026-11-25T10:37:40.200Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos" type=entries backend=node ignores=0 http.span=1869 role=server
+timestamp=2026-11-25T10:37:40.200Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos\\fx-v2u" type=entries ignores=0 http.span=1869 role=server
+timestamp=2026-11-25T10:37:40.204Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos\\fx-v2u" type=entries backend=node ignores=0 http.span=1873 role=server
+timestamp=2026-11-25T10:37:40.219Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\xdg-v2-upgraded\\config\\opencode" type=directory backend=windows ignores=6 http.span=1888 role=server
+timestamp=2026-11-25T10:37:40.305Z level=INFO run=d5ce6078 message="location services booted" directory="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos\\fx-v2u" workspaceID=undefined durationMs=1972 http.span=1974 role=server
+timestamp=2026-11-25T10:37:45.767Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\xdg-v2-upgraded\\config\\opencode\\AGENTS.md" type=file ignores=0
+timestamp=2026-11-25T10:37:45.770Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\xdg-v2-upgraded\\config\\opencode\\AGENTS.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:45.770Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\.claude\\CLAUDE.md" type=file ignores=0
+timestamp=2026-11-25T10:37:45.771Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\.claude\\CLAUDE.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:45.771Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos\\fx-v2u\\AGENTS.md" type=file ignores=0
+timestamp=2026-11-25T10:37:45.772Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos\\fx-v2u\\AGENTS.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:45.772Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos\\fx-v2u\\CLAUDE.md" type=file ignores=0
+timestamp=2026-11-25T10:37:45.772Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos\\fx-v2u\\CLAUDE.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:45.774Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos\\AGENTS.md" type=file ignores=0
+timestamp=2026-11-25T10:37:45.775Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos\\AGENTS.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:45.776Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos\\CLAUDE.md" type=file ignores=0
+timestamp=2026-11-25T10:37:45.777Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos\\CLAUDE.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:45.777Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\AGENTS.md" type=file ignores=0
+timestamp=2026-11-25T10:37:45.778Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\AGENTS.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:45.778Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\CLAUDE.md" type=file ignores=0
+timestamp=2026-11-25T10:37:45.778Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\CLAUDE.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:45.778Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\AGENTS.md" type=file ignores=0
+timestamp=2026-11-25T10:37:45.803Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\Temp\\AGENTS.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:45.804Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\CLAUDE.md" type=file ignores=0
+timestamp=2026-11-25T10:37:45.804Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\Temp\\CLAUDE.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:45.804Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\AGENTS.md" type=file ignores=0
+timestamp=2026-11-25T10:37:45.805Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\AGENTS.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:45.805Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\CLAUDE.md" type=file ignores=0
+timestamp=2026-11-25T10:37:45.805Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\CLAUDE.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:45.805Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\AGENTS.md" type=file ignores=0
+timestamp=2026-11-25T10:37:45.806Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\AGENTS.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:45.806Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\CLAUDE.md" type=file ignores=0
+timestamp=2026-11-25T10:37:45.806Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\CLAUDE.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:45.806Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AGENTS.md" type=file ignores=0
+timestamp=2026-11-25T10:37:45.807Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AGENTS.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:45.807Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\CLAUDE.md" type=file ignores=0
+timestamp=2026-11-25T10:37:45.807Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\CLAUDE.md" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:45.941Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\.claude\\skills" type=directory ignores=8
+timestamp=2026-11-25T10:37:45.944Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\.claude\\skills" type=directory backend=windows ignores=8 role=server
+timestamp=2026-11-25T10:37:46.735Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\xdg-v2-upgraded\\config\\opencode\\skill" type=file ignores=0
+timestamp=2026-11-25T10:37:46.736Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\xdg-v2-upgraded\\config\\opencode\\skill" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:46.738Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\xdg-v2-upgraded\\config\\opencode\\skills" type=file ignores=0
+timestamp=2026-11-25T10:37:46.739Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\xdg-v2-upgraded\\config\\opencode\\skills" type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T10:37:46.785Z level=INFO run=d5ce6078 message=event event.id=evt_212486fa1001LjEfTLvqbruUVV event.created=1795603066785 event.type=provider.updated event.location.directory="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos\\fx-v2u" event.location.workspaceID=undefined event.data={} http.span=8454 role=server
+timestamp=2026-11-25T10:37:46.813Z level=INFO run=d5ce6078 message=event event.id=evt_212486fbc001h1pAOfzGlJiqKX event.created=1795603066813 event.type=model.updated event.location.directory="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos\\fx-v2u" event.location.workspaceID=undefined event.data={} http.span=8482 role=server
+timestamp=2026-11-25T10:37:47.543Z level=INFO run=d5ce6078 message=event event.id=evt_212487297001cyJPxNsr4klt0R event.created=1795603067543 event.type=agent.updated event.location.directory="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos\\fx-v2u" event.location.workspaceID=undefined event.data={} http.span=9212 role=server
+timestamp=2026-11-25T10:37:47.544Z level=INFO run=d5ce6078 message=event event.id=evt_212487298001I1S1t386XZE13s event.created=1795603067544 event.type=command.updated event.location.directory="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos\\fx-v2u" event.location.workspaceID=undefined event.data={} http.span=9213 role=server
+timestamp=2026-11-25T10:37:47.917Z level=INFO run=d5ce6078 message="watcher subscribe" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos\\fx-v2u\\.git\\HEAD" type=file ignores=0 http.span=9586 role=server
+timestamp=2026-11-25T10:37:47.919Z level=INFO run=d5ce6078 message="watcher started" path="<home>\\AppData\\Local\\Temp\\ralphy-1009\\repos\\fx-v2u\\.git\\HEAD" type=file backend=node ignores=0 http.span=9588 role=server
+timestamp=2026-11-25T10:37:56.049Z level=INFO run=d5ce6078 message="Sent HTTP response" http.span=10361 role=server http.method=GET http.url=/api/event http.status=200
+

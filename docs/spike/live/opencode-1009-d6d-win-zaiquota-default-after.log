@@ -1,0 +1,10 @@
+$ (cwd=<home>\AppData\Local\Temp\ralphy-1009\repos\d6d-after) <home>\AppData\Roaming\npm\opencode.cmd run --auto --format json --print-logs --log-level error -m zai-coding-plan/glm-5.3
+### stdin
+Reply with the word ok.
+### exit 1 after 5.1s
+### stdout
+{"type":"step_start","timestamp":1795602470433,"sessionID":"ses_dedc0af59ffeycmA9vxgqwth7s","part":{"id":"prt_2123f5621001qaZ0c7QMpbLrbr","sessionID":"ses_dedc0af59ffeycmA9vxgqwth7s","messageID":"msg_2123f5227001IP5aqss3OAqXHK","type":"step-start","snapshot":"57b37e28e41047d9d375f22a6144934bb658ccde"}}
+{"type":"error","timestamp":1795602471372,"sessionID":"ses_dedc0af59ffeycmA9vxgqwth7s","error":{"type":"provider.quota","message":"Insufficient balance or no resource package. Please recharge.","status":429,"response":{"body":"{\"error\":{\"code\":\"1113\",\"message\":\"Insufficient balance or no resource package. Please recharge.\"}}"}}}
+
+### stderr
+

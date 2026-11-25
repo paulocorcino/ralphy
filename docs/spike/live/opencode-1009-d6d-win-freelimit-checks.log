@@ -1,0 +1,31 @@
+$ python win.py d6d (checks after the standalone run)
+exit=1 sessions=['ses_dedc40f3affeAX5u0chwujkFk6']
+in operator db copy: [[('ses_dedc40f3affeAX5u0chwujkFk6', '<home>/AppData/Local/Temp/ralphy-1009/repos/d6d')]]
+lock lines: []
+### git log of the clone
+a3063749 feat: add TypeScript build info and new test bytecode files
+ .../__pycache__/test_categoria_schema.cpython-311.pyc    | Bin 0 -> 3583 bytes
+ .../test_conta_lancamento_schema.cpython-311.pyc         | Bin 0 -> 7879 bytes
+ .../__pycache__/test_recorrencia_schema.cpython-311.pyc  | Bin 0 -> 5648 bytes
+ .../test_renda_liquida_schema.cpython-311.pyc            | Bin 0 -> 4361 bytes
+ dbkit/tests/__pycache__/test_user_schema.cpython-311.pyc | Bin 0 -> 6202 bytes
+ tsconfig.tsbuildinfo                                     |   1 +
+ 6 files changed, 1 insertion(+)
+f15623d5 chore: opt out of Cursor codebase indexing (D6)
+ .cursorindexingignore | 1 +
+ 1 file changed, 1 insertion(+)
+
+### opencode processes before
+44232 17532 <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+4484 44232 <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+4880 37332 "C:\Dev\ralphy\worktrees\opencode-1009-1040-1042-s3\target\debug\deps\opencode_version-e9c89986bdf3d208.exe" --list --format terse
+32728 37332 
+
+### after the standalone run
+44232 17532 <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+4484 44232 <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+
+### after the second default run (exit 0, sessions ['ses_dedc2ff93ffeLC5bBWozoSB2Cw'])
+44232 17532 <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+4484 44232 <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+

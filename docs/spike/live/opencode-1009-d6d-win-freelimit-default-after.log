@@ -1,0 +1,11 @@
+$ (cwd=<home>\AppData\Local\Temp\ralphy-1009\repos\d6d-after) <home>\AppData\Roaming\npm\opencode.cmd run --auto --format json --print-logs --log-level error -m opencode/deepseek-v4.1-flash-free
+### stdin
+Reply with the word ok.
+### exit 0 after 25.3s
+### stdout
+{"type":"step_start","timestamp":1795602333549,"sessionID":"ses_dedc2ff93ffeLC5bBWozoSB2Cw","part":{"id":"prt_2123d3f6d001S1ya7sh1oMKE4K","sessionID":"ses_dedc2ff93ffeLC5bBWozoSB2Cw","messageID":"msg_2123d2155001XIjXIlgQ8QeS6m","type":"step-start","snapshot":"57b37e28e41047d9d375f22a6144934bb658ccde"}}
+{"type":"text","timestamp":1795602333570,"sessionID":"ses_dedc2ff93ffeLC5bBWozoSB2Cw","part":{"id":"prt_2123d3f7e001I4j7ptoVfelm2I","sessionID":"ses_dedc2ff93ffeLC5bBWozoSB2Cw","messageID":"msg_2123d2155001XIjXIlgQ8QeS6m","type":"text","text":"ok","time":{"start":1795602333566,"end":1795602333570}}}
+{"type":"step_finish","timestamp":1795602334590,"sessionID":"ses_dedc2ff93ffeLC5bBWozoSB2Cw","part":{"id":"prt_2123d437e001YZ1I1oF22CyVwQ","sessionID":"ses_dedc2ff93ffeLC5bBWozoSB2Cw","messageID":"msg_2123d2155001XIjXIlgQ8QeS6m","type":"step-finish","reason":"stop","snapshot":"57b37e28e41047d9d375f22a6144934bb658ccde","cost":0,"tokens":{"input":13968,"output":3,"reasoning":0,"cache":{"read":1792,"write":0}}}}
+
+### stderr
+

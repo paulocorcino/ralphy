@@ -1,0 +1,52 @@
+$ (cwd=<home>\AppData\Local\Temp\ralphy-1009) <home>\AppData\Roaming\npm\opencode.cmd models --standalone
+### stdin
+
+### exit 0 after 25.1s
+### stdout
+opencode/beam-free
+opencode/big-pickle
+opencode/deepseek-v4.1-flash-free
+opencode/flint-40b-free
+opencode/hy4-flash-free
+opencode/iceman-free
+opencode/mimo-v2.6-flash-free
+opencode/nemotron-3.5-lightning-free
+opencode/nemotron-3.5-super-vl-free
+opencode/tidepool-alpha-free
+zai-coding-plan/glm-5.3
+zai-coding-plan/glm-5.3-flash
+zai-coding-plan/glm-5.3-highspeed
+zai-coding-plan/glm-5.4
+zai/glm-4.5
+zai/glm-4.5-air
+zai/glm-4.5-airx
+zai/glm-4.5-flash
+zai/glm-4.5-x
+zai/glm-4.5v
+zai/glm-4.6
+zai/glm-4.6v
+zai/glm-4.6v-flash
+zai/glm-4.6v-flashx
+zai/glm-4.7
+zai/glm-4.7-flash
+zai/glm-4.7-flashx
+zai/glm-5
+zai/glm-5-turbo
+zai/glm-5.1
+zai/glm-5.2
+zai/glm-5.3
+zai/glm-5.3-flash
+zai/glm-5.3-flashx
+zai/glm-5.3-flashx-legal
+zai/glm-5v-turbo
+
+### stderr
+
+### opencode processes before
+44232 17532 <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+4484 44232 <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+
+### after
+44232 17532 <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+4484 44232 <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+

@@ -1,0 +1,19 @@
+$ (cwd=/tmp/ralphy-1009) <home>/.opencode/bin/opencode models --standalone
+### stdin
+
+### exit 1 after 25.7s
+### stdout
+
+### stderr
+ServiceUnavailableError: Location plugins did not finish activating
+    at k (/$bunfs/root/chunk-hn7ztr6r.js:13:34510)
+    at <anonymous> (/$bunfs/root/chunk-hn7ztr6r.js:2:1153)
+    at cli.models (/$bunfs/root/chunk-s4020npe.js:7:23383)
+    at cli.models (definition) (/$bunfs/root/chunk-bzf01ar2.js:2:1005)
+
+### opencode processes before
+2216799       1 <home>/.opencode/bin/opencode serve --service
+3980080 2216799 <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+### after
+2216799       1 <home>/.opencode/bin/opencode serve --service
+3980080 2216799 <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
