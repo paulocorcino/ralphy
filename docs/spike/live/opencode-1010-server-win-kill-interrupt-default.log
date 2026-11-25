@@ -1,0 +1,44 @@
+<home>\AppData\Roaming\npm\opencode.cmd run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/hy4-flash-free   (cwd=<home>\AppData\Local\Temp\ralphy-1010\repos\w5k PWD=<home>\AppData\Local\Temp\ralphy-1010\repos\w5k prompt=slow40 on stdin; kill=tree by pid mid-run) [win32]
+service.json pid: 44232
+--- processes before (t+1s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+started pid 46900
+--- processes during (t+8s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+13296 47056 conhost.exe \??\C:\WINDOWS\system32\conhost.exe 0x4
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+46900 14636 cmd.exe C:\WINDOWS\system32\cmd.exe /c <home>\AppData\Roaming\npm\opencode.cmd run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/hy4-flash-free
+47056 4484 pwsh.exe "C:\Program Files\PowerShell\7\pwsh.EXE" -NoLogo -NoProfile -NonInteractive -Command "sleep 40"
+47296 46900 opencode.exe "<home>\AppData\Roaming\npm\\node_modules\@opencode\cli\bin\opencode.exe"    run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/hy4-flash-free
+tool process seen: 47056 parent 4484 "C:\Program Files\PowerShell\7\pwsh.EXE" -NoLogo -NoProfile -NonInteractive -Command "sleep 40"
+kill trigger: a sleep process; session before kill: ses_def5e0721ffeC7yQ31dSX1a8CR; repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []
+kill: TerminateProcess root first, pids [46900, 47296]
+client exit after kill: 1
+api POST /api/session/ses_def5e0721ffeC7yQ31dSX1a8CR/interrupt -> exit 0; stdout {"interrupted":true}; stderr 
+log opencode.log lines with the session id at kill: 1
+t+10s after kill: repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []; AFTER.md exists=False; log lines with session id: 2
+--- processes t+10s after kill (t+19s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+t+21s after kill: repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []; AFTER.md exists=False; log lines with session id: 2
+--- processes t+21s after kill (t+30s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+t+31s after kill: repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []; AFTER.md exists=False; log lines with session id: 2
+--- processes t+31s after kill (t+40s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+t+42s after kill: repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []; AFTER.md exists=False; log lines with session id: 2
+--- processes t+42s after kill (t+51s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+t+53s after kill: repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []; AFTER.md exists=False; log lines with session id: 2
+--- processes t+53s after kill (t+62s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+t+63s after kill: repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []; AFTER.md exists=False; log lines with session id: 2
+--- processes t+63s after kill (t+72s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+stderr bytes: 0

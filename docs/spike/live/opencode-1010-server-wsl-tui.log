@@ -1,0 +1,17 @@
+cd /tmp/ralphy-1010/repos/l5t && timeout 20 script -qfc <home>/.opencode/bin/opencode /dev/null (the operator's state; timeout sends SIGTERM at 20 s)
+process snapshot [linux]
+--- processes now (t+0s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+started pid 4025260 (setsid timeout)
+process snapshot [linux]
+--- processes now (t+0s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+4025263 4025262 opencode <home>/.opencode/bin/opencode
+exit 124 (124 = ended by timeout)
+process snapshot [linux]
+--- processes now (t+0s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+screen bytes written by the TUI: 15943

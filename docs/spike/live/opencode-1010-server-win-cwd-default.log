@@ -1,0 +1,18 @@
+<home>\AppData\Roaming\npm\opencode.cmd run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/hy4-flash-free   (cwd=<home>\AppData\Local\Temp\ralphy-1010\repos\w5c PWD=<home>\AppData\Local\Temp\ralphy-1010\repos\a prompt=cwd on stdin; kill=no) [win32]
+service.json pid: 44232
+--- processes before (t+1s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+started pid 39248
+--- processes during (t+8s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+19164 39248 opencode.exe "<home>\AppData\Roaming\npm\\node_modules\@opencode\cli\bin\opencode.exe"    run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/hy4-flash-free
+39248 47924 cmd.exe C:\WINDOWS\system32\cmd.exe /c <home>\AppData\Roaming\npm\opencode.cmd run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/hy4-flash-free
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+exit 0 after 9s; session ses_def64f3ebffeG2EFDOJPDgAvxT
+repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []
+--- processes 5s after exit (t+14s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+PWD folder HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status [?? CWD.md]; CWD.md there=True; CWD.md in cwd=False
+stderr bytes: 0

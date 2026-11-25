@@ -1,0 +1,24 @@
+<home>\AppData\Roaming\npm\opencode.cmd run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/deepseek-v4.1-flash-free --standalone   (cwd=<home>\AppData\Local\Temp\ralphy-1010\repos\w5s PWD=<home>\AppData\Local\Temp\ralphy-1010\repos\w5s prompt=slow15 on stdin; kill=no) [win32]
+service.json pid: 44232
+--- processes before (t+1s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+started pid 6028
+--- processes during (t+8s): pid ppid name cmd
+2476 2724 opencode-pty.exe <home>\AppData\Local\Temp\ralphy-1010\xdg-v2\cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\AppData\Local\Temp\ralphy-1010\xdg-v2
+2724 21060 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --stdio --port 0
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+6028 12952 cmd.exe C:\WINDOWS\system32\cmd.exe /c <home>\AppData\Roaming\npm\opencode.cmd run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/deepseek-v4.1-flash-free --s
+6492 2476 bash.exe "C:\Program Files\Git\usr\bin\bash.exe" -c "sleep 15"
+21060 6028 opencode.exe "<home>\AppData\Roaming\npm\\node_modules\@opencode\cli\bin\opencode.exe"    run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/deepseek-v4.1-flash-fr
+29676 6492 sleep.exe "C:\Program Files\Git\usr\bin\sleep.exe" 15
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+46824 6492 conhost.exe \??\C:\WINDOWS\system32\conhost.exe 0x4
+tool process seen: 6492 parent 2476 "C:\Program Files\Git\usr\bin\bash.exe" -c "sleep 15"
+tool process seen: 29676 parent 6492 "C:\Program Files\Git\usr\bin\sleep.exe" 15
+exit 0 after 32s; session ses_def6a6129ffeYhTp68owuuxO43
+repo HEAD da0507c9 spike: add AFTER.md | status []
+--- processes 5s after exit (t+37s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+stderr bytes: 13416

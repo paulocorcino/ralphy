@@ -1,0 +1,18 @@
+two at once: <home>\AppData\Roaming\npm\opencode.cmd run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/deepseek-v4.1-flash-free --standalone   (A cwd=<home>\AppData\Local\Temp\ralphy-1010\repos\w5q1 prompt name:PA; B cwd=<home>\AppData\Local\Temp\ralphy-1010\repos\w5q2 prompt name:PB) [win32]
+--- processes before (t+1s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+started A pid 41080, B pid 42336
+--- processes during (t+11s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+A exit 1 session ses_def669c4cffeClM0kbEepFC7XH; repo HEAD bc0a33d7 spike: add PA.md | status []; files PA=True PB=False
+B exit 1 session ses_def669c5dffeFTEQuDU8GQBR3S; repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status [?? PB.md]; files PA=False PB=True
+stream A: 9 events; mentions the other repo folder w5q2: False; mentions PB.md: False
+stream B: 6 events; mentions the other repo folder w5q1: False; mentions PA.md: False
+--- processes 5s after both exit (t+17s): pid ppid name cmd
+4484 44232 opencode-pty.exe <home>\.cache\opencode\bin\opencode-pty\0.6.0-3ca87f140ff90483\opencode-pty.exe daemon --runtime-dir <home>\.local\state\opencode\pty --name 8b1db2e1-5e7c-483b-8627-d75ff2685f97
+44232 17532 opencode.exe <home>\AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe serve --service
+=== the last event of each stream (both runs stopped at the free-model limit, so this pair is kept as a record of a real 2.x free-limit error; win-par-standalone is the full run)
+{"type":"error","timestamp":1795574824383,"sessionID":"ses_def669c4cffeClM0kbEepFC7XH","error":{"type":"provider.free-limit","message":"Free usage limit reached. Connect a provider or subscribe to OpenCode Go to keep going, or switch models.","status":429,"response":{"body":"{\"type\":\"error\",\"error\":{\"type\":\"FreeUsageLimitError\",\"message\":\"Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go\"}}"},"retryAfterMs":77890000}}
+{"type":"error","timestamp":1795574824992,"sessionID":"ses_def669c5dffeFTEQuDU8GQBR3S","error":{"type":"provider.free-limit","message":"Free usage limit reached. Connect a provider or subscribe to OpenCode Go to keep going, or switch models.","status":429,"response":{"body":"{\"type\":\"error\",\"error\":{\"type\":\"FreeUsageLimitError\",\"message\":\"Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go\"}}"},"retryAfterMs":77890000}}

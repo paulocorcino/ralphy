@@ -1,0 +1,17 @@
+<home>/.opencode/bin/opencode run --format json --dangerously-skip-permissions --print-logs --log-level error -m opencode/hy4-flash-free   (cwd=/tmp/ralphy-1010/repos/l5c PWD=/tmp/ralphy-1010/repos/a prompt=cwd on stdin; kill=no) [linux]
+service.json pid: 2216799
+--- processes before (t+0s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+started pid 4024887
+--- processes during (t+6s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+4024887 4024886 opencode 
+exit 0 after 6s; session ses_def6210aaffexMu5ph027XU31a
+repo HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status []
+--- processes 5s after exit (t+11s): pid ppid name cmd
+2216799 1 opencode <home>/.opencode/bin/opencode serve --service
+3980080 2216799 opencode-pty <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+PWD folder HEAD a3063749 feat: add TypeScript build info and new test bytecode files | status [?? CWD.md]; CWD.md there=True; CWD.md in cwd=False
+stderr bytes: 0
