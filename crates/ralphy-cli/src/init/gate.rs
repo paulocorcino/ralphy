@@ -236,8 +236,7 @@ fn cursor_logged_in(authenticated: bool) -> bool {
 /// The program the login probe spawns: `OpenCode` through its shared locator.
 fn login_probe_program(a: Agent) -> std::ffi::OsString {
     match a {
-        Agent::Opencode => ralphy_proc_util::opencode::locate_opencode()
-            .map_or_else(|| a.cli_name().into(), std::path::PathBuf::into_os_string),
+        Agent::Opencode => ralphy_proc_util::opencode::opencode_program(),
         Agent::Claude
         | Agent::Codex
         | Agent::Copilot

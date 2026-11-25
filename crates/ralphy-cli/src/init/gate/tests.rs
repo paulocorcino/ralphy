@@ -209,7 +209,7 @@ fn the_opencode_login_probe_uses_the_shared_locator() {
         .expect("login_probe_program has a closing brace");
     let body: String = rest.split_at(end).0.split_whitespace().collect();
     assert!(
-        body.contains("Agent::Opencode=>ralphy_proc_util::opencode::locate_opencode()"),
+        body.contains("Agent::Opencode=>ralphy_proc_util::opencode::opencode_program()"),
         "the OpenCode login probe must spawn the located program: {body}"
     );
     assert!(
