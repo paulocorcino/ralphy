@@ -1,6 +1,6 @@
 # The OpenCode adapter supports 1.x and 2.x, reads the version once, and runs 2.x standalone
 
-Status: proposed
+Status: accepted
 Kind: structural
 Protects: recoverability, observability and cost; constraint portability
 
