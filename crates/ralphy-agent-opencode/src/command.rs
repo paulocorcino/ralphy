@@ -84,6 +84,7 @@ fn command_with(
         cmd.arg("--variant").arg(v);
     }
     cmd.current_dir(root)
+        .env("PWD", root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -171,6 +172,25 @@ mod tests {
         cmd.get_args()
             .map(|a| a.to_string_lossy().into_owned())
             .collect()
+    }
+
+    #[test]
+    fn the_run_command_sets_pwd_to_its_folder() {
+        let root = Path::new("/repo/work");
+        let state = StatePlugin {
+            plugin: Path::new("/run/plugin.js"),
+            status: Path::new("/run/status"),
+        };
+        for cmd in [
+            build_opencode_command(None, None, root, None),
+            build_watched_opencode_command(None, None, root, None, &state),
+        ] {
+            let pwd = cmd.get_envs().find(|(k, _)| *k == "PWD");
+            assert_eq!(
+                pwd,
+                Some((std::ffi::OsStr::new("PWD"), Some(root.as_os_str())))
+            );
+        }
     }
 
     #[test]

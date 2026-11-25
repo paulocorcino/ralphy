@@ -432,3 +432,51 @@ fn a_codex_console_in_a_project_with_its_own_hooks_gets_no_trust_flag() {
         Some(crate::agent_state::CODEX_OWN_HOOKS_REASON)
     );
 }
+
+fn opencode_console_env(with_plugin: bool, checkout: &Path) -> Vec<(OsString, OsString)> {
+    let store = tempfile::tempdir().unwrap();
+    let files = if with_plugin {
+        crate::agent_state::StatusFiles::for_agent(Agent::OpenCode, store.path(), 1)
+    } else {
+        None
+    };
+    let root = tempfile::tempdir().unwrap();
+    spec_with_status(
+        Agent::OpenCode,
+        root.path(),
+        checkout.to_path_buf(),
+        "owner/r",
+        None,
+        24,
+        80,
+        files,
+    )
+    .env
+}
+
+/// A console with no status files returns early, and must still run in its folder.
+#[test]
+fn an_opencode_console_sets_pwd_to_its_folder() {
+    let checkout = tempfile::tempdir().unwrap();
+    let env = opencode_console_env(false, checkout.path());
+    assert!(
+        env.contains(&(
+            OsString::from("PWD"),
+            checkout.path().as_os_str().to_owned()
+        )),
+        "{env:?}"
+    );
+}
+
+#[test]
+fn an_opencode_console_with_the_plugin_sets_pwd() {
+    let checkout = tempfile::tempdir().unwrap();
+    let env = opencode_console_env(true, checkout.path());
+    assert!(
+        env.contains(&(
+            OsString::from("PWD"),
+            checkout.path().as_os_str().to_owned()
+        )),
+        "{env:?}"
+    );
+}

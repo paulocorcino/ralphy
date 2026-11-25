@@ -311,8 +311,11 @@ fn add_codex_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::S
 /// in `OPENCODE_CONFIG_CONTENT`, and `RALPHY_STATUS_FILE` (ADR-0085 D2). The
 /// config holds the plugin only: `OpenCode` merges it with the operator's own
 /// config, so their settings and plugins still load. A failed write launches
-/// the console without the plugin, as for Claude.
+/// the console without the plugin, as for Claude. `PWD` is the folder of the
+/// console, set before every early return: 2.x reads it as the project folder.
 fn add_opencode_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::StatusFiles>) {
+    let folder = spec.cwd.clone().into_os_string();
+    spec.env.push((OsString::from("PWD"), folder));
     let Some(files) = status else {
         return;
     };
