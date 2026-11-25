@@ -122,4 +122,6 @@ WSL, one prompt: the 1.19.0 file (`opencode-1042-status-v1-wsl.jsonl`) holds the
 Windows 🔬. Every 2.3.2 run on WSL hit the free limit of the model
 (`opencode-1042-load-wsl-v2.log`, `opencode-1042-load-wsl-v2-limited.log`): the plugin wrote
 `plugin.loaded`, `session.created`, two `session.status` and `session.idle`, the lines of a turn
-whose one step failed 🔬. The 2.x file of a turn that ends with a reply is still to capture on WSL.
+whose one step failed 🔬. With the operator's provider (`anthropic/claude-haiku-5-5`, `--standalone`),
+the 2.3.2 file of a turn that ends with a reply (`opencode-1042-status-v2-wsl.jsonl`, run log
+`opencode-1042-status-v2-wsl-run.log`) holds the same six lines as the 1.19.0 file 🔬.
