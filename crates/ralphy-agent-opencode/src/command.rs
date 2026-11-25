@@ -1,10 +1,18 @@
 //! Building the headless `opencode run` invocation both `plan` and `execute`
 //! go through.
 
-use std::path::Path;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use ralphy_adapter_support::{resolve_program, DENIED_FORGE_WRITES};
+use ralphy_adapter_support::DENIED_FORGE_WRITES;
+
+/// The located `opencode` (its installer folder included), else the bare name so
+/// a spawn error names the vendor.
+pub(crate) fn resolve_opencode_program() -> OsString {
+    ralphy_proc_util::opencode::locate_opencode()
+        .map_or_else(|| OsString::from("opencode"), PathBuf::into_os_string)
+}
 
 /// Build the headless `opencode run` command both `plan` and `execute` go through
 /// — the single point that fixes the invocation, always passes
@@ -49,9 +57,9 @@ fn command_with(
     skills_dir: Option<&Path>,
     state: Option<&StatePlugin<'_>>,
 ) -> Command {
-    // Resolve `opencode` to its real path: on Windows it ships as an npm `.cmd`
-    // shim with no `.exe`, which a bare `Command::new("opencode")` cannot find.
-    let mut cmd = Command::new(resolve_program("opencode"));
+    // The located path: on Windows `opencode` ships as an npm `.cmd` shim with no
+    // `.exe`, which a bare `Command::new("opencode")` cannot find.
+    let mut cmd = Command::new(resolve_opencode_program());
     cmd.arg("run")
         .arg("--format")
         .arg("json")
@@ -136,7 +144,28 @@ fn opencode_config(skills_dir: Option<&Path>, plugin: Option<&Path>) -> String {
 mod tests {
     use super::*;
     use crate::cleanup::remove_scratch;
-    use std::path::PathBuf;
+
+    fn squeezed(source: &str) -> String {
+        source.split_whitespace().collect()
+    }
+
+    #[test]
+    fn the_program_comes_from_the_shared_opencode_locator() {
+        let command = squeezed(include_str!("command.rs"));
+        assert!(
+            command.contains("ralphy_proc_util::opencode::locate_opencode()"),
+            "the locator must come from proc-util"
+        );
+        assert!(
+            command.contains("Command::new(resolve_opencode_program())"),
+            "the run command must spawn the located program"
+        );
+        let tasks = squeezed(include_str!("tasks.rs"));
+        assert!(
+            tasks.contains("Command::new(resolve_opencode_program())"),
+            "the one-shot task must spawn the located program"
+        );
+    }
 
     fn argv(cmd: &Command) -> Vec<String> {
         cmd.get_args()
@@ -147,7 +176,7 @@ mod tests {
     #[test]
     fn build_command_omits_model_when_none() {
         let cmd = build_opencode_command(None, None, Path::new("/repo"), None);
-        // The program is `resolve_program("opencode")`: a full path (e.g.
+        // The program is `resolve_opencode_program()`: a full path (e.g.
         // `opencode.cmd` on Windows) when found on PATH, else the bare name. Either
         // way the file stem is `opencode`.
         let program = PathBuf::from(cmd.get_program());

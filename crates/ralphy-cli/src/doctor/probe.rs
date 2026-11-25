@@ -206,9 +206,9 @@ pub(crate) fn agent_program(a: Agent) -> Option<PathBuf> {
         Agent::Cursor => ralphy_agent_cursor::locate_cursor(),
         // The binary is `agy`, found by the adapter's locator (ADR-0086 D17).
         Agent::Antigravity => ralphy_proc_util::antigravity::locate_agy(),
-        Agent::Claude | Agent::Codex | Agent::Copilot | Agent::Kimi | Agent::Opencode => {
-            locate_program(a.cli_name())
-        }
+        // Also found in its installer folder, `~/.opencode/bin`.
+        Agent::Opencode => ralphy_proc_util::opencode::locate_opencode(),
+        Agent::Claude | Agent::Codex | Agent::Copilot | Agent::Kimi => locate_program(a.cli_name()),
     }
 }
 

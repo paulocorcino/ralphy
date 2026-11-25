@@ -16,6 +16,7 @@ include_dir.workspace = true
 rusqlite.workspace = true
 ralphy-core.workspace = true
 ralphy-adapter-support.workspace = true
+ralphy-proc-util.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -11,15 +11,13 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use tracing::info;
 
-use ralphy_adapter_support::{
-    resolve_program, run_init_session, run_text_session, JsonSession, TextSession,
-};
+use ralphy_adapter_support::{run_init_session, run_text_session, JsonSession, TextSession};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DiagnosisReport,
     DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Usage, Workspace, PROMPT_CONSOLIDATE,
 };
 
-use crate::command::build_opencode_command;
+use crate::command::{build_opencode_command, resolve_opencode_program};
 use crate::events::{is_opencode_auth_error, OPENCODE_AUTH_ERROR_MSG};
 use crate::usage::opencode_usage;
 
@@ -226,7 +224,7 @@ pub fn consolidate_knowledge(
 /// List available models by passing through to `opencode models`.
 /// Stdio is inherited so the output streams directly to the operator.
 pub fn list_models() -> Result<()> {
-    let status = Command::new(resolve_program("opencode"))
+    let status = Command::new(resolve_opencode_program())
         .arg("models")
         .status()
         .context("failed to spawn `opencode models` (is opencode installed and on PATH?)")?;

@@ -233,14 +233,27 @@ fn cursor_logged_in(authenticated: bool) -> bool {
     authenticated
 }
 
+/// The program the login probe spawns: `OpenCode` through its shared locator.
+fn login_probe_program(a: Agent) -> std::ffi::OsString {
+    match a {
+        Agent::Opencode => ralphy_proc_util::opencode::locate_opencode()
+            .map_or_else(|| a.cli_name().into(), std::path::PathBuf::into_os_string),
+        Agent::Claude
+        | Agent::Codex
+        | Agent::Copilot
+        | Agent::Cursor
+        | Agent::Antigravity
+        | Agent::Kimi => resolve_program(a.cli_name()),
+    }
+}
+
 pub(crate) fn agent_logged_in(a: Agent) -> bool {
     let hello = "hello";
     // Built up front for the arms that fall through to the shared
     // `status().success()` tail. The two early-returning arms below (Copilot,
     // Cursor) never touch it — Cursor in particular could not use it, since
     // `a.cli_name()` is not its binary name (ADR-0042 D14).
-    let bin = resolve_program(a.cli_name());
-    let mut cmd = std::process::Command::new(&bin);
+    let mut cmd = std::process::Command::new(login_probe_program(a));
     match a {
         Agent::Claude => {
             cmd.args(["-p", hello]);

@@ -4,6 +4,26 @@ use super::*;
 use ralphy_daemon::telegram_state::{FleetTelegram, OffReason, PeerName, PeerTelegram};
 use ralphy_proc_util::hook_form::HookCheck;
 
+#[test]
+fn doctor_finds_opencode_with_the_shared_locator() {
+    let source = include_str!("probe.rs");
+    let start = source
+        .find("pub(crate) fn agent_program(")
+        .expect("agent_program is defined");
+    let rest = source.split_at(start).1;
+    let end = rest
+        .find(
+            "
+}",
+        )
+        .expect("agent_program has a closing brace");
+    let body: String = rest.split_at(end).0.split_whitespace().collect();
+    assert!(
+        body.contains("Agent::Opencode=>ralphy_proc_util::opencode::locate_opencode(),"),
+        "agent_program must find OpenCode with `locate_opencode`: {body}"
+    );
+}
+
 fn all_found() -> MachineFacts {
     MachineFacts {
         git: Some("git version 2.47.1".to_owned()),

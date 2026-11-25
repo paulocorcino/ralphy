@@ -213,6 +213,28 @@ fn preflight_agents_probes_cursor_with_its_adapter_locator() {
         "preflight_agents must probe Cursor with `locate_cursor`: {body}"
     );
 }
+#[test]
+fn preflight_agents_probes_opencode_with_its_locator() {
+    let source = include_str!("../wiring.rs");
+    let start = source
+        .find("pub(crate) fn preflight_agents(")
+        .expect("preflight_agents is defined");
+    let rest = source.split_at(start).1;
+    let end = rest
+        .find(
+            "
+}",
+        )
+        .expect("preflight_agents has a closing brace");
+    let body: String = rest.split_at(end).0.split_whitespace().collect();
+    assert!(
+        body.contains(
+            "CliAgent::OpenCode=>ralphy_proc_util::opencode::locate_opencode().is_some(),"
+        ),
+        "preflight_agents must probe OpenCode with `locate_opencode`: {body}"
+    );
+}
+
 /// Each phase's model: its own flag wins over the persisted `copilot.*_model`,
 /// which is used when the flag is absent; nothing anywhere is `None`.
 #[test]
