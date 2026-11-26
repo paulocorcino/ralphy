@@ -341,3 +341,23 @@ fn opencode_scan_failed_query_is_an_error() {
     };
     assert!(read_opencode(&input).is_err());
 }
+
+#[test]
+fn opencode_scan_skips_a_row_it_cannot_read() {
+    let tmp = tempfile::tempdir().unwrap();
+    let good = r#"{"role":"assistant","modelID":"k2p6","tokens":{"input":7,"output":3}}"#;
+    let path = seed_db(tmp.path(), &[("ses_1", good)], &[("ses_1", "/x")]);
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute(
+        "INSERT INTO message (id, session_id, data) VALUES ('bad', 'ses_2', X'00')",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    let records = scan(&path, &[], None);
+
+    assert_eq!(records.len(), 1, "{records:?}");
+    assert_eq!(records[0].session_id, "ses_1");
+    assert_eq!(records[0].tokens.as_ref().unwrap().input, 7);
+}

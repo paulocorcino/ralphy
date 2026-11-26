@@ -191,9 +191,12 @@ fn collect_rows(conn: &rusqlite::Connection) -> rusqlite::Result<Vec<RawRow>> {
     let v2_sessions: HashSet<String> = rows.iter().map(|r| r.session_id.clone()).collect();
     let mut v1 = Vec::new();
     // Older databases have no `session` table (ADR-0033 §6): no directory then.
-    if read_rows(conn, V1_ROWS, Layout::V1, &mut v1).is_err() {
-        read_rows(conn, V1_ROWS_NO_DIRECTORY, Layout::V1, &mut v1)?;
-    }
+    let v1_sql = if table_exists(conn, "session")? {
+        V1_ROWS
+    } else {
+        V1_ROWS_NO_DIRECTORY
+    };
+    read_rows(conn, v1_sql, Layout::V1, &mut v1)?;
     rows.extend(
         v1.into_iter()
             .filter(|r| !v2_sessions.contains(&r.session_id)),
@@ -216,10 +219,29 @@ fn read_rows(
             layout,
         })
     })?;
+    let mut skipped = 0usize;
     for row in rows {
-        out.push(row?);
+        match row {
+            Ok(row) => out.push(row),
+            Err(e) if is_undecodable_row(&e) => skipped += 1,
+            Err(e) => return Err(e),
+        }
+    }
+    if skipped > 0 {
+        tracing::warn!(
+            skipped,
+            "skipped OpenCode message rows whose columns cannot be read"
+        );
     }
     Ok(())
+}
+
+/// A row whose values have the wrong type: the row is skipped, the scan goes on.
+fn is_undecodable_row(e: &rusqlite::Error) -> bool {
+    matches!(
+        e,
+        rusqlite::Error::InvalidColumnType(..) | rusqlite::Error::FromSqlConversionFailure(..)
+    )
 }
 
 /// The assistant row in a message's JSON `data`; `None` for any other role,

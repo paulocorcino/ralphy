@@ -136,3 +136,26 @@ fn a_third_major_is_refused_with_the_text_it_read() {
         assert!(message.contains(part), "{message}");
     }
 }
+
+#[test]
+fn the_store_follows_xdg_data_home_when_it_is_absolute() {
+    let home = std::env::temp_dir().join("home");
+    let xdg = std::env::temp_dir().join("xdg");
+    let store = |x: Option<&std::path::Path>| {
+        opencode_db_path_with(x.map(|p| p.as_os_str().to_owned()), Some(home.clone()))
+    };
+    let in_xdg = xdg.join("opencode").join("opencode.db");
+    let in_home = home
+        .join(".local")
+        .join("share")
+        .join("opencode")
+        .join("opencode.db");
+    assert_eq!(store(Some(&xdg)), Some(in_xdg));
+    assert_eq!(store(None), Some(in_home.clone()));
+    assert_eq!(
+        store(Some(std::path::Path::new("relative"))),
+        Some(in_home.clone())
+    );
+    assert_eq!(store(Some(std::path::Path::new(""))), Some(in_home));
+    assert_eq!(opencode_db_path_with(None, None), None);
+}

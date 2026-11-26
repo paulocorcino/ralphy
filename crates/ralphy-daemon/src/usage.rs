@@ -151,21 +151,14 @@ pub fn codex_dir_path() -> anyhow::Result<PathBuf> {
 }
 
 /// The `OpenCode` SQLite store: `$RALPHY_OPENCODE_DB` when set (tests point it at a
-/// temp file), else `<home>/.local/share/opencode/opencode.db` (USERPROFILE on
-/// Windows, HOME elsewhere). Mirrors the adapter's `opencode_db_path` and
-/// [`codex_dir_path`]; `None` when no home directory can be resolved.
+/// temp file), else the store the adapter reads
+/// (`ralphy_proc_util::opencode::opencode_db_path`).
 pub fn opencode_db_path() -> anyhow::Result<PathBuf> {
     if let Some(db) = std::env::var_os("RALPHY_OPENCODE_DB") {
         return Ok(PathBuf::from(db));
     }
-    let home = std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .ok_or_else(|| anyhow::anyhow!("no home directory resolved for the OpenCode store"))?;
-    Ok(PathBuf::from(home)
-        .join(".local")
-        .join("share")
-        .join("opencode")
-        .join("opencode.db"))
+    ralphy_proc_util::opencode::opencode_db_path()
+        .ok_or_else(|| anyhow::anyhow!("no home directory resolved for the OpenCode store"))
 }
 
 /// The Copilot SQLite store: `$RALPHY_COPILOT_DB` when set (tests point it at a
