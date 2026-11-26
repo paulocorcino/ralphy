@@ -40,6 +40,8 @@ const MODULE_WINDOW_NAMES: &[&str] = &[
 /// `.js` file in the source tree is a vendored file or a classic script on the
 /// list that only gets shorter; a module sets no `window.WB*` name that no
 /// reader outside the modules needs; the `file://` demo does not come back.
+// pin: first-party code is TypeScript —
+// a rule over the source tree; no run of the code can see it.
 #[test]
 fn first_party_scripts_move_to_typescript_and_never_back() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/ui");
@@ -127,6 +129,8 @@ fn typed_event_names(globals: &str, map: &str) -> std::collections::BTreeSet<Str
 /// a `$dispatch` in the markup or a `.window` listener does not, so every
 /// name in a module and in `index.html` is read here, both names of a ternary
 /// included.
+// pin: every workbench event name is in the typed list —
+// a rule over the source tree; no run of the code can see it.
 #[test]
 fn every_workbench_event_name_is_in_the_typed_list() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/ui");
@@ -202,6 +206,8 @@ fn every_workbench_event_name_is_in_the_typed_list() {
 /// (ADR-0075 D2), and that module has its own `ui-tests/<file>.test.mjs`,
 /// where `loadComponent` checks the `uses` list of ADR-0073 D4. An Alpine
 /// store (D6) is built the same way.
+// pin: every Alpine component has its own test file —
+// a rule over the source tree; no run of the code can see it.
 #[test]
 fn every_alpine_component_can_be_built_and_has_a_test() {
     let tests = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui-tests");
@@ -266,6 +272,8 @@ fn alpine_data_calls(js: &str) -> Vec<(&str, &str)> {
 /// `index.html` registers Alpine components and starts Alpine, once. A
 /// name in an `x-data` that `main.ts` does not register is an element
 /// Alpine cannot build, which no node test renders.
+// pin: each page starts from one entry module —
+// node loads no page, so only the page text shows what it loads.
 #[test]
 fn each_page_starts_from_one_entry_module() {
     for (page, html, entry) in [
@@ -342,6 +350,8 @@ fn each_page_starts_from_one_entry_module() {
 /// instances at once), and the consoles boot after Alpine has started, as
 /// they did when `DOMContentLoaded` triggered the boot (ADR-0075 phase 5).
 /// No unit test runs an entry module, so the order is pinned here.
+// pin: each entry module builds the instances before it wires the page —
+// no test runs an entry module.
 #[test]
 fn each_entry_module_creates_the_instances_before_it_wires_the_page() {
     for (entry, text, order) in [

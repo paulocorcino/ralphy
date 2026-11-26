@@ -15,6 +15,8 @@ use super::*;
 ///
 /// `fullscreenOffered` is driven by the node suite; the rest is DOM wiring
 /// and CSS that no node test runs, so it fails here or nowhere.
+// pin: a console takes the whole screen and its control follows the browser —
+// no test runs this wiring, so only the source text shows it.
 #[test]
 fn a_console_can_take_the_whole_screen() {
     // The console, its window chrome, its window gestures and its view, as one text: the
@@ -90,6 +92,8 @@ fn a_console_can_take_the_whole_screen() {
     );
 }
 
+// pin: a fullscreen console fits a tablet —
+// node computes no style, so only the stylesheet text shows it.
 #[test]
 fn a_fullscreen_console_fits_a_tablet() {
     let css = served_css();
@@ -122,6 +126,8 @@ fn a_fullscreen_console_fits_a_tablet() {
     );
 }
 
+// pin: the shell installs to the home screen —
+// node loads no page, so only the page text shows what it loads.
 #[test]
 fn the_shell_installs_to_the_home_screen() {
     // The iPad's OTHER answer, which needs no fullscreen state at all:
@@ -160,44 +166,20 @@ fn the_shell_installs_to_the_home_screen() {
 
 /// Three pieces of chrome that only a browser can really prove, pinned here
 /// because the browser pass — Playwright — does not run in CI.
+// pin: the shell sends the menus event, and the fence name opens on a double click —
+// no test runs this wiring, so only the source text shows it.
 #[test]
 fn the_console_chrome_holds_its_three_rules() {
     let app = shell_family();
-    let tab = concat!(
-        include_str!("../../assets/ui/wb-consoles-tab.ts"),
-        include_str!("../../assets/ui/wb-consoles-tab-menus.ts"),
-    );
     let html = INDEX_HTML;
-    // ONE dropdown at a time. Every toggler sends ONE event,
-    // `workbench:menus-close`, and the shell and the two consoles components
-    // each close their own menus on it — the account menu and the toolbar's
-    // pickers used to enumerate each other and left both open, overlapping.
-    // wb-consoles-tab.test.mjs and app.test.mjs drive the event.
-    let close = r#"sendWindow(window, "workbench:menus-close");"#;
-    let hear = r#"addEventListener("workbench:menus-close", "#;
-    // Counted, not `contains`: the family also holds the two consoles
-    // components, so a bare `contains` stays green when the shell's own send
-    // or hear is gone. Five is the shell's one, their two, the + menu's, and
-    // the attention panel's (wb-attention.ts); the palette sends a sixth,
-    // the Settings button of the rail a seventh, and the runs picker hears a
-    // sixth.
+    // ONE dropdown at a time: every toggler sends `workbench:menus-close`. The
+    // account menu and the two consoles components hearing it are driven by
+    // wb-account.test.mjs and wb-consoles-tab.test.mjs; the shell's own send is
+    // reached by no node test.
     assert!(
-        app.matches(close).count() == 7
-            && app.matches(hear).count() == 6
-            && app.contains("this.avatarMenu = false;"),
-        "the shell must close the account menu on the one menus event, and send it"
-    );
-    // The account menu's send and hear are the third of each above.
-    let account = include_str!("../../assets/ui/wb-account.ts");
-    assert!(
-        account.matches(close).count() == 1
-            && account.matches(hear).count() == 1
-            && account.contains("this.avatarMenu = false;"),
-        "the account menu (wb-account.ts) must close on the one menus event, and send it"
-    );
-    assert!(
-        tab.matches(close).count() == 2 && tab.matches(hear).count() == 2,
-        "both consoles components must send the one menus event and hear it"
+        include_str!("../../assets/ui/app.ts")
+            .contains(r#"sendWindow(window, "workbench:menus-close");"#),
+        "the shell must send the one menus event when it opens a menu"
     );
     for pin in ["toggleAvatarMenu()", "toggleAgentMenu()"] {
         assert!(html.contains(pin), "index.html must toggle through {pin}");

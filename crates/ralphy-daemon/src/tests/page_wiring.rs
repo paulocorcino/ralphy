@@ -8,6 +8,8 @@ use super::*;
 /// `wb-changes-panel.test.mjs`. No node test reaches the export
 /// `wb-changes-panel.ts` guards on or the filter call inside
 /// `mountChangesSub`, so those two are pinned here.
+// pin: the shell filters each changes nudge through shouldReload —
+// no test runs this wiring, so only the source text shows it.
 #[test]
 fn the_run_completion_nudge_is_wired_through_the_ui_assets() {
     assert!(
@@ -27,6 +29,8 @@ fn the_run_completion_nudge_is_wired_through_the_ui_assets() {
 /// by no node test, and Playwright does not run in CI — these substrings are
 /// the only CI-visible gate over the one consumer `/api/fleet/nudge` has, and
 /// a route with no caller is a route that rots.
+// pin: a peer group header carries the wake control —
+// node runs no Alpine over the markup, so only its text shows it.
 #[test]
 fn the_peer_wake_is_wired_through_the_ui_assets() {
     let app_js = shell_family();
@@ -83,6 +87,8 @@ fn the_peer_wake_is_wired_through_the_ui_assets() {
 /// uncreatable. The Files header carries the same two actions, because
 /// right-clicking empty space is an affordance nothing on screen advertises.
 /// The directory `emitCreate` sends is driven by `wb-files.test.mjs`.
+// pin: the Files header creates at the repo root —
+// node runs no Alpine over the markup, so only its text shows it.
 #[test]
 fn the_explorer_can_create_at_every_target_including_the_repo_root() {
     let js = include_str!("../../assets/ui/wb-files.ts");
@@ -112,6 +118,8 @@ fn the_explorer_can_create_at_every_target_including_the_repo_root() {
 /// shell that cannot be reached. The create action calling `askPrompt`, and
 /// `askPrompt` settling with the name `promptSubmit` accepts, are driven by
 /// `app.test.mjs`; this pins the markup the dialog renders into.
+// pin: the prompt dialog has its input and submit —
+// node runs no Alpine over the markup, so only its text shows it.
 #[test]
 fn naming_a_new_entry_uses_the_design_system_prompt() {
     let html = INDEX_HTML;
@@ -137,6 +145,8 @@ fn naming_a_new_entry_uses_the_design_system_prompt() {
 /// Only a browser computes that geometry and CI runs none, so what is pinned
 /// here is the structure the geometry follows from: the face wraps every
 /// descriptive span, closes, and only then come the actions.
+// pin: a Changes row keeps its actions outside the clipped face —
+// node runs no Alpine over the markup, so only its text shows it.
 #[test]
 fn a_changes_row_keeps_its_actions_outside_the_clipped_face() {
     let html = INDEX_HTML;
@@ -215,6 +225,8 @@ fn a_changes_row_keeps_its_actions_outside_the_clipped_face() {
 /// ship as an empty icon, and a `createIcons()` call would bring back the
 /// scan that missed every `x-if` and `x-for` built after it ran (#332).
 /// `wb_icons_487.py` owns the rendering; this pin keeps the markup on it.
+// pin: every icon is drawn by the x-icon directive —
+// node runs no Alpine over the markup, so only its text shows it.
 #[test]
 fn every_icon_is_drawn_by_the_x_icon_directive() {
     let html = INDEX_HTML;
@@ -242,6 +254,8 @@ fn every_icon_is_drawn_by_the_x_icon_directive() {
 
 /// A repo with no `origin` is keyed `path-<hash>` (ADR-0008 D7). That stays
 /// the identity; only the LABEL becomes the directory basename (#332).
+// pin: a remoteless project row shows its label —
+// node runs no Alpine over the markup, so only its text shows it.
 #[test]
 fn a_remoteless_project_is_labelled_by_its_directory() {
     let js = shell_family();
@@ -290,6 +304,8 @@ fn a_remoteless_project_is_labelled_by_its_directory() {
 
 /// A twenty-character label in a column fixed at 300px wrapped the row to
 /// two lines (#332).
+// pin: the project name truncates instead of wrapping —
+// node computes no style, so only the stylesheet text shows it.
 #[test]
 fn the_project_name_truncates_instead_of_wrapping() {
     let css = served_css();
@@ -320,6 +336,8 @@ fn the_project_name_truncates_instead_of_wrapping() {
 /// it is only the count, open it grows the branch and switches it. The Files
 /// bar is left to the checkout chip. Neither block nests a `<div>`, so slicing
 /// each to its first `</div>` is exact.
+// pin: the branch chip carries the change count on the project row —
+// node runs no Alpine over the markup, so only its text shows it.
 #[test]
 fn the_branch_chip_carries_the_change_count_on_the_project_row() {
     let html = INDEX_HTML;
@@ -415,6 +433,8 @@ fn the_branch_chip_carries_the_change_count_on_the_project_row() {
 /// and rows; 0.5rem for the Changes toolbar and compose box), so tightening
 /// only the project row would have made it worse. One token, six rules
 /// (#332). `.runs-head` keeps its own value: it is not this column.
+// pin: the sidebar column keeps one gutter —
+// node computes no style, so only the stylesheet text shows it.
 #[test]
 fn the_sidebar_column_keeps_one_gutter() {
     let css = served_css();

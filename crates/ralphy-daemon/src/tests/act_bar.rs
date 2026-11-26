@@ -9,6 +9,8 @@ use super::*;
 /// "cannot push: this branch has no remote to push to" and the operator saw
 /// a button that did nothing. These are the CI-visible pins over that fix,
 /// on the same bargain as the #331 gate above: no Playwright in CI.
+// pin: a refused act shows its note in the Changes panel —
+// node runs no Alpine over the markup, so only its text shows it.
 #[test]
 fn a_refused_change_act_reports_in_the_changes_panel() {
     let html = INDEX_HTML;
@@ -51,6 +53,8 @@ fn a_refused_change_act_reports_in_the_changes_panel() {
 /// against the first. One `syncBusy` slot locks the whole bar and swaps
 /// the busy act's icon for a ring. Pinned here on the #331 bargain: no
 /// Playwright in CI.
+// pin: a remote act in flight locks the bar and shows a ring —
+// node runs no Alpine over the markup, so only its text shows it.
 #[test]
 fn a_remote_act_in_flight_locks_the_bar_and_shows_a_ring() {
     let html = INDEX_HTML;
@@ -90,6 +94,8 @@ fn a_remote_act_in_flight_locks_the_bar_and_shows_a_ring() {
 /// branch is published, so it leaves the bar and Publish takes its width.
 /// "Publish branch" did not fit in a third of the bar, and the centred
 /// label was cut on both sides.
+// pin: Pull leaves the bar while the branch has no upstream —
+// node runs no Alpine over the markup, so only its text shows it.
 #[test]
 fn pull_leaves_the_bar_while_the_branch_has_no_upstream() {
     let html = INDEX_HTML;
@@ -125,6 +131,8 @@ fn pull_leaves_the_bar_while_the_branch_has_no_upstream() {
 /// `_flashAction`, so a refused switch was a chip that snapped back saying
 /// nothing. Its own state and its own gutter — dressing a branch refusal as
 /// `treeError` would make a working project read as an unreadable one.
+// pin: a refused branch change shows its note above the tree —
+// node runs no Alpine over the markup, so only its text shows it.
 #[test]
 fn a_refused_branch_change_reports_in_the_projects_panel() {
     let html = INDEX_HTML;
@@ -218,6 +226,8 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
 /// The picker row's remove action (#409, ADR-0063 §4): the `.stop` is
 /// load-bearing — the row's own click selects the checkout and closes the
 /// modal, so without it a remove is also a select-and-dismiss.
+// pin: the trash of a worktree row does not also select the row —
+// no test runs this wiring, so only the source text shows it.
 #[test]
 fn the_worktree_row_remove_action_stops_the_selecting_click() {
     // The rows are the checkout menu's (wb-console-checkout.ts `checkoutMenu`),

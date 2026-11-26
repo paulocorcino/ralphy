@@ -1,6 +1,5 @@
-//! The pins of the console family and of the shell family (#621, ADR-0073):
-//! the lists of the workbench modules whose text a pin reads, and the tests that
-//! keep each list equal to the files on disk. Split from `tests.rs`.
+//! The console family and the shell family (#621, ADR-0073): the modules whose text a
+//! pin reads, and the tests that keep each list equal to the files on disk.
 
 use super::*;
 
@@ -260,6 +259,8 @@ fn console_family_group(name: &str) -> Option<u8> {
 
 /// #621: a new console family module cannot be left out of the pins that
 /// read the family, because this test compares the list with the disk.
+// pin: the console family holds every console module —
+// include_str! needs each path written.
 #[test]
 fn the_console_family_lists_every_module_on_disk() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/ui");
@@ -280,8 +281,7 @@ fn the_console_family_lists_every_module_on_disk() {
     assert_eq!(
         listed, on_disk,
         "CONSOLE_FAMILY in crates/ralphy-daemon/src/tests/families.rs must list every \
-         console family \
-         module under assets/ui, in its order: add the new module to CONSOLE_FAMILY"
+         console family module under assets/ui, in its order: add it to CONSOLE_FAMILY"
     );
 }
 
@@ -433,6 +433,8 @@ pub(super) fn shell_family() -> String {
 /// #621: a module that `main.ts` registers with Alpine cannot be left out of
 /// the pins that read the shell family, because this test builds the list
 /// from `main.ts` and the disk.
+// pin: the shell family holds every module main.ts registers —
+// include_str! needs each path written.
 #[test]
 fn the_shell_family_lists_every_module_on_disk() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/ui");

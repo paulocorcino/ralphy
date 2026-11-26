@@ -10,6 +10,8 @@ use super::*;
 /// in the detached-fence popup, which has neither; `window.confirm` is
 /// pinned OUT because an automated browser dismisses it by default, which
 /// would turn every guarded click into a silently cancelled one.
+// pin: a destructive console click asks first —
+// no test runs this wiring, so only the source text shows it.
 #[test]
 fn the_destructive_console_clicks_confirm_first() {
     // The whole console family and the door for operator messages, as one
@@ -106,6 +108,8 @@ fn the_destructive_console_clicks_confirm_first() {
 /// at the same desk would relaunch the same consoles and spend the quota
 /// once per tab. Playwright proves the fold (`wb_desk_303.py` scenario 2);
 /// this is the gate CI can see.
+// pin: agent consoles relaunch on load only under the opt-in —
+// no test runs this wiring, so only the source text shows it.
 #[test]
 fn relaunching_agent_consoles_on_load_is_opt_in() {
     // Every pin reads whitespace-free text: the code, not its layout. The
@@ -196,6 +200,8 @@ fn relaunching_agent_consoles_on_load_is_opt_in() {
 /// persisted key, and an "Eligible labels" field backed by nothing at all —
 /// no `SUPPORTED_KEYS` entry, no field in `ralphy-core`'s `Settings`. All
 /// three are gone from the schema; this is what keeps the fourth out.
+// pin: every key the panel saves is one the CLI accepts —
+// the daemon may not run the CLI's code.
 #[test]
 fn every_settable_key_the_panel_offers_is_a_key_the_cli_accepts() {
     let schema = include_str!("../../assets/ui/wb-settings.ts");
