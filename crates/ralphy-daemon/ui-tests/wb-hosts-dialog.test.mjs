@@ -303,6 +303,8 @@ test("dialog: Remove host runs host.remove with the daemon id and the token choi
   assert.deepEqual(calls.at(-1).payload, { host: VPS_ID, rotate_token: false });
 });
 
+// pin: the checks step offers Back, Connect and Done buttons bound to the dialog —
+// node runs no Alpine over the markup, so only its text shows the buttons.
 test("dialog: Back from the checks keeps the fields; it waits while a command runs", async () => {
   const { state, replies, scripts } = dialog();
   replies["host.key"] = { status: "ok", key: { state: "known" } };
@@ -483,6 +485,8 @@ test("the dialog lists at most 12 shell() names, and shell() has each one", () =
   }
 });
 
+// pin: the markup reads only names its component can see —
+// node runs no Alpine over the markup, so only its text shows the names.
 test("every name the dialog's markup reads is its own or in its uses list", () => {
   const { state } = dialog();
   const markup = partMarkup(PART);
@@ -518,6 +522,8 @@ test("the dialog's scope refuses a shell() name outside uses, and any shell() wr
   assert.equal(shell.projectQuery, "", "the write did not reach shell()");
 });
 
+// pin: the sidebar button opens the dialog by its event, and no markup outside reads its state —
+// node runs no Alpine over the markup, so only its text shows the event and the names.
 test("the sidebar button asks the dialog to open with workbench:hosts-open", () => {
   // The page without the dialog's part: the shell and the other components.
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));

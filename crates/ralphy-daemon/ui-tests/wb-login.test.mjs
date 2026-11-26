@@ -36,6 +36,8 @@ test("wbLogin lists only shell() names in uses, and its members left shell()", (
   }
 });
 
+// pin: the markup reads only names its component can see —
+// node runs no Alpine over the markup, so only its text shows the names.
 test("every name the markup of wbLogin reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbLogin");
   const markup = partMarkup(PART);
@@ -55,6 +57,8 @@ test("every name the markup of wbLogin reads is its own or in its uses list", ()
   assert.ok(read >= 8, `the markup was read: ${read} names`);
 });
 
+// pin: no markup outside the login gate reads its state —
+// node runs no Alpine over the page, so only its text shows the names.
 test("nothing outside the login gate names its state", () => {
   // The gate is the last element of the page that binds state: what comes
   // before it is outside. Only the bindings are read; the page's text says
