@@ -10,7 +10,6 @@ export type RosterRow = {
   accelerator?: string;
   available?: boolean;
   reason?: string | null;
-  version?: string;
 };
 /** A live session, as the menu counts it. */
 export type Session = { agent?: string; repo?: string };
@@ -26,9 +25,7 @@ function shownReason(reason: string | null | undefined): string {
 }
 
 function rowLabel(row: RosterRow): string {
-  const label = (row.label ?? "") || row.id;
-  const version = row.version ?? "";
-  return version === "" ? label : `${label} ${version}`;
+  return (row.label ?? "") || row.id;
 }
 
 function rowTitle(needsRepo: boolean, unavailable: boolean, reason: string | null | undefined) {
