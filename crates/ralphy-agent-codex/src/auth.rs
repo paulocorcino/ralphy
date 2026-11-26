@@ -229,6 +229,19 @@ mod tests {
         ));
     }
 
+    /// A wall-clock time in a DST gap or fold names no instant.
+    #[test]
+    fn a_local_time_in_a_dst_gap_or_fold_names_no_instant() {
+        let zone = jiff::tz::TimeZone::get("America/New_York").expect("a bundled zone");
+        let now = jiff::civil::date(2026, 3, 1)
+            .at(0, 0, 0, 0)
+            .to_zoned_datetime(zone)
+            .expect("a valid time");
+        assert_eq!(reset_instant("2026-03-08 02:30:00", &now), None);
+        assert_eq!(reset_instant("2026-11-01 01:30:00", &now), None);
+        assert!(reset_instant("2026-03-08 04:30:00", &now).is_some());
+    }
+
     /// Build a fixed local date-time for the deterministic parse tests.
     fn local((y, mo, d): (i16, i8, i8), (h, mi, sec): (i8, i8, i8)) -> ZonedDateTime {
         jiff::civil::date(y, mo, d)

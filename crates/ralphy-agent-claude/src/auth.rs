@@ -276,6 +276,21 @@ mod tests {
         assert!(reset.at.is_some(), "the reset names an instant");
     }
 
+    /// A reset time in a DST gap or fold names no instant.
+    #[test]
+    fn a_reset_time_in_a_dst_gap_or_fold_names_no_instant() {
+        let zone = jiff::tz::TimeZone::get("America/New_York").expect("a bundled zone");
+        let at_midnight = |y, mo, d| {
+            jiff::civil::date(y, mo, d)
+                .at(0, 0, 0, 0)
+                .to_zoned_datetime(zone.clone())
+                .expect("a valid time")
+        };
+        assert_eq!(next_local_instant("02:30", &at_midnight(2026, 3, 8)), None);
+        assert_eq!(next_local_instant("01:30", &at_midnight(2026, 11, 1)), None);
+        assert!(next_local_instant("04:30", &at_midnight(2026, 3, 8)).is_some());
+    }
+
     /// Build a fixed local date-time for the deterministic parse table.
     fn local(y: i16, mo: i8, d: i8, h: i8, mi: i8) -> ZonedDateTime {
         jiff::civil::date(y, mo, d)

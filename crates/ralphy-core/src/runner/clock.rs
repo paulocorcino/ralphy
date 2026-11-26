@@ -1,7 +1,8 @@
 use std::thread;
 use std::time::{Duration, Instant};
 
-use jiff::{SignedDuration, Timestamp, ZonedDateTime};
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp};
 use tracing::info;
 
 use crate::types::ResetAt;
@@ -16,8 +17,14 @@ use crate::types::ResetAt;
 /// interrupts (Ctrl-C) — which is the point: the operator, not a parseable reset,
 /// decides when to give up (ADR-0030).
 pub(crate) fn synthetic_reset() -> String {
-    let now = ZonedDateTime::now();
-    ralphy_time::rfc3339(synthetic_instant(now.timestamp()), now.offset())
+    synthetic_reset_in(Timestamp::now(), &TimeZone::system())
+}
+
+/// The synthetic reset for a `now`, written with the offset `zone` has at the
+/// new instant, not at `now`.
+fn synthetic_reset_in(now: Timestamp, zone: &TimeZone) -> String {
+    let at = synthetic_instant(now);
+    ralphy_time::rfc3339(at, zone.to_offset(at))
 }
 
 /// The synthetic reset instant for a `now`: 25 minutes out.
@@ -92,7 +99,7 @@ impl RunClock for WallClock {
         // raw hint stays as `hint` for the log.
         crate::emit::usage_limit_waiting(
             &target
-                .to_zoned_datetime(jiff::tz::TimeZone::system())
+                .to_zoned_datetime(TimeZone::system())
                 .strftime("%H:%M")
                 .to_string(),
             &reset.text,
@@ -171,6 +178,15 @@ mod tests {
         ralphy_time::parse_rfc3339(text)
             .expect("an RFC 3339 instant")
             .0
+    }
+
+    /// The offset is the zone's at the new instant: 25 minutes after 01:50 EST
+    /// is 03:15 EDT, across the spring-forward gap.
+    #[test]
+    fn the_synthetic_reset_carries_the_offset_of_the_new_instant() {
+        let zone = TimeZone::get("America/New_York").expect("a bundled zone");
+        let text = synthetic_reset_in(at("2026-03-08T01:50:00-05:00"), &zone);
+        assert_eq!(text, "2026-03-08T03:15:00-04:00");
     }
 
     /// A reset that lands after the run deadline ends the wait before it
