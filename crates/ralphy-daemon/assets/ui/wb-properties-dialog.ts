@@ -142,10 +142,7 @@ export function wbPropertiesDialog() {
     },
 
     propsRoot() {
-      return (
-        this.$store.projects.projects.find((p) => p.slug === this.$store.projects.openSlug)?.root ??
-        ""
-      );
+      return this.$store.projects.openProject()?.root ?? "";
     },
 
     // The lines of the dialog, in order. The facts of the path come from
