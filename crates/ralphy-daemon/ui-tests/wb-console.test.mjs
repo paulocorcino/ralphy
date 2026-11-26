@@ -811,6 +811,8 @@ test("markRelaunch marks the id, and a take-down that throws clears the mark", (
 // A relaunch takes the window off the stage and spawns a new one under the
 // same id; the shell's columns wait for an id marked in between. These paths
 // need a real DOM, so the wiring is pinned on the source.
+// pin: a restart and a placeholder's Launch mark the console as relaunching —
+// both paths build a real window in the DOM, which the node harness has not.
 test("a restart and a placeholder's Launch mark the console as relaunching", () => {
   assert.match(SRC, /markRelaunch\(carry\.id, discard\);/u);
   assert.match(SRC, /markRelaunch\(carry\.id, \(\) => \{\s*drop\(true\);\s*\}\);/u);
@@ -893,6 +895,8 @@ test("a restart survives a layout throw", (t) => {
 
 // The torn-off fence window's grid is never stored (ADR-0051 §8, amended
 // 2026-10-05), so its one call never asks to write the maximize.
+// pin: the torn-off fence window never stores its grid —
+// its page script runs only in its own browser window, never under node.
 test("the torn-off fence window paints its columns without persist", () => {
   // The page and its page script module.
   const html =

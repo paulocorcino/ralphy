@@ -414,6 +414,8 @@ test("pasteAfterRead pastes only into the terminal still attached when the read 
 
 // --- phoneBleed: when a maximized console folds the chrome away ------------
 
+// pin: the phone width of the script is the one of the CSS —
+// node applies no media query, so only the CSS text shows its width.
 test("phoneBleed is maximize AND a phone-width viewport", () => {
   // The breakpoint is the workbench's phone breakpoint: 01-base.css gates the
   // phone layout on the same number, so a drift between the two fails here.
