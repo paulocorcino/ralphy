@@ -4,9 +4,9 @@ use super::*;
 
 /// A detached file comes home however its popup closes: the popup sends its
 /// edited bytes on unload, and the shell polls `closed` for one that dies
-/// without an unload. No node test fires an unload on the popup's page
-/// script (`wb-detached.ts`), so a deletion fails HERE or nowhere. Pins are
-/// expressions, not nouns (#342).
+/// without an unload. Pins are expressions, not nouns (#342).
+// pin: a detached file comes home however its popup closes —
+// the node suite sees the popup listeners; no test closes a popup on the shell.
 #[test]
 fn a_detached_file_comes_home_when_its_popup_closes() {
     let popup = include_str!("../../assets/ui/wb-detached.ts");
@@ -33,13 +33,10 @@ fn a_detached_file_comes_home_when_its_popup_closes() {
     }
 }
 
-/// A fence detaches into its own window, and comes home (#346). The fold
-/// (`detachFold`, with its cap of four) is driven by
-/// `ui-tests/wb-console.test.mjs`; the DOM half, the popup document and the
-/// CSS run in no node test, so a deletion there fails HERE or nowhere. Every
-/// pin is an EXPRESSION, not a bare noun: #342 measured that a function's
-/// own explanatory comment satisfies a noun pin, leaving it green over
-/// deleted code.
+/// A fence detaches into its own window, and comes home (#346). Every pin is
+/// an EXPRESSION: #342 measured that a function's own comment satisfies a noun pin.
+// pin: a fence detaches through the desk sink, and a detached fence is kept —
+// the node suite sees the refused remove; no test sees the one desk PUT.
 #[test]
 fn shell_detaches_a_fence() {
     // The console, its fence list, its fences, its desk and its detach, as
@@ -122,6 +119,8 @@ fn shell_detaches_a_fence() {
     );
 }
 
+// pin: a fence is torn down only after its popup is open, and keeps its records —
+// the node suite sees a blocked popup; no test sees the kept session.
 #[test]
 fn detaching_a_fence_opens_the_popup_before_any_teardown() {
     let body = |name: &str| function_body(&fence_detach_js(), name);
@@ -160,6 +159,8 @@ fn detaching_a_fence_opens_the_popup_before_any_teardown() {
     );
 }
 
+// pin: the fence popup cannot write the desk or open a console —
+// no test boots the popup page with its entry options.
 #[test]
 fn the_detached_fence_popup_is_denied_the_desk() {
     let body = |name: &str| function_body(&fence_detach_js(), name);
@@ -234,6 +235,8 @@ fn the_detached_fence_popup_is_denied_the_desk() {
     );
 }
 
+// pin: the detach controls take a click on an inert fence —
+// node renders no markup or CSS, and the gate runs no browser.
 #[test]
 fn the_fence_detach_controls_take_pointer_events() {
     // `.fence-tools` and `.fence` are transparent to pointer events, so a
@@ -260,10 +263,9 @@ fn the_fence_detach_controls_take_pointer_events() {
 }
 
 /// The detach survives an F5, and dies with the tab that opened it (#347).
-/// Same split as `shell_detaches_a_fence`: the fold (`peerFold`) is driven by
-/// `ui-tests/wb-console.test.mjs`, and the wiring and the popup document are
-/// pinned here. Every pin is an EXPRESSION — #342 measured that a function's
-/// own explanatory comment satisfies a bare-noun pin over deleted code.
+/// Every pin is an EXPRESSION, as in `shell_detaches_a_fence`.
+// pin: the detach registry lives only in the link module —
+// the node suite drives the link; no test sees the rule over the console family.
 #[test]
 fn shell_survives_a_reload_with_its_detach() {
     // The console, its popup registry, its fences, its desk and its detach,
@@ -307,6 +309,8 @@ fn shell_survives_a_reload_with_its_detach() {
     );
 }
 
+// pin: a reload keeps a detached fence's consoles off the plane —
+// the node suite sees the restore skip; no test sees the one registry writer.
 #[test]
 fn a_reload_keeps_a_detached_fence_off_the_plane() {
     let js = &reload_detach_js();
@@ -350,6 +354,8 @@ fn a_reload_keeps_a_detached_fence_off_the_plane() {
     );
 }
 
+// pin: an F5 of the shell does not close a detached popup —
+// no test boots the popup page or fires pagehide on the shell.
 #[test]
 fn a_reload_does_not_close_the_detached_popup() {
     let js = &reload_detach_js();
@@ -415,6 +421,8 @@ fn a_reload_does_not_close_the_detached_popup() {
 /// documents now demand a better witness before acting — a window handle,
 /// or a probe that message delivery (which is not timer-throttled) still
 /// answers. `wb_fence_347.py` scenario 5c drives it; this is CI's view.
+// pin: a quiet popup is asked before its consoles come home —
+// the node suite sees the opener's side; no test runs the popup's verdict.
 #[test]
 fn a_quiet_detach_peer_is_challenged_before_it_is_buried() {
     // Whitespace-free text: the code, not its layout. The opener's side of

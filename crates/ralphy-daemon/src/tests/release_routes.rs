@@ -28,6 +28,8 @@ async fn api_about_route_reports_version_and_facts() {
 /// renders this markup, and Playwright — which would — does not run there.
 /// So this pin over the served assets is what reds `cargo test` if the
 /// surface is deleted.
+// pin: the release dot and the What's new panel are in the page and styled —
+// node tests drive the store only; they render no markup or CSS.
 #[test]
 fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
     let html = INDEX_HTML;

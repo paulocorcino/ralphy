@@ -74,6 +74,8 @@ async fn no_shell_carries_an_inline_event_handler() {
 /// file a card already holds — the exact thing §11 exists to prevent — and
 /// a UI that still believed `.ralphy/notes/` was protected would hide the
 /// gestures the daemon now accepts there.
+// pin: a .note opens as a card, and its file actions ask through the workbench —
+// the node suite sees the path rule only; no test opens a note from the explorer.
 #[test]
 fn the_explorer_opens_a_note_as_a_card() {
     let paths = include_str!("../../assets/ui/wb-file-paths.ts");
@@ -161,6 +163,8 @@ fn the_explorer_opens_a_note_as_a_card() {
 /// `sans` and `m` are deliberately absent from the CSS: they are the
 /// declared defaults on `.note-card` itself, so a rule for them would be a
 /// second place to change one value.
+// pin: each hand and size of a note has a CSS rule, and the editor takes them —
+// node renders no markup or CSS, and the gate runs no browser.
 #[test]
 fn a_notes_hand_and_size_are_a_closed_set_on_both_sides() {
     let palette = include_str!("../../assets/ui/wb-notes-palette.ts");
@@ -244,6 +248,8 @@ fn a_notes_hand_and_size_are_a_closed_set_on_both_sides() {
 /// break, and it breaks silently: a console a different shade from the pane
 /// around it. The ANSI slots stay xterm's own, so this pins the base colours
 /// only.
+// pin: the terminal colors match the stylesheet tokens —
+// xterm paints with WebGL from literal hex, and no test compares it to the CSS.
 #[test]
 fn the_console_terminal_is_themed_in_lockstep_with_the_stylesheet() {
     let js = include_str!("../../assets/ui/wb-console-terminal.ts");
@@ -281,6 +287,8 @@ fn the_console_terminal_is_themed_in_lockstep_with_the_stylesheet() {
 /// in the window that owns the clipboard, and that nothing in this file ever
 /// reads the clipboard back. The feature itself is visible the moment you
 /// copy; these are the invariants that are not.
+// pin: the console writes the clipboard once and reads it only on a gesture —
+// the node suite sees the replay gate only; no test counts the clipboard reads.
 #[test]
 fn the_console_clipboard_is_write_only_and_refused_on_replay() {
     // The whole console family, as one text: the exact counts below hold
