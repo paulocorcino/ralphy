@@ -345,7 +345,7 @@ def main():
                 "arm={!r}".format(rename_arm.strip()[:120]),
             )
             files_src = Path(FILES_TS).read_text(encoding="utf-8")
-            perform = files_src.split("async performMove(from: string, to: string) {", 1)[1].split("\n    },", 1)[0]
+            perform = files_src.split("performMove(from: string, to: string) {", 1)[1].split("\n    },", 1)[0]
             move_src = Path(FILES_MOVE_TS).read_text(encoding="utf-8")
             move_entry = move_src.split("export async function moveEntry(", 1)[1].split("\n}", 1)[0]
             reveals = "moveEntry(this, from, to)" in perform and "files.revealRel(" in move_entry

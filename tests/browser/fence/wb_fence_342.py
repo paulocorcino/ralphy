@@ -839,9 +839,17 @@ def main():
             # enough to tile a 176x116 cell renders it 240x150 and the member
             # escapes by 52 px. Every other scenario here uses a fixture whose
             # cells sit ABOVE the floor, which is exactly why none of them can
-            # see this. Shrunk to 200x180, only the first member's centre stays
-            # inside, so this is the one-member grid: cell = the whole inset.
+            # see this. Shrunk to 200x180, the fence keeps only the members whose
+            # title bar point (the membership rule since f0c4390b) stays inside.
             small = {"left": 40, "top": 40, "width": 200, "height": 180}
+
+            def title_point_in_small(r):
+                x, y = r["left"] + r["width"] / 2, r["top"] + min(16, r["height"] / 2)
+                return small["left"] <= x < small["left"] + small["width"] and (
+                    small["top"] <= y < small["top"] + small["height"]
+                )
+
+            belongs = sorted(i for i in member_ids if title_point_in_small(restored[i]["box"]))
             page.evaluate(
                 "(r) => { const el = document.querySelector(\"[data-fence-id='f-alpha']\");"
                 " el.style.width = r.width + 'px'; el.style.height = r.height + 'px'; }",
@@ -864,8 +872,8 @@ def main():
             )
             check(
                 "…and the member that no longer belongs to the shrunken fence was not tiled into it",
-                len(inside_small) == 1,
-                f"inside={inside_small} boxes={[tight[i]['box'] for i in member_ids]}",
+                0 < len(belongs) < len(member_ids) and sorted(inside_small) == belongs,
+                f"inside={inside_small} belongs={belongs} boxes={[tight[i]['box'] for i in member_ids]}",
             )
 
             check("no page error was raised by the whole pass", errors == [], f"pageerrors={errors}")
