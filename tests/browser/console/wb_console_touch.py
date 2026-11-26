@@ -860,16 +860,16 @@ def main():
                 ),
                 f"woke={woke}",
             )
-            # `resumeAll` replaces the page socket first, and each console sends
-            # one new `channel.open` on it with its byte count, so the consoles'
-            # own `resume` finds that open waiting and wakes nothing. The claim
-            # is the wait: the first backoff is 1000 ms, so an open within
-            # 900 ms of the call did not wait it out.
+            # The daemon door owns the page resume: an `online` event is stale,
+            # so it replaces the page socket first, and each console sends one
+            # new `channel.open` on it with its byte count. The claim is the
+            # wait: the first backoff is 1000 ms, so an open within 900 ms of
+            # the event did not wait it out.
             first = page.evaluate("() => document.querySelectorAll('.session-window')[0]._term.sessionId")
             known_sockets = len(seen.sockets)
             known_channels = len(seen.channels)
             called = time.time()
-            page.evaluate("() => window.WBConsole.resumeAll(true)")
+            page.evaluate("() => window.dispatchEvent(new Event('online'))")
             pump(
                 page,
                 lambda: any(c["session"] == first and c["socket"] >= known_sockets for c in seen.channels[known_channels:]),
