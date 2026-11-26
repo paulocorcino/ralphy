@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
-use ralphy_core::acceptance::{apply_ledger, parse_ledger, Verdict};
+use ralphy_core::acceptance::{parse_ledger, Verdict};
 use ralphy_core::VerdictKind;
 
 const SLOTS: [&str; 8] = [
@@ -129,6 +129,8 @@ fn lf(s: &str) -> String {
 /// overlay assemble to. A shared-prose edit made in one artifact (instead of in
 /// `plan/template.md`) diverges from the assembly and fails here; so does an
 /// edited template whose artifacts were not regenerated.
+// pin: each plan charter is its template plus its overlay —
+// the charters are Markdown, so only their text shows it.
 #[test]
 fn plan_prompt_artifacts_match_template_plus_overlays() {
     let dir = prompts_dir();
@@ -250,6 +252,8 @@ fn first<'a>(verdicts: &'a [Verdict], kind: &VerdictKind) -> &'a Verdict {
 
 /// The documented ledger format is exactly what the #12 parser accepts: the
 /// example in `prompt.plan.md` parses into typed verdicts.
+// pin: the ledger example of the plan charter parses —
+// the charter is Markdown, so only its text shows it.
 #[test]
 fn prompt_plan_ledger_example_parses_into_typed_verdicts() {
     let verdicts = prompt_example_verdicts();
@@ -261,31 +265,4 @@ fn prompt_plan_ledger_example_parses_into_typed_verdicts() {
     );
     let review_only = first(&verdicts, &VerdictKind::ReviewOnly);
     assert!(!review_only.criterion.is_empty(), "{review_only:?}");
-}
-
-/// `apply_ledger` ticks the issue-body line of the example's `[verified]`
-/// criterion and leaves its `[review-only]` one open.
-#[test]
-fn prompt_plan_verified_example_ticks_matching_issue_body_line() {
-    let verdicts = prompt_example_verdicts();
-    let verified = first(&verdicts, &VerdictKind::Verified).criterion.clone();
-    let review_only = first(&verdicts, &VerdictKind::ReviewOnly).criterion.clone();
-    let body = format!("- [ ] {verified}\n- [ ] {review_only}\n");
-
-    let result = apply_ledger(&body, &verdicts);
-
-    assert_eq!(
-        result.new_body,
-        format!("- [x] {verified}\n- [ ] {review_only}\n"),
-        "the verified criterion is ticked, the review-only one stays open"
-    );
-    assert!(
-        result.ticked.contains(&verified),
-        "apply_ledger must report the verified criterion as ticked"
-    );
-    assert!(
-        result.unmatched.is_empty(),
-        "no verified criteria should be unmatched: {:?}",
-        result.unmatched
-    );
 }

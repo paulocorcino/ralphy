@@ -117,6 +117,8 @@ fn decoder_arm_messages(src: &str) -> usize {
 /// (`event_to_runevent` returns `Some`), and the count must match the decoder's
 /// arm count — so a NEW arm added without a pin reds here rather than shipping
 /// unpinned.
+// pin: a new decoder arm has its message in the pinned set —
+// the arms are match literals, so only the source lists them.
 #[test]
 fn every_decoder_arm_has_a_pin() {
     use super::super::event_to_runevent;

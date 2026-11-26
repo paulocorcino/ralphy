@@ -329,6 +329,8 @@ mod tests {
         }
     }
 
+    // pin: the consolidation charter shows the folded marker the parser reads —
+    // the charter is Markdown, so only its text shows it.
     #[test]
     fn prompt_and_parser_agree_on_the_folded_list_contract() {
         // The consolidation prompt shows the exact marker the runner parses;
@@ -395,6 +397,8 @@ mod tests {
         remove_scratch(ws.repo_root());
     }
 
+    // pin: the consolidation charter shows the line append_citation writes —
+    // the charter is Markdown, so only its text shows it.
     #[test]
     fn prompt_and_citation_log_agree_on_the_jsonl_contract() {
         // The consolidation prompt shows the exact JSON line `append_citation`

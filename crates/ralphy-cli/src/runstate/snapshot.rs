@@ -355,6 +355,8 @@ mod tests {
     /// The closed-vocabulary gate for step statuses, the sibling of
     /// [`every_issue_status_is_known_to_the_runs_panel`]: the document ships
     /// `plan.steps[].status` as a string with no compiler between it and the panel.
+    // pin: every step status has a glyph and a label in the Runs panel —
+    // the panel is TypeScript and no test runs it with the Rust enum.
     #[test]
     fn every_step_status_is_known_to_the_runs_panel() {
         use crate::plan_progress::StepStatus;
@@ -415,6 +417,8 @@ mod tests {
     /// with no compiler between them. `planned` was missing from all three JS
     /// tables and rendered as `○ pending`, undercounting the progress counter.
     /// Its TERMINAL set must agree with `IssueStatus::is_terminal`.
+    // pin: the panel's terminal set agrees with IssueStatus::is_terminal —
+    // the panel is TypeScript and no test runs it with the Rust enum.
     #[test]
     fn every_issue_status_is_known_to_the_runs_panel() {
         const PANEL: &str = include_str!("../../../ralphy-daemon/assets/ui/wb-runs.ts");

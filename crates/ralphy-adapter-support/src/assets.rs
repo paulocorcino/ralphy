@@ -107,6 +107,8 @@ mod tests {
     static FIXTURE: include_dir::Dir<'_> =
         include_dir!("$CARGO_MANIFEST_DIR/tests/fixtures/sample");
 
+    // pin: not a pin: it reads the .gitignore the code under test writes —
+    // the classifier takes that read for a read of source text.
     #[test]
     fn materialize_assets_clears_extracts_and_writes_gitignore() {
         let tmp = std::env::temp_dir().join(format!("ralphy-mat-assets-{}", std::process::id()));

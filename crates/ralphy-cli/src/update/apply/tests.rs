@@ -101,6 +101,8 @@ fn each_published_target_has_its_os_and_arch() {
 /// Every target `target_for` names is built by the release workflow, and
 /// every target the workflow builds is reachable: a name that differs
 /// between the two is found here, not when a release is cut.
+// pin: the update asks for a target the release builds —
+// the matrix is workflow YAML, so only its text shows it.
 #[test]
 fn target_for_and_the_release_matrix_name_the_same_targets() {
     let release = include_str!("../../../../../.github/workflows/release.yml");
