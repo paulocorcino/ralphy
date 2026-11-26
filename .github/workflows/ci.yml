@@ -172,7 +172,7 @@ jobs:
       # The rules are in .yamllint.yml; a rule with sites left is off there
       # and has a debt line.
       - name: YAML (yamllint)
-        run: pipx run "yamllint==${YAMLLINT_VERSION}" -s .
+        run: pipx run "yamllint==${YAMLLINT_VERSION}" -s .github .yamllint.yml ast-grep sgconfig.yml
 
       # The rules are in .htmlvalidate.json; their reasons and debt counts
       # are at the html-validate step of crates/xtask/src/gate/steps.rs.
