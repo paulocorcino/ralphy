@@ -385,8 +385,13 @@ def main():
                   f"heads={heads} fences={fence_order}")
             check("2 the empty fence is left out", "empty" not in heads, str(heads))
             ids = [r["id"] for g in menu for r in g["rows"]]
-            check("2 the maximized console is left out", "w-a" not in ids, str(ids))
             rows = {r["id"]: r for g in menu for r in g["rows"]}
+            # Since #748 the maximized console is a row that says "This console" and
+            # cannot be opened or swapped in.
+            me = page.evaluate("() => { const b = document.querySelector(\".column-menu .column-item[data-id='w-a']\");"
+                               " return b && { swap: b.disabled, open: b.nextElementSibling.disabled }; }")
+            check("2 the maximized console is left out", me == {"swap": True, "open": True}
+                  and rows["w-a"]["title"] == "This console", f"{me} {rows.get('w-a')}")
             check("2 a placeholder row says not running", rows.get("w-c", {}).get("off") is True, str(rows.get("w-c")))
             check("2 a live row does not", rows.get("w-b", {}).get("off") is False, str(rows.get("w-b")))
             # #479: no group head prints a repo; each row is `<name> (<label>)`.
@@ -458,7 +463,7 @@ def main():
             page.locator(".column-filter").fill("zzz")
             page.wait_for_timeout(100)
             check("2b no match says so",
-                  page.evaluate("() => __visible(document.querySelector('.column-empty'))"))
+                  page.evaluate("() => __visible(document.querySelector('.column-menu .column-empty'))"))
             page.locator(".column-filter").press("Escape")
             page.wait_for_timeout(100)
             check("2b Escape closes the list", page.evaluate(f"() => {COLS}.columnMenu === false"))
@@ -667,10 +672,16 @@ def main():
             page.wait_for_timeout(400)
             press_max(page, "w-a")
             page.wait_for_timeout(300)
-            s11 = page.evaluate("() => ({ max: __W('w-a').classList.contains('maximized'),"
-                                " shown: __visible(__colBtn('w-a')), hidden: __colBtn('w-a').hidden })")
-            check("11 a phone-width viewport offers no column", s11["max"] and not s11["shown"] and s11["hidden"],
-                  str(s11))
+            # Since #599 a phone keeps the list button, as "Switch": its list only
+            # swaps the maximized console, with no open button and no Right | Down.
+            open_menu(page, "w-a")
+            s11 = page.evaluate("() => { const m = document.querySelector('.column-menu');"
+                                " return { max: __W('w-a').classList.contains('maximized'),"
+                                " open: [...m.querySelectorAll('.column-open')].filter(__visible).length,"
+                                " dir: __visible(m.querySelector('.column-dir')) }; }")
+            close_menu(page)
+            check("11 a phone-width viewport offers no column",
+                  s11["max"] and s11["open"] == 0 and not s11["dir"], str(s11))
             press_max(page, "w-a")
 
             # 12 -------------------------------------------------------------

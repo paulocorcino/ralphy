@@ -51,3 +51,18 @@ screenshots to `.ralphy/design-measure/`. Run it before and after a change
 to the styles, then compare the two runs with
 `workbench/wb_design_measure_diff.py`. See
 [docs/DESIGN-SYSTEM.md](../../docs/DESIGN-SYSTEM.md).
+
+## Run every script: the sweep
+
+`python tests/browser/sweep.py` runs every `wb_*.py` script, one at a time,
+and writes one line per script to `.ralphy/browser-sweep/results.jsonl` and
+its output to `.ralphy/browser-sweep/logs/`. A script already in
+`results.jsonl` is not run again, so delete that file to start over. Give
+parts of a path to run only the scripts that match them. `--list` prints each
+script with `run` or `skipped` and runs nothing.
+
+The sweep skips four tools, because each needs arguments that only a person
+can choose: `workbench/wb_perf_487.py` (two real repositories),
+`workbench/wb_design_measure_diff.py` (two measure files),
+`workbench/wb_closed_dialogs_946.py` (`measure <variant>` or `patch`) and
+`files/wb_detached_file.py` (`menu`, `descriptor` or `tab`). Run them by hand.

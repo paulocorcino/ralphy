@@ -555,7 +555,10 @@ def main():
             )
             check(
                 "…so what is on screen is the workspace the active tab names",
-                page_r.evaluate("() => document.getElementById('workspace').offsetParent !== null"),
+                page_r.evaluate(
+                    "() => getComputedStyle(document.getElementById('workspace')).visibility"
+                    " !== 'hidden'"
+                ),
             )
 
             # The same burst with a FILE active: the pane shown is the one the
@@ -584,8 +587,8 @@ def main():
             check(
                 "…and the Consoles workspace is hidden under it",
                 page_r.evaluate(
-                    "() => { const ws = document.getElementById('workspace');"
-                    "  return ws.offsetParent === null || ws.clientWidth === 0; }"
+                    "() => getComputedStyle(document.getElementById('workspace')).visibility"
+                    " === 'hidden'"
                 ),
             )
             ctx_r.close()
@@ -737,11 +740,12 @@ def main():
             page.wait_for_timeout(900)
             hidden = page.evaluate(
                 "() => { const ws = document.getElementById('workspace');"
-                "  return { shown: ws.offsetParent !== null, cw: ws.clientWidth }; }"
+                "  return { visibility: getComputedStyle(ws).visibility, cw: ws.clientWidth }; }"
             )
+            # The Consoles tab hides with visibility, so the consoles keep their geometry.
             check(
-                "switching to a file tab really hides the viewport (`x-show`)",
-                not hidden["shown"] or hidden["cw"] == 0,
+                "switching to a file tab really hides the viewport",
+                hidden["visibility"] == "hidden",
                 f"got={hidden}",
             )
             activate_consoles(page)

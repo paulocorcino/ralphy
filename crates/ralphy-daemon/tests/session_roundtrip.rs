@@ -80,6 +80,7 @@ fn spec_at(cwd: PathBuf) -> SessionSpec {
         name: None,
         status: None,
         unreported_reason: None,
+        start_notice: None,
     }
 }
 

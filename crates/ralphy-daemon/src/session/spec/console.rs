@@ -82,6 +82,7 @@ pub fn console_spec(cwd: PathBuf, rows: u16, cols: u16, command: Option<&str>) -
         name: None,
         status: None,
         unreported_reason: None,
+        start_notice: None,
     }
 }
 
@@ -117,6 +118,7 @@ pub fn peer_console_spec(
         name: None,
         status: None,
         unreported_reason: None,
+        start_notice: None,
     }
 }
 
