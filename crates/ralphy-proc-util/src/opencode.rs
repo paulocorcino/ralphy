@@ -138,5 +138,25 @@ pub fn locate_opencode_with(
     crate::is_executable_file(&cand).then_some(cand)
 }
 
+/// The SQLite store `OpenCode` writes its sessions to. `OpenCode` follows
+/// `XDG_DATA_HOME` on every OS (measured on 1.19.0, Windows 11 and WSL), else
+/// `<home>/.local/share`. `None` when no home is known.
+pub fn opencode_db_path() -> Option<PathBuf> {
+    opencode_db_path_with(std::env::var_os("XDG_DATA_HOME"), crate::home_dir())
+}
+
+/// [`opencode_db_path`] over its inputs; an empty or relative `XDG_DATA_HOME`
+/// is not used, as the XDG base directory rules say.
+pub fn opencode_db_path_with(
+    xdg_data_home: Option<OsString>,
+    home: Option<PathBuf>,
+) -> Option<PathBuf> {
+    let data = xdg_data_home
+        .map(PathBuf::from)
+        .filter(|dir| dir.is_absolute())
+        .or_else(|| Some(home?.join(".local").join("share")))?;
+    Some(data.join("opencode").join("opencode.db"))
+}
+
 #[cfg(test)]
 mod tests;

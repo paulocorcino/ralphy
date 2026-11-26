@@ -2,7 +2,7 @@
 //! `sessionID` to the rows `OpenCode` wrote into its SQLite message store
 //! (ADR-0008 D5).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use ralphy_core::Usage;
 
@@ -71,17 +71,6 @@ pub(crate) fn session_id_from_stream(stdout: &str) -> Option<String> {
         }
     }
     None
-}
-
-/// `<home>/.local/share/opencode/opencode.db` — the SQLite store `OpenCode` writes
-/// message records into (`USERPROFILE` on Windows, `HOME` elsewhere). `None` when
-/// no home is known.
-fn opencode_db_path() -> Option<PathBuf> {
-    ralphy_adapter_support::home_scoped_path(
-        None,
-        Path::new(".local/share/opencode"),
-        Path::new("opencode.db"),
-    )
 }
 
 /// Sum the token usage of every assistant message belonging to `session_id` in
@@ -168,7 +157,10 @@ fn read_opencode_session_usage(db: &Path, session_id: &str) -> rusqlite::Result<
 /// rows `OpenCode` wrote into `opencode.db`. Best-effort: `Usage::default()` when
 /// no session id is on the stream or the DB is unavailable.
 pub(crate) fn opencode_usage(stdout: &str) -> Usage {
-    match (session_id_from_stream(stdout), opencode_db_path()) {
+    match (
+        session_id_from_stream(stdout),
+        ralphy_proc_util::opencode::opencode_db_path(),
+    ) {
         (Some(sid), Some(db)) => sum_opencode_session_usage(&db, &sid),
         _ => Usage::default(),
     }
@@ -183,6 +175,7 @@ pub(crate) fn resolved_model_label(usage: &Usage) -> &str {
 mod tests {
     use super::*;
     use crate::cleanup::remove_scratch_file;
+    use std::path::PathBuf;
 
     // ── usage_from_opencode_message ──────────────────────────────────────────
 
