@@ -67,6 +67,10 @@ def strip_code(text: str, js: bool) -> str:
             j = n if end < 0 else end + 1 + len(hashes)
             out.append(_blank(text[i:j]))
             i = j
+        elif js and c == "/" and _regex_may_start(out):
+            j = _regex_end(text, i)
+            out.append(_blank(text[i:j]))
+            i = j
         elif c == '"' or (js and c in "'`"):
             j = _string_end(text, i, c)
             out.append(_blank(text[i:j]))
@@ -90,10 +94,32 @@ def _blank(s: str) -> str:
 
 
 def _string_end(text: str, i: int, quote: str) -> int:
+    """A `'` or `"` string ends at its quote or at the end of the line; a template may span lines."""
     j = i + 1
-    while j < len(text) and text[j] != quote:
+    while j < len(text) and text[j] != quote and (quote == "`" or text[j] != "\n"):
         j += 2 if text[j] == "\\" else 1
-    return min(j + 1, len(text))
+    return min(j + 1, len(text)) if j < len(text) and text[j] == quote else j
+
+
+def _regex_may_start(out: list) -> bool:
+    """A `/` starts a JS regex literal after an operator, an open bracket or a keyword."""
+    before = "".join(out[-40:]).rstrip()
+    if not before or before[-1] in "(,=:[!&|?{};+-*%<>~^":
+        return True
+    return re.search(r"\b(return|typeof|of|in)$", before) is not None
+
+
+def _regex_end(text: str, i: int) -> int:
+    j, in_class = i + 1, False
+    while j < len(text) and text[j] != "\n":
+        if text[j] == "\\":
+            j += 2
+            continue
+        if text[j] == "/" and not in_class:
+            return j + 1
+        in_class = (in_class or text[j] == "[") and text[j] != "]"
+        j += 1
+    return i + 1
 
 
 def matching(code: str, start: int, open_ch: str, close_ch: str) -> int:
@@ -427,6 +453,11 @@ SNIPPETS = [
      "behavior"),
     ("crates/a/ui-tests/x.test.mjs", 'const PAGE = readFileSync(join(UI, "a.html"), "utf8");\n'
      'test("p", () => {\n  assert.match(PAGE, /x/);\n});', "pin"),
+    ("crates/a/ui-tests/x.test.mjs", 'test("p", () => {\n  const m = /="([^"]*)"/;\n  partMarkup('
+     '"a.part.html");\n});\ntest("b", () => {\n  assert.equal(1, 1);\n});',
+     ["pin", "behavior"]),
+    ("crates/a/ui-tests/x.test.mjs", 'const R = /`/;\ntest("p", () => {\n  partMarkup("a.part.html"'
+     ');\n});', "pin"),
 ]
 MARKED = ("crates/a/src/x.rs", '#[cfg(test)]\nmod tests {\n// pin: the shell is wired — no node '
           'test loads it\n#[test]\nfn p() { include_str!("../assets/ui/a.ts"); }\n#[test]\nfn q() '
@@ -437,7 +468,7 @@ def selftest() -> int:
     bad = []
     for rel, text, want in SNIPPETS:
         got = [t.kind for t in classify(rel, text).tests]
-        if got != [want]:
+        if got != (want if isinstance(want, list) else [want]):
             bad.append(f"{rel}: want [{want}], got {got}\n{text}")
     marks = [t.marked for t in classify(*MARKED).tests]
     if marks != [True, False]:
