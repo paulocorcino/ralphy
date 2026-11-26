@@ -72,6 +72,8 @@ test("wbPropertiesDialog lists only shell() names in uses, and its members left 
   }
 });
 
+// pin: the markup reads only names its component can see —
+// node runs no Alpine over the markup, so only its text shows the names.
 test("every name the markup of wbPropertiesDialog reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbPropertiesDialog");
   const markup = partMarkup(PART);

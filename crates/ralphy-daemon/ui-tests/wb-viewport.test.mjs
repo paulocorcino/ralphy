@@ -19,6 +19,8 @@ function mediaQueries() {
   );
 }
 
+// pin: the stylesheets switch layout on the queries wb-viewport.ts asks —
+// a @media rule is CSS, and node lays out no page.
 test("the stylesheets copy the phone and touch queries exactly", () => {
   const all = mediaQueries();
   const phone = all.filter((m) => m.query === PHONE_QUERY);

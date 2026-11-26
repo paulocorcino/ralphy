@@ -184,6 +184,8 @@ test("the dialogs list at most 12 shell() names, and shell() has each one", () =
   }
 });
 
+// pin: the markup reads only names its component can see —
+// node runs no Alpine over the markup, so only its text shows the names.
 test("every name the dialogs' markup reads is their own or in their uses list", () => {
   const { state } = dialogs();
   const markup = partMarkup(PART);
@@ -202,6 +204,8 @@ test("every name the dialogs' markup reads is their own or in their uses list", 
   assert.ok(names > 40, `the markup was read: ${names} names`);
 });
 
+// pin: the opener sends the event and the element's handler opens the dialog —
+// the wiring is only in the markup, so the test runs its text.
 test("the account menu closes itself and asks the dialogs to open with their events", async () => {
   const loaded = loadShell();
   const { scope: state } = loadComponent("wbReleaseDialogs", { from: loaded });
@@ -239,6 +243,8 @@ test("the account menu closes itself and asks the dialogs to open with their eve
   }
 });
 
+// pin: the modal stack sees the dialog open —
+// the path is a string of the markup, and node runs no Alpine over it.
 // `app.ts` asks the modal stack with this path; it must be the path the panel
 // gives to `scrim()`, or the shortcuts would never see the panel open.
 test("whatsNewFlag is the path the What's new panel gives to scrim()", () => {

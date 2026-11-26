@@ -425,6 +425,8 @@ test("renderMenu sets a label as text, never as markup", () => {
   }
 });
 
+// pin: a canvas tab takes the focus and opens on Enter or Space —
+// the role, tabindex and keys are only in the markup, so the test runs its text.
 // The canvas tab is a `div`: the page gives it the focus and the keys a tab
 // has. The expressions are read out of the page and run on a real store.
 test("a canvas tab takes the focus, and Enter or Space opens it", () => {

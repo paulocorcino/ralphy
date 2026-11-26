@@ -46,6 +46,8 @@ test("wbSpend lists only shell() names in uses, and its members left shell()", (
   }
 });
 
+// pin: the markup reads only names its component can see —
+// node runs no Alpine over the markup, so only its text shows the names.
 test("every name the markup of wbSpend reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbSpend");
   const markup = partMarkup(PART);
@@ -65,6 +67,8 @@ test("every name the markup of wbSpend reads is its own or in its uses list", ()
   assert.ok(read > 60, `the markup was read: ${read} names`);
 });
 
+// pin: the page outside the component never reads its state —
+// node runs no Alpine over the page, so only its text shows what it reads.
 test("nothing outside the Spend element names its state", () => {
   // The page without the Spend part: the shell and the other components.
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));

@@ -282,6 +282,8 @@ test("the dialog lists at most 12 shell() names, and shell() has each one", () =
   }
 });
 
+// pin: the markup reads only names its component can see —
+// node runs no Alpine over the markup, so only its text shows the names.
 test("every name the dialog's markup reads is its own or in its uses list", () => {
   const { scope } = loadComponent("wbSettingsDialog");
   // The Devices and Telegram sections are components of their own, nested
@@ -310,6 +312,8 @@ test("every name the dialog's markup reads is its own or in its uses list", () =
   assert.ok(read > 40, `the markup was read: ${read} names`);
 });
 
+// pin: the opener sends the event and the element's handler opens the dialog —
+// the wiring is only in the markup, so the test runs its text.
 test("the rail button asks the dialog to open with workbench:settings-open, and shows the modal stack", () => {
   const html = withoutComments(assembledPage("index.html"));
   const at = html.indexOf('title="Settings"');
@@ -380,6 +384,8 @@ test("the open dialog reads its settings again on workbench:panels-reread, and a
   assert.deepEqual(reads, ["settings"]);
 });
 
+// pin: the modal stack sees the dialog open —
+// the path is a string of the markup, and node runs no Alpine over it.
 // `app.ts` asks the modal stack with this path; it must be the path the dialog
 // gives to `scrim()`, or the shortcuts would never see the dialog open.
 test("openFlag is the path the Settings dialog gives to scrim()", () => {
