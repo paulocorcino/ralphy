@@ -282,14 +282,11 @@ impl Page {
 
     /// The text `channel` showed, line breaks removed: a long line wraps.
     fn shown(&self, channel: u32) -> String {
-        self.text
-            .get(&channel)
-            .map(|text| {
-                String::from_utf8_lossy(text)
-                    .replace("\r\n", "")
-                    .replace('\n', "")
-            })
-            .unwrap_or_default()
+        self.text.get(&channel).map_or_default(|text| {
+            String::from_utf8_lossy(text)
+                .replace("\r\n", "")
+                .replace('\n', "")
+        })
     }
 
     /// The next frame of `channel`, which must be the command `verb`. Frames
@@ -434,8 +431,7 @@ fn names_cwd(text: &str, dir: &Path) -> bool {
     let raw = format!("CWD:{}", dir.display());
     let canonical = dir
         .canonicalize()
-        .map(|c| c.display().to_string())
-        .unwrap_or_default();
+        .map_or_default(|c| c.display().to_string());
     let canonical = format!("CWD:{}", canonical.trim_start_matches("\\\\?\\"));
     text.contains(&raw) || text.contains(&canonical)
 }

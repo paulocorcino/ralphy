@@ -337,8 +337,7 @@ pub fn nvm_candidates(home: &Path, name: &str) -> Vec<PathBuf> {
             let key = dir
                 .file_name()
                 .and_then(|n| n.to_str())
-                .map(version_key)
-                .unwrap_or_default();
+                .map_or_default(version_key);
             (key, dir.join("bin").join(name))
         })
         .collect();

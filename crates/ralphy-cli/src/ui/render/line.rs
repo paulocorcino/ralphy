@@ -157,8 +157,7 @@ pub(crate) fn render_line(
     // the issue lines (`plan written` / `done`) compose their own tail via `issue_tail`.
     let dur = extra
         .duration
-        .map(|d| format!(" ({})", fmt_duration(d)))
-        .unwrap_or_default();
+        .map_or_default(|d| format!(" ({})", fmt_duration(d)));
 
     let (glyph, style, body) = match event {
         RunEvent::QueueBuilt { count, .. } => (

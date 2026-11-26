@@ -128,8 +128,7 @@ fn scan_project_transcripts(
 ) {
     let slug_dir = project_dir
         .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default();
+        .map_or_default(|n| n.to_string_lossy().to_string());
     let matched = input
         .repos
         .iter()
@@ -217,8 +216,7 @@ fn attribute(
 /// Duplicated from `opencode.rs` (ADR-0033 §7 accepts per-vendor duplication).
 fn ms_to_rfc3339(ms: Option<i64>) -> String {
     ms.and_then(chrono::DateTime::from_timestamp_millis)
-        .map(|d| d.to_rfc3339())
-        .unwrap_or_default()
+        .map_or_default(|d| d.to_rfc3339())
 }
 
 #[cfg(test)]

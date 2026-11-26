@@ -211,15 +211,14 @@ impl Agent for ScriptedAgent {
         let ledger_section = self
             .ledger
             .as_deref()
-            .map(|l| format!("\n## Acceptance ledger\n\n{l}"))
-            .unwrap_or_default();
+            .map_or_default(|l| format!("\n## Acceptance ledger\n\n{l}"));
         let extra = self
             .extra_by_issue
             .iter()
             .find(|(n, _)| *n == issue.number)
             .map(|(_, e)| e.as_str())
             .or(self.extra.as_deref());
-        let extra_section = extra.map(|e| format!("\n{e}\n")).unwrap_or_default();
+        let extra_section = extra.map_or_default(|e| format!("\n{e}\n"));
         // Lint-clean by default (ADR-0015): steps ticked and the closing
         // sections present, so tests not about the protocol lint never trip it.
         // `lint_dirty` scripts the opposite; an extra already carrying one of

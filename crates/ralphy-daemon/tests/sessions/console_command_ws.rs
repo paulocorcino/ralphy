@@ -56,8 +56,7 @@ async fn http_request(port: u16, method: &str, path: &str) -> (u16, String) {
         .unwrap_or(0);
     let body = text
         .split_once("\r\n\r\n")
-        .map(|(_, b)| b.to_owned())
-        .unwrap_or_default();
+        .map_or_default(|(_, b)| b.to_owned());
     (status, body)
 }
 

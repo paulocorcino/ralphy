@@ -44,7 +44,7 @@ pub fn scan_antigravity(input: &AntigravityScan<'_>) -> Vec<InteractiveRecord> {
         let calls = read_calls(&path).unwrap_or_default();
         let summary = summaries.get(&session_id);
         let (project, actor_email) = attribute(input, summary, &mut email_cache);
-        let last_ts = summary.map(|s| s.last_modified.clone()).unwrap_or_default();
+        let last_ts = summary.map_or_default(|s| s.last_modified.clone());
         for (model, agg) in fold_calls(&calls) {
             records.push(InteractiveRecord {
                 agent: "antigravity".to_owned(),
@@ -265,7 +265,7 @@ fn read_summaries(path: &Path) -> rusqlite::Result<HashMap<String, Summary>> {
         .map(|(id, uris, modified)| {
             let summary = Summary {
                 workspace: uris.as_deref().and_then(workspace_path),
-                last_modified: modified.as_deref().map(rfc3339).unwrap_or_default(),
+                last_modified: modified.as_deref().map_or_default(rfc3339),
             };
             (id, summary)
         })
@@ -315,8 +315,7 @@ fn percent_decode(text: &str) -> String {
 fn rfc3339(stored: &str) -> String {
     chrono::DateTime::parse_from_rfc3339(stored)
         .or_else(|_| chrono::DateTime::parse_from_str(stored, "%Y-%m-%d %H:%M:%S%.f%:z"))
-        .map(|time| time.with_timezone(&chrono::Utc).to_rfc3339())
-        .unwrap_or_default()
+        .map_or_default(|time| time.with_timezone(&chrono::Utc).to_rfc3339())
 }
 
 /// The repo a conversation's workspace sits in and that repo's git actor email,

@@ -177,8 +177,7 @@ mod tests {
     fn stem(cmd: &Command) -> String {
         PathBuf::from(cmd.get_program())
             .file_stem()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default()
+            .map_or_default(|s| s.to_string_lossy().into_owned())
     }
 
     /// The #229 baseline, pinned: with the escape hatch OFF nothing about the

@@ -117,9 +117,7 @@ pub fn load(cache_path: &Path) -> Vec<Release> {
     let Ok(text) = std::fs::read_to_string(cache_path) else {
         return Vec::new();
     };
-    serde_json::from_str::<CacheEnvelope>(&text)
-        .map(|e| e.releases)
-        .unwrap_or_default()
+    serde_json::from_str::<CacheEnvelope>(&text).map_or_default(|e| e.releases)
 }
 
 // The same code is in `ralphy-pricing/src/fetch.rs`, and it stays two copies:

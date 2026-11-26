@@ -115,8 +115,7 @@ pub(crate) async fn fleet_route(
     let (mut descriptors, rejects) = read_peer_store(peers_dir.clone()).await;
     let probe_id = identity
         .as_ref()
-        .map(|identity| identity.id.to_string())
-        .unwrap_or_default();
+        .map_or_default(|identity| identity.id.to_string());
 
     let probed = probe_all(&descriptors, &probe_id, bound_port).await;
     let recalled = recall_repos(&repo_cache, &mut descriptors, &probed);
@@ -140,7 +139,7 @@ pub(crate) async fn fleet_route(
     // sidebar can head its own group.
     let this = serde_json::json!({
         "daemon_id": probe_id,
-        "daemon_name": identity.as_ref().map(|i| i.name.as_str()).unwrap_or_default(),
+        "daemon_name": identity.as_ref().map_or_default(|i| i.name.as_str()),
         "environment": environment,
         "os": fleet::THIS_OS,
     });
@@ -382,8 +381,8 @@ async fn local_rows(
             registry::RegistryStore::default()
         }
     };
-    let local_id = identity.map(|i| i.id.to_string()).unwrap_or_default();
-    let local_name = identity.map(|i| i.name.clone()).unwrap_or_default();
+    let local_id = identity.map_or_default(|i| i.id.to_string());
+    let local_name = identity.map_or_default(|i| i.name.clone());
     // A local row reads its branch through git, so the local rows are built on
     // the blocking pool; the peer rows need no git.
     let environment = environment.to_owned();

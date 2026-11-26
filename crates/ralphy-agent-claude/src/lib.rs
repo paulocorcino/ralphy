@@ -74,9 +74,7 @@ pub(crate) const STREAM_JSON_ARGS: [&str; 5] = [
 ];
 
 fn effort_args(effort: Option<&str>) -> Vec<String> {
-    effort
-        .map(|value| vec!["--effort".into(), value.into()])
-        .unwrap_or_default()
+    effort.map_or_default(|value| vec!["--effort".into(), value.into()])
 }
 
 fn planning_args(
@@ -309,15 +307,13 @@ impl Agent for ClaudeAgent {
         let transcript_dir = transcript_dir(ws);
         let before = transcript_dir
             .as_deref()
-            .map(|d| list_session_files(d, "jsonl", false, None))
-            .unwrap_or_default();
+            .map_or_default(|d| list_session_files(d, "jsonl", false, None));
 
         let outcome = self.execute_outcome(plan, ws)?;
 
         let after = transcript_dir
             .as_deref()
-            .map(|d| list_session_files(d, "jsonl", false, None))
-            .unwrap_or_default();
+            .map_or_default(|d| list_session_files(d, "jsonl", false, None));
         let appeared = session_files_appeared(&before, &after);
         let read_usage = |paths: &[PathBuf]| -> Vec<Usage> {
             paths

@@ -260,8 +260,7 @@ impl Agent for AntigravityAgent {
         )?;
         let fold = session
             .as_ref()
-            .map(|(r, ())| outcome::fold(&r.stdout))
-            .unwrap_or_default();
+            .map_or_default(|(r, ())| outcome::fold(&r.stdout));
         let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
         Ok(Plan {
             open_steps: plan::count_open_steps(&md),

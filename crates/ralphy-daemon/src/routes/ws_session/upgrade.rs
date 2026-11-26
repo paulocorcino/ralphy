@@ -147,8 +147,7 @@ impl Open {
         let record = query.record().map(str::to_owned);
         let daemon_id = identity
             .as_ref()
-            .map(|identity| identity.id.to_string())
-            .unwrap_or_default();
+            .map_or_default(|identity| identity.id.to_string());
         // A peer free console is the one composite-ref session hosted HERE. Match
         // both id and repo so an equal numeric id owned by the peer still proxies.
         let locally_owned = query.id.and_then(|id| {

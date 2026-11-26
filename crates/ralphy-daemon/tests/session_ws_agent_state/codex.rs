@@ -60,7 +60,7 @@ async fn assert_codex_hooks_inline(
     let events = ralphy_proc_util::hook_form::CODEX_STATUS_EVENTS;
     let want_hook = |event: &str| format!("-chooks.{event}=[{{hooks=[{{type=");
     let got = read_echo(ws, |flat| {
-        flat.contains(&want_env) && flat.contains(&want_hook("Interrupt"))
+        flat.contains(&want_env) && flat.matches("hookstatuscodex").count() >= events.len()
     })
     .await;
     let flat = flatten(&got);

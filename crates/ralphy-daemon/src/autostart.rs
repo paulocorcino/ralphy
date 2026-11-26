@@ -100,7 +100,7 @@ pub struct Shortcut {
 /// The shortcut that starts `ralphy daemon` through the launcher beside
 /// `program`, its output appended to `log`.
 pub fn windows_shortcut(program: &Path, log: &Path, startup_dir: &Path) -> Shortcut {
-    let folder = program.parent().map(Path::to_path_buf).unwrap_or_default();
+    let folder = program.parent().map_or_default(Path::to_path_buf);
     Shortcut {
         link: startup_dir.join(SHORTCUT_NAME),
         target: folder.join(LAUNCHER_NAME),
@@ -206,10 +206,7 @@ fn render_systemctl(verb: SystemctlVerb) -> Vec<String> {
 /// A missing uid renders `gui/` with no number — `launchctl` then fails
 /// loudly, which is the right outcome for a spec the executor never resolved.
 fn render_launchctl(verb: LaunchctlVerb, spec: &AutostartSpec) -> Vec<String> {
-    let domain = format!(
-        "gui/{}",
-        spec.uid.map(|u| u.to_string()).unwrap_or_default()
-    );
+    let domain = format!("gui/{}", spec.uid.map_or_default(|u| u.to_string()));
     match verb {
         LaunchctlVerb::Bootstrap => vec![
             "launchctl".into(),

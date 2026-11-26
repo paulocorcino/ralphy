@@ -75,6 +75,17 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    /// The arguments of `cmd`, after the check that it runs the `kimi` binary.
+    fn kimi_args(cmd: &Command) -> Vec<String> {
+        let stem = PathBuf::from(cmd.get_program())
+            .file_stem()
+            .map_or_default(|s| s.to_string_lossy().into_owned());
+        assert_eq!(stem, "kimi");
+        cmd.get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
     /// The value that follows `flag` on `args`: flag order is not the contract.
     fn value_of<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
         args.iter()
@@ -93,16 +104,7 @@ mod tests {
         );
         // The program is the resolved `kimi` binary (file stem `kimi` regardless of
         // any `.exe`/absolute-path resolution).
-        let stem = PathBuf::from(cmd.get_program())
-            .file_stem()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        assert_eq!(stem, "kimi");
-
-        let args: Vec<String> = cmd
-            .get_args()
-            .map(|a| a.to_string_lossy().into_owned())
-            .collect();
+        let args = kimi_args(&cmd);
         for (flag, want) in [
             ("-p", "hello"),
             ("--output-format", "stream-json"),
@@ -125,16 +127,7 @@ mod tests {
     #[test]
     fn build_init_command_argv_and_env() {
         let cmd = build_kimi_init_command(DEFAULT_KIMI_MODEL, Path::new("/repo"), "hello");
-        let stem = PathBuf::from(cmd.get_program())
-            .file_stem()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        assert_eq!(stem, "kimi");
-
-        let args: Vec<String> = cmd
-            .get_args()
-            .map(|a| a.to_string_lossy().into_owned())
-            .collect();
+        let args = kimi_args(&cmd);
         for (flag, want) in [
             ("-p", "hello"),
             ("--output-format", "stream-json"),

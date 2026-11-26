@@ -302,8 +302,7 @@ fn attribute(
 /// A unix-ms instant → RFC3339 UTC; empty string when absent or out of range.
 fn ms_to_rfc3339(ms: Option<i64>) -> String {
     ms.and_then(chrono::DateTime::from_timestamp_millis)
-        .map(|d| d.to_rfc3339())
-        .unwrap_or_default()
+        .map_or_default(|d| d.to_rfc3339())
 }
 
 #[cfg(test)]

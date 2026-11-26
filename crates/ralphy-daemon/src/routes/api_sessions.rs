@@ -92,8 +92,7 @@ pub(crate) async fn sessions_route(
 ) -> Response {
     let daemon_id = identity
         .as_ref()
-        .map(|identity| identity.id.to_string())
-        .unwrap_or_default();
+        .map_or_default(|identity| identity.id.to_string());
     let mut rows: Vec<HostedSessionInfo> = sessions
         .list()
         .into_iter()
@@ -147,8 +146,7 @@ pub(crate) async fn close_session_route(
         }
         let daemon_id = identity
             .as_ref()
-            .map(|identity| identity.id.to_string())
-            .unwrap_or_default();
+            .map_or_default(|identity| identity.id.to_string());
         let (peers, rejects) = read_peer_store(peers_dir).await;
         match fleet::route(repo_ref, &daemon_id, &peers) {
             fleet::route::Route::Peer { peer, .. } => return close_on_peer(peer, q.id).await,

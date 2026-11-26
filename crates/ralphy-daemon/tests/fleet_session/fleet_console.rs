@@ -172,9 +172,7 @@ async fn http_json(port: u16, method: &str, path: &str, bearer: Option<&str>) ->
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
         .expect("the test socket connects");
-    let auth = bearer
-        .map(|token| format!("Authorization: Bearer {token}\r\n"))
-        .unwrap_or_default();
+    let auth = bearer.map_or_default(|token| format!("Authorization: Bearer {token}\r\n"));
     let request = format!(
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{auth}\
         Content-Length: 0\r\nConnection: close\r\n\r\n"

@@ -69,9 +69,7 @@ fn main() {
     // and on Linux a 0x03 that reaches the PTY while `ISIG` is still on becomes
     // SIGINT instead of a byte this loop reads.
     configure_raw_input();
-    let cwd = std::env::current_dir()
-        .map(|p| p.display().to_string())
-        .unwrap_or_default();
+    let cwd = std::env::current_dir().map_or_default(|p| p.display().to_string());
     println!("{CWD_MARKER}{cwd}");
     println!("READY");
     flush_stdout();
