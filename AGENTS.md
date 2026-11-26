@@ -70,9 +70,11 @@ ubiquitous language, and each crate is roughly one bounded context.
 - **Run CI's gate before you call a change done.** The source of the gate is
   [.github/workflows/ci.yml](./.github/workflows/ci.yml) and the test jobs of
   [release.yml](./.github/workflows/release.yml); an ADR or doc that lists
-  other commands is out of date. A pull request does not build or test the
-  product: the suite runs only before a release, so the local run is the
-  only test before a merge. The local gate is one command:
+  other commands is out of date. A pull request runs every lint step and the
+  test suite on Linux; Windows and macOS run only before a release
+  ([ADR-0095](./docs/adr/0095-a-pull-request-runs-the-linux-suite.md)). So
+  the local run is the only Windows test before a merge. The local gate is
+  one command:
 
   ```sh
   cargo run -q -p xtask -- gate
@@ -85,7 +87,12 @@ ubiquitous language, and each crate is roughly one bounded context.
   a step is in `target/gate/<step>.log`; its first line is the command that
   runs the step alone. `--fast` skips the workspace tests and the doctests,
   for the loop while you work, but runs the daemon's pins on its own source
-  (`source-pins`); a change is done after a full run. When every file the
+  (`source-pins`). While you work, rerun only a step that failed, with the
+  command on the first line of its log. Before a pull request that changes
+  Rust code, run `gate --fast` once and, on Windows, the suite:
+  `cargo nextest run --workspace --locked` and
+  `cargo test --doc --workspace --locked`. The full gate is not required;
+  run it when you have no pull request to check the lint. When every file the
   branch changes since `main` (commits, working tree, new files) is Markdown
   outside `assets/` and `crates/`, the gate skips the code steps listed in
   `crates/xtask/src/gate/scope.rs`: their rows say `skipped (docs)`, and
@@ -148,8 +155,8 @@ ubiquitous language, and each crate is roughly one bounded context.
   `changelog.json` belong to the `changelog` xtask: edit only fragments.
 - **Cross-platform, always.** Ralphy ships on **Windows, Linux and macOS**.
   The tests of all three run in the release workflow, before the packages
-  are built; a pull request runs none. A change to Windows code
-  (`#[cfg(windows)]`, a path, a spawn) runs the gate on Windows before it is
+  are built; a pull request runs the Linux suite only. A change to Windows code
+  (`#[cfg(windows)]`, a path, a spawn) runs the suite on Windows before it is
   called done. A change to Linux or macOS code (`cfg(target_os = …)`,
   launchd, file watching, a PTY) is checked before the tag by a manual run
   of the release workflow (`gh workflow run release.yml --ref <branch>`). Build paths with `std::path`, spawn a program directly with its

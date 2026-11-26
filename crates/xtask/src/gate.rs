@@ -235,7 +235,7 @@ pub(crate) fn gate_cmd(args: &[String]) -> Result<()> {
         );
     }
     if options.fast {
-        println!("--fast: the workspace tests did not run; the gate is not done");
+        println!("--fast: the workspace tests did not run; run the suite before a pull request");
     }
     if !bad.is_empty() {
         let dir = log_dir(&root);

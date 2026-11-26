@@ -69,9 +69,12 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
 
 - **`ci.yml`** — runs on every push to `main` and every PR. With the test
   jobs of `release.yml` it is the source of the gate; `cargo run -p xtask --
-  gate` runs the same checks in their local form. It builds and tests no product crate:
-  the suite runs in `release.yml` (below), on Linux, macOS and Windows, so
-  a pull request waits only for checks of a few minutes. A `lint` job checks
+  gate` runs the same checks in their local form. A `test` job builds the
+  workspace with the `ci` profile and runs the suite (`cargo nextest run`)
+  and the doctests on Linux only, about 9 minutes
+  ([ADR-0095](./adr/0095-a-pull-request-runs-the-linux-suite.md)). macOS and
+  Windows run the suite in `release.yml` (below); the author runs the
+  Windows suite locally before a pull request. A `lint` job checks
   formatting (`cargo fmt --check`), lints (`cargo clippy --all-targets -D
   warnings`), the workbench text (`xtask ui-copy --check`) and runs the
   ratchets in `crates/xtask/tests` (`cargo test -p xtask`), once on Linux.
