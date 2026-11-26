@@ -11,8 +11,10 @@ Modes (run from the repo root, Python 3 stdlib only):
                           is `unmarked pins: <n>`
 
 The kinds, in the order they are decided: ratchet (under crates/xtask/tests/ratchets/),
-browser (under tests/browser/), pin (a test that reads source text), integration (under
-crates/*/tests/), behavior (the rest). A file's kind is the kind of most of its tests.
+browser (under tests/browser/), ratchet (a test whose only reads are Cargo.toml manifests),
+pin (a test that reads source text, except an xtask test whose reads all sit in string
+literals: they are its scanner's input), integration (under crates/*/tests/), behavior (the
+rest). A file's kind is the kind of most of its tests.
 """
 from __future__ import annotations
 
@@ -146,6 +148,34 @@ RUST_UI_DIR = re.compile(r"\bUI\s*\.\s*get_(file|dir)\b")
 DATA_EXT = re.compile(r"\.(json|jsonl|err|log|txt|webmanifest|sql|bin|zip|gz|csv|snap)\"")
 RUST_FS_READ = re.compile(r"\b(read_to_string|fs::read)\s*\(")
 SOURCE_PATH = re.compile(r'"[^"\n]*\b(src|assets)\b[^"\n]*"')
+
+
+RUST_READS = (RUST_INCLUDE, RUST_UI_DIR, RUST_FS_READ)
+
+
+def reads_in_literals_only(body: str) -> bool:
+    """True when every read in the Rust test `body` sits inside a string literal (scanner input)."""
+    code = strip_code(body, False)
+    hits = [m.start() for r in RUST_READS for m in r.finditer(body)]
+    return bool(hits) and all(code[i] == " " for i in hits)
+
+
+def reads_manifest_only(body: str) -> bool:
+    """True when every read in the Rust test `body` reads a Cargo.toml manifest."""
+    hits = [m.end() for r in (RUST_INCLUDE, RUST_FS_READ) for m in r.finditer(body)]
+    args = [body[i: body.find(")", i) + 1] for i in hits]
+    return bool(args) and not RUST_UI_DIR.search(body) and all("Cargo.toml" in a for a in args)
+
+
+def own_read_kind(rel: str, body: str, js: bool, other: str) -> str:
+    """The kind of a test that reads source text itself, with no helper."""
+    if js:
+        return "pin"
+    # An xtask test that hands source text in a literal to its scanner runs the scanner.
+    if rel.startswith("crates/xtask/") and reads_in_literals_only(body):
+        return other
+    # A rule read from a crate manifest is a rule about the crate graph.
+    return "ratchet" if reads_manifest_only(body) else "pin"
 
 
 def includes_source(raw: str) -> bool:
@@ -291,8 +321,12 @@ def classify(rel: str, text: str, helpers: set[str] | None = None) -> TestFile:
     other = "integration" if re.match(r"crates/[^/]+/tests/", rel) else "behavior"
     for name, start, body in (js_tests if js else rust_tests)(text, code, region):
         line = text.count("\n", 0, start) + 1
-        pin = reads_source(body, js, functions) or bool(idents(body) & names)
-        kind = fixed or ("pin" if pin else other)
+        if idents(body) & names:
+            kind = fixed or "pin"
+        elif reads_source(body, js, functions):
+            kind = fixed or own_read_kind(rel, body, js, other)
+        else:
+            kind = fixed or other
         tf.tests.append(Test(name, line, kind, kind == "pin" and marked(lines, line)))
     return tf
 
@@ -458,6 +492,14 @@ SNIPPETS = [
      ["pin", "behavior"]),
     ("crates/a/ui-tests/x.test.mjs", 'const R = /`/;\ntest("p", () => {\n  partMarkup("a.part.html"'
      ');\n});', "pin"),
+    ("crates/xtask/src/x.rs", '#[cfg(test)]\nmod tests {\n#[test]\nfn s() {\n    scan(r#"inclu'
+     'de_str!("../assets/ui/a.ts")"#);\n}\n}', "behavior"),
+    ("crates/a/src/x.rs", '#[cfg(test)]\nmod tests {\n#[test]\nfn s() {\n    scan(r#"include_st'
+     'r!("../assets/ui/a.ts")"#);\n}\n}', "pin"),
+    ("crates/a/src/x.rs", '#[cfg(test)]\nmod tests {\n#[test]\nfn m() {\n    let t = include_st'
+     'r!("../Cargo.toml");\n}\n}', "ratchet"),
+    ("crates/a/src/x.rs", '#[cfg(test)]\nmod tests {\n#[test]\nfn m() {\n    include_str!("../C'
+     'argo.toml");\n    include_str!("lib.rs");\n}\n}', "pin"),
 ]
 MARKED = ("crates/a/src/x.rs", '#[cfg(test)]\nmod tests {\n// pin: the shell is wired — no node '
           'test loads it\n#[test]\nfn p() { include_str!("../assets/ui/a.ts"); }\n#[test]\nfn q() '
