@@ -376,3 +376,22 @@ fn an_absent_cache_reads_as_nothing_known() {
         Vec::<Release>::new()
     );
 }
+
+#[test]
+fn the_release_stamp_is_whole_seconds_z() {
+    let (port, _accepts, _requests, handle) = serve_n(http_response(200, &fixture_body()), 1);
+    let cache = temp_cache_path("stamp");
+    remove_cache(&cache);
+    refresh_if_stale(&opts(&format!("http://127.0.0.1:{port}/"), &cache));
+    handle.join().expect("server thread");
+
+    let written = std::fs::read_to_string(&cache).expect("cache written");
+    let v: serde_json::Value = serde_json::from_str(&written).expect("cache json");
+    let stamp = v["timestamp"].as_str().expect("timestamp");
+    let shape: String = stamp
+        .chars()
+        .map(|c| if c.is_ascii_digit() { '9' } else { c })
+        .collect();
+    assert_eq!(shape, "9999-99-99T99:99:99Z", "got {stamp}");
+    remove_cache(&cache);
+}

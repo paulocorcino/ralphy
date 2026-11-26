@@ -258,11 +258,8 @@ fn parse_transcript(
 /// `…Z` form and a `+00:00` offset order correctly. Falls back to a lexical
 /// compare when either does not parse (best-effort ordering, never a panic).
 fn ts_lt(a: &str, b: &str) -> bool {
-    match (
-        chrono::DateTime::parse_from_rfc3339(a),
-        chrono::DateTime::parse_from_rfc3339(b),
-    ) {
-        (Ok(a), Ok(b)) => a < b,
+    match (ralphy_time::parse_rfc3339(a), ralphy_time::parse_rfc3339(b)) {
+        (Ok((a, _)), Ok((b, _))) => a < b,
         _ => a < b,
     }
 }

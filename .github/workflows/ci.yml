@@ -449,7 +449,7 @@ jobs:
         run: |
           set -euo pipefail
           ./jscpd --reporters json --output jscpd-out crates
-          python3 docs/lint/scripts/tally.py jscpd jscpd-out/jscpd-report.json --prefix crates/ --expect 28
+          python3 docs/lint/scripts/tally.py jscpd jscpd-out/jscpd-report.json --prefix crates/ --expect 27
 
   lint-transition:
     name: lint debt

@@ -277,3 +277,16 @@ fn scan_antigravity_excludes_run_owned_conversations() {
     let sessions: Vec<&str> = records.iter().map(|r| r.session_id.as_str()).collect();
     assert_eq!(sessions, ["interactive"]);
 }
+
+#[test]
+fn scan_times_keep_the_utc_rfc3339_form_of_a_stored_time() {
+    assert_eq!(
+        rfc3339("2026-06-21T02:00:00+02:00"),
+        "2026-06-21T00:00:00+00:00"
+    );
+    assert_eq!(
+        rfc3339("2026-06-21 02:00:00.5+02:00"),
+        "2026-06-21T00:00:00.500+00:00"
+    );
+    assert_eq!(rfc3339("not a time"), "");
+}

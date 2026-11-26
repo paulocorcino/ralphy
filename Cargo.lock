@@ -2410,7 +2410,7 @@ dependencies = [
 name = "ralphy-pricing"
 version = "0.1.0-rc.46"
 dependencies = [
- "chrono",
+ "ralphy-time",
  "serde",
  "serde_json",
  "toml",
@@ -2443,7 +2443,7 @@ dependencies = [
 name = "ralphy-release"
 version = "0.1.0-rc.46"
 dependencies = [
- "chrono",
+ "ralphy-time",
  "semver",
  "serde",
  "serde_json",
@@ -2485,8 +2485,9 @@ dependencies = [
 name = "ralphy-usage-scan"
 version = "0.0.0"
 dependencies = [
- "chrono",
+ "jiff",
  "ralphy-git-read",
+ "ralphy-time",
  "rusqlite",
  "serde",
  "serde_json",

@@ -313,9 +313,13 @@ fn percent_decode(text: &str) -> String {
 
 /// A stored time as RFC 3339 UTC; empty when it does not parse.
 fn rfc3339(stored: &str) -> String {
-    chrono::DateTime::parse_from_rfc3339(stored)
-        .or_else(|_| chrono::DateTime::parse_from_str(stored, "%Y-%m-%d %H:%M:%S%.f%:z"))
-        .map_or_default(|time| time.with_timezone(&chrono::Utc).to_rfc3339())
+    ralphy_time::parse_rfc3339(stored)
+        .map(|(time, _)| time)
+        .or_else(|_| {
+            jiff::fmt::strtime::parse("%Y-%m-%d %H:%M:%S%.f%:z", stored)
+                .and_then(|parsed| parsed.to_timestamp())
+        })
+        .map_or_default(|time| ralphy_time::rfc3339(time, ralphy_time::Offset::UTC))
 }
 
 /// The repo a conversation's workspace sits in and that repo's git actor email,

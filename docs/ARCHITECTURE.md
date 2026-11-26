@@ -149,7 +149,7 @@ The component names are CONTEXT.md terms.
 | --- | --- | --- |
 | `ralphy-core` depends on no `ralphy-agent-*` crate and not on `ralphy-adapter-support` | ADR-0002 | `core_and_adapters_keep_their_dependency_edges` (`crates/xtask/tests/crate_dependencies.rs`) |
 | No adapter depends on another adapter | ADR-0002, ADR-0040 | the same test |
-| `ralphy-pricing` and `ralphy-release` are leaf crates | ADR-0034, ADR-0056 | the same test |
+| `ralphy-pricing` and `ralphy-release` are leaf crates; each may use the leaf `ralphy-time` | ADR-0034, ADR-0056, ADR-0096 | the same test |
 | `ralphy-git-read` is a leaf crate | ADR-0069 | the same test |
 | `ralphy-telegram` is a leaf crate | ADR-0085 D14 | the same test |
 | `ralphy-wording` is a leaf crate, and the daemon still does not import `ralphy-core` to read a wording | ADR-0078 | the same test, and `wording_depends_only_on_serde` (`crates/xtask/tests/crate_dependencies.rs`) |

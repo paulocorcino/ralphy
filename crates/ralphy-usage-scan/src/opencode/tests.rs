@@ -361,3 +361,16 @@ fn opencode_scan_skips_a_row_it_cannot_read() {
     assert_eq!(records[0].session_id, "ses_1");
     assert_eq!(records[0].tokens.as_ref().unwrap().input, 7);
 }
+
+#[test]
+fn scan_times_keep_the_utc_rfc3339_form() {
+    assert_eq!(
+        ms_to_rfc3339(Some(1_782_000_000_000)),
+        "2026-06-21T00:00:00+00:00"
+    );
+    assert_eq!(
+        ms_to_rfc3339(Some(1_782_000_000_123)),
+        "2026-06-21T00:00:00.123+00:00"
+    );
+    assert_eq!(ms_to_rfc3339(None), "");
+}

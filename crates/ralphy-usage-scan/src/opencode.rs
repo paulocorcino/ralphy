@@ -301,8 +301,8 @@ fn attribute(
 
 /// A unix-ms instant → RFC3339 UTC; empty string when absent or out of range.
 fn ms_to_rfc3339(ms: Option<i64>) -> String {
-    ms.and_then(chrono::DateTime::from_timestamp_millis)
-        .map_or_default(|d| d.to_rfc3339())
+    ms.and_then(|ms| ralphy_time::Timestamp::from_millisecond(ms).ok())
+        .map_or_default(|t| ralphy_time::rfc3339(t, ralphy_time::Offset::UTC))
 }
 
 #[cfg(test)]

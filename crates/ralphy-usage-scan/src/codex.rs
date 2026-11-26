@@ -165,15 +165,13 @@ impl Session {
 /// Drop records whose `last_ts` is strictly before `since`; an unparseable
 /// bound or record keeps the record.
 fn retain_since(records: &mut Vec<(String, InteractiveRecord)>, since: Option<&str>) {
-    let Some(since_dt) = since.and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()) else {
+    let Some((since_dt, _)) = since.and_then(|s| ralphy_time::parse_rfc3339(s).ok()) else {
         return;
     };
-    records.retain(
-        |(_, r)| match chrono::DateTime::parse_from_rfc3339(&r.last_ts) {
-            Ok(last) => last >= since_dt,
-            Err(_) => true, // never hide spend on a parse miss
-        },
-    );
+    records.retain(|(_, r)| match ralphy_time::parse_rfc3339(&r.last_ts) {
+        Ok((last, _)) => last >= since_dt,
+        Err(_) => true, // never hide spend on a parse miss
+    });
 }
 
 /// The three cumulative Codex token counters. `input` is the vendor's raw
@@ -320,11 +318,8 @@ impl ModelAgg {
 /// form and a `+00:00` offset order correctly), lexical fallback on a parse miss.
 /// Verbatim from `claude.rs` (ADR-0033 §7 accepts per-vendor duplication).
 fn ts_lt(a: &str, b: &str) -> bool {
-    match (
-        chrono::DateTime::parse_from_rfc3339(a),
-        chrono::DateTime::parse_from_rfc3339(b),
-    ) {
-        (Ok(a), Ok(b)) => a < b,
+    match (ralphy_time::parse_rfc3339(a), ralphy_time::parse_rfc3339(b)) {
+        (Ok((a, _)), Ok((b, _))) => a < b,
         _ => a < b,
     }
 }
