@@ -1,5 +1,5 @@
-//! The blocked-by graph: open/closed blockers, split children, self
-//! references and the human gate.
+//! The blocked-by gate end to end: an open blocker skips, a closed one runs,
+//! the human gate, and a blocker named in the consolidated comment.
 
 use super::*;
 
@@ -33,6 +33,7 @@ fn open_blocker_skips_then_closed_blocker_runs() {
         assert!(r5.outcome.is_none(), "#5 outcome must be None (skipped)");
         assert!(!r5.closed, "#5 must not be closed");
         assert_eq!(r5.blocked_by, vec![2], "#5 blocked_by must be [2]");
+        assert_eq!(r5.skip, Some(ralphy_core::SkipReason::BlockedBy));
 
         // #2 must have been planned, executed, and closed.
         assert!(
@@ -91,182 +92,6 @@ fn open_blocker_skips_then_closed_blocker_runs() {
 }
 
 #[test]
-fn closed_blocker_with_open_children_still_blocks() {
-    // #4 declares "Blocked by #3"; #3 is closed but was a retired bundle whose
-    // work moved into open children #16/#17 (their `## Parent` references #3).
-    // Expected: #4 is skipped, blocked on the children — not on the closed #3.
-    {
-        let repo = init_repo("split-blocks");
-        let queue = vec![issue_with_body(4, "## Blocked by\n- #3\n")];
-        let agent = ScriptedAgent::new(vec![]);
-        let tracker = RecordingTracker {
-            closed_issues: HashSet::from([3]),
-            children: HashMap::from([(3u64, vec![16, 17])]),
-            ..Default::default()
-        };
-
-        let report = run_queue(
-            &cfg(&repo, "stamp-split", false),
-            &queue,
-            &agent,
-            &tracker,
-            &ScriptedClock::never(),
-        )
-        .unwrap();
-
-        let r4 = report
-            .worked
-            .iter()
-            .find(|r| r.number == 4)
-            .expect("#4 in worked");
-        assert!(r4.outcome.is_none(), "#4 skipped, never planned");
-        assert!(!r4.closed);
-        assert_eq!(r4.blocked_by, vec![16, 17], "blocked on the open children");
-        assert!(
-            agent.planned.borrow().is_empty(),
-            "#4 never reached the planner"
-        );
-        assert!(report.stop.is_none(), "a skip never stops the run");
-
-        remove_scratch(&repo);
-    }
-
-    // Same shape but the children are all closed (none open): the closed
-    // blocker counts as done and #4 runs normally.
-    {
-        let repo = init_repo("split-drained");
-        let queue = vec![issue_with_body(4, "## Blocked by\n- #3\n")];
-        let agent = ScriptedAgent::new(vec![Outcome::Done]);
-        let tracker = RecordingTracker {
-            closed_issues: HashSet::from([3]),
-            children: HashMap::new(), // no OPEN children remain
-            ..Default::default()
-        };
-
-        let report = run_queue(
-            &cfg(&repo, "stamp-drained", false),
-            &queue,
-            &agent,
-            &tracker,
-            &ScriptedClock::never(),
-        )
-        .unwrap();
-
-        let r4 = report
-            .worked
-            .iter()
-            .find(|r| r.number == 4)
-            .expect("#4 in worked");
-        assert!(r4.blocked_by.is_empty(), "no open children → unblocked");
-        assert!(r4.closed, "#4 closed green");
-
-        remove_scratch(&repo);
-    }
-}
-
-#[test]
-fn split_children_never_block_the_issue_on_itself() {
-    // The #299/#300 shape: #4 declares "Blocked by #3", #3 is closed, and #4 is
-    // itself among #3's open children (its `## Parent` section named #3 in prose).
-    // Substituting the children verbatim would hand #4 back to itself as a blocker
-    // — a gate only #4 could clear, so it could never run. Expected: the self-ref
-    // is dropped, the remaining child #16 blocks, and with no other child #4 runs.
-    {
-        let repo = init_repo("split-self-among-children");
-        let queue = vec![issue_with_body(4, "## Blocked by\n- #3\n")];
-        let agent = ScriptedAgent::new(vec![]);
-        let tracker = RecordingTracker {
-            closed_issues: HashSet::from([3]),
-            children: HashMap::from([(3u64, vec![4, 16])]),
-            ..Default::default()
-        };
-
-        let report = run_queue(
-            &cfg(&repo, "stamp-split-self", false),
-            &queue,
-            &agent,
-            &tracker,
-            &ScriptedClock::never(),
-        )
-        .unwrap();
-
-        let r4 = report
-            .worked
-            .iter()
-            .find(|r| r.number == 4)
-            .expect("#4 in worked");
-        assert_eq!(
-            r4.blocked_by,
-            vec![16],
-            "self dropped, sibling still blocks"
-        );
-
-        remove_scratch(&repo);
-    }
-
-    // #4 is the ONLY open child of the closed #3: nothing else is pending, so the
-    // blocker counts as done and #4 runs instead of parking forever on itself.
-    {
-        let repo = init_repo("split-self-only-child");
-        let queue = vec![issue_with_body(4, "## Blocked by\n- #3\n")];
-        let agent = ScriptedAgent::new(vec![Outcome::Done]);
-        let tracker = RecordingTracker {
-            closed_issues: HashSet::from([3]),
-            children: HashMap::from([(3u64, vec![4])]),
-            ..Default::default()
-        };
-
-        let report = run_queue(
-            &cfg(&repo, "stamp-split-self-only", false),
-            &queue,
-            &agent,
-            &tracker,
-            &ScriptedClock::never(),
-        )
-        .unwrap();
-
-        let r4 = report
-            .worked
-            .iter()
-            .find(|r| r.number == 4)
-            .expect("#4 in worked");
-        assert!(r4.blocked_by.is_empty(), "an issue never blocks itself");
-        assert!(r4.closed, "#4 closed green");
-
-        remove_scratch(&repo);
-    }
-}
-
-#[test]
-fn self_ref_in_blocked_by_is_ignored() {
-    // A malformed `## Blocked by - #5` on issue #5: the gate must drop it rather
-    // than park the issue on a blocker only itself could close.
-    let repo = init_repo("self-ref-blocker");
-    let queue = vec![issue_with_body(5, "## Blocked by\n- #5\n")];
-    let agent = ScriptedAgent::new(vec![Outcome::Done]);
-    let tracker = RecordingTracker::default();
-
-    let report = run_queue(
-        &cfg(&repo, "stamp-self-ref", false),
-        &queue,
-        &agent,
-        &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
-
-    let r5 = report
-        .worked
-        .iter()
-        .find(|r| r.number == 5)
-        .expect("#5 in worked");
-    assert!(r5.blocked_by.is_empty(), "self-ref dropped");
-    assert!(r5.closed, "#5 ran and closed green");
-
-    remove_scratch(&repo);
-}
-
-#[test]
 fn human_gate_blocker_is_classified_and_run_continues() {
     // #5 is blocked by #2, an OPEN issue carrying `ready-for-human` (a human
     // gate, ADR-0014). #7 is independent and runnable. Expected: #5 is skipped
@@ -316,43 +141,6 @@ fn human_gate_blocker_is_classified_and_run_continues() {
     assert!(
         report.stop.is_none(),
         "a human gate never stops the whole run"
-    );
-
-    remove_scratch(&repo);
-}
-
-#[test]
-fn ordinary_open_blocker_is_not_a_human_gate() {
-    // #5 is blocked by open #2 carrying only `ready-for-agent` (ordinary agent
-    // work the queue will clear). Expected: skipped, blocked_by == [2], but
-    // human_blockers empty — it is NOT a human gate.
-    let repo = init_repo("agent-blocker");
-    let queue = vec![issue_with_body(5, "## Blocked by\n- #2\n")];
-    let agent = ScriptedAgent::new(vec![]);
-    let tracker = RecordingTracker {
-        issue_labels: HashMap::from([(2u64, vec!["ready-for-agent".to_owned()])]),
-        ..Default::default()
-    };
-
-    let report = run_queue(
-        &cfg(&repo, "stamp-agent-blocker", false),
-        &queue,
-        &agent,
-        &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
-
-    let r5 = report
-        .worked
-        .iter()
-        .find(|r| r.number == 5)
-        .expect("#5 in worked");
-    assert_eq!(r5.blocked_by, vec![2]);
-    assert_eq!(r5.skip, Some(ralphy_core::SkipReason::BlockedBy));
-    assert!(
-        r5.human_blockers.is_empty(),
-        "an agent-work blocker is not a human gate"
     );
 
     remove_scratch(&repo);

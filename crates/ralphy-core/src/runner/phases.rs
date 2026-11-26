@@ -20,6 +20,9 @@ mod plan;
 mod protocol;
 mod verify;
 
+#[cfg(test)]
+mod tests;
+
 pub(crate) use close::close_and_record;
 pub(crate) use execute::{execute_phase, ExecPhase};
 pub(crate) use plan::{plan_phase, PlanPhase};
