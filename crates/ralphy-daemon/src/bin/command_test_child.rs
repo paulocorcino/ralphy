@@ -64,7 +64,7 @@ fn main() {
             clippy::zombie_processes,
             reason = "the grandchild must outlive this child, so nothing waits for it"
         )]
-        let _grandchild = std::process::Command::new(exe)
+        let _grandchild = grandchild_command(exe)
             .env_remove("RALPHY_TEST_GRANDCHILD_MS")
             .env("RALPHY_TEST_SLEEP_MS", ms)
             .spawn()
@@ -272,4 +272,19 @@ dispatch-cwd: {}
             .and_then(|mut f| f.write_all(echo.as_bytes()))
             .expect("appending to the echo file");
     }
+}
+
+/// The grandchild's command. This child runs with no console, so on Windows a
+/// console program it starts would get a new console window; `CREATE_NO_WINDOW`
+/// keeps it hidden and still lets it inherit stdout and stderr.
+fn grandchild_command(exe: std::path::PathBuf) -> std::process::Command {
+    #[cfg_attr(not(windows), expect(unused_mut, reason = "only Windows sets a flag"))]
+    let mut cmd = std::process::Command::new(exe);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
 }
