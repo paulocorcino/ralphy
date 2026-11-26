@@ -9,8 +9,5 @@ description = "The timestamp forms Ralphy writes and reads (ADR-0096)."
 [dependencies]
 jiff.workspace = true
 
-[dev-dependencies]
-chrono.workspace = true
-
 [lints]
 workspace = true

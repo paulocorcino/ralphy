@@ -1,6 +1,6 @@
 # One crate owns the timestamp forms
 
-Status: proposed
+Status: accepted
 Kind: structural
 Protects: recoverability, integrity of change
 

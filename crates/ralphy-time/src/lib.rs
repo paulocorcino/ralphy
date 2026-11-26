@@ -90,6 +90,4 @@ fn offset_text(offset: Offset) -> String {
 }
 
 #[cfg(test)]
-mod chrono_parity;
-#[cfg(test)]
 mod tests;
