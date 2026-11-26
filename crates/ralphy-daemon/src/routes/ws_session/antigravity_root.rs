@@ -90,6 +90,8 @@ mod tests {
     use crate::dispatch::CollectedOutput;
 
     /// The daemon cannot import the adapter, so it names the hooks file itself.
+    // pin: the daemon checks the hooks file where the adapter writes it —
+    // the daemon cannot import the adapter, so only the adapter's source shows it.
     #[test]
     fn the_hooks_file_layout_matches_the_adapters_own() {
         let root = include_str!("../../../../ralphy-agent-antigravity/src/root.rs");

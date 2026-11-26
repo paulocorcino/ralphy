@@ -47,6 +47,8 @@ fn only_an_opted_in_antigravity_console_is_marked() {
 
 /// The daemon reparses the adapter's schema; a rename there would read
 /// `false` for every repo that opted in.
+// pin: the daemon reads the console-workflow opt-in under the adapter's own key —
+// the daemon cannot import the adapter, so only the adapter's source shows it.
 #[test]
 fn the_console_workflow_key_matches_the_adapters_own_schema() {
     let src = include_str!("../../../../../ralphy-agent-antigravity/src/settings.rs");

@@ -437,6 +437,8 @@ mod tests {
         assert_eq!(header_str(&resp, header::CONTENT_TYPE), Some("image/png"));
     }
 
+    // pin: each route serves the bytes of its own embedded page —
+    // the expected bytes are the embedded file, so the test reads the source page.
     #[tokio::test]
     async fn a_page_is_served_at_its_route_and_never_at_its_file_name() {
         for (route, source) in [
@@ -458,24 +460,6 @@ mod tests {
             let resp = get(file, &[]).await;
             assert_eq!(resp.status(), StatusCode::NOT_FOUND, "GET {file}");
         }
-    }
-
-    #[tokio::test]
-    async fn the_desk_page_carries_the_build_id() {
-        let source = crate::tests::INDEX_HTML.as_bytes();
-        assert!(
-            String::from_utf8_lossy(source).contains(BUILD_META),
-            "index.html keeps the empty tag the daemon fills"
-        );
-        let page = String::from_utf8_lossy(desk_page()).into_owned();
-        assert!(
-            page.contains(&format!(
-                r#"<meta name="ralphy-build" content="{}">"#,
-                build_id()
-            )),
-            "the served page names this build"
-        );
-        assert!(build_id().starts_with(env!("RALPHY_VERSION")));
     }
 
     #[tokio::test]

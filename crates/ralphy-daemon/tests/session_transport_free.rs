@@ -13,6 +13,8 @@
     reason = "an integration test crate is the test module"
 )]
 
+// pin: the session manager names no HTTP transport type —
+// a dependency rule has no behavior; only the source shows it.
 #[test]
 fn session_module_references_no_http_transport() {
     let sources = [
@@ -77,6 +79,8 @@ fn session_module_references_no_http_transport() {
     }
 }
 
+// pin: the codec names no transport or runtime type —
+// a dependency rule has no behavior; only the source shows it.
 #[test]
 fn protocol_module_references_no_transport() {
     let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/protocol.rs"));

@@ -72,6 +72,8 @@ fn a_claude_console_gets_the_classic_screen_only_when_opted_in() {
 
 /// The daemon reparses the adapter's schema; a rename or retype there would
 /// read `false` for every repo that opted in.
+// pin: the daemon reads the classic-screen opt-in under the adapter's own key —
+// the daemon cannot import the adapter, so only the adapter's source shows it.
 #[test]
 fn the_classic_screen_key_matches_the_adapters_own_schema() {
     let src = include_str!("../../../../../ralphy-agent-claude/src/settings.rs");

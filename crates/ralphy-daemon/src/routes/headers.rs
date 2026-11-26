@@ -198,6 +198,8 @@ mod tests {
         assert_eq!(script_hash("a\r\nb\rc"), script_hash("a\nb\nc"));
     }
 
+    // pin: the CSP lets every inline script of every page run —
+    // only a browser blocks a script; no Rust or node test runs one.
     #[test]
     fn the_policy_hashes_every_inline_script_of_every_shell() {
         let csp = content_security_policy(false).to_str().unwrap();
