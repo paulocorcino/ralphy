@@ -1,7 +1,8 @@
 //! Codex authentication and usage-limit text detection: signals recovered from
 //! `codex exec` stdout/stderr that the process exit code alone can't distinguish.
 
-use chrono::{DateTime, Local, NaiveDateTime, NaiveTime};
+use jiff::civil::{DateTime, Time};
+use jiff::{Timestamp, ZonedDateTime};
 use ralphy_core::ResetAt;
 
 /// The actionable message surfaced when a run hits a Codex authentication
@@ -64,7 +65,7 @@ pub(crate) fn parse_codex_reset_hint(text: &str) -> Option<String> {
 /// names, or `None` when the message names no reset.
 pub(crate) fn codex_reset(text: &str) -> Option<ResetAt> {
     let hint = parse_codex_reset_hint(text)?;
-    let at = reset_instant(&hint, Local::now()).map(|t| t.fixed_offset());
+    let at = reset_instant(&hint, &ZonedDateTime::now());
     Some(ResetAt { text: hint, at })
 }
 
@@ -76,32 +77,32 @@ pub(crate) fn codex_reset(text: &str) -> Option<ResetAt> {
 /// (a zoneless one is read as local wall-clock time); `now` only places a bare
 /// time, which is today when still ahead, else tomorrow. `None` when the hint is
 /// none of these.
-fn reset_instant(hint: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
+fn reset_instant(hint: &str, now: &ZonedDateTime) -> Option<Timestamp> {
     // Trailing sentence punctuation an error line may leave on the hint.
     let trimmed = hint.trim().trim_end_matches('.').trim();
     parse_rfc3339(trimmed)
-        .or_else(|| parse_month_name_datetime(trimmed))
-        .or_else(|| parse_numeric_local_datetime(trimmed))
+        .or_else(|| parse_month_name_datetime(trimmed).and_then(|dt| local_instant(dt, now)))
+        .or_else(|| parse_numeric_local_datetime(trimmed).and_then(|dt| local_instant(dt, now)))
         .or_else(|| parse_12h_time(trimmed).and_then(|time| next_time_of_day(time, now)))
         // Last, so a hint with an AM/PM marker is read as 12-hour time first.
         .or_else(|| {
-            let time = NaiveTime::parse_from_str(trimmed, "%H:%M").ok()?;
+            let time = Time::strptime("%H:%M", trimmed).ok()?;
             next_time_of_day(time, now)
         })
 }
 
-/// An RFC3339 instant in local time: the whole hint, or its leading token when
-/// prose trails the datetime.
-fn parse_rfc3339(trimmed: &str) -> Option<DateTime<Local>> {
+/// An RFC3339 instant: the whole hint, or its leading token when prose trails
+/// the datetime.
+fn parse_rfc3339(trimmed: &str) -> Option<Timestamp> {
     let leading = trimmed.split_whitespace().next().unwrap_or(trimmed);
     [trimmed, leading.trim_end_matches('.')]
         .into_iter()
-        .find_map(|cand| DateTime::parse_from_rfc3339(cand).ok())
-        .map(|dt| dt.with_timezone(&Local))
+        .find_map(|cand| ralphy_time::parse_rfc3339(cand).ok())
+        .map(|(t, _)| t)
 }
 
 /// A numeric ISO-like date-time with no zone, read as local wall-clock time.
-fn parse_numeric_local_datetime(trimmed: &str) -> Option<DateTime<Local>> {
+fn parse_numeric_local_datetime(trimmed: &str) -> Option<DateTime> {
     [
         "%Y-%m-%d %H:%M:%S",
         "%Y-%m-%dT%H:%M:%S",
@@ -109,14 +110,13 @@ fn parse_numeric_local_datetime(trimmed: &str) -> Option<DateTime<Local>> {
         "%Y-%m-%dT%H:%M",
     ]
     .into_iter()
-    .find_map(|fmt| NaiveDateTime::parse_from_str(trimmed, fmt).ok())
-    .and_then(|ndt| ndt.and_local_timezone(Local).single())
+    .find_map(|fmt| DateTime::strptime(fmt, trimmed).ok())
 }
 
 /// A month-name date-time like `"Jun 10th, 2026 12:23 AM"` in local time.
-/// Ordinal suffixes and commas are stripped first so chrono's format specifiers
+/// Ordinal suffixes and commas are stripped first so the format specifiers
 /// match.
-fn parse_month_name_datetime(s: &str) -> Option<DateTime<Local>> {
+fn parse_month_name_datetime(s: &str) -> Option<DateTime> {
     let cleaned = s.replace(',', " ");
     let normalized = cleaned
         .split_whitespace()
@@ -130,8 +130,16 @@ fn parse_month_name_datetime(s: &str) -> Option<DateTime<Local>> {
         "%B %d %Y %H:%M",
     ]
     .into_iter()
-    .find_map(|fmt| NaiveDateTime::parse_from_str(&normalized, fmt).ok())
-    .and_then(|ndt| ndt.and_local_timezone(Local).single())
+    .find_map(|fmt| DateTime::strptime(fmt, &normalized).ok())
+}
+
+/// The instant of a local wall-clock `datetime` in the zone of `now`. An
+/// ambiguous or skipped local time names no instant.
+fn local_instant(datetime: DateTime, now: &ZonedDateTime) -> Option<Timestamp> {
+    now.time_zone()
+        .to_ambiguous_timestamp(datetime)
+        .unambiguous()
+        .ok()
 }
 
 /// Drop an ordinal suffix (`st`/`nd`/`rd`/`th`) from a token that is otherwise all
@@ -149,24 +157,24 @@ fn strip_ordinal_suffix(tok: &str) -> &str {
 
 /// A bare 12-hour clock time like `"6:13 PM"`. `None` when the AM/PM marker is
 /// absent.
-fn parse_12h_time(s: &str) -> Option<NaiveTime> {
+fn parse_12h_time(s: &str) -> Option<Time> {
     let upper = s.trim().to_uppercase();
     if !upper.ends_with("AM") && !upper.ends_with("PM") {
         return None;
     }
-    // chrono's numeric specifiers accept an unpadded hour, so "6:13 PM" parses.
-    NaiveTime::parse_from_str(&upper, "%I:%M %p").ok()
+    // The numeric specifiers accept an unpadded hour, so "6:13 PM" parses.
+    Time::strptime("%I:%M %p", &upper).ok()
 }
 
 /// The next local instant carrying `time`: today when still ahead, else tomorrow.
-fn next_time_of_day(time: NaiveTime, now: DateTime<Local>) -> Option<DateTime<Local>> {
-    let today = now.date_naive();
+fn next_time_of_day(time: Time, now: &ZonedDateTime) -> Option<Timestamp> {
+    let today = now.date();
     let date = if now.time() < time {
         today
     } else {
-        today + chrono::Duration::days(1)
+        today.tomorrow().ok()?
     };
-    date.and_time(time).and_local_timezone(Local).single()
+    local_instant(date.to_datetime(time), now)
 }
 
 #[cfg(test)]
@@ -221,19 +229,18 @@ mod tests {
         ));
     }
 
-    /// Build a fixed `DateTime<Local>` for the deterministic parse tests.
-    fn local((y, mo, d): (i32, u32, u32), (h, mi, sec): (u32, u32, u32)) -> DateTime<Local> {
-        use chrono::TimeZone;
-        Local
-            .with_ymd_and_hms(y, mo, d, h, mi, sec)
-            .single()
+    /// Build a fixed local date-time for the deterministic parse tests.
+    fn local((y, mo, d): (i16, i8, i8), (h, mi, sec): (i8, i8, i8)) -> ZonedDateTime {
+        jiff::civil::date(y, mo, d)
+            .at(h, mi, sec, 0)
+            .to_zoned_datetime(jiff::tz::TimeZone::system())
             .unwrap()
     }
 
     /// An RFC3339 text as the epoch it names, so the expectation does not
     /// depend on the local zone.
     fn epoch(rfc3339: &str) -> i64 {
-        DateTime::parse_from_rfc3339(rfc3339).unwrap().timestamp()
+        ralphy_time::parse_rfc3339(rfc3339).unwrap().0.as_second()
     }
 
     #[test]
@@ -241,8 +248,8 @@ mod tests {
         let now = local((2026, 6, 9), (15, 20, 0));
         let cases = [
             // (hint, now, expected instant)
-            ("6:13 PM", now, local((2026, 6, 9), (18, 13, 0))),
-            ("18:13", now, local((2026, 6, 9), (18, 13, 0))),
+            ("6:13 PM", now.clone(), local((2026, 6, 9), (18, 13, 0))),
+            ("18:13", now.clone(), local((2026, 6, 9), (18, 13, 0))),
             (
                 "18:13",
                 local((2026, 6, 9), (19, 0, 0)),
@@ -260,18 +267,23 @@ mod tests {
             ),
             (
                 "Jun 10th, 2026 12:23 AM",
-                now,
+                now.clone(),
                 local((2026, 6, 10), (0, 23, 0)),
             ),
             (
                 "2026-07-12 11:11:48",
-                now,
+                now.clone(),
                 local((2026, 7, 12), (11, 11, 48)),
             ),
-            ("2026-07-12T09:00", now, local((2026, 7, 12), (9, 0, 0))),
+            (
+                "2026-07-12T09:00",
+                now.clone(),
+                local((2026, 7, 12), (9, 0, 0)),
+            ),
         ];
         for (hint, now, expected) in cases {
-            assert_eq!(reset_instant(hint, now), Some(expected), "hint {hint:?}");
+            let got = reset_instant(hint, &now);
+            assert_eq!(got, Some(expected.timestamp()), "hint {hint:?}");
         }
         let rfc3339_cases = [
             ("2026-06-09T18:00:00Z", "2026-06-09T18:00:00Z"),
@@ -280,7 +292,7 @@ mod tests {
             ("2026-06-09T15:00:00-03:00", "2026-06-09T15:00:00-03:00"),
         ];
         for (hint, instant) in rfc3339_cases {
-            let got = reset_instant(hint, now).map(|t| t.timestamp());
+            let got = reset_instant(hint, &now).map(Timestamp::as_second);
             assert_eq!(got, Some(epoch(instant)), "hint {hint:?}");
         }
     }

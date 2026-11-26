@@ -146,7 +146,7 @@ fn a_limit_ends_execute_as_limit_with_the_quota_reset() {
         .agent(Some("gemini-3.8-flash-low"))
         .execute(&plan(), &setup.ws())
         .expect("a limit is an outcome");
-    let at = chrono::DateTime::parse_from_rfc3339(FAKE_RESET).expect("the fake's reset");
+    let (at, _) = ralphy_time::parse_rfc3339(FAKE_RESET).expect("the fake's reset");
     let reset = ResetAt {
         text: FAKE_RESET.to_owned(),
         at: Some(at),

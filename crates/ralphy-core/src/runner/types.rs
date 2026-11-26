@@ -279,7 +279,7 @@ impl RunLedger<'_> {
             session_id: session_id.map(str::to_owned),
             outcome: outcome.into(),
             tokens: usage.clone(),
-            ts: chrono::Utc::now().to_rfc3339(),
+            ts: crate::ledger::now_ts(),
         };
         if let Err(e) = self.sink.append(&rec) {
             warn!(number = issue, error = %e, "writing {} usage ledger line failed", phase);

@@ -2152,12 +2152,12 @@ name = "ralphy-agent-antigravity"
 version = "0.1.0-rc.46"
 dependencies = [
  "anyhow",
- "chrono",
  "include_dir",
  "ralphy-adapter-support",
  "ralphy-core",
  "ralphy-pricing",
  "ralphy-proc-util",
+ "ralphy-time",
  "serde",
  "serde_json",
  "tempfile",
@@ -2169,8 +2169,8 @@ name = "ralphy-agent-claude"
 version = "0.1.0-rc.46"
 dependencies = [
  "anyhow",
- "chrono",
  "include_dir",
+ "jiff",
  "ralphy-adapter-support",
  "ralphy-core",
  "ralphy-proc-util",
@@ -2188,11 +2188,12 @@ name = "ralphy-agent-codex"
 version = "0.1.0-rc.46"
 dependencies = [
  "anyhow",
- "chrono",
  "include_dir",
+ "jiff",
  "ralphy-adapter-support",
  "ralphy-core",
  "ralphy-proc-util",
+ "ralphy-time",
  "regex",
  "saphyr-parser",
  "serde_json",
@@ -2320,11 +2321,12 @@ name = "ralphy-core"
 version = "0.1.0-rc.46"
 dependencies = [
  "anyhow",
- "chrono",
+ "jiff",
  "junction",
  "os_info",
  "ralphy-git-read",
  "ralphy-proc-util",
+ "ralphy-time",
  "ralphy-wording",
  "regex",
  "serde",
