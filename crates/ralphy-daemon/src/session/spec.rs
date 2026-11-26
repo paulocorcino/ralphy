@@ -43,6 +43,8 @@ pub struct SessionSpec {
     /// start, and it is not an attention request. `None` for every other
     /// child.
     pub unreported_reason: Option<String>,
+    /// Bytes the console shows before the child's first output; `None` for most consoles.
+    pub start_notice: Option<String>,
 }
 
 impl std::fmt::Debug for SessionSpec {
@@ -223,6 +225,7 @@ pub fn spec_with_status(
         name: None,
         status: None,
         unreported_reason: None,
+        start_notice: None,
     };
     match agent {
         Agent::Claude => add_claude_launch(&mut spec, root, repo_slug, console, status),

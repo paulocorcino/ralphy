@@ -56,3 +56,46 @@ fn the_console_workflow_key_matches_the_adapters_own_schema() {
     );
     assert!(src.contains(r#"SECTION: &'static str = "antigravity""#));
 }
+
+const NOTICE_TEXT: &str = concat!(
+    "The agent may switch branches, push and write pull requests ",
+    "in this console."
+);
+
+/// The notice is the sentence as dim text on a line of its own.
+fn dim_line(text: &str) -> String {
+    format!("\u{1b}[2m{text}\u{1b}[0m\r\n")
+}
+
+#[test]
+fn a_console_with_the_setting_on_carries_the_notice() {
+    let d = tempfile::tempdir().unwrap();
+    let on = repo_with(&d, ON);
+    let spec = spec_for(Agent::Antigravity, &on, on.clone(), "owner/r", (24, 80));
+    if spec.program.is_empty() {
+        return; // no owned root on this machine: the console is refused anyway
+    }
+    assert_eq!(spec.start_notice, Some(dim_line(NOTICE_TEXT)));
+}
+
+#[test]
+fn a_console_with_the_setting_off_carries_no_notice() {
+    let d = tempfile::tempdir().unwrap();
+    for body in [
+        "{}",
+        r#"{"antigravity":{"console_agent_workflow_i_understand_the_risk":false}}"#,
+        r#"{"antigravity":{"console_agent_workflow_i_understand_the_risk":"true"}}"#,
+    ] {
+        let off = repo_with(&d, body);
+        let spec = spec_for(Agent::Antigravity, &off, off.clone(), "owner/r", (24, 80));
+        assert_eq!(spec.start_notice, None, "settings.json = {body}");
+    }
+}
+
+#[test]
+fn a_claude_console_carries_no_notice() {
+    let d = tempfile::tempdir().unwrap();
+    let on = repo_with(&d, ON);
+    let spec = spec_for(Agent::Claude, &on, on.clone(), "owner/r", (24, 80));
+    assert_eq!(spec.start_notice, None);
+}

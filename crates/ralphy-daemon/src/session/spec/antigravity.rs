@@ -6,6 +6,13 @@ use std::path::Path;
 
 use super::SessionSpec;
 
+/// The dim first line of a console whose agent may run the workflow rules (ADR-0093 D5).
+pub(super) const WORKFLOW_NOTICE: &str = concat!(
+    "\x1b[2m",
+    "The agent may switch branches, push and write pull requests in this console.",
+    "\x1b[0m\r\n",
+);
+
 /// The Antigravity part of [`spec_with_status`](super::spec_with_status): the owned root as
 /// `--gemini_dir`, no autonomy flag (ADR-0086 D8), and `RALPHY_STATUS_FILE`
 /// for the status hook the root already holds (D9). The route refuses the
@@ -33,6 +40,7 @@ pub(super) fn add_antigravity_launch(
             OsString::from(ralphy_proc_util::GUARD_CONSOLE_ENV),
             OsString::from("1"),
         ));
+        spec.start_notice = Some(WORKFLOW_NOTICE.to_owned());
     }
     let Some(files) = status else {
         return;

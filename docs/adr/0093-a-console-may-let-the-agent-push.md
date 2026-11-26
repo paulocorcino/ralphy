@@ -66,8 +66,10 @@ vendor of the run.
 
 **D5. The console says so.** When the setting is on, the console shows one
 line when it starts: "The agent may switch branches, push and write pull
-requests in this console." With the setting off, it shows nothing new. This
-rule is not built yet; it is a separate change to the workbench.
+requests in this console." With the setting off, it shows nothing new. The
+daemon writes this line, as dim text, into the console's kept output before
+the agent starts, so every attach shows it first. Only an Antigravity console
+gets it.
 
 **D6. No.** This ADR does not turn the guard off, does not change a run, and
 does not move a safety rule. It does not add the guard to Claude or Codex
@@ -108,4 +110,7 @@ consoles.
   written here.
 - D4: checked by `crates/ralphy-cli/src/main.rs`
   (`only_the_guard_hook_keeps_the_console_mark`).
-- D5: not checked by code: manual, reviewed in the PR.
+- D5: checked by `crates/ralphy-daemon/src/session/spec/tests/console_workflow.rs`
+  (`a_console_with_the_setting_on_carries_the_notice`) and
+  `crates/ralphy-daemon/src/session/manager/tests/start_notice.rs`
+  (`the_notice_is_the_first_thing_an_attach_replays`).

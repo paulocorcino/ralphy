@@ -18,6 +18,7 @@ fn opencode_env_with_version(
         name: None,
         status: None,
         unreported_reason: None,
+        start_notice: None,
     };
     let read = |_: &Path| {
         version
