@@ -162,6 +162,8 @@ pub(crate) fn init_repo(name: &str) -> PathBuf {
     git(&dir, &["init", "-q", "-b", "main"]);
     git(&dir, &["config", "user.email", "t@example.com"]);
     git(&dir, &["config", "user.name", "Test"]);
+    // The commits of a run start `git maintenance` in the background, which outlives the test.
+    git(&dir, &["config", "maintenance.auto", "false"]);
     fs::write(dir.join(".gitignore"), ".ralphy/\n").expect("write .gitignore");
     fs::write(dir.join("README.md"), "hello\n").expect("write README.md");
     git(&dir, &["add", "."]);
