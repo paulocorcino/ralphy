@@ -84,7 +84,7 @@ fn envelope(
     ev.insert("id".to_owned(), json!(super::emitter::new_id()));
     ev.insert(
         "time".to_owned(),
-        json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
+        json!(ralphy_time::secs_z(ralphy_time::Timestamp::now())),
     );
     ev.insert("runid".to_owned(), json!(ctx.runid));
     ev.insert("datacontenttype".to_owned(), json!("application/json"));

@@ -186,7 +186,7 @@ pub(crate) fn run_status_hook(vendor: HookVendor) {
     if path.is_empty() || read.is_err() {
         return;
     }
-    let line = status_line(vendor, &payload, &chrono::Local::now().to_rfc3339());
+    let line = status_line(vendor, &payload, &crate::run::local_rfc3339_now());
     if let Err(e) = append_line(Path::new(&path), &line) {
         eoutln!("ralphy hook status: could not append to {path}: {e:#}");
     }
