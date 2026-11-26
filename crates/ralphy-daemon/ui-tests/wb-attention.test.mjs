@@ -121,6 +121,8 @@ test("a row names the console's project, not its slug", (t) => {
   assert.equal(data.nameOf({ ...one, repo: "owner/other" }), "owner/other");
 });
 
+// pin: a click on the row runs act(r) and its tooltip names the action —
+// the @click and :title bindings are only in the markup, and node runs no Alpine.
 test("a run's row opens the run, and a console's row goes to the console", (t) => {
   const { data } = page(t);
   const sent = [];
@@ -159,6 +161,8 @@ test("a click on a row does the action of its kind, and a finished run's does no
   ]);
 });
 
+// pin: the row's dot takes dotOf(r) as its class —
+// the :class binding is only in the markup, and node runs no Alpine over it.
 test("the dot of a row says its kind", (t) => {
   const { data } = page(t);
   const dot = (kind) => data.dotOf({ ...waitingRow(), kind });
@@ -181,6 +185,8 @@ test("the age of a request is short", () => {
   assert.equal(ageText("not a time", at), "");
 });
 
+// pin: the Dismiss button shows only when canDismiss(r) —
+// the x-show binding is only in the markup, and node runs no Alpine over it.
 test("only a finished run can be dismissed", async (t) => {
   // The rows as the daemon sends them: a waiting console, a waiting run,
   // and the issues a finished run left.
@@ -222,6 +228,8 @@ test("an attention.dirty push reads the list again", (t) => {
   assert.deepEqual(sent, ["workbench:attention-reread"]);
 });
 
+// pin: the markup reads only names its component can see —
+// node runs no Alpine over the markup, so only its text shows the names.
 test("every name the markup of wbAttention reads is its own", (t) => {
   const { data } = page(t);
   const markup = partMarkup(PART);
@@ -261,6 +269,8 @@ function notifications(permission, answer = permission) {
   return { shown, asked, stored, view };
 }
 
+// pin: the panel has no Notify me switch, because the switch is in Settings —
+// the text is only in the markup, and node runs no Alpine over it.
 test("the notification is off by default", async (t) => {
   const { data } = page(t, { replies: [{ requests: [waitingRow()] }] });
   const { shown, asked, stored, view } = notifications("default", "granted");

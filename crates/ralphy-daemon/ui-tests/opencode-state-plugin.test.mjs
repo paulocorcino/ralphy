@@ -150,6 +150,8 @@ test("the plugin never throws and never prints", async () => {
   assert.deepEqual(printed, [], "nothing on stdout or stderr");
 });
 
+// pin: the plugin loads no module but node:fs —
+// an extra import changes no output, so only the source text shows it.
 test("the plugin imports only the file system module", () => {
   const source = readFileSync(PLUGIN, "utf8");
   const specifiers = [

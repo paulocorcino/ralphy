@@ -40,6 +40,8 @@ test("wbAccount lists only shell() names in uses, and its members left shell()",
   }
 });
 
+// pin: the markup reads only names its component can see —
+// node runs no Alpine over the markup, so only its text shows the names.
 test("every name the markup of wbAccount reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbAccount");
   const attrs = [...partMarkup(PART).matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
@@ -55,6 +57,8 @@ test("every name the markup of wbAccount reads is its own or in its uses list", 
   assert.ok(read >= 6, `the markup was read: ${read} names`);
 });
 
+// pin: the page outside the component never reads its state —
+// node runs no Alpine over the page, so only its text shows what it reads.
 test("nothing outside the account menu names its state", () => {
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["avatarMenu", "toggleAvatarMenu", "closeAvatarMenu"]) {

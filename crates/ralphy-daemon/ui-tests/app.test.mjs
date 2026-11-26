@@ -20,6 +20,8 @@ import { loadComponent, loadShell, UI } from "./harness.mjs";
 // silently legal in sloppy mode and the LAST one wins, which is how `app.ts`
 // carried two incompatible `changesError` declarations. `Object.keys()` cannot
 // see the loser, so this reads the source.
+// pin: shell() declares each member once —
+// the last duplicate key wins in silence, so no run of shell() can see the first.
 test("the state literal declares no key twice", () => {
   const text = readFileSync(join(UI, "app.ts"), "utf8");
   const body = text.slice(text.indexOf("function shell()"), text.indexOf("export function wire("));

@@ -143,6 +143,8 @@ test("dialog: the second click of a double click is dropped", () => {
   assert.equal(state.addProject.text, "C:\\Dev\\fincal\\");
 });
 
+// pin: a touch on the list sets the touch flag that stops the focus —
+// the @pointerdown handler is only in the markup, and node runs no Alpine over it.
 test("dialog: a pick by touch does not focus the field; by mouse or key it does", () => {
   const { state } = dialog();
   state.addProjectList = () => {};
@@ -190,6 +192,8 @@ test("dialog: the hint names how many folders the list leaves out", () => {
   assert.equal(state.addProjectMoreText(), "5 more. Type to filter.");
 });
 
+// pin: the Add a project button sits between refresh and Hosts, with its name —
+// node lays out no page, so only the markup text shows the order.
 test("the Add a project button comes before Hosts, after refresh", () => {
   const refresh = HTML.indexOf('class="side-refresh"');
   const add = HTML.indexOf(`@click="$dispatch('workbench:add-project-open')"`);
@@ -201,6 +205,8 @@ test("the Add a project button comes before Hosts, after refresh", () => {
   assert.match(HTML.slice(add, HTML.indexOf("</button>", add)), /x-icon="'folder-plus'"/u);
 });
 
+// pin: the empty project list offers Add a project —
+// the block is only in the markup, and node runs no Alpine over it.
 test("the empty state offers Add a project", () => {
   const at = HTML.indexOf('class="side-empty projects-empty"');
   const block = HTML.slice(at, HTML.indexOf("</div>", at));
@@ -209,6 +215,8 @@ test("the empty state offers Add a project", () => {
   assert.match(block, /@click="\$dispatch\('workbench:add-project-open'\)"/u);
 });
 
+// pin: the dialog writes folder names and errors as text, never as HTML —
+// x-text and x-html are only in the markup, and node runs no Alpine over it.
 test("the dialog shows folder names and errors as text only", () => {
   const dialogHtml = partMarkup(PART);
   assert.ok(dialogHtml.length > 0);
@@ -226,6 +234,8 @@ test("the dialog lists at most 12 shell() names, and shell() has each one", () =
   }
 });
 
+// pin: the markup reads only names its component can see —
+// node runs no Alpine over the markup, so only its text shows the names.
 test("every name the dialog's markup reads is its own or in its uses list", () => {
   const { state } = dialog();
   const markup = partMarkup(PART);
@@ -261,6 +271,8 @@ test("the dialog's scope refuses a shell() name outside uses, and any shell() wr
   assert.equal(shell.projectQuery, "", "the write did not reach shell()");
 });
 
+// pin: the opener sends the event and the element's handler opens the dialog —
+// the wiring is only in the markup, so the test runs its text.
 test("both openers ask the dialog to open with workbench:add-project-open", () => {
   const html = withoutComments(assembledPage("index.html"));
   for (const opener of [
