@@ -1,7 +1,23 @@
 # The config of taplo, run by the taplo step of `xtask gate` and by CI:
 # `taplo check` (TOML syntax). `taplo fmt` writes the format.
-include = ["**/*.toml"]
-exclude = ["target/**", "worktrees/**", "**/node_modules/**", "**/fixtures/**"]
+# The folders that hold TOML, not `**`: taplo walks every folder a pattern can
+# reach before `exclude` drops it, so `**` read every local worktree and
+# `target/` (84 s on Windows, 0.06 s for the files git tracks). A new TOML file
+# elsewhere needs its folder here; the ratchet `taplo_reads_every_tracked_toml_file`
+# fails until it has one.
+include = [
+    "*.toml",
+    ".config/*.toml",
+    "crates/*/Cargo.toml",
+    "docs/lint/**/*.toml",
+]
+exclude = [
+    "target/**",
+    "worktrees/**",
+    ".claude/**",
+    "**/node_modules/**",
+    "**/fixtures/**",
+]
 
 [formatting]
 # The indent the repo's TOML files already use.

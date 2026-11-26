@@ -163,12 +163,23 @@ pub(super) const STEPS: &[Step] = &[
         &["-y", "markdownlint-cli2@0.24.0"],
     ),
     // The module installed on the machine, as for PSScriptAnalyzer:
-    // `ci.yml` installs `YAMLLINT_VERSION`.
+    // `ci.yml` installs `YAMLLINT_VERSION`. The paths that hold YAML, not `.`:
+    // yamllint walks every folder before its `ignore` drops one, and `.` read
+    // every local worktree (34 s on Windows, under 1 s for these paths).
+    // `yamllint_reads_every_tracked_yaml_file` fails when a YAML file is elsewhere.
     step(
         "yamllint",
         &["YAML (yamllint)"],
         "python",
-        &["-m", "yamllint", "-s", "."],
+        &[
+            "-m",
+            "yamllint",
+            "-s",
+            ".github",
+            ".yamllint.yml",
+            "ast-grep",
+            "sgconfig.yml",
+        ],
     ),
     // Rules off in .htmlvalidate.json (JSON has no comments). Noise:
     // void-style (both forms are valid), text-content, empty-heading and
