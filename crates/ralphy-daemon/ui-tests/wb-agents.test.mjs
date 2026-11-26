@@ -224,7 +224,7 @@ test("runCommand trims the line, and a blank line runs nothing", () => {
   }
 });
 
-test("a row shows its version after its label", () => {
+test("a row shows its label without the adapter's version", () => {
   const rows = load().menuRows({
     roster: [
       { id: "opencode", label: "opencode", accelerator: "3", version: "2.3.2" },
@@ -233,7 +233,7 @@ test("a row shows its version after its label", () => {
     sessions: [],
     openSlug: "repo",
   });
-  assert.equal(rows[0].label, "opencode 2.3.2");
+  assert.equal(rows[0].label, "opencode");
   assert.equal(rows[0].kind, "opencode");
   assert.equal(rows[1].label, "claude");
 });
