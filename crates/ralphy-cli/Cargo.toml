@@ -20,7 +20,6 @@ path = "src/bin/ralphyw.rs"
 anyhow.workspace = true
 thiserror.workspace = true
 clap.workspace = true
-chrono.workspace = true
 jiff.workspace = true
 ralphy-time.workspace = true
 indicatif.workspace = true

@@ -341,6 +341,17 @@ fn autostart_lines(st: ralphy_daemon::autostart::AutostartStatus) -> Vec<&'stati
     lines
 }
 
+/// The log timer of the CLI: the local time as `YYYY-MM-DD HH:MM:SS`.
+#[derive(Clone, Copy)]
+pub(crate) struct LocalTimer;
+
+impl tracing_subscriber::fmt::time::FormatTime for LocalTimer {
+    fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
+        let now = jiff::Timestamp::now().to_zoned_datetime(jiff::tz::TimeZone::system());
+        w.write_str(&now.strftime("%Y-%m-%d %H:%M:%S").to_string())
+    }
+}
+
 /// Foreground logs to stderr: raw INFO `fmt` lines with local timestamps (the
 /// same shape `run --verbose` prints), overridable via `RUST_LOG`/`RALPHY_LOG`.
 /// No presenter — a resident process wants a scrollable log, not animation.
@@ -348,13 +359,12 @@ fn autostart_lines(st: ralphy_daemon::autostart::AutostartStatus) -> Vec<&'stati
 /// a restart, and escape codes in a file are noise.
 fn init_tracing() {
     use std::io::IsTerminal;
-    use tracing_subscriber::fmt::time::ChronoLocal;
     use tracing_subscriber::EnvFilter;
 
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     tracing_subscriber::fmt()
         .with_env_filter(filter)
-        .with_timer(ChronoLocal::new("%Y-%m-%d %H:%M:%S".to_owned()))
+        .with_timer(LocalTimer)
         .with_ansi(std::io::stderr().is_terminal())
         .with_writer(std::io::stderr)
         .init();

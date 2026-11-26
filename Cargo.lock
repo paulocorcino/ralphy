@@ -2271,7 +2271,6 @@ name = "ralphy-cli"
 version = "0.1.0-rc.46"
 dependencies = [
  "anyhow",
- "chrono",
  "clap",
  "console",
  "data-encoding",
