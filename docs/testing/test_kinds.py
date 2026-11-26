@@ -32,17 +32,26 @@ MARKER = "// pin:"
 
 # The baseline runs, written by hand after each measure (the script cannot run them).
 MEASURED = """\
-Date: 2026-11-26. Machine: Windows 11 Pro (10.0.26300), the phase tree of
-`test/961-measure` at `deb106c5`, a warm `target/` (no compile in the runs),
-nothing else building. Wall time is the time of the whole command, by Python's
-`time.monotonic()` before and after it.
+Date: 2026-11-26. Machine: Windows 11 Pro (10.0.26300). Wall time is the time of
+the whole command, by Python's `time.monotonic()` before and after it. The before
+rows ran in the phase tree of `test/961-measure` at `deb106c5`, with a warm
+`target/` and nothing else building. The after rows ran in the phase tree of
+`test/961-pins`, with the same commands, after the pins were marked and the
+empty test files were deleted. The wall time of the Rust suite is about 45 s
+longer after than before, while the time nextest itself reports is lower in run 1
+and 0.6 % lower in run 2: the extra time is the start of `cargo` in that tree,
+not the tests.
 
-| Suite | Command | Tests | Wall time |
-| --- | --- | --- | --- |
-| Rust (nextest), run 1 | `cargo nextest run --locked --workspace --exclude xtask --no-fail-fast` | 3777 run, 14 skipped | 115.1 s (nextest: 112.0 s) |
-| Rust (nextest), run 2 | the same command | 3777 run, 14 skipped | 115.5 s (nextest: 112.3 s) |
-| xtask | `cargo nextest run --locked -p xtask` | 305 run | 4.0 s (nextest: 3.0 s) |
-| ui-tests | `node --test crates/ralphy-daemon/ui-tests` | 1755 | 91.4 s (node: 91.3 s) |
+| Phase | Suite | Command | Tests | Wall time |
+| --- | --- | --- | --- | --- |
+| before | Rust (nextest), run 1 | `cargo nextest run --locked --workspace --exclude xtask --no-fail-fast` | 3777 run, 14 skipped | 115.1 s (nextest: 112.0 s) |
+| before | Rust (nextest), run 2 | the same command | 3777 run, 14 skipped | 115.5 s (nextest: 112.3 s) |
+| before | xtask | `cargo nextest run --locked -p xtask` | 305 run | 4.0 s (nextest: 3.0 s) |
+| before | ui-tests | `node --test crates/ralphy-daemon/ui-tests` | 1755 | 91.4 s (node: 91.3 s) |
+| after | Rust (nextest), run 1 | the same command | 3773 run, 14 skipped | 160.4 s (nextest: 107.8 s) |
+| after | Rust (nextest), run 2 | the same command | 3773 run, 14 skipped | 164.3 s (nextest: 111.7 s) |
+| after | xtask | the same command | 305 run | 16.6 s (nextest: 3.1 s) |
+| after | ui-tests | the same command | 1755 | 91.4 s (node: 91.4 s) |
 """
 
 # ---------------------------------------------------------------- lexing
