@@ -9,6 +9,8 @@ pub(crate) fn squeezed(source: &str) -> String {
 
 /// The program of every command is `located.program`, and every caller gets
 /// it from the shared locator through [`checked_opencode`].
+// pin: every opencode command spawns the program of the shared locator —
+// the locator finds the same binary on a test machine, so no behavior test sees it.
 #[test]
 fn the_program_comes_from_the_shared_opencode_locator() {
     let command = squeezed(include_str!("../command.rs"));

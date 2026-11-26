@@ -284,6 +284,8 @@ mod tests {
     }
 
     /// Every one-shot and `opencode models` build from the checked version.
+    // pin: every one-shot builds its command from the checked opencode version —
+    // the one-shots spawn opencode, and no test here runs the vendor binary.
     #[test]
     fn the_one_shots_use_the_checked_version() {
         let source = include_str!("tasks.rs");

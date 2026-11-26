@@ -281,6 +281,8 @@ mod tests {
     /// one-shot actually spawns a child. Source-text pin: no test here spawns a
     /// real `copilot` process, so nothing else would catch a deleted call site.
     /// Fragments assembled with `concat!` so the assertion cannot match itself.
+    // pin: every one-shot session has its preflight before and its receipt check after —
+    // the sessions spawn copilot, and no test here runs the vendor binary.
     #[test]
     fn d7_and_d11_guards_are_wired_into_all_four_verbs() {
         // Every one-shot session is preceded by its own D11 preflight and

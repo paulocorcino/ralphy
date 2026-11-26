@@ -115,6 +115,8 @@ fn tail_reports_transitions_and_handles_partial_lines() {
 /// `Watcher` they started. A source pin, because the three spawns are
 /// not reachable without a vendor binary; the daemon's launch is pinned
 /// the same way against its helper child.
+// pin: each Claude child gets the status file of its own Watcher —
+// the three spawns need the vendor binary, so only the source shows the env.
 #[test]
 fn every_child_shape_is_handed_the_status_file() {
     let bind = regex::Regex::new(r"let(\w+)=(?:crate::)?status::Watcher::start\(").unwrap();

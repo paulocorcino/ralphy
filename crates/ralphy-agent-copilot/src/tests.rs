@@ -143,6 +143,8 @@ fn escape_hatch_suppresses_the_connected_failure() {
 /// This pins the call sites in the source, the same mechanism
 /// `no_direct_command_new` and `runstate/capture.rs` use. Fragments are
 /// assembled with `concat!` so the assertion cannot match ITSELF.
+// pin: plan and execute both check the built-in MCP receipt —
+// both phases spawn copilot, and no test here runs the vendor binary.
 #[test]
 fn the_receipt_guard_is_wired_into_both_phases() {
     let code = code_of(include_str!("lib.rs"));
@@ -192,6 +194,8 @@ fn check_skills_loaded_fails_a_run_missing_a_ralphy_skill() {
 /// Same reasoning as D7's pin, for D9: no test here constructs a `Workspace`,
 /// so deleting either call site would leave the suite green and ADR-0041 D9 a
 /// silent no-op. Pins both the materialization and the receipt assertion.
+// pin: plan and execute both materialize, list and check the skills —
+// both phases spawn copilot, and no test here runs the vendor binary.
 #[test]
 fn the_skills_guard_is_wired_into_both_phases() {
     let code = code_of(include_str!("lib.rs"));
@@ -238,6 +242,8 @@ fn method_body(src: &str, sig: &str) -> String {
 /// The argv tests below prove `phase_model`/`phase_effort` and the builder.
 /// This pins that each phase asks for its own model and effort, so `plan`
 /// cannot run with the execute pins or the reverse.
+// pin: plan and execute each read the model and effort of their own phase —
+// both phases spawn copilot, and no test here runs the vendor binary.
 #[test]
 fn each_phase_reads_its_own_model_and_effort() {
     let src = production_text(include_str!("lib.rs"));
@@ -398,6 +404,8 @@ fn no_effort_requested_reads_no_session_store() {
 
 /// The model catalog, the effort table and the settings slice read the
 /// vendor's live catalog; none of them carries a model table of its own.
+// pin: the catalog, effort and settings code carry no model id of their own —
+// a table that agrees with the live catalog looks the same to every behavior test.
 #[test]
 fn no_hardcoded_model_table() {
     for (file, src) in [

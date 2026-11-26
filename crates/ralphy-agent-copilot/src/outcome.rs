@@ -161,6 +161,8 @@ mod tests {
     /// make D11 a silent no-op. Pin the call AND its position — it is only a
     /// preflight if it precedes `HeadlessCall::new`. Fragments are assembled with
     /// `concat!` so the assertion cannot match ITSELF.
+    // pin: the preflight runs before the copilot child is spawned —
+    // the spawn needs the vendor binary, so only the source shows the order.
     #[test]
     fn preflight_runs_before_the_child_is_spawned() {
         let src = include_str!("outcome.rs");
@@ -279,6 +281,8 @@ mod tests {
     /// The production half of this file must never so much as name the envelope's
     /// change counters: `committed` comes from the HEAD-diff, not from the
     /// envelope's own (possibly zeroed) change count.
+    // pin: the outcome never reads the change counters of the envelope —
+    // a read that agrees with the HEAD diff looks the same to every behavior test.
     #[test]
     fn no_code_changes_read() {
         let production = crate::tests::production_text(include_str!("outcome.rs"));

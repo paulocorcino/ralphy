@@ -459,6 +459,8 @@ mod tests {
     /// constructor fails on Windows for a `.cmd` shim and bypasses any override.
     /// The guard string is assembled from fragments so this assertion cannot match
     /// itself.
+    // pin: the copilot binary is named only through resolve_program —
+    // a direct name runs the same on a test machine, so no behavior test sees it.
     #[test]
     fn no_direct_command_new() {
         assert!(

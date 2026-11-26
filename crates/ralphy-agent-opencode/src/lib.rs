@@ -35,8 +35,6 @@ use std::time::Instant;
 use anyhow::Result;
 use ralphy_adapter_support::IssueBudget;
 
-#[cfg(test)]
-mod cleanup;
 mod command;
 mod events;
 mod outcome;
@@ -275,6 +273,8 @@ impl std::fmt::Debug for OpenCodeAgent {
     }
 }
 
+#[cfg(test)]
+mod cleanup;
 #[cfg(test)]
 mod tests {
     use super::*;
