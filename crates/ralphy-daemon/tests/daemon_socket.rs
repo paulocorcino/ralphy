@@ -85,8 +85,7 @@ async fn get(store: &Path, uri: &str, bearer: Option<&str>) -> (u16, String) {
         .expect("a status line");
     let body = response
         .split_once("\r\n\r\n")
-        .map(|(_, body)| body.to_owned())
-        .unwrap_or_default();
+        .map_or_default(|(_, body)| body.to_owned());
     (status, body)
 }
 
