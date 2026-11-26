@@ -160,7 +160,7 @@ pub(super) const STEPS: &[Step] = &[
         "markdownlint",
         &["Markdown (markdownlint)"],
         "npx",
-        &["-y", "markdownlint-cli2@0.24.0"],
+        &["-y", "markdownlint-cli2@0.24.2"],
     ),
     // The module installed on the machine, as for PSScriptAnalyzer:
     // `ci.yml` installs `YAMLLINT_VERSION`. The paths that hold YAML, not `.`:
@@ -193,7 +193,7 @@ pub(super) const STEPS: &[Step] = &[
         "npx",
         &[
             "-y",
-            "html-validate@11.21.0",
+            "html-validate@11.22.1",
             "crates/ralphy-daemon/assets/ui",
         ],
     ),
@@ -209,7 +209,7 @@ pub(super) const STEPS: &[Step] = &[
         "npx",
         &[
             "-y",
-            "stylelint@18.0.0",
+            "stylelint@18.1.0",
             "crates/ralphy-daemon/assets/ui/styles/*.css",
         ],
     ),
@@ -254,7 +254,7 @@ pub(super) const STEPS: &[Step] = &[
         &[
             "-y",
             "-p",
-            "@ast-grep/cli@0.51.2",
+            "@ast-grep/cli@0.51.3",
             "ast-grep",
             "scan",
             "--error=unused-suppression",
@@ -267,7 +267,7 @@ pub(super) const STEPS: &[Step] = &[
         &[
             "-y",
             "-p",
-            "@ast-grep/cli@0.51.2",
+            "@ast-grep/cli@0.51.3",
             "ast-grep",
             "test",
             "--skip-snapshot-tests",
@@ -308,7 +308,7 @@ pub(super) const STEPS: &[Step] = &[
         "npx",
         &[
             "-y",
-            "oxlint@1.93.0",
+            "oxlint@1.95.0",
             "--deny-warnings",
             "crates/ralphy-daemon/assets/ui",
             "crates/ralphy-daemon/ui-tests",
@@ -325,9 +325,9 @@ pub(super) const STEPS: &[Step] = &[
         &[
             "-y",
             "-p",
-            "oxlint@1.93.0",
+            "oxlint@1.95.0",
             "-p",
-            "oxlint-tsgolint@7.0.2006",
+            "oxlint-tsgolint@7.0.2008",
             "oxlint",
             "--type-aware",
             "--deny-warnings",
@@ -342,7 +342,7 @@ pub(super) const STEPS: &[Step] = &[
         "npx",
         &[
             "-y",
-            "oxfmt@0.78.0",
+            "oxfmt@0.80.0",
             "--check",
             "crates/ralphy-daemon/assets/ui/*.ts",
         ],

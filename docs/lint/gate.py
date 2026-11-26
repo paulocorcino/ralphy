@@ -30,7 +30,7 @@ CONFIGS = ["Cargo.toml", ".oxlintrc.json"]
 
 UI = "crates/ralphy-daemon/assets/ui"
 UI_TESTS = "crates/ralphy-daemon/ui-tests"
-OXLINT = ["npx", "-y", "-p", "oxlint@1.93.0", "-p", "oxlint-tsgolint@7.0.2006", "oxlint"]
+OXLINT = ["npx", "-y", "-p", "oxlint@1.95.0", "-p", "oxlint-tsgolint@7.0.2008", "oxlint"]
 TSC = ["npx", "-y", "-p", "typescript@7.0.2", "tsc"]
 # The tsconfig flags of the target that are not on yet; tsconfig.json has them all.
 TSC_FLAGS: list[str] = []
