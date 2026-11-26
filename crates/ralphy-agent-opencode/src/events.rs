@@ -2,7 +2,10 @@
 //! assistant text, detecting error/limit events under the several observed
 //! envelope shapes, and the auth-error detector (ADR-0005 D2/D6/D9).
 
+use ralphy_proc_util::opencode::OpenCodeMajor;
 use regex::Regex;
+
+mod v2;
 
 /// A model-agnostic matcher for the *class* of usage-limit signals a provider
 /// message or log line can carry. opencode fronts many providers (Anthropic, Z.ai,
@@ -34,8 +37,19 @@ pub(crate) const OPENCODE_AUTH_ERROR_MSG: &str =
 /// SDK error event (ADR-0005 D6). Keying on the case-insensitive substring
 /// `providerautherror` is specific enough to avoid false positives from our own
 /// prompt text mentioning `opencode auth login`.
+/// On 2.x the same stop is an `error` event of type `provider.auth` (ADR-0094 D4d);
+/// a 1.x stream has no `error.type`, so both matchers run on every log.
 pub(crate) fn is_opencode_auth_error(text: &str) -> bool {
-    ralphy_adapter_support::auth_error(text, &[&["providerautherror"]])
+    ralphy_adapter_support::auth_error(text, &[&["providerautherror"]]) || v2::has_auth_error(text)
+}
+
+/// The message of a 2.x stream whose last error is `provider.no-route`: no login
+/// for the model's provider, or a wrong model id (ADR-0094 D4d). `None` on 1.x.
+pub(crate) fn no_route_message(major: OpenCodeMajor, stdout: &str) -> Option<String> {
+    match major {
+        OpenCodeMajor::V1 => None,
+        OpenCodeMajor::V2 => v2::no_route_message(stdout),
+    }
 }
 
 /// The headless **degraded-line** matcher, handed to the shared runner's
@@ -46,7 +60,15 @@ pub(crate) fn is_opencode_auth_error(text: &str) -> bool {
 /// terminal signals out of the degraded set is what stops a real quota block from
 /// being papered over as "degraded, retrying"; a false negative here is safe (the
 /// line just counts as ordinary progress).
-pub(crate) fn is_opencode_api_degraded(line: &str) -> bool {
+/// On 2.x the degraded line is a `retry` event (ADR-0094 D4c).
+pub(crate) fn is_opencode_api_degraded(major: OpenCodeMajor, line: &str) -> bool {
+    match major {
+        OpenCodeMajor::V1 => is_v1_degraded(line),
+        OpenCodeMajor::V2 => v2::is_retry_line(line),
+    }
+}
+
+fn is_v1_degraded(line: &str) -> bool {
     let trimmed = line.trim();
     let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) else {
         return false; // logfmt/plain lines are not degraded events
@@ -55,7 +77,7 @@ pub(crate) fn is_opencode_api_degraded(line: &str) -> bool {
         return false;
     }
     // A terminal limit or auth error is NOT "degraded" — those are terminal.
-    !is_opencode_auth_error(trimmed) && parse_opencode_limit(trimmed).is_none()
+    !is_opencode_auth_error(trimmed) && parse_v1_limit(trimmed).is_none()
 }
 
 /// The payload object a single event's fields live in. opencode 1.16.2 wraps
@@ -109,8 +131,16 @@ fn error_name(val: &serde_json::Value) -> &str {
 /// reads) and set the bool when any line is an `error` event. Tolerant of
 /// unparseable lines (skipped). Reads the text from the event's `part` payload
 /// (opencode 1.16.2) and falls back to the top level (flat shape), so the
-/// sentinel scan sees the assistant's real output under both envelopes.
-pub(crate) fn parse_opencode_events(stdout: &str) -> (String, bool) {
+/// sentinel scan sees the assistant's real output under both envelopes. The
+/// major picks what an error event is: on 2.x a `retry` event is not one.
+pub(crate) fn parse_opencode_events(major: OpenCodeMajor, stdout: &str) -> (String, bool) {
+    match major {
+        OpenCodeMajor::V1 => parse_events_with(stdout, is_error_event),
+        OpenCodeMajor::V2 => parse_events_with(stdout, v2::is_error_event),
+    }
+}
+
+fn parse_events_with(stdout: &str, is_error: fn(&serde_json::Value) -> bool) -> (String, bool) {
     let mut text = String::new();
     let mut saw_error = false;
     for line in stdout.lines() {
@@ -121,7 +151,7 @@ pub(crate) fn parse_opencode_events(stdout: &str) -> (String, bool) {
         let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) else {
             continue; // tolerate non-JSON noise on the stream
         };
-        if is_error_event(&val) {
+        if is_error(&val) {
             saw_error = true;
         }
         if let Some(t) = text_part(&val) {
@@ -218,7 +248,16 @@ pub(crate) struct OpencodeLimit {
 ///    (`retry.ts`): "`rate_limit_error`", "rate limit exceeded", "too many requests",
 ///    "quota exceeded".
 /// 3. Zen provider `*UsageLimitError` name suffix.
-pub(crate) fn parse_opencode_limit(stdout: &str) -> Option<OpencodeLimit> {
+///
+/// On 2.x the last `error` event is read by its `error.type` instead (ADR-0094 D4e).
+pub(crate) fn parse_opencode_limit(major: OpenCodeMajor, stdout: &str) -> Option<OpencodeLimit> {
+    match major {
+        OpenCodeMajor::V1 => parse_v1_limit(stdout),
+        OpenCodeMajor::V2 => v2::parse_limit(stdout),
+    }
+}
+
+fn parse_v1_limit(stdout: &str) -> Option<OpencodeLimit> {
     // Shares the line-delimited-JSON scan scaffold with the Claude adapter's
     // transcript limit scan (`scan_json_lines`); the error-shape decoding and the
     // limit predicate below stay OpenCode-specific.

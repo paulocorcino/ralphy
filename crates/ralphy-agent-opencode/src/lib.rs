@@ -1,4 +1,4 @@
-//! The `OpenCode` CLI adapter: drives `opencode run` behind the core [`Agent`]
+//! The `OpenCode` CLI adapter: drives `opencode run` behind the core [`Agent`](ralphy_core::Agent)
 //! contract. Everything OpenCode-specific — the binary, the model/variant flags,
 //! the headless invocation, the line-delimited-JSON event stream, and the
 //! signal→[`ralphy_core::Outcome`] mapping — is confined here. See docs/adr/0005.
@@ -29,20 +29,18 @@
 // D7 of the lint plan: production code here parses outside data; indexing must not panic.
 #![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 
-use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use anyhow::{Context, Result};
-use ralphy_adapter_support::{run_exec_session, run_plan_session, ExecCfg, IssueBudget, PlanCfg};
-use ralphy_core::{git, plan, Agent, Execution, Issue, Plan, Workspace};
-use tracing::info;
+use anyhow::Result;
+use ralphy_adapter_support::IssueBudget;
 
 #[cfg(test)]
 mod cleanup;
 mod command;
 mod events;
 mod outcome;
+mod phases;
 mod skills;
 mod status;
 mod tasks;
@@ -53,15 +51,9 @@ mod usage;
 /// input)` (ADR-0025 §4). A future vision `OpenCode` flips this in its own crate.
 pub const ACCEPTS_IMAGES: bool = false;
 
-use command::{build_watched_opencode_command, StatePlugin};
-use events::{
-    is_opencode_auth_error, parse_opencode_events, parse_opencode_limit, parse_opencode_log_limit,
-    usage_limit_regex, OpencodeLimit, OPENCODE_AUTH_ERROR_MSG,
-};
-use outcome::{classify_opencode_outcome, Reported};
-use skills::materialize_opencode_skills;
+use command::{build_watched_opencode_command, checked_opencode, RunArgs, StatePlugin};
+use ralphy_proc_util::opencode::LocatedOpenCode;
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, list_models, triage_issues};
-use usage::{opencode_usage, resolved_model_label, session_id_from_stream};
 
 /// The `OpenCode` planning prompt, embedded so the binary is self-contained as a
 /// global tool. A variant of `prompt.plan.md` with the `## Execution model` tier
@@ -110,7 +102,13 @@ pub struct OpenCodeAgent {
     run_hook: Option<
         std::sync::Arc<dyn Fn() -> Result<ralphy_adapter_support::HeadlessRun> + Send + Sync>,
     >,
+    #[cfg(test)]
+    version_seam: Option<std::sync::Arc<dyn Fn() -> VersionRead + Send + Sync>>,
 }
+
+#[cfg(test)]
+type VersionRead =
+    std::result::Result<LocatedOpenCode, ralphy_proc_util::opencode::OpenCodeVersionError>;
 
 impl OpenCodeAgent {
     pub fn new(model: Option<String>, run_dir: PathBuf) -> Self {
@@ -123,23 +121,55 @@ impl OpenCodeAgent {
             budget: IssueBudget::new(ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE),
             #[cfg(test)]
             run_hook: None,
+            #[cfg(test)]
+            version_seam: None,
         }
     }
 
     /// A stand-in for the `opencode run` child, so a test drives a plan or an
-    /// execute with no `OpenCode` installed.
+    /// execute with no `OpenCode` installed. The version read becomes a 1.x
+    /// one unless [`Self::with_version`] sets another.
     #[cfg(test)]
     fn with_run_hook(
         mut self,
         hook: impl Fn() -> Result<ralphy_adapter_support::HeadlessRun> + Send + Sync + 'static,
     ) -> Self {
         self.run_hook = Some(std::sync::Arc::new(hook));
+        if self.version_seam.is_none() {
+            self = self.with_version(|| {
+                Ok(command::tests::located(
+                    ralphy_proc_util::opencode::OpenCodeMajor::V1,
+                ))
+            });
+        }
         self
     }
 
-    /// One `opencode run` call with the state plugin loaded: the plugin and
-    /// the status file are written in the run dir before the child starts,
-    /// and the status file is tailed while it runs (ADR-0085 D2).
+    /// A stand-in for the version read of a plan or an execute.
+    #[cfg(test)]
+    fn with_version(mut self, read: impl Fn() -> VersionRead + Send + Sync + 'static) -> Self {
+        self.version_seam = Some(std::sync::Arc::new(read));
+        self
+    }
+
+    /// The checked `OpenCode`; a test may stand in for the version read.
+    #[cfg_attr(
+        not(test),
+        expect(clippy::unused_self, reason = "the test build reads its version seam")
+    )]
+    fn located(&self) -> Result<LocatedOpenCode> {
+        #[cfg(test)]
+        if let Some(seam) = &self.version_seam {
+            return seam().map_err(anyhow::Error::new);
+        }
+        checked_opencode()
+    }
+
+    /// One `opencode run` call. The version is read first, so a refused
+    /// version spawns nothing. The state plugin of the major (a file on 1.x,
+    /// a folder on 2.x) and the status file are written in the run dir before
+    /// the child starts, and the status file is tailed while it runs
+    /// (ADR-0085 D2, ADR-0094 D5b).
     fn run_watched(
         &self,
         skills_dir: &std::path::Path,
@@ -147,15 +177,20 @@ impl OpenCodeAgent {
         prompt: &str,
         kill_on_stderr_line: impl Fn(&str) -> bool + Send + Sync + 'static,
     ) -> Result<ralphy_adapter_support::HeadlessRun> {
+        let located = self.located()?;
         // Clock the budget at the spawn, not method entry, so the run_deadline
         // clamp isn't eroded by the preceding dir/skills setup.
         let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
-        let status = status::Watcher::start(&self.run_dir)?;
-        let cmd = build_watched_opencode_command(
-            self.model.as_deref(),
-            self.variant.as_deref(),
+        let status = status::Watcher::start(&self.run_dir, located.version.major)?;
+        let run = RunArgs {
+            model: self.model.as_deref(),
+            variant: self.variant.as_deref(),
             root,
-            Some(skills_dir),
+            skills_dir: Some(skills_dir),
+        };
+        let cmd = build_watched_opencode_command(
+            &located,
+            run,
             &StatePlugin {
                 plugin: status.plugin(),
                 status: status.path(),
@@ -183,7 +218,7 @@ impl OpenCodeAgent {
     }
 
     /// Accept the resolved planning Effort word (ADR-0044 D5). Documented no-op
-    /// at the discard site in [`Agent::plan`] (D4) — must not alter argv or map
+    /// at the discard site in `plan` (D4) — must not alter argv or map
     /// onto `--variant` (D8).
     #[must_use]
     pub fn with_plan_effort(mut self, effort: Option<String>) -> Self {
@@ -192,7 +227,7 @@ impl OpenCodeAgent {
     }
 
     /// Accept the resolved execution Effort word (ADR-0044 D5). Documented no-op
-    /// at the discard site in [`Agent::execute`] (D4) — must not alter argv or map
+    /// at the discard site in `execute` (D4) — must not alter argv or map
     /// onto `--variant` (D8).
     #[must_use]
     pub fn with_exec_effort(mut self, effort: Option<String>) -> Self {
@@ -237,184 +272,6 @@ impl std::fmt::Debug for OpenCodeAgent {
             .field("run_dir", &self.run_dir)
             .field("budget", &self.budget)
             .finish_non_exhaustive()
-    }
-}
-
-impl Agent for OpenCodeAgent {
-    fn name(&self) -> &'static str {
-        "opencode"
-    }
-
-    fn plan(&self, issue: &Issue, ws: &Workspace) -> Result<Plan> {
-        let plan_path = ws.plan_path();
-        let log_path = self.run_dir.join("opencode.log");
-
-        let run = || {
-            let skills_dir = materialize_opencode_skills(ws)?;
-            // ADR-0044 D4 No-op: resolved `--plan-effort` accepted at the CLI,
-            // discarded here — must not alter argv; emit effort "". `--variant`
-            // stays `--exec-variant`-only (D8).
-            let _: Option<&str> = self.plan_effort.as_deref();
-            ralphy_core::emit::planning(
-                "opencode run",
-                self.model.as_deref().unwrap_or(""),
-                "",
-                self.variant.as_deref().unwrap_or(""),
-            );
-            // No early-kill on plan: plan surfaces no usage limit today (the detector
-            // below is `|_log| None`), so there is nothing for a kill to hand off to.
-            // The call still streams the log live, like execute.
-            let r = self.run_watched(
-                &skills_dir,
-                ws.repo_root(),
-                ralphy_adapter_support::PLAN_CHARTER,
-                |_| false,
-            )?;
-            let stdout = r.stdout.clone();
-            Ok((r, stdout))
-        };
-
-        let ralphy_dir = ws.ralphy_dir();
-        let charter_path = ws.plan_charter_path();
-        let session = run_plan_session(
-            PlanCfg {
-                issue_number: issue.number,
-                ralphy_dir: &ralphy_dir,
-                run_dir: &self.run_dir,
-                plan_path: &plan_path,
-                plan_charter_path: &charter_path,
-                charter_body: PROMPT_PLAN_OPENCODE,
-                log_path: &log_path,
-                auth_msg: OPENCODE_AUTH_ERROR_MSG,
-                no_plan_msg: "opencode produced no plan",
-            },
-            run,
-            is_opencode_auth_error,
-            // No plan-time usage limit is surfaced for OpenCode today (the current
-            // ladder is auth-then-generic); the limit path lives in execute (D9).
-            |_log| None,
-        )?;
-
-        let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
-        // None = resumed (finalized plan kept, no vendor run): no stdout to parse,
-        // so report zero planning tokens.
-        let (usage, session_id) = match session {
-            Some((_, stdout_text)) => (
-                opencode_usage(&stdout_text),
-                session_id_from_stream(&stdout_text),
-            ),
-            None => (ralphy_core::Usage::default(), None),
-        };
-        info!(
-            model = resolved_model_label(&usage),
-            "opencode plan resolved model"
-        );
-        Ok(Plan {
-            open_steps: plan::count_open_steps(&md),
-            // OpenCode drops complexity routing (ADR-0005 D3), so there is no tier.
-            recommended_model: None,
-            path: plan_path,
-            usage,
-            session_id,
-        })
-    }
-
-    fn execute(&self, _plan: &Plan, ws: &Workspace) -> Result<Execution> {
-        let log_path = self.run_dir.join("opencode.log");
-        // HEAD before/after bounds the work this call committed (progress guard).
-        let before_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
-
-        let run = || {
-            let skills_dir = materialize_opencode_skills(ws)?;
-            // ADR-0044 D4 No-op: resolved `--exec-effort` accepted at the CLI,
-            // discarded here — must not alter argv; emit effort "". `--variant`
-            // stays `--exec-variant`-only (D8).
-            let _: Option<&str> = self.exec_effort.as_deref();
-            ralphy_core::emit::executing(
-                "opencode run",
-                0,
-                self.model.as_deref().unwrap_or(""),
-                "",
-                self.variant.as_deref().unwrap_or(""),
-            );
-            // Early-kill: a provider quota block only ever prints to `--print-logs`
-            // stderr (never the JSON stream), then the child idles in silent backoff
-            // until the wall timeout (FinCal #71/#73, glm-5.2). Match the same
-            // usage-limit shape the post-run `parse_opencode_log_limit` keys on, so an
-            // early-killed run classifies as `Limit` identically — only ~sub-second
-            // instead of burning the whole per-issue budget.
-            let limit_re = usage_limit_regex();
-            let r = self.run_watched(
-                &skills_dir,
-                ws.repo_root(),
-                ralphy_adapter_support::PROMPT_EXECUTE,
-                move |line| limit_re.is_match(line),
-            )?;
-            let stdout = r.stdout.clone();
-            Ok((r, stdout))
-        };
-
-        let ralphy_dir = ws.ralphy_dir();
-        let (r, stdout_text) = run_exec_session(
-            ExecCfg {
-                ralphy_dir: &ralphy_dir,
-                run_dir: &self.run_dir,
-                log_path: &log_path,
-                auth_msg: OPENCODE_AUTH_ERROR_MSG,
-            },
-            run,
-            is_opencode_auth_error,
-        )?;
-
-        let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
-        let committed = before_sha != after_sha;
-        let (text, saw_error) = parse_opencode_events(&stdout_text);
-        // Prefer the JSON-event limit (structured, carries reset hints); fall back to
-        // the logfmt scan over the combined stdout+stderr log for providers whose
-        // quota block only prints to `--print-logs` stderr and never reaches the JSON
-        // stream (Z.ai `zai-coding-plan`/GLM, kimi — D9, FinCal #71).
-        let detected =
-            parse_opencode_limit(&stdout_text).or_else(|| parse_opencode_log_limit(&r.log));
-        // OpenCode fronts N providers whose reset strings are unreliable: a "5 hour"
-        // limit reporting a reset ~12h out (FinCal #73, glm-5.2) is internally
-        // impossible, yet parses cleanly and would park the run on a bogus instant.
-        // Never schedule on an OpenCode reset — keep detecting the limit but discard
-        // the hint so the runner falls to the ~30-min synthetic cadence (ADR-0030 D1)
-        // instead of honouring it. Trustworthiness is a per-vendor extraction decision
-        // (the `classify` seam, ADR-0023); Claude/Codex are stable and keep their hints.
-        if let Some(OpencodeLimit { reset: Some(reset) }) = &detected {
-            info!(
-                %reset,
-                "opencode reported a usage-limit reset — discarding \
-                 (OpenCode resets are unschedulable by policy)"
-            );
-        }
-
-        let outcome = classify_opencode_outcome(
-            r.exited_cleanly,
-            r.timed_out,
-            committed,
-            Reported {
-                text: &text,
-                saw_error,
-                limit: detected.as_ref(),
-            },
-        );
-        let usage = opencode_usage(&stdout_text);
-        info!(
-            ?outcome,
-            model = resolved_model_label(&usage),
-            exited_cleanly = r.exited_cleanly,
-            timed_out = r.timed_out,
-            committed,
-            saw_error,
-            "opencode execution ended"
-        );
-        Ok(Execution {
-            outcome,
-            usage,
-            session_id: session_id_from_stream(&stdout_text),
-        })
     }
 }
 

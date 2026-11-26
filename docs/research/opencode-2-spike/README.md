@@ -50,6 +50,8 @@ Every fact has the tool, the version and the OS, and one marker:
 - [The event stream and the three outcome signals](stream-and-outcomes.md): Q3 and Q4.
 - [The background service, `--standalone`, kill and the console](server-and-console.md):
   Q5 and Q8.
+- [Live checks for #1009](live-checks-1009.md): D6d, D6e, D3c and the fixture databases.
+- [The 2.x state plugin](plugin-v2.md): the plugin folder of D5b and its status lines.
 
 The decision that stands on these facts is
 [ADR-0094](../../adr/0094-opencode-1-and-2.md) (proposed).

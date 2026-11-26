@@ -1,0 +1,13 @@
+$ MODEL=opencode/hy4-flash-free bash run.sh /tmp/ralphy-1042/v1/node_modules/opencode-windows-x64/bin/opencode.exe <home>/AppData/Local/Temp/ralphy-1042/xdg-v1 /tmp/ralphy-1042/repos/a file:///<home>/AppData/Local/Temp/ralphy-1042/ralphy-state-plugin.js <home>/AppData/Local/Temp/ralphy-1042/st-v1-win.jsonl ERROR
+config: {"plugin":["file:///<home>/AppData/Local/Temp/ralphy-1042/ralphy-state-plugin.js"]}
+{"type":"step_start","timestamp":1795604991693,"sessionID":"ses_ded9a4ed8ffeIandfc40VoBj7m","part":{"id":"prt_21265cec7001Ltxhqd2vVh4coR","messageID":"msg_21265b61a001fyiG3q5cZMvDvV","sessionID":"ses_ded9a4ed8ffeIandfc40VoBj7m","snapshot":"57b37e28e41047d9d375f22a6144934bb658ccde","type":"step-start"}}
+{"type":"text","timestamp":1795604991959,"sessionID":"ses_ded9a4ed8ffeIandfc40VoBj7m","part":{"id":"prt_21265cf31001zMoPotpUt0gmWG","messageID":"msg_21265b61a001fyiG3q5cZMvDvV","sessionID":"ses_ded9a4ed8ffeIandfc40VoBj7m","type":"text","text":"ok","time":{"start":1795604991793,"end":1795604991952}}}
+{"type":"step_finish","timestamp":1795604992153,"sessionID":"ses_ded9a4ed8ffeIandfc40VoBj7m","part":{"id":"prt_21265d08b001gQmL9MQRzOtBP1","reason":"stop","snapshot":"57b37e28e41047d9d375f22a6144934bb658ccde","messageID":"msg_21265b61a001fyiG3q5cZMvDvV","sessionID":"ses_ded9a4ed8ffeIandfc40VoBj7m","type":"step-finish","tokens":{"total":23854,"input":31,"output":3,"reasoning":12,"cache":{"write":0,"read":23808}},"cost":0}}
+--- exit 0
+--- status file:
+{"event":"plugin.loaded","ts":"2026-11-25T11:09:43.730Z"}
+{"event":"session.created","session_id":"ses_ded9a4ed8ffeIandfc40VoBj7m","ts":"2026-11-25T11:09:44.117Z"}
+{"event":"session.status","session_id":"ses_ded9a4ed8ffeIandfc40VoBj7m","ts":"2026-11-25T11:09:45.365Z"}
+{"event":"session.status","session_id":"ses_ded9a4ed8ffeIandfc40VoBj7m","ts":"2026-11-25T11:09:47.196Z"}
+{"event":"session.status","session_id":"ses_ded9a4ed8ffeIandfc40VoBj7m","ts":"2026-11-25T11:09:52.363Z"}
+{"event":"session.idle","session_id":"ses_ded9a4ed8ffeIandfc40VoBj7m","ts":"2026-11-25T11:09:52.368Z"}

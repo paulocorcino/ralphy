@@ -2,30 +2,44 @@
 //! `opencode.db` SQLite `message` store read-only into per-session × model
 //! interactive records.
 //!
+//! Two table sets are read: the 1.x `message` and `session`, and the 2.x
+//! `session_message` (`type = 'assistant'`) and `session_v2`. The 2.x upgrade
+//! copies each 1.x session into the 2.x tables with the same tokens, so a session
+//! id found in the 2.x set is not read again from the 1.x set. A database is 2.x
+//! when it has `session_v2`: 1.19.0 creates an empty `session_message`.
+//!
 //! Two OpenCode-specific rules, both proven live by the adapter
 //! (`ralphy-agent-opencode/src/usage.rs`, ADR-0008 D5): (1) `tokens.reasoning`
-//! is NOT added to `output` — `OpenCode`'s own `total = input + output +
-//! cache.read` reconciles without it, so reasoning already sits inside `output`;
-//! re-adding it double-counts. (2) The CLI `cost` field is never read (0 for the
-//! operator's un-priced custom providers).
+//! is added to `output`: `OpenCode` 1.19.0 on Windows 11 reported a stream total of
+//! 24227 = 22336 input + 86 output + 1792 cache.read + 13 reasoning. (2) The CLI
+//! `cost` field is never read (0 for the operator's un-priced custom providers).
 //!
-//! Aggregation is a plain per-session × model SUM over assistant rows with no
+//! Aggregation is a plain per-session x model SUM over assistant rows with no
 //! row-id dedup: forks land under a distinct `session_id`, and a session never
-//! replays its own rows (ADR-0033 §2). Any `rusqlite` error — missing db, lock
-//! (`SQLITE_BUSY`), schema drift, corrupt file — funnels through one
-//! `unwrap_or_default` into an empty vec, never failing the verb.
+//! replays its own rows (ADR-0033 §2). Any `rusqlite` error (lock
+//! `SQLITE_BUSY`, schema drift, corrupt file) is logged at `warn` and yields
+//! an empty vec, never failing the verb; a missing file is silent.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::{InteractiveRecord, OpenCodeScan, Tokens};
 
 /// Scan the `OpenCode` SQLite store into interactive records (one per session ×
-/// model). Fully best-effort: any `rusqlite` error (missing db, lock, schema
-/// drift, corrupt file) yields an empty vec via the single `read_opencode`
-/// error funnel. `since` drops records whose `last_ts` is strictly before it
-/// (§6: an unparseable bound or record keeps the record).
+/// model). Fully best-effort: a missing db is silent, and any `rusqlite` error
+/// (lock, schema drift, corrupt file) is logged and yields an empty vec.
+/// `since` drops records whose `last_ts` is strictly before it (§6: an
+/// unparseable bound or record keeps the record).
 pub fn scan_opencode(input: &OpenCodeScan<'_>) -> Vec<InteractiveRecord> {
-    read_opencode(input).unwrap_or_default()
+    if !input.db_path.is_file() {
+        return Vec::new();
+    }
+    read_opencode(input).unwrap_or_else(|e| {
+        tracing::warn!(
+            "could not read the OpenCode token usage from {}: {e}",
+            input.db_path.display()
+        );
+        Vec::new()
+    })
 }
 
 /// Per-model accumulator: the summed per-field tokens plus the ts span
@@ -58,6 +72,22 @@ struct AssistantRow {
     ts_ms: Option<i64>,
 }
 
+/// Which table set a row came from.
+#[derive(Clone, Copy)]
+enum Layout {
+    V1,
+    V2,
+}
+
+/// One message row: `session_id`, its `data` JSON, the session's directory and the
+/// table set it came from.
+struct RawRow {
+    session_id: String,
+    data: String,
+    directory: Option<String>,
+    layout: Layout,
+}
+
 /// A session's `(project, actor_email)`.
 type Attribution = (Option<String>, Option<String>);
 
@@ -81,22 +111,18 @@ fn read_opencode(input: &OpenCodeScan<'_>) -> rusqlite::Result<Vec<InteractiveRe
     // session_id → its attribution, resolved once.
     let mut attribution: HashMap<String, Attribution> = HashMap::new();
 
-    let mut stmt = prepare_messages(&conn)?;
-
-    let rows = stmt.query_map([], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, Option<String>>(2)?,
-        ))
-    })?;
-
-    for (session_id, data, directory) in rows.flatten() {
+    for RawRow {
+        session_id,
+        data,
+        directory,
+        layout,
+    } in collect_rows(&conn)?
+    {
         // Run-owned sessions are Ralphy runs', never interactive (ADR-0033 §5).
         if input.run_session_ids.contains(&session_id) {
             continue;
         }
-        let Some(row) = assistant_row(&data) else {
+        let Some(row) = assistant_row(&data, layout) else {
             continue;
         };
 
@@ -136,38 +162,93 @@ fn read_opencode(input: &OpenCodeScan<'_>) -> rusqlite::Result<Vec<InteractiveRe
     Ok(records)
 }
 
-/// The `message` rows as `(session_id, data, directory)`, joined to
-/// `session.directory`; without that join when the table or column is absent.
-fn prepare_messages(conn: &rusqlite::Connection) -> rusqlite::Result<rusqlite::Statement<'_>> {
-    conn.prepare(
-        "SELECT m.session_id, m.data, NULLIF(s.directory,'') AS directory \
-         FROM message m LEFT JOIN session s ON s.id = m.session_id",
+fn table_exists(conn: &rusqlite::Connection, name: &str) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+        [name],
+        |row| row.get(0),
     )
-    .or_else(|_| conn.prepare("SELECT session_id, data, NULL AS directory FROM message"))
+}
+
+const V1_ROWS: &str = "SELECT m.session_id, m.data, NULLIF(s.directory,'') \
+                       FROM message m LEFT JOIN session s ON s.id = m.session_id";
+const V1_ROWS_NO_DIRECTORY: &str = "SELECT session_id, data, NULL FROM message";
+const V2_ROWS: &str = "SELECT m.session_id, m.data, NULLIF(s.directory,'') \
+                       FROM session_message m LEFT JOIN session_v2 s ON s.id = m.session_id \
+                       WHERE m.type = 'assistant'";
+
+/// The rows of both table sets. A 1.x row whose session is also in the 2.x set is
+/// dropped: the upgrade copied it. A database with neither set is an error.
+fn collect_rows(conn: &rusqlite::Connection) -> rusqlite::Result<Vec<RawRow>> {
+    let has_v2 = table_exists(conn, "session_v2")?;
+    let mut rows = Vec::new();
+    if has_v2 {
+        read_rows(conn, V2_ROWS, Layout::V2, &mut rows)?;
+    }
+    if has_v2 && !table_exists(conn, "message")? {
+        return Ok(rows);
+    }
+    let v2_sessions: HashSet<String> = rows.iter().map(|r| r.session_id.clone()).collect();
+    let mut v1 = Vec::new();
+    // Older databases have no `session` table (ADR-0033 §6): no directory then.
+    if read_rows(conn, V1_ROWS, Layout::V1, &mut v1).is_err() {
+        read_rows(conn, V1_ROWS_NO_DIRECTORY, Layout::V1, &mut v1)?;
+    }
+    rows.extend(
+        v1.into_iter()
+            .filter(|r| !v2_sessions.contains(&r.session_id)),
+    );
+    Ok(rows)
+}
+
+fn read_rows(
+    conn: &rusqlite::Connection,
+    sql: &str,
+    layout: Layout,
+    out: &mut Vec<RawRow>,
+) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare(sql)?;
+    let rows = stmt.query_map([], |row| {
+        Ok(RawRow {
+            session_id: row.get(0)?,
+            data: row.get(1)?,
+            directory: row.get(2)?,
+            layout,
+        })
+    })?;
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(())
 }
 
 /// The assistant row in a message's JSON `data`; `None` for any other role,
-/// for a row with no `tokens` object, and for text that is not JSON.
-fn assistant_row(data: &str) -> Option<AssistantRow> {
+/// for a row with no `tokens` object, and for text that is not JSON. The 2.x SQL
+/// keeps only assistant rows and the model is `model.id`; in 1.x it is `modelID`.
+fn assistant_row(data: &str, layout: Layout) -> Option<AssistantRow> {
     let val = serde_json::from_str::<serde_json::Value>(data).ok()?;
-    if val.get("role").and_then(|v| v.as_str()) != Some("assistant") {
+    if matches!(layout, Layout::V1) && val.get("role").and_then(|v| v.as_str()) != Some("assistant")
+    {
         return None;
     }
+    let model = match layout {
+        Layout::V1 => val.get("modelID"),
+        Layout::V2 => val.get("model").and_then(|m| m.get("id")),
+    };
     let tokens = val.get("tokens").filter(|t| t.is_object())?;
     let field = |obj: &serde_json::Value, k: &str| {
         obj.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0)
     };
     let cache = tokens.get("cache");
     Some(AssistantRow {
-        model: val
-            .get("modelID")
+        model: model
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
             .to_owned(),
-        // reasoning NOT added — `output` already includes it (module doc / ADR-0008 D5).
+        // reasoning is counted in `output` (module doc).
         tokens: Tokens {
             input: field(tokens, "input"),
-            output: field(tokens, "output"),
+            output: field(tokens, "output") + field(tokens, "reasoning"),
             cache_read: cache.map_or(0, |c| field(c, "read")),
             cache_creation: cache.map_or(0, |c| field(c, "write")),
         },
@@ -204,273 +285,4 @@ fn ms_to_rfc3339(ms: Option<i64>) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::RegisteredRepo;
-    use std::collections::HashSet;
-    use std::fs;
-    use std::path::{Path, PathBuf};
-
-    fn no_runs() -> HashSet<String> {
-        HashSet::new()
-    }
-
-    /// A row: `(session_id, data-json)`. `session` entries: `(session_id, directory)`.
-    fn seed_db(dir: &Path, rows: &[(&str, &str)], sessions: &[(&str, &str)]) -> PathBuf {
-        use rusqlite::Connection;
-        let path = dir.join("opencode.db");
-        let conn = Connection::open(&path).unwrap();
-        conn.execute(
-            "CREATE TABLE message (id TEXT, session_id TEXT, data TEXT)",
-            [],
-        )
-        .unwrap();
-        conn.execute("CREATE TABLE session (id TEXT, directory TEXT)", [])
-            .unwrap();
-        for (i, (sid, data)) in rows.iter().enumerate() {
-            conn.execute(
-                "INSERT INTO message (id, session_id, data) VALUES (?1, ?2, ?3)",
-                rusqlite::params![format!("msg_{i}"), sid, data],
-            )
-            .unwrap();
-        }
-        for (sid, directory) in sessions {
-            conn.execute(
-                "INSERT INTO session (id, directory) VALUES (?1, ?2)",
-                rusqlite::params![sid, directory],
-            )
-            .unwrap();
-        }
-        path
-    }
-
-    fn scan(
-        db_path: &Path,
-        repos: &[RegisteredRepo],
-        since: Option<&str>,
-    ) -> Vec<InteractiveRecord> {
-        scan_opencode(&OpenCodeScan {
-            db_path,
-            run_session_ids: &no_runs(),
-            repos,
-            since,
-        })
-    }
-
-    #[test]
-    fn opencode_maps_tokens_ignoring_cost_and_reasoning() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data = concat!(
-            r#"{"role":"assistant","cost":999.0,"modelID":"k2p6","tokens":{"input":2168,"#,
-            r#""output":100,"reasoning":40,"cache":{"write":0,"read":11264}}}"#
-        );
-        let db = seed_db(tmp.path(), &[("ses_1", data)], &[]);
-        let records = scan(&db, &[], None);
-        assert_eq!(records.len(), 1);
-        let r = &records[0];
-        assert_eq!(r.tokens.as_ref().unwrap().input, 2168);
-        assert_eq!(
-            r.tokens.as_ref().unwrap().output,
-            100,
-            "reasoning NOT folded (would be 140)"
-        );
-        assert_eq!(r.tokens.as_ref().unwrap().cache_read, 11264);
-        assert_eq!(r.tokens.as_ref().unwrap().cache_creation, 0);
-        assert_eq!(r.model, "k2p6");
-        assert_eq!(r.agent, "opencode");
-        assert!(
-            !r.lower_bound,
-            "OpenCode writes every token to disk — this is a total, not a floor"
-        );
-    }
-
-    #[test]
-    fn opencode_attributes_a_linked_worktree_directory_to_its_repo() {
-        let tmp = tempfile::tempdir().unwrap();
-        let repo = tmp.path().join("repo");
-        let repo_fwd = repo.to_string_lossy().replace('\\', "/");
-        let wt = tmp.path().join("wt");
-        fs::create_dir_all(&wt).unwrap();
-        fs::write(
-            wt.join(".git"),
-            format!("gitdir: {repo_fwd}/.git/worktrees/wt\n"),
-        )
-        .unwrap();
-        let wt_native = wt.to_string_lossy().to_string();
-
-        let data = r#"{"role":"assistant","modelID":"k2p6","tokens":{"input":10,"output":5}}"#;
-        let db = seed_db(tmp.path(), &[("ses_wt", data)], &[("ses_wt", &wt_native)]);
-        let repos = vec![RegisteredRepo {
-            slug: "o/repo".into(),
-            path: repo.to_string_lossy().to_string(),
-        }];
-        let records = scan(&db, &repos, None);
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].project.as_deref(), Some("o/repo"));
-    }
-
-    #[test]
-    fn opencode_unmatched_directory_yields_null_project() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data = r#"{"role":"assistant","modelID":"k2p6","tokens":{"input":10,"output":5}}"#;
-        let db = seed_db(
-            tmp.path(),
-            &[("ses_1", data)],
-            &[("ses_1", "C:\\Dev\\elsewhere")],
-        );
-        let repos = vec![RegisteredRepo {
-            slug: "o/ralphy".into(),
-            path: "C:\\Dev\\ralphy".into(),
-        }];
-        let records = scan(&db, &repos, None);
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].project, None);
-        assert_eq!(records[0].actor_email, None);
-    }
-
-    #[test]
-    fn opencode_excludes_run_owned_sessions() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data = r#"{"role":"assistant","modelID":"m","tokens":{"input":10,"output":5}}"#;
-        let db = seed_db(tmp.path(), &[("ses_run", data), ("ses_int", data)], &[]);
-        let mut runs = HashSet::new();
-        runs.insert("ses_run".to_owned());
-        let records = scan_opencode(&OpenCodeScan {
-            db_path: &db,
-            run_session_ids: &runs,
-            repos: &[],
-            since: None,
-        });
-        assert!(records.iter().any(|r| r.session_id == "ses_int"));
-        assert!(!records.iter().any(|r| r.session_id == "ses_run"));
-    }
-
-    #[test]
-    fn opencode_missing_db_is_zero() {
-        let records = scan(Path::new("does-not-exist-anywhere.db"), &[], None);
-        assert_eq!(records, Vec::<InteractiveRecord>::new());
-    }
-
-    #[test]
-    fn opencode_corrupt_db_degrades_to_zero() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("opencode.db");
-        fs::write(&path, b"this is not a sqlite database at all").unwrap();
-        let records = scan(&path, &[], None);
-        assert_eq!(records, Vec::<InteractiveRecord>::new());
-    }
-
-    #[test]
-    fn opencode_since_filters_by_last_ts() {
-        let tmp = tempfile::tempdir().unwrap();
-        // created ms: old = 2026-07-01, new = 2026-07-10.
-        let old = concat!(
-            r#"{"role":"assistant","modelID":"m","tokens":{"input":10,"output":5},"#,
-            r#""time":{"created":1782000000000}}"#
-        );
-        let new = concat!(
-            r#"{"role":"assistant","modelID":"m","tokens":{"input":20,"output":5},"#,
-            r#""time":{"created":1783000000000}}"#
-        );
-        let db = seed_db(tmp.path(), &[("ses_old", old), ("ses_new", new)], &[]);
-        // since between the two created instants.
-        let between = ms_to_rfc3339(Some(1_782_500_000_000));
-        let records = scan(&db, &[], Some(&between));
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].session_id, "ses_new");
-        // The bound is inclusive: a session whose last message is AT it stays.
-        let at = ms_to_rfc3339(Some(1_783_000_000_000));
-        let records = scan(&db, &[], Some(&at));
-        assert_eq!(records.len(), 1, "the bound is inclusive");
-        assert_eq!(records[0].session_id, "ses_new");
-    }
-
-    #[test]
-    fn opencode_attributed_record_carries_git_actor_email() {
-        let tmp = tempfile::tempdir().unwrap();
-        let repo = tmp.path().join("repo");
-        fs::create_dir_all(&repo).unwrap();
-        let run = |args: &[&str]| {
-            std::process::Command::new("git")
-                .args(["-C", repo.to_str().unwrap()])
-                .args(args)
-                .output()
-                .unwrap();
-        };
-        run(&["init"]);
-        run(&["config", "user.email", "t@example.com"]);
-        let repo_path = repo.to_string_lossy().to_string();
-
-        let data = r#"{"role":"assistant","modelID":"m","tokens":{"input":10,"output":5}}"#;
-        let db = seed_db(tmp.path(), &[("ses_1", data)], &[("ses_1", &repo_path)]);
-        let repos = vec![RegisteredRepo {
-            slug: "o/repo".into(),
-            path: repo_path,
-        }];
-        let records = scan(&db, &repos, None);
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].project.as_deref(), Some("o/repo"));
-        assert_eq!(records[0].actor_email.as_deref(), Some("t@example.com"));
-    }
-
-    #[test]
-    fn opencode_db_without_a_session_table_still_yields_the_record() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("opencode.db");
-        let conn = rusqlite::Connection::open(&path).unwrap();
-        conn.execute(
-            "CREATE TABLE message (id TEXT, session_id TEXT, data TEXT)",
-            [],
-        )
-        .unwrap();
-        let data = r#"{"role":"assistant","modelID":"k2p6","tokens":{"input":7,"output":3}}"#;
-        conn.execute(
-            "INSERT INTO message (id, session_id, data) VALUES ('m0', 'ses_1', ?1)",
-            [data],
-        )
-        .unwrap();
-        drop(conn);
-
-        let records = scan(&path, &[], None);
-
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].session_id, "ses_1");
-        assert_eq!(records[0].project, None);
-        assert_eq!(records[0].tokens.as_ref().unwrap().input, 7);
-    }
-
-    #[test]
-    fn opencode_rows_of_one_session_and_model_sum_and_span_their_times() {
-        let tmp = tempfile::tempdir().unwrap();
-        // Written out of time order, so the span is not the first or last row.
-        let mid = concat!(
-            r#"{"role":"assistant","modelID":"m","tokens":{"input":10,"output":1,"#,
-            r#""cache":{"read":2,"write":3}},"time":{"created":1782500000000}}"#
-        );
-        let late = concat!(
-            r#"{"role":"assistant","modelID":"m","tokens":{"input":20,"output":4,"#,
-            r#""cache":{"read":5,"write":6}},"time":{"created":1783000000000}}"#
-        );
-        let early = concat!(
-            r#"{"role":"assistant","modelID":"m","tokens":{"input":30,"output":9,"#,
-            r#""cache":{"read":7,"write":8}},"time":{"created":1782000000000}}"#
-        );
-        let db = seed_db(
-            tmp.path(),
-            &[("ses_1", mid), ("ses_1", late), ("ses_1", early)],
-            &[],
-        );
-
-        let records = scan(&db, &[], None);
-
-        assert_eq!(records.len(), 1);
-        let r = &records[0];
-        let t = r.tokens.as_ref().unwrap();
-        assert_eq!(
-            (t.input, t.output, t.cache_read, t.cache_creation),
-            (60, 14, 14, 17)
-        );
-        assert_eq!(r.first_ts, ms_to_rfc3339(Some(1_782_000_000_000)));
-        assert_eq!(r.last_ts, ms_to_rfc3339(Some(1_783_000_000_000)));
-    }
-}
+mod tests;

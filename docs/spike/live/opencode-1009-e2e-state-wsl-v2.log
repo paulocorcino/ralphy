@@ -1,0 +1,26 @@
+$ cat <run dir>/agent-status.jsonl   (run dir 20261125-215114)
+{"event":"plugin.loaded","ts":"2026-11-26T00:51:59.399Z"}
+{"event":"session.created","session_id":"ses_deaa985d4ffezeIhD2ShFX9BWk","ts":"2026-11-26T00:51:59.626Z"}
+{"event":"session.status","session_id":"ses_deaa985d4ffezeIhD2ShFX9BWk","ts":"2026-11-26T00:51:59.626Z"}
+{"event":"session.status","session_id":"ses_deaa985d4ffezeIhD2ShFX9BWk","ts":"2026-11-26T00:52:00.241Z"}
+{"event":"session.status","session_id":"ses_deaa985d4ffezeIhD2ShFX9BWk","ts":"2026-11-26T00:52:00.903Z"}
+{"event":"session.status","session_id":"ses_deaa985d4ffezeIhD2ShFX9BWk","ts":"2026-11-26T00:52:01.392Z"}
+{"event":"session.status","session_id":"ses_deaa985d4ffezeIhD2ShFX9BWk","ts":"2026-11-26T00:52:01.972Z"}
+{"event":"session.status","session_id":"ses_deaa985d4ffezeIhD2ShFX9BWk","ts":"2026-11-26T00:52:02.538Z"}
+{"event":"session.status","session_id":"ses_deaa985d4ffezeIhD2ShFX9BWk","ts":"2026-11-26T00:52:03.410Z"}
+{"event":"session.status","session_id":"ses_deaa985d4ffezeIhD2ShFX9BWk","ts":"2026-11-26T00:52:04.036Z"}
+{"event":"session.status","session_id":"ses_deaa985d4ffezeIhD2ShFX9BWk","ts":"2026-11-26T00:52:04.976Z"}
+{"event":"session.status","session_id":"ses_deaa985d4ffezeIhD2ShFX9BWk","ts":"2026-11-26T00:52:05.554Z"}
+{"event":"session.status","session_id":"ses_deaa985d4ffezeIhD2ShFX9BWk","ts":"2026-11-26T00:52:12.379Z"}
+{"event":"session.status","session_id":"ses_deaa985d4ffezeIhD2ShFX9BWk","ts":"2026-11-26T00:52:13.010Z"}
+{"event":"session.status","session_id":"ses_deaa985d4ffezeIhD2ShFX9BWk","ts":"2026-11-26T00:52:14.953Z"}
+{"event":"session.status","session_id":"ses_deaa985d4ffezeIhD2ShFX9BWk","ts":"2026-11-26T00:52:15.524Z"}
+{"event":"session.status","session_id":"ses_deaa985d4ffezeIhD2ShFX9BWk","ts":"2026-11-26T00:52:16.826Z"}
+{"event":"session.idle","session_id":"ses_deaa985d4ffezeIhD2ShFX9BWk","ts":"2026-11-26T00:52:16.826Z"}
+KNOWLEDGE.rejected.md
+agent-status.jsonl
+consolidate.log
+opencode.log
+ralphy-state-plugin-v2
+ralphy.log
+snapshot.json

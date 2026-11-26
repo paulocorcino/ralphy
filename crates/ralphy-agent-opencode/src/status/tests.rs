@@ -146,3 +146,20 @@ fn an_opencode_run_emits_the_agent_state_of_its_plugin() {
     let got = sink.lock().expect("sink").clone();
     assert_eq!(got, [("waiting".to_owned(), "permission: bash".to_owned())]);
 }
+
+/// A 2.x watcher writes the plugin folder into the run dir, with the bytes of
+/// the asset, and gives the folder as its plugin path.
+#[test]
+fn a_2x_watcher_writes_the_plugin_folder() {
+    let run_dir = tempfile::tempdir().unwrap();
+    let watcher = Watcher::start(run_dir.path(), OpenCodeMajor::V2).expect("the watcher starts");
+    let folder = run_dir.path().join(PLUGIN_DIR_V2);
+    assert_eq!(watcher.plugin(), folder);
+    let asset = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/opencode");
+    for name in ["index.js", "package.json"] {
+        let want = std::fs::read(asset.join("ralphy-state-plugin-v2").join(name)).unwrap();
+        assert_eq!(std::fs::read(folder.join(name)).unwrap(), want, "{name}");
+    }
+    assert!(!run_dir.path().join(PLUGIN_FILE).exists());
+    watcher.stop();
+}

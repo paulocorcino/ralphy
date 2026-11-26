@@ -3,7 +3,9 @@
 //! (ADR-0040 Tier 4). Availability is a presence snapshot for this daemon's
 //! environment, never a login probe or a launch gate.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use ralphy_proc_util::opencode::read_opencode_version;
 
 use crate::dispatch::agent_flag;
 use crate::session::Agent;
@@ -16,6 +18,9 @@ pub struct AgentRow {
     pub accelerator: &'static str,
     pub available: bool,
     pub reason: Option<&'static str>,
+    /// The installed version, for `OpenCode` only; absent when it is not read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 /// The `Alt+Shift+<digit>` accelerator each adapter answers to. EXHAUSTIVE on
@@ -44,18 +49,33 @@ pub fn roster() -> Vec<AgentRow> {
 }
 
 pub fn roster_with(locator: &dyn Fn(Agent) -> Option<PathBuf>) -> Vec<AgentRow> {
+    roster_with_versions(locator, &|program| {
+        read_opencode_version(program).ok().map(|v| v.text)
+    })
+}
+
+/// [`roster_with`] with the reader of the `OpenCode` version given. The reader
+/// runs only for an available `OpenCode`.
+pub fn roster_with_versions(
+    locator: &dyn Fn(Agent) -> Option<PathBuf>,
+    opencode_version: &dyn Fn(&Path) -> Option<String>,
+) -> Vec<AgentRow> {
     let mut rows: Vec<AgentRow> = Agent::ALL
         .iter()
         .map(|&a| {
-            let available = locator(a)
+            let program = locator(a).filter(|path| !ralphy_proc_util::is_windows_mount_path(path));
+            let available = program.is_some();
+            let version = program
                 .as_deref()
-                .is_some_and(|path| !ralphy_proc_util::is_windows_mount_path(path));
+                .filter(|_| a == Agent::OpenCode)
+                .and_then(opencode_version);
             AgentRow {
                 id: agent_flag(a),
                 label: agent_flag(a),
                 accelerator: accelerator(a),
                 available,
                 reason: (!available).then_some("not installed here"),
+                version,
             }
         })
         .collect();
@@ -173,6 +193,30 @@ mod tests {
             .iter()
             .filter(|row| row.id != "opencode")
             .all(|row| row.available && row.reason.is_none()));
+    }
+
+    fn rows_with_version(version: &'static str) -> Vec<AgentRow> {
+        roster_with_versions(&|_| Some(PathBuf::from("/usr/local/bin/vendor")), &|_| {
+            Some(version.to_owned())
+        })
+    }
+
+    #[test]
+    fn the_opencode_row_carries_its_version() {
+        let rows = rows_with_version("2.3.2");
+        let opencode = rows.iter().find(|row| row.id == "opencode").unwrap();
+        assert_eq!(opencode.version.as_deref(), Some("2.3.2"));
+        let none = roster_with_versions(&|_| None, &|_| Some("2.3.2".to_owned()));
+        assert!(none.iter().all(|row| row.version.is_none()), "{none:?}");
+    }
+
+    #[test]
+    fn rows_without_a_version_send_no_version_key() {
+        let rows = serde_json::to_value(rows_with_version("2.3.2")).unwrap();
+        for row in rows.as_array().unwrap() {
+            let has_key = row.get("version").is_some();
+            assert_eq!(has_key, row["id"] == "opencode", "{row}");
+        }
     }
 
     #[test]

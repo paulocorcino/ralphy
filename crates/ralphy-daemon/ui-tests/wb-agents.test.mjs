@@ -223,3 +223,17 @@ test("runCommand trims the line, and a blank line runs nothing", () => {
     assert.equal(runCommand(text), null, `${JSON.stringify(text)} must run nothing`);
   }
 });
+
+test("a row shows its version after its label", () => {
+  const rows = load().menuRows({
+    roster: [
+      { id: "opencode", label: "opencode", accelerator: "3", version: "2.3.2" },
+      { id: "claude", label: "claude", accelerator: "1" },
+    ],
+    sessions: [],
+    openSlug: "repo",
+  });
+  assert.equal(rows[0].label, "opencode 2.3.2");
+  assert.equal(rows[0].kind, "opencode");
+  assert.equal(rows[1].label, "claude");
+});

@@ -1,0 +1,111 @@
+$ (cwd=<home>\AppData\Local\Temp\ralphy-1009\repos\d3c) <home>\AppData\Roaming\npm\opencode.cmd debug config --standalone
+### stdin
+
+### exit 0 after 28.2s
+### stdout
+[
+  {
+    "type": "directory",
+    "path": "<home>\\AppData\\Local\\Temp\\ralphy-1009\\xdg-v2\\config\\opencode"
+  },
+  {
+    "type": "document",
+    "info": {
+      "permissions": [
+        {
+          "action": "shell",
+          "resource": "gh pr close",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "gh pr close *",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "gh pr comment",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "gh pr comment *",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "gh pr create",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "gh pr create *",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "gh pr edit",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "gh pr edit *",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "gh pr merge",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "gh pr merge *",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "gh pr ready",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "gh pr ready *",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "gh pr reopen",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "gh pr reopen *",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "gh pr review",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "gh pr review *",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "git push",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "git push *",
+          "effect": "deny"
+        }
+      ]
+    }
+  }
+]
+
+### stderr
+

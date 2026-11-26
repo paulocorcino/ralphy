@@ -1,95 +1,87 @@
 //! Building the headless `opencode run` invocation both `plan` and `execute`
 //! go through.
 
-use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use ralphy_adapter_support::DENIED_FORGE_WRITES;
+use ralphy_proc_util::opencode::{LocatedOpenCode, OpenCodeMajor};
+use tracing::info;
 
-/// The located `opencode` (its installer folder included), else the bare name so
-/// a spawn error names the vendor.
-pub(crate) fn resolve_opencode_program() -> OsString {
-    ralphy_proc_util::opencode::locate_opencode()
-        .map_or_else(|| OsString::from("opencode"), PathBuf::into_os_string)
+/// The `OpenCode` of this host and its checked version: the program comes from
+/// the shared locator, and a version Ralphy does not support is an error.
+pub(crate) fn checked_opencode() -> anyhow::Result<LocatedOpenCode> {
+    ralphy_proc_util::opencode::located_opencode().map_err(anyhow::Error::new)
 }
 
-/// Build the headless `opencode run` command both `plan` and `execute` go through
-/// — the single point that fixes the invocation, always passes
-/// `--dangerously-skip-permissions` (the headless-hang guard, ADR-0005 D5) and
-/// `--format json`, omits `-m` unless the operator set one (D4), passes
-/// `--variant` only when set (D3), injects `OPENCODE_CONFIG_CONTENT` (see
-/// [`opencode_config`]), runs in `root`, and defensively removes both
-/// `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` so an inherited key can't switch
-/// the run to metered API billing (D6). The prompt is written on stdin.
-pub(crate) fn build_opencode_command(
-    model: Option<&str>,
-    variant: Option<&str>,
-    root: &Path,
-    skills_dir: Option<&Path>,
-) -> Command {
-    command_with(model, variant, root, skills_dir, None)
+/// The model and variant the operator set, and the session's folder and skills.
+#[derive(Clone, Copy)]
+pub(crate) struct RunArgs<'a> {
+    pub(crate) model: Option<&'a str>,
+    pub(crate) variant: Option<&'a str>,
+    pub(crate) root: &'a Path,
+    pub(crate) skills_dir: Option<&'a Path>,
 }
 
-/// The state plugin of a run (ADR-0085 D2): the plugin file `OpenCode` loads,
-/// and the status file the plugin appends to.
+/// Build the headless `opencode run` command of a session, with the argv of
+/// the located major (ADR-0094 D3): the JSON stream, the permission flag
+/// (`--dangerously-skip-permissions` on 1.x, `--standalone --auto` on 2.x),
+/// the logs on stderr, `-m` only when set, the deny map and skills in
+/// `OPENCODE_CONFIG_CONTENT`, the folder, and both API keys removed (ADR-0005
+/// D6). The prompt is written on stdin.
+pub(crate) fn build_opencode_command(located: &LocatedOpenCode, run: RunArgs<'_>) -> Command {
+    command_with(located, run, None)
+}
+
+/// The state plugin of a run (ADR-0085 D2): the plugin file (1.x) or folder
+/// (2.x) `OpenCode` loads, and the status file the plugin appends to.
 pub(crate) struct StatePlugin<'a> {
     pub(crate) plugin: &'a Path,
     pub(crate) status: &'a Path,
 }
 
-/// [`build_opencode_command`] for a plan or an execute, which also loads the
-/// state plugin and points it at the status file.
+/// [`build_opencode_command`] for a plan or an execute. It also loads the
+/// state plugin and points it at the status file, whatever the major.
 pub(crate) fn build_watched_opencode_command(
-    model: Option<&str>,
-    variant: Option<&str>,
-    root: &Path,
-    skills_dir: Option<&Path>,
+    located: &LocatedOpenCode,
+    run: RunArgs<'_>,
     state: &StatePlugin<'_>,
 ) -> Command {
-    command_with(model, variant, root, skills_dir, Some(state))
+    command_with(located, run, Some(state))
+}
+
+/// `opencode models`; on 2.x with `--standalone`, measured to start no
+/// service (ADR-0094 D6e).
+pub(crate) fn build_models_command(located: &LocatedOpenCode) -> Command {
+    let mut cmd = Command::new(&located.program);
+    cmd.arg("models");
+    match located.version.major {
+        OpenCodeMajor::V1 => {}
+        OpenCodeMajor::V2 => {
+            cmd.arg("--standalone");
+        }
+    }
+    cmd
 }
 
 fn command_with(
-    model: Option<&str>,
-    variant: Option<&str>,
-    root: &Path,
-    skills_dir: Option<&Path>,
+    located: &LocatedOpenCode,
+    run: RunArgs<'_>,
     state: Option<&StatePlugin<'_>>,
 ) -> Command {
-    // The located path: on Windows `opencode` ships as an npm `.cmd` shim with no
-    // `.exe`, which a bare `Command::new("opencode")` cannot find.
-    let mut cmd = Command::new(resolve_opencode_program());
-    cmd.arg("run")
-        .arg("--format")
-        .arg("json")
-        .arg("--dangerously-skip-permissions")
-        // Route opencode's own logs (logfmt) onto stderr at ERROR level. Some
-        // providers (Z.ai `zai-coding-plan`/GLM) never emit a `{type:"error"}`
-        // JSON event on a quota block: their ai-sdk treats the `AI_APICallError:
-        // Usage limit reached` as a *retryable* stream error and loops on backoff,
-        // printing it only to the server log — so the `--format json` stream stays
-        // silent and the run stalls until the wall timeout. `--print-logs` brings
-        // that line onto the stderr we already drain, where `parse_opencode_log_limit`
-        // can see it and classify the run as `Limit` instead of a mute `Timeout`
-        // (observed live 2026-07-11, FinCal #71, glm-5.2). ERROR keeps the combined
-        // log lean; the quota line is logged at ERROR.
-        .arg("--print-logs")
-        .arg("--log-level")
-        .arg("ERROR");
-    if let Some(m) = model {
-        cmd.arg("-m").arg(m);
+    let mut cmd = Command::new(&located.program);
+    match located.version.major {
+        OpenCodeMajor::V1 => v1_args(&mut cmd, run),
+        OpenCodeMajor::V2 => v2_args(&mut cmd, run),
     }
-    if let Some(v) = variant {
-        cmd.arg("--variant").arg(v);
-    }
-    cmd.current_dir(root)
+    cmd.current_dir(run.root)
+        .env("PWD", run.root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env(
             "OPENCODE_CONFIG_CONTENT",
-            opencode_config(skills_dir, state.map(|s| s.plugin)),
+            opencode_config(run.skills_dir, state.map(|s| s.plugin)),
         )
         .env_remove("ANTHROPIC_API_KEY")
         .env_remove("OPENAI_API_KEY");
@@ -97,6 +89,39 @@ fn command_with(
         cmd.env(crate::status::STATUS_ENV, state.status);
     }
     cmd
+}
+
+// `--print-logs` brings a provider quota block that never reaches the JSON
+// stream onto stderr, where `parse_opencode_log_limit` sees it (FinCal #71).
+fn v1_args(cmd: &mut Command, run: RunArgs<'_>) {
+    cmd.args(["run", "--format", "json", "--dangerously-skip-permissions"])
+        .args(["--print-logs", "--log-level", "ERROR"]);
+    if let Some(m) = run.model {
+        cmd.arg("-m").arg(m);
+    }
+    if let Some(v) = run.variant {
+        cmd.arg("--variant").arg(v);
+    }
+}
+
+fn v2_args(cmd: &mut Command, run: RunArgs<'_>) {
+    cmd.args(["run", "--format", "json", "--standalone", "--auto"])
+        .args(["--print-logs", "--log-level", "error"]);
+    match (run.model, run.variant) {
+        (Some(m), Some(v)) => {
+            cmd.arg("-m").arg(format!("{m}#{v}"));
+        }
+        (Some(m), None) => {
+            cmd.arg("-m").arg(m);
+        }
+        (None, Some(v)) => {
+            info!(
+                variant = v,
+                "OpenCode 2 takes a variant only with a model; not passed"
+            );
+        }
+        (None, None) => {}
+    }
 }
 
 // The daemon names a console's plugin the same way, in
@@ -117,8 +142,10 @@ pub(crate) fn plugin_entry(path: &Path) -> String {
 /// (ADR-0072 D6, ADR-0005 D5 amendment). opencode applies an explicit `deny`
 /// even under `--dangerously-skip-permissions`, and the refused call reaches
 /// the model as a tool error; the run goes on (measured with opencode 1.18.32).
+/// 2.x reads the same key as its `shell` rules and refuses the call under
+/// `--auto` (measured with 2.3.2 on Windows).
 /// The map has no `"*"` entry, so the operator's own bash rules still apply.
-/// A plan or an execute also names Ralphy's state plugin under `plugin`;
+/// A plan or execute also names Ralphy's state plugin under `plugin`;
 /// `OpenCode` joins that list with the operator's own plugins.
 fn opencode_config(skills_dir: Option<&Path>, plugin: Option<&Path>) -> String {
     let mut bash = serde_json::Map::new();
@@ -141,256 +168,4 @@ fn opencode_config(skills_dir: Option<&Path>, plugin: Option<&Path>) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::cleanup::remove_scratch;
-
-    fn squeezed(source: &str) -> String {
-        source.split_whitespace().collect()
-    }
-
-    #[test]
-    fn the_program_comes_from_the_shared_opencode_locator() {
-        let command = squeezed(include_str!("command.rs"));
-        assert!(
-            command.contains("ralphy_proc_util::opencode::locate_opencode()"),
-            "the locator must come from proc-util"
-        );
-        assert!(
-            command.contains("Command::new(resolve_opencode_program())"),
-            "the run command must spawn the located program"
-        );
-        let tasks = squeezed(include_str!("tasks.rs"));
-        assert!(
-            tasks.contains("Command::new(resolve_opencode_program())"),
-            "the one-shot task must spawn the located program"
-        );
-    }
-
-    fn argv(cmd: &Command) -> Vec<String> {
-        cmd.get_args()
-            .map(|a| a.to_string_lossy().into_owned())
-            .collect()
-    }
-
-    #[test]
-    fn build_command_omits_model_when_none() {
-        let cmd = build_opencode_command(None, None, Path::new("/repo"), None);
-        // The program is `resolve_opencode_program()`: a full path (e.g.
-        // `opencode.cmd` on Windows) when found on PATH, else the bare name. Either
-        // way the file stem is `opencode`.
-        let program = PathBuf::from(cmd.get_program());
-        assert_eq!(
-            program.file_stem().and_then(|s| s.to_str()),
-            Some("opencode"),
-            "program: {program:?}"
-        );
-        let args = argv(&cmd);
-        assert!(args.contains(&"run".to_owned()), "argv: {args:?}");
-        // No -m flag is passed; OpenCode resolves its own model (ADR-0005 D4).
-        assert!(!args.contains(&"-m".to_owned()), "argv: {args:?}");
-        // --variant is absent unless the operator set one (D3).
-        assert!(!args.contains(&"--variant".to_owned()), "argv: {args:?}");
-        // Always-on flags.
-        assert!(
-            args.contains(&"--dangerously-skip-permissions".to_owned()),
-            "argv: {args:?}"
-        );
-        assert!(args.contains(&"--format".to_owned()), "argv: {args:?}");
-        assert!(args.contains(&"json".to_owned()), "argv: {args:?}");
-        // `--print-logs`/`--log-level ERROR` route opencode's own logs to stderr so
-        // a provider quota block that never reaches the JSON stream is still visible
-        // to the limit detector (D9 — silent-quota fix, FinCal #71).
-        assert!(args.contains(&"--print-logs".to_owned()), "argv: {args:?}");
-        assert!(args.contains(&"--log-level".to_owned()), "argv: {args:?}");
-        assert!(args.contains(&"ERROR".to_owned()), "argv: {args:?}");
-    }
-
-    #[test]
-    fn build_command_includes_model_when_some() {
-        let cmd = build_opencode_command(
-            Some("anthropic/claude-sonnet-4-6"),
-            None,
-            Path::new("/repo"),
-            None,
-        );
-        let args = argv(&cmd);
-        assert!(args.contains(&"-m".to_owned()), "argv: {args:?}");
-        assert!(
-            args.contains(&"anthropic/claude-sonnet-4-6".to_owned()),
-            "argv: {args:?}"
-        );
-    }
-
-    #[test]
-    fn build_command_includes_variant_only_when_some() {
-        let without = build_opencode_command(None, None, Path::new("/repo"), None);
-        assert!(!argv(&without).contains(&"--variant".to_owned()));
-
-        let with = build_opencode_command(None, Some("high"), Path::new("/repo"), None);
-        let args = argv(&with);
-        assert!(args.contains(&"--variant".to_owned()), "argv: {args:?}");
-        assert!(args.contains(&"high".to_owned()), "argv: {args:?}");
-    }
-
-    #[test]
-    fn build_command_removes_both_api_keys() {
-        let cmd = build_opencode_command(None, None, Path::new("/repo"), None);
-        let anthropic_removed = cmd
-            .get_envs()
-            .any(|(k, v)| k == "ANTHROPIC_API_KEY" && v.is_none());
-        let openai_removed = cmd
-            .get_envs()
-            .any(|(k, v)| k == "OPENAI_API_KEY" && v.is_none());
-        assert!(
-            anthropic_removed,
-            "ANTHROPIC_API_KEY should be removed on the child"
-        );
-        assert!(
-            openai_removed,
-            "OPENAI_API_KEY should be removed on the child"
-        );
-    }
-
-    fn injected_config(cmd: &Command) -> serde_json::Value {
-        let raw = cmd
-            .get_envs()
-            .find(|(k, _)| *k == "OPENCODE_CONFIG_CONTENT")
-            .and_then(|(_, v)| v)
-            .map(|v| v.to_string_lossy().into_owned())
-            .expect("OPENCODE_CONFIG_CONTENT is set");
-        serde_json::from_str(&raw).expect("the injected config is JSON")
-    }
-
-    #[test]
-    fn build_command_injects_the_skills_path_only_when_given() {
-        let dir = std::env::temp_dir().join("ralphy-opencode-skills-cfg");
-        std::fs::create_dir_all(&dir).unwrap();
-        let cmd = build_opencode_command(None, None, Path::new("/repo"), Some(&dir));
-        let expected = dir.canonicalize().unwrap_or_else(|_| dir.clone());
-        assert_eq!(
-            injected_config(&cmd)["skills"]["paths"],
-            serde_json::json!([expected])
-        );
-
-        let cfg = injected_config(&build_opencode_command(
-            None,
-            None,
-            Path::new("/repo"),
-            None,
-        ));
-        assert!(cfg.get("skills").is_none(), "{cfg}");
-        remove_scratch(&dir);
-    }
-
-    /// A plan or an execute names the state plugin in the run dir under
-    /// `plugin`, keeps the forge-write denies, and gives the plugin the
-    /// status file; a task call names no plugin.
-    #[test]
-    fn opencode_config_names_the_state_plugin() {
-        let run_dir = if cfg!(windows) {
-            PathBuf::from(r"C:\runs\r 1")
-        } else {
-            PathBuf::from("/runs/r 1")
-        };
-        let plugin = run_dir.join("ralphy-state-plugin.js");
-        let status = run_dir.join("agent-status.jsonl");
-        let state = StatePlugin {
-            plugin: &plugin,
-            status: &status,
-        };
-        let cmd = build_watched_opencode_command(None, None, Path::new("/repo"), None, &state);
-        let cfg = injected_config(&cmd);
-        let want = if cfg!(windows) {
-            "file:///C:/runs/r 1/ralphy-state-plugin.js"
-        } else {
-            "file:///runs/r 1/ralphy-state-plugin.js"
-        };
-        assert_eq!(cfg["plugin"], serde_json::json!([want]), "{cfg}");
-        let rules = cfg["permission"]["bash"].as_object().expect("the deny map");
-        assert_eq!(rules.get("git push"), Some(&"deny".into()), "{cfg}");
-        assert_eq!(rules.get("gh pr merge *"), Some(&"deny".into()), "{cfg}");
-        let env = cmd
-            .get_envs()
-            .find(|(k, _)| *k == "RALPHY_STATUS_FILE")
-            .and_then(|(_, v)| v)
-            .map(PathBuf::from);
-        assert_eq!(env, Some(status));
-
-        let task = build_opencode_command(None, None, Path::new("/repo"), None);
-        assert!(injected_config(&task).get("plugin").is_none());
-        assert!(!task.get_envs().any(|(k, _)| k == "RALPHY_STATUS_FILE"));
-    }
-
-    /// A daemon or a run started through a canonicalized path has the
-    /// verbatim form; the entry drops it.
-    #[cfg(windows)]
-    #[test]
-    fn the_plugin_entry_drops_the_verbatim_prefix() {
-        assert_eq!(
-            plugin_entry(Path::new(r"\\?\C:\r\p.js")),
-            "file:///C:/r/p.js"
-        );
-    }
-
-    /// opencode's documented wildcard rule: `*` is any run of characters and
-    /// the pattern must match the whole command.
-    fn glob(pattern: &str, text: &str) -> bool {
-        match pattern.split_once('*') {
-            None => pattern == text,
-            Some((head, tail)) => {
-                let Some(rest) = text.strip_prefix(head) else {
-                    return false;
-                };
-                rest.char_indices()
-                    .map(|(i, _)| i)
-                    .chain([rest.len()])
-                    .any(|i| glob(tail, rest.split_at(i).1))
-            }
-        }
-    }
-
-    /// Every session, with or without skills, carries the deny map, and the
-    /// map denies the forge writes and nothing else.
-    #[test]
-    fn every_session_denies_the_forge_writes_and_only_them() {
-        let skills = std::env::temp_dir();
-        for skills_dir in [None, Some(skills.as_path())] {
-            let cmd = build_opencode_command(None, None, Path::new("/repo"), skills_dir);
-            let cfg = injected_config(&cmd);
-            let rules = cfg["permission"]["bash"]
-                .as_object()
-                .expect("permission.bash is a map");
-            assert!(rules.values().all(|v| v == "deny"), "{cfg}");
-            assert!(!rules.contains_key("*"), "the operator's own rules apply");
-            let denied = |command: &str| rules.keys().any(|p| glob(p, command));
-            for command in [
-                "git push",
-                "git push origin HEAD",
-                "gh pr create --fill",
-                "gh pr edit 5",
-                "gh pr ready",
-                "gh pr reopen 5",
-                "gh pr review 5 --approve",
-                "gh pr comment 5 -b hi",
-                "gh pr merge 5",
-                "gh pr close 5",
-            ] {
-                assert!(denied(command), "{command} must be denied");
-            }
-            for command in [
-                "git status",
-                "git commit -m \"fix push logic\"",
-                "git pull",
-                "gh pr view 5",
-                "gh pr list",
-                "gh pr diff 5",
-                "gh pr checks 5",
-                "gh api repos/o/r/pulls",
-                "gh issue comment 5 -b hi",
-            ] {
-                assert!(!denied(command), "{command} must stay allowed");
-            }
-        }
-    }
-}
+pub(crate) mod tests;

@@ -8,9 +8,52 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use ralphy_adapter_support::{CompletionSignals, HeadlessCall, HeadlessRun};
 use ralphy_core::{Outcome, ResetAt};
+use ralphy_proc_util::opencode::OpenCodeMajor;
 
-use crate::events::OpencodeLimit;
+use crate::events::{
+    is_opencode_api_degraded, parse_opencode_events, parse_opencode_limit,
+    parse_opencode_log_limit, OpencodeLimit,
+};
 use crate::OpenCodeAgent;
+
+/// What one call's stream and log say, read by the major of the `OpenCode`
+/// that wrote them (ADR-0094 D4).
+pub(crate) struct CallRead {
+    text: String,
+    saw_error: bool,
+    pub(crate) limit: Option<OpencodeLimit>,
+}
+
+impl CallRead {
+    /// On 1.x the JSON-event limit comes first, then the logfmt scan of the
+    /// combined log, for providers whose quota block prints only to stderr
+    /// (Z.ai `zai-coding-plan`, kimi; ADR-0005 D9, `FinCal` #71). On 2.x the
+    /// limit is a typed stdout event, and stderr holds only server lines (D4g).
+    pub(crate) fn new(major: OpenCodeMajor, stdout: &str, log: &str) -> Self {
+        let (text, saw_error) = parse_opencode_events(major, stdout);
+        let limit = parse_opencode_limit(major, stdout).or_else(|| match major {
+            OpenCodeMajor::V1 => parse_opencode_log_limit(log),
+            OpenCodeMajor::V2 => None,
+        });
+        Self {
+            text,
+            saw_error,
+            limit,
+        }
+    }
+
+    pub(crate) fn saw_error(&self) -> bool {
+        self.saw_error
+    }
+
+    pub(crate) fn reported(&self) -> Reported<'_> {
+        Reported {
+            text: &self.text,
+            saw_error: self.saw_error,
+            limit: self.limit.as_ref(),
+        }
+    }
+}
 
 /// What one `opencode run` call reported in its output: the final text, whether
 /// an error event was seen, and the usage limit it hit, if any.
@@ -96,10 +139,11 @@ impl OpenCodeAgent {
         // matcher catches a quota block the moment it *prints*, while the idle
         // watchdog catches the same block when the child swallows it into a
         // silent retry and prints nothing at all (docs/adr/0038).
+        let major = self.located()?.version.major;
         HeadlessCall::new(cmd, prompt, timeout, &self.run_dir.join("opencode.log"))
             .kill_on_stderr_line(kill_on_stderr_line)
             .idle_minutes(self.budget.idle_minutes)
-            .degraded_line(crate::events::is_opencode_api_degraded)
+            .degraded_line(move |line| is_opencode_api_degraded(major, line))
             .run()
             .context("failed to spawn the `opencode` CLI (is it installed and on PATH?)")
     }

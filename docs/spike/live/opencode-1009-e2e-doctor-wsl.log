@@ -1,0 +1,21 @@
+$ ralphy doctor
+[ok  ] git: git version 2.34.1
+[ok  ] gh: gh version 2.89.0 (2026-03-26)
+[ok  ] python: Python 3.12.13
+[ok  ] claude: 2.1.332 (Claude Code)
+[ok  ] codex: codex-cli 0.170.0
+[ok  ] opencode: 2.3.2
+[ok  ] copilot: GitHub Copilot CLI 1.0.91.
+[ok  ] cursor: 2026.07.20-8cc9c0b
+[ok  ] antigravity: 1.5.11
+[ok  ] antigravity sign-in: signed in for Ralphy
+[ok  ] claude hooks: the hook command ran and wrote a status line
+[ok  ] codex hooks: the hook command ran and wrote a status line
+[ok  ] opencode hooks: a plugin; checked by its first line in each console
+[ok  ] copilot hooks: no state source
+[ok  ] cursor hooks: no state source
+[ok  ] antigravity hooks: the hook command ran and wrote a status line
+[ok  ] lingering: lingering is on: the daemon runs with no one signed in
+[ok  ] telegram: sends through the main daemon 01KX5QAGWETWBGA08VVFJAT6YT
+result: every required tool is here
+exit=0

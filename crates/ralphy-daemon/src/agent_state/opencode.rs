@@ -10,6 +10,19 @@ use super::fold::{Signal, StatusLine, WaitKind};
 pub(crate) const STATE_PLUGIN: &str =
     include_str!("../../../../assets/opencode/ralphy-state-plugin.js");
 
+/// The files of the 2.x plugin folder, the same the adapter writes for a run
+/// (2.x loads a folder, never a file).
+pub(crate) const STATE_PLUGIN_V2: [(&str, &str); 2] = [
+    (
+        "index.js",
+        include_str!("../../../../assets/opencode/ralphy-state-plugin-v2/index.js"),
+    ),
+    (
+        "package.json",
+        include_str!("../../../../assets/opencode/ralphy-state-plugin-v2/package.json"),
+    ),
+];
+
 /// The plugin's first line: it changes no state, but it is the proof that
 /// the plugin runs, so it ends a console's silence (ADR-0085 D9).
 pub(crate) const PLUGIN_LOADED: &str = "plugin.loaded";
@@ -70,7 +83,8 @@ pub(crate) fn plugin_entry(path: &Path) -> String {
     format!("file:///{}", text.trim_start_matches('/'))
 }
 
-/// The `OPENCODE_CONFIG_CONTENT` of a console: the state plugin and nothing
+/// The `OPENCODE_CONFIG_CONTENT` of a console: the state plugin (a file on
+/// 1.x, a folder on 2.x) and nothing
 /// else. `OpenCode` merges it with the operator's own config, so their
 /// settings and plugins still load.
 pub(crate) fn console_config(plugin: &Path) -> String {

@@ -292,7 +292,7 @@ const ADAPTER_EMIT_SITES: &[AdapterEmitSite] = &[
         &["\"kimi\"", "0", "&model", "\"\"", "\"\""],
     ),
     (
-        "crates/ralphy-agent-opencode/src/lib.rs",
+        "crates/ralphy-agent-opencode/src/phases.rs",
         1,
         1,
         &[

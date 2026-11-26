@@ -1,0 +1,144 @@
+$ (cwd = the clone; scratch opencode-ai 1.19.0 first on PATH; XDG_* under <root>/xdg-v1) /tmp/ralphy-1009-e2e/ralphy/target/debug/ralphy run --repo . --agent opencode --only-issue 136 --branch-mode current --plan-model opencode/deepseek-v4.1-flash-free --exec-model opencode/deepseek-v4.1-flash-free --max-minutes-per-issue 25 --no-telegram --verbose
+2026-11-25 21:55:35  INFO ralphy::run: ralphy run repo=/tmp/ralphy-1009-e2e/repos/wsl-v1 stamp=20261125-215535 dry_run=false
+🐻 Ralphy - v0.1.0-rc.46
+wsl-v1 · e2e · https://github.com/<user>/FinCal
+2026-11-25 21:55:38  INFO ralphy_core::emit: queue built count=1 order=#136 stop_before=0 issues_json=[{"number":136,"title":"Smoke e2e wsl-v1: add a marker file","labels":["ready-for-agent"],"queue_status":"eligible","skip_reason":null,"blocked_by":[],"position":1}] assignee_filter= scope=issue #136
+2026-11-25 21:55:38  INFO ralphy_core::emit: run started repo=<user>/FinCal queue_labels=ready-for-agent,AFK agent="opencode" plan_agent="opencode" branch_mode="current" base=origin/main deadline_hours=0.0
+2026-11-25 21:55:40  INFO ralphy_core::runner::branch: running in place on current branch branch=e2e
+2026-11-25 21:55:41  INFO ralphy_core::emit: issue started number=136 title=Smoke e2e wsl-v1: add a marker file
+2026-11-25 21:55:41  INFO ralphy_core::runner::phases: comments attached for planner number=136 comments=1
+2026-11-25 21:55:41  INFO ralphy_core::emit: planning cmd=opencode run model=opencode/deepseek-v4.1-flash-free effort= variant=
+2026-11-25 21:55:43  INFO ralphy_core::emit: agent state state="done" since="2026-11-26T00:55:43.834Z" detail=""
+2026-11-25 21:55:45  INFO ralphy_core::emit: agent state state="working" since="2026-11-26T00:55:45.196Z" detail=""
+2026-11-25 21:55:58  INFO ralphy_core::emit: agent state state="waiting" since="2026-11-26T00:55:58.844Z" detail="permission: external_directory"
+2026-11-25 21:55:59  INFO ralphy_core::emit: agent state state="working" since="2026-11-26T00:55:58.848Z" detail=""
+2026-11-25 21:56:01  INFO ralphy_core::emit: agent state state="waiting" since="2026-11-26T00:56:01.652Z" detail="permission: external_directory"
+2026-11-25 21:56:01  INFO ralphy_core::emit: agent state state="working" since="2026-11-26T00:56:01.654Z" detail=""
+2026-11-25 21:56:03  INFO ralphy_core::emit: agent state state="waiting" since="2026-11-26T00:56:03.573Z" detail="permission: external_directory"
+2026-11-25 21:56:03  INFO ralphy_core::emit: agent state state="working" since="2026-11-26T00:56:03.574Z" detail=""
+2026-11-25 21:56:07  INFO ralphy_core::emit: agent state state="waiting" since="2026-11-26T00:56:07.342Z" detail="permission: external_directory"
+2026-11-25 21:56:07  INFO ralphy_core::emit: agent state state="working" since="2026-11-26T00:56:07.344Z" detail=""
+2026-11-25 21:56:09  INFO ralphy_core::emit: agent state state="waiting" since="2026-11-26T00:56:09.642Z" detail="permission: external_directory"
+2026-11-25 21:56:09  INFO ralphy_core::emit: agent state state="working" since="2026-11-26T00:56:09.644Z" detail=""
+2026-11-25 21:56:12  INFO ralphy_core::emit: agent state state="waiting" since="2026-11-26T00:56:12.583Z" detail="permission: external_directory"
+2026-11-25 21:56:12  INFO ralphy_core::emit: agent state state="working" since="2026-11-26T00:56:12.585Z" detail=""
+2026-11-25 21:56:16  INFO ralphy_core::emit: agent state state="waiting" since="2026-11-26T00:56:16.814Z" detail="permission: external_directory"
+2026-11-25 21:56:16  INFO ralphy_core::emit: agent state state="working" since="2026-11-26T00:56:16.815Z" detail=""
+2026-11-25 21:56:27  INFO ralphy_core::emit: agent state state="waiting" since="2026-11-26T00:56:27.443Z" detail="permission: external_directory"
+2026-11-25 21:56:27  INFO ralphy_core::emit: agent state state="working" since="2026-11-26T00:56:27.444Z" detail=""
+2026-11-25 21:57:33  INFO ralphy_core::emit: agent state state="done" since="2026-11-26T00:57:33.042Z" detail=""
+2026-11-25 21:57:33  INFO ralphy_agent_opencode::phases: opencode plan resolved model model="<unknown>"
+2026-11-25 21:57:33  INFO ralphy_core::emit: plan written number=136 open_steps=4 up=0 cr=0 cw=0 out=0 model="" steps_json=[{"status":"open","text":"Create directory `smoke/` and write `smoke/e2e-wsl-v1.txt` with exactly the bytes `ok\\n` (one line, `ok`, trailing newline)."},{"status":"open","text":"Prove the oracle discriminates before committing: run the `## Verify` python line → exits 0 on the new file; confirm RED by reasoning already recorded (wrong content exits 1)."},{"status":"open","text":"Stage and commit only `smoke/e2e-wsl-v1.txt` with message `chore: add wsl-v1 e2e smoke marker`; confirm `git status --porcelain` is empty and no other paths changed."},{"status":"open","text":"Green gate: run both `## Verify` commands from the repo root; both exit 0."}]
+2026-11-25 21:57:33  INFO ralphy_core::emit: plan opened number=136 plan_md=# Plan for #136: Smoke e2e wsl-v1: add a marker file
+
+## Feasible: yes
+Temporary Ralphy live check: create `smoke/e2e-wsl-v1.txt` holding `ok` and commit it. `smoke/` does not exist yet (verified: `ls smoke/` → absent), the tree is clean on branch `e2e` (HEAD `6092733e`), and the exact-content oracle below was run RED/GREEN this pass.
+
+## Done when
+- `smoke/e2e-wsl-v1.txt` exists, is git-tracked, and its full content is exactly `ok` + newline — proven by `git ls-files --error-unmatch smoke/e2e-wsl-v1.txt` exiting 0 and `python3 -c "import pathlib,sys; sys.exit(0 if pathlib.Path('smoke/e2e-wsl-v1.txt').read_text() == 'ok\n' else 1)"` exiting 0.
+
+## Acceptance ledger
+- [verified] `smoke/e2e-wsl-v1.txt` exists and holds `ok`. — evidence: `git ls-files --error-unmatch smoke/e2e-wsl-v1.txt` (tracked) and the `python3 -c` exact-content check asserting `read_text() == 'ok\n'`.
+
+## Verify
+git ls-files --error-unmatch smoke/e2e-wsl-v1.txt
+python3 -c "import pathlib,sys; sys.exit(0 if pathlib.Path('smoke/e2e-wsl-v1.txt').read_text() == 'ok\n' else 1)"
+
+## Decisions
+- Decision: use a `python3 -c` one-liner with only double outer quotes and single inner quotes for the content oracle. Why: the runner's `tokenize`/`has_escaped_quote` in `crates/ralphy-core/src/verify/parse.rs` rejects backslash-escaped quotes and does no shell expansion; this shape tokenizes cleanly (verified against that source) and was run here: `ok\n` → exit 0, `nope\n` → exit 1, `ok\nextra\n` → exit 1.
+- Decision: no new test step. Why: the change is pure data (one fixture file) in a repo with no test harness (`ls` shows only docs/scripts/CONTEXT.md, no package.json or test dir); adding a suite would violate "Change nothing else". The `## Verify` oracle is the executable check and was demonstrated RED on wrong content and GREEN on correct content this pass.
+- Decision: omit the self-review step. Why: pure-data/fixture change, no control flow, no domain logic (charter's explicit omission case).
+- Decision: treat `docs/issues/14-smoke-e2e.md` as unrelated. Why: that slice spec describes a full browser E2E happy-path suite; issue #136's body explicitly scopes to one marker file and says "Change nothing else".
+
+## Caveats
+- Prior run (source: issue comment, Ralphy run 20261125-214943) failed the gate because its `## Verify` line used backslash-escaped quotes (`\"`), which the tokenizer rejects as malformed. — handled: both Verify lines here are bare with no escaped quotes, and the python line was executed successfully in this planning pass.
+- `docs/issues/14-smoke-e2e.md` (source: file) describes a much larger smoke-test deliverable; this issue is a temporary live check, not slice 14. — handled: plan implements only the marker file per the issue body.
+
+## Steps
+- [ ] Create directory `smoke/` and write `smoke/e2e-wsl-v1.txt` with exactly the bytes `ok\n` (one line, `ok`, trailing newline).
+- [ ] Prove the oracle discriminates before committing: run the `## Verify` python line → exits 0 on the new file; confirm RED by reasoning already recorded (wrong content exits 1).
+- [ ] Stage and commit only `smoke/e2e-wsl-v1.txt` with message `chore: add wsl-v1 e2e smoke marker`; confirm `git status --porcelain` is empty and no other paths changed.
+- [ ] Green gate: run both `## Verify` commands from the repo root; both exit 0.
+
+<!-- ralphy-plan: issue=136 -->
+
+2026-11-25 21:57:33  INFO ralphy_core::emit: executing cmd=opencode run budget_min=0 model=opencode/deepseek-v4.1-flash-free effort= variant=
+2026-11-25 21:57:34  INFO ralphy_core::emit: agent state state="done" since="2026-11-26T00:57:34.619Z" detail=""
+2026-11-25 21:57:35  INFO ralphy_core::emit: agent state state="working" since="2026-11-26T00:57:35.363Z" detail=""
+2026-11-25 21:58:02  INFO ralphy_core::emit: agent state state="done" since="2026-11-26T00:58:02.749Z" detail=""
+2026-11-25 21:58:02  INFO ralphy_agent_opencode::phases: opencode execution ended outcome=Done model="<unknown>" exited_cleanly=true timed_out=false committed=true saw_error=false
+2026-11-25 21:58:02  INFO ralphy_core::runner::phases::verify: verify gate — running number=136 commands=2
+2026-11-25 21:58:06  INFO ralphy_core::runner::phases::verify: verify gate passed number=136
+2026-11-25 21:58:10  INFO ralphy_core::emit: green — issue closed number=136 tokens=0 invocations=2 up=0 cr=0 cw=0 out=0 model=""
+2026-11-25 21:58:10  INFO ralphy_core::emit: plan closed number=136 plan_md=# Plan for #136: Smoke e2e wsl-v1: add a marker file
+
+## Feasible: yes
+Temporary Ralphy live check: create `smoke/e2e-wsl-v1.txt` holding `ok` and commit it. `smoke/` does not exist yet (verified: `ls smoke/` → absent), the tree is clean on branch `e2e` (HEAD `6092733e`), and the exact-content oracle below was run RED/GREEN this pass.
+
+## Done when
+- `smoke/e2e-wsl-v1.txt` exists, is git-tracked, and its full content is exactly `ok` + newline — proven by `git ls-files --error-unmatch smoke/e2e-wsl-v1.txt` exiting 0 and `python3 -c "import pathlib,sys; sys.exit(0 if pathlib.Path('smoke/e2e-wsl-v1.txt').read_text() == 'ok\n' else 1)"` exiting 0.
+
+## Acceptance ledger
+- [verified] `smoke/e2e-wsl-v1.txt` exists and holds `ok`. — evidence: commit 1cf6542a; `git ls-files --error-unmatch smoke/e2e-wsl-v1.txt` exit 0 and `python3 -c` exact-content check `read_text() == 'ok\n'` exit 0.
+
+## Verify
+git ls-files --error-unmatch smoke/e2e-wsl-v1.txt
+python3 -c "import pathlib,sys; sys.exit(0 if pathlib.Path('smoke/e2e-wsl-v1.txt').read_text() == 'ok\n' else 1)"
+
+## Decisions
+- Decision: use a `python3 -c` one-liner with only double outer quotes and single inner quotes for the content oracle. Why: the runner's `tokenize`/`has_escaped_quote` in `crates/ralphy-core/src/verify/parse.rs` rejects backslash-escaped quotes and does no shell expansion; this shape tokenizes cleanly (verified against that source) and was run here: `ok\n` → exit 0, `nope\n` → exit 1, `ok\nextra\n` → exit 1.
+- Decision: no new test step. Why: the change is pure data (one fixture file) in a repo with no test harness (`ls` shows only docs/scripts/CONTEXT.md, no package.json or test dir); adding a suite would violate "Change nothing else". The `## Verify` oracle is the executable check and was demonstrated RED on wrong content and GREEN on correct content this pass.
+- Decision: omit the self-review step. Why: pure-data/fixture change, no control flow, no domain logic (charter's explicit omission case).
+- Decision: treat `docs/issues/14-smoke-e2e.md` as unrelated. Why: that slice spec describes a full browser E2E happy-path suite; issue #136's body explicitly scopes to one marker file and says "Change nothing else".
+
+## Caveats
+- Prior run (source: issue comment, Ralphy run 20261125-214943) failed the gate because its `## Verify` line used backslash-escaped quotes (`\"`), which the tokenizer rejects as malformed. — handled: both Verify lines here are bare with no escaped quotes, and the python line was executed successfully in this planning pass.
+- `docs/issues/14-smoke-e2e.md` (source: file) describes a much larger smoke-test deliverable; this issue is a temporary live check, not slice 14. — handled: plan implements only the marker file per the issue body.
+
+## Steps
+- [x] Create directory `smoke/` and write `smoke/e2e-wsl-v1.txt` with exactly the bytes `ok\n` (one line, `ok`, trailing newline).
+- [x] Prove the oracle discriminates before committing: run the `## Verify` python line → exits 0 on the new file; confirm RED by reasoning already recorded (wrong content exits 1).
+- [x] Stage and commit only `smoke/e2e-wsl-v1.txt` with message `chore: add wsl-v1 e2e smoke marker`; confirm `git status --porcelain` is empty and no other paths changed.
+- [x] Green gate: run both `## Verify` commands from the repo root; both exit 0.
+
+## Self-review findings
+Review step omitted per plan Decisions: pure-data one-file fixture, no control flow or domain logic (charter explicit omission case). 0 HIGH, 0 MEDIUM, 0 LOW.
+
+## Plan friction
+- none
+
+## Handoff
+- **Delivered**: `smoke/e2e-wsl-v1.txt` (content `ok\n`), commit 1cf6542a.
+- **Environment facts & traps**: none
+- **Commands that work**: `git ls-files --error-unmatch smoke/e2e-wsl-v1.txt` and `python3 -c "import pathlib,sys; sys.exit(0 if pathlib.Path('smoke/e2e-wsl-v1.txt').read_text() == 'ok\n' else 1)"` (both exit 0).
+- **Residue**: none
+- **Knowledge used**: none
+
+<!-- ralphy-plan: issue=136 -->
+
+2026-11-25 21:58:14  INFO ralphy_core::runner::artifacts: knowledge note written number=136 path=/tmp/ralphy-1009-e2e/repos/wsl-v1/.ralphy/knowledge/issue-136.md
+2026-11-25 21:58:14  INFO ralphy_core::runner::artifacts: knowledge citations recorded number=136 citations=2
+2026-11-25 21:58:14  INFO ralphy_core::emit: consolidating knowledge count=1
+2026-11-25 21:58:14  INFO ralphy_agent_opencode::tasks: consolidating knowledge with opencode run model=None
+2026-11-25 21:59:05  INFO ralphy_core::emit: knowledge consolidated count=1
+2026-11-25 21:59:05  INFO ralphy_core::emit: run finished outcome="completed" issues_done=1 issues_skipped=0 issues_total=1 issues_blocked=0 issues_hitl=0 issues_json=[{"number":136,"status":"done"}] up=0 cr=0 cw=0 out=0 duration_s=203
+2026-11-25 21:59:05  WARN ralphy_pricing: unknown model — add `big-pickle` to pricing.toml to price it model="big-pickle"
+2026-11-25 21:59:05  WARN ralphy_pricing: unknown model — add `claude-haiku-5-5` to pricing.toml to price it model="claude-haiku-5-5"
+2026-11-25 21:59:05  WARN ralphy_pricing: some tokens had no model attribution — not priced (shown as +?) model="unknown"
+[ok] 1 done · [blocked] 0 blocked · [skip] 0 skipped
+1 commit(s) on 'e2e'
+Clean run: 1 commit(s) added to 'e2e' in place.
+[undo]  undo (pre-run tag 'ralphy/pre-run-20261125-215535'): git reset --hard ralphy/pre-run-20261125-215535
+run: in 0 cr 0 cw 0 out 0 · $? · project: <user>/FinCal in 507.1k cr 4.2M cw 412.4k out 177.8k · $1.28+?
+exit=0
+
+--- the run's result in its issue list
+--- git -C <root>/repos/wsl-v1 log --oneline -2
+1cf6542a chore: add wsl-v1 e2e smoke marker (#136)
+6092733e feat: enhance issue publishing scripts to resolve "Slice NN" dependencies for clickable links
+--- git -C <root>/repos/wsl-v1 show --stat HEAD
+chore: add wsl-v1 e2e smoke marker (#136)
+
+ smoke/e2e-wsl-v1.txt | 1 +
+ 1 file changed, 1 insertion(+)
+--- git -C <root>/repos/wsl-v1 status --porcelain

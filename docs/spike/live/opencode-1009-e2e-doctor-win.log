@@ -1,0 +1,25 @@
+$ ralphy doctor
+[ok  ] git: git version 2.50.1.windows.1
+[ok  ] gh: gh version 2.89.0 (2026-03-26)
+[ok  ] python: Python 3.11.9
+[ok  ] claude: 2.1.332 (Claude Code)
+[ok  ] codex: codex-cli 0.169.0
+[ok  ] kimi: 0.29.0
+[ok  ] opencode: 2.3.2
+[ok  ] copilot: GitHub Copilot CLI 1.0.91.
+[ok  ] cursor: 2026.08.31-4057e58
+[ok  ] antigravity: 1.5.14
+[ok  ] antigravity sign-in: signed in for Ralphy
+[ok  ] claude hooks: the hook command ran and wrote a status line
+[ok  ] codex hooks: the hook command ran and wrote a status line
+[ok  ] kimi hooks: no state source
+[ok  ] opencode hooks: a plugin; checked by its first line in each console
+[ok  ] copilot hooks: no state source
+[ok  ] cursor hooks: no state source
+[ok  ] antigravity hooks: the hook command ran and wrote a status line
+[ok  ] telegram: sends from this machine
+[ok  ] telegram on wsl-ubuntu: sends through the main daemon ralphy
+[ok  ] telegram on <user>-mac: the daemon did not answer
+[ok  ] telegram on vps-ralphy1: the daemon did not answer
+result: every required tool is here
+exit=0

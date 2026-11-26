@@ -1,0 +1,71 @@
+command: wsl -d Ubuntu-22.04 -e bash -s: RALPHY_STATUS_FILE=<status> OPENCODE_CONFIG_CONTENT='{"plugin":["file:///tmp/ralphy-1042/plugin-v2"]}' /home/<user>/.opencode/bin/opencode run --standalone --log-level info --print-logs -m anthropic/claude-haiku-5-5 --format json 'Reply with the word ok.' (OpenCode 2.3.2, WSL Ubuntu-22.04, operator's provider login)
+timestamp=2026-11-25T23:08:47.385Z level=INFO run=aefb91d6 message="cli starting" version=2.3.2 channel=latest local=false args="[\"serve\",\"--stdio\",\"--port\",\"0\"]" role=cli
+timestamp=2026-11-25T23:08:47.671Z level=INFO run=aefb91d6 message="watcher subscribe" path=/home/<user>/.config/opencode type=directory ignores=6 http.span=56 role=server
+timestamp=2026-11-25T23:08:47.675Z level=INFO run=aefb91d6 message="watcher subscribe" path=/etc type=entries ignores=0 http.span=60 role=server
+timestamp=2026-11-25T23:08:47.676Z level=INFO run=aefb91d6 message="watcher started" path=/etc type=entries backend=node ignores=0 http.span=61 role=server
+timestamp=2026-11-25T23:08:47.676Z level=INFO run=aefb91d6 message="watcher subscribe" path=/ type=entries ignores=0 http.span=61 role=server
+timestamp=2026-11-25T23:08:47.677Z level=INFO run=aefb91d6 message="watcher started" path=/ type=entries backend=node ignores=0 http.span=62 role=server
+timestamp=2026-11-25T23:08:47.677Z level=INFO run=aefb91d6 message="watcher subscribe" path=/tmp type=entries ignores=0 http.span=62 role=server
+timestamp=2026-11-25T23:08:47.678Z level=INFO run=aefb91d6 message="watcher started" path=/tmp type=entries backend=node ignores=0 http.span=63 role=server
+timestamp=2026-11-25T23:08:47.678Z level=INFO run=aefb91d6 message="watcher subscribe" path=/tmp/ralphy-1042 type=entries ignores=0 http.span=63 role=server
+timestamp=2026-11-25T23:08:47.678Z level=INFO run=aefb91d6 message="watcher started" path=/tmp/ralphy-1042 type=entries backend=node ignores=0 http.span=63 role=server
+timestamp=2026-11-25T23:08:47.679Z level=INFO run=aefb91d6 message="watcher subscribe" path=/tmp/ralphy-1042/repos type=entries ignores=0 http.span=64 role=server
+timestamp=2026-11-25T23:08:47.679Z level=INFO run=aefb91d6 message="watcher started" path=/tmp/ralphy-1042/repos type=entries backend=node ignores=0 http.span=64 role=server
+timestamp=2026-11-25T23:08:47.679Z level=INFO run=aefb91d6 message="watcher subscribe" path=/tmp/ralphy-1042/repos/a type=entries ignores=0 http.span=64 role=server
+timestamp=2026-11-25T23:08:47.679Z level=INFO run=aefb91d6 message="watcher started" path=/tmp/ralphy-1042/repos/a type=entries backend=node ignores=0 http.span=64 role=server
+timestamp=2026-11-25T23:08:47.680Z level=INFO run=aefb91d6 message="watcher subscribe" path=/home/<user> type=entries ignores=0 http.span=65 role=server
+timestamp=2026-11-25T23:08:47.680Z level=INFO run=aefb91d6 message="watcher started" path=/home/<user> type=entries backend=node ignores=0 http.span=65 role=server
+timestamp=2026-11-25T23:08:47.691Z level=INFO run=aefb91d6 message="watcher started" path=/home/<user>/.config/opencode type=directory backend=inotify ignores=6 http.span=76 role=server
+timestamp=2026-11-25T23:08:47.717Z level=INFO run=aefb91d6 message="location services booted" directory=/tmp/ralphy-1042/repos/a workspaceID=undefined durationMs=101 http.span=102 role=server
+timestamp=2026-11-25T23:08:47.738Z level=INFO run=aefb91d6 message="watcher subscribe" path=/tmp/ralphy-1042/plugin-v2 type=directory ignores=0 http.span=123 role=server
+timestamp=2026-11-25T23:08:47.742Z level=INFO run=aefb91d6 message="watcher started" path=/tmp/ralphy-1042/plugin-v2 type=directory backend=inotify ignores=0 http.span=127 role=server
+timestamp=2026-11-25T23:08:47.742Z level=INFO run=aefb91d6 msg="loading plugin" id=/tmp/ralphy-1042/plugin-v2 entrypoint=file:///tmp/ralphy-1042/plugin-v2/index.js http.span=127 role=server
+timestamp=2026-11-25T23:08:47.749Z level=INFO run=aefb91d6 message="watcher subscribe" path=/tmp/ralphy-1042/plugin-v2/index.js type=file ignores=0 http.span=134 role=server
+timestamp=2026-11-25T23:08:47.750Z level=INFO run=aefb91d6 message="watcher started" path=/tmp/ralphy-1042/plugin-v2/index.js type=file backend=node ignores=0 http.span=135 role=server
+timestamp=2026-11-25T23:08:48.541Z level=INFO run=aefb91d6 message="watcher subscribe" path=/home/<user>/.config/opencode/AGENTS.md type=file ignores=0
+timestamp=2026-11-25T23:08:48.542Z level=INFO run=aefb91d6 message="watcher started" path=/home/<user>/.config/opencode/AGENTS.md type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T23:08:48.542Z level=INFO run=aefb91d6 message="watcher subscribe" path=/home/<user>/.claude/CLAUDE.md type=file ignores=0
+timestamp=2026-11-25T23:08:48.542Z level=INFO run=aefb91d6 message="watcher started" path=/home/<user>/.claude/CLAUDE.md type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T23:08:48.542Z level=INFO run=aefb91d6 message="watcher subscribe" path=/tmp/ralphy-1042/repos/a/AGENTS.md type=file ignores=0
+timestamp=2026-11-25T23:08:48.543Z level=INFO run=aefb91d6 message="watcher started" path=/tmp/ralphy-1042/repos/a/AGENTS.md type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T23:08:48.543Z level=INFO run=aefb91d6 message="watcher subscribe" path=/tmp/ralphy-1042/repos/a/CLAUDE.md type=file ignores=0
+timestamp=2026-11-25T23:08:48.543Z level=INFO run=aefb91d6 message="watcher started" path=/tmp/ralphy-1042/repos/a/CLAUDE.md type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T23:08:48.564Z level=INFO run=aefb91d6 message="watcher subscribe" path=/home/<user>/.claude/skills type=directory ignores=8
+timestamp=2026-11-25T23:08:48.621Z level=INFO run=aefb91d6 message="watcher started" path=/home/<user>/.claude/skills type=directory backend=inotify ignores=8 role=server
+timestamp=2026-11-25T23:08:48.669Z level=INFO run=aefb91d6 message="watcher subscribe" path=/home/<user>/.agents/skills type=directory ignores=8
+timestamp=2026-11-25T23:08:48.671Z level=INFO run=aefb91d6 message="watcher started" path=/home/<user>/.agents/skills type=directory backend=inotify ignores=8 role=server
+timestamp=2026-11-25T23:08:48.674Z level=INFO run=aefb91d6 message="watcher subscribe" path=/home/<user>/.config/opencode/skill type=file ignores=0
+timestamp=2026-11-25T23:08:48.675Z level=INFO run=aefb91d6 message="watcher started" path=/home/<user>/.config/opencode/skill type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T23:08:48.676Z level=INFO run=aefb91d6 message="watcher subscribe" path=/home/<user>/.config/opencode/skills type=file ignores=0
+timestamp=2026-11-25T23:08:48.676Z level=INFO run=aefb91d6 message="watcher started" path=/home/<user>/.config/opencode/skills type=file backend=node ignores=0 role=server
+timestamp=2026-11-25T23:08:48.708Z level=INFO run=aefb91d6 message=event event.id=evt_214f806c4001q1txJIjWvcRDb5 event.created=1795648128708 event.type=provider.updated event.location.directory=/tmp/ralphy-1042/repos/a event.location.workspaceID=undefined event.data={} http.span=1093 role=server
+timestamp=2026-11-25T23:08:48.720Z level=INFO run=aefb91d6 message=event event.id=evt_214f806d0001KKuZshyx89RepB event.created=1795648128720 event.type=model.updated event.location.directory=/tmp/ralphy-1042/repos/a event.location.workspaceID=undefined event.data={} http.span=1105 role=server
+timestamp=2026-11-25T23:08:48.735Z level=WARN run=aefb91d6 message="mcp connect failed" server=pencil status.status=failed status.error="NotFound: ChildProcess.spawn (/home/<user>/.vscode-server/extensions/highagency.pencildev-0.6.47/out/mcp-server-linux-x64 --app visual_studio_code)" http.span=1120 role=server server=pencil directory=/tmp/ralphy-1042/repos/a connectionID=d39b03ef-2f71-4c2f-b23d-faeae315ce21
+timestamp=2026-11-25T23:08:48.749Z level=INFO run=aefb91d6 message=event event.id=evt_214f806ed001Kb5IMkGinvNh77 event.created=1795648128749 event.type=agent.updated event.location.directory=/tmp/ralphy-1042/repos/a event.location.workspaceID=undefined event.data={} http.span=1134 role=server
+timestamp=2026-11-25T23:08:48.750Z level=INFO run=aefb91d6 message=event event.id=evt_214f806ee0012wqdJ9vLq0bHVV event.created=1795648128750 event.type=command.updated event.location.directory=/tmp/ralphy-1042/repos/a event.location.workspaceID=undefined event.data={} http.span=1135 role=server
+timestamp=2026-11-25T23:08:48.824Z level=INFO run=aefb91d6 message="watcher subscribe" path=/tmp/ralphy-1042/repos/a/.git/HEAD type=file ignores=0 http.span=1209 role=server
+timestamp=2026-11-25T23:08:48.824Z level=INFO run=aefb91d6 message="watcher started" path=/tmp/ralphy-1042/repos/a/.git/HEAD type=file backend=node ignores=0 http.span=1209 role=server
+{"type":"step_start","timestamp":1795648129495,"sessionID":"ses_deb07fd15ffe4E2IzFiNSZJSEX","part":{"id":"prt_214f809d7001f2UgmCozVxc1Ox","sessionID":"ses_deb07fd15ffe4E2IzFiNSZJSEX","messageID":"msg_214f8076b001iNlNfuUspveylq","type":"step-start","snapshot":"46fa518f85512546ad32ff5a909f97ac1e8471c9"}}
+{"type":"text","timestamp":1795648129505,"sessionID":"ses_deb07fd15ffe4E2IzFiNSZJSEX","part":{"id":"prt_214f809de0010D1zFvC4P25XKh","sessionID":"ses_deb07fd15ffe4E2IzFiNSZJSEX","messageID":"msg_214f8076b001iNlNfuUspveylq","type":"text","text":"ok","time":{"start":1795648129502,"end":1795648129505}}}
+{"type":"step_finish","timestamp":1795648129531,"sessionID":"ses_deb07fd15ffe4E2IzFiNSZJSEX","part":{"id":"prt_214f809fb001G8vaA7GOqXSflO","sessionID":"ses_deb07fd15ffe4E2IzFiNSZJSEX","messageID":"msg_214f8076b001iNlNfuUspveylq","type":"step-finish","reason":"stop","snapshot":"46fa518f85512546ad32ff5a909f97ac1e8471c9","cost":0.0019983699999999997,"tokens":{"input":4,"output":4,"reasoning":0,"cache":{"read":5947,"write":15492}}}}
+timestamp=2026-11-25T23:08:49.557Z level=INFO run=aefb91d6 message="Sent HTTP response" http.span=1817 role=server http.method=GET http.url=/api/event http.status=200
+timestamp=2026-11-25T23:08:49.565Z level=INFO run=aefb91d6 message="shutdown started" signal=SIGTERM role=cli
+timestamp=2026-11-25T23:08:49.566Z level=INFO run=aefb91d6 message="watcher stopped" path=/tmp/ralphy-1042/repos/a/.git/HEAD type=file http.span=1951 role=server
+timestamp=2026-11-25T23:08:49.585Z level=INFO run=aefb91d6 message="watcher stopped" path=/tmp/ralphy-1042/plugin-v2/index.js type=file http.span=1970 role=server
+timestamp=2026-11-25T23:08:49.586Z level=INFO run=aefb91d6 message="watcher stopped" path=/tmp/ralphy-1042/plugin-v2 type=directory http.span=1971 role=server
+timestamp=2026-11-25T23:08:49.588Z level=INFO run=aefb91d6 message="watcher stopped" path=/home/<user>/.config/opencode/skill type=file role=server
+timestamp=2026-11-25T23:08:49.589Z level=INFO run=aefb91d6 message="watcher stopped" path=/home/<user>/.config/opencode/skills type=file role=server
+timestamp=2026-11-25T23:08:49.590Z level=INFO run=aefb91d6 message="watcher stopped" path=/home/<user>/.claude/skills type=directory role=server
+timestamp=2026-11-25T23:08:49.590Z level=INFO run=aefb91d6 message="watcher stopped" path=/home/<user>/.agents/skills type=directory role=server
+timestamp=2026-11-25T23:08:49.593Z level=INFO run=aefb91d6 message="watcher stopped" path=/tmp/ralphy-1042/repos/a/CLAUDE.md type=file role=server
+timestamp=2026-11-25T23:08:49.593Z level=INFO run=aefb91d6 message="watcher stopped" path=/tmp/ralphy-1042/repos/a/AGENTS.md type=file role=server
+timestamp=2026-11-25T23:08:49.593Z level=INFO run=aefb91d6 message="watcher stopped" path=/home/<user>/.claude/CLAUDE.md type=file role=server
+timestamp=2026-11-25T23:08:49.593Z level=INFO run=aefb91d6 message="watcher stopped" path=/home/<user>/.config/opencode/AGENTS.md type=file role=server
+timestamp=2026-11-25T23:08:49.611Z level=INFO run=aefb91d6 message="watcher stopped" path=/etc type=entries http.span=1996 role=server
+timestamp=2026-11-25T23:08:49.611Z level=INFO run=aefb91d6 message="watcher stopped" path=/ type=entries http.span=1996 role=server
+timestamp=2026-11-25T23:08:49.611Z level=INFO run=aefb91d6 message="watcher stopped" path=/tmp type=entries http.span=1996 role=server
+timestamp=2026-11-25T23:08:49.611Z level=INFO run=aefb91d6 message="watcher stopped" path=/tmp/ralphy-1042 type=entries http.span=1996 role=server
+timestamp=2026-11-25T23:08:49.611Z level=INFO run=aefb91d6 message="watcher stopped" path=/tmp/ralphy-1042/repos type=entries http.span=1996 role=server
+timestamp=2026-11-25T23:08:49.611Z level=INFO run=aefb91d6 message="watcher stopped" path=/tmp/ralphy-1042/repos/a type=entries http.span=1996 role=server
+timestamp=2026-11-25T23:08:49.611Z level=INFO run=aefb91d6 message="watcher stopped" path=/home/<user> type=entries http.span=1996 role=server
+timestamp=2026-11-25T23:08:49.612Z level=INFO run=aefb91d6 message="watcher stopped" path=/home/<user>/.config/opencode type=directory http.span=1997 role=server

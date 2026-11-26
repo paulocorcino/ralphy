@@ -1,0 +1,26 @@
+$ python3 wsl.py d6d (checks after the standalone run)
+exit=0 sessions=['ses_dedb2be85ffel38Ek8kfqHZ9dV']
+in operator db copy: [[('ses_dedb2be85ffel38Ek8kfqHZ9dV', '/tmp/ralphy-1009/repos/d6d')]]
+lock lines: []
+### git log of the clone
+40b2bb33 Add probe.txt with ok
+ probe.txt | 1 +
+ 1 file changed, 1 insertion(+)
+a3063749 feat: add TypeScript build info and new test bytecode files
+ .../__pycache__/test_categoria_schema.cpython-311.pyc    | Bin 0 -> 3583 bytes
+ .../test_conta_lancamento_schema.cpython-311.pyc         | Bin 0 -> 7879 bytes
+ .../__pycache__/test_recorrencia_schema.cpython-311.pyc  | Bin 0 -> 5648 bytes
+ .../test_renda_liquida_schema.cpython-311.pyc            | Bin 0 -> 4361 bytes
+ dbkit/tests/__pycache__/test_user_schema.cpython-311.pyc | Bin 0 -> 6202 bytes
+ tsconfig.tsbuildinfo                                     |   1 +
+ 6 files changed, 1 insertion(+)
+
+### opencode processes before
+2216799       1 <home>/.opencode/bin/opencode serve --service
+3980080 2216799 <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+### after the standalone run
+2216799       1 <home>/.opencode/bin/opencode serve --service
+3980080 2216799 <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871
+### after the second default run (exit 0, sessions ['ses_dedadd9a7ffeKKAMaaWvNGglK1'])
+2216799       1 <home>/.opencode/bin/opencode serve --service
+3980080 2216799 <home>/.cache/opencode/bin/opencode-pty/0.6.0-3a781ac5ff8bc189/opencode-pty daemon --runtime-dir <home>/.local/state/opencode/pty --name ca225a21-03f9-463c-aa6c-4025079aa871

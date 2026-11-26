@@ -78,3 +78,61 @@ fn the_opencode2_shim_is_never_found() {
     );
     assert_eq!(found, None);
 }
+
+#[test]
+fn the_program_is_the_located_path_else_the_bare_name() {
+    assert_eq!(opencode_program_with(None), OsString::from("opencode"));
+    let found = PathBuf::from("/x/opencode");
+    assert_eq!(
+        opencode_program_with(Some(found.clone())),
+        found.into_os_string()
+    );
+}
+
+#[test]
+fn the_version_is_read_from_both_outputs() {
+    let cases = [
+        ("1.19.0", OpenCodeMajor::V1, "1.19.0"),
+        ("1.16.2", OpenCodeMajor::V1, "1.16.2"),
+        ("opencode v2.3.2", OpenCodeMajor::V2, "2.3.2"),
+        ("opencode v2.4.1", OpenCodeMajor::V2, "2.4.1"),
+    ];
+    for (line, major, text) in cases {
+        let got = parse_opencode_version(line).unwrap();
+        assert_eq!((got.major, got.text.as_str()), (major, text), "{line}");
+    }
+}
+
+#[test]
+fn an_unreadable_version_is_refused() {
+    for line in ["", "opencode", "vX"] {
+        assert!(
+            matches!(
+                parse_opencode_version(line),
+                Err(OpenCodeVersionError::Unreadable { .. })
+            ),
+            "{line:?}"
+        );
+    }
+    let missing = read_opencode_version(Path::new("/no/such/opencode-program")).unwrap_err();
+    assert!(matches!(missing, OpenCodeVersionError::Unreadable { .. }));
+    assert!(
+        missing.to_string().contains("opencode-program"),
+        "{missing}"
+    );
+}
+
+#[test]
+fn a_third_major_is_refused_with_the_text_it_read() {
+    let err = parse_opencode_version("3.0.0").unwrap_err();
+    assert_eq!(
+        err,
+        OpenCodeVersionError::Unsupported {
+            text: "3.0.0".into()
+        }
+    );
+    let message = err.to_string();
+    for part in ["3.0.0", "1.x", "2.x"] {
+        assert!(message.contains(part), "{message}");
+    }
+}

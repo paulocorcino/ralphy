@@ -235,7 +235,9 @@ def main():
             check(
                 "…and exactly the roster's fields: identity, accelerator, availability",
                 all(
-                    sorted(r.keys()) == ["accelerator", "available", "id", "label", "reason"]
+                    sorted(set(r.keys()) - {"version"})
+                    == ["accelerator", "available", "id", "label", "reason"]
+                    and ("version" not in r or r["id"] == "opencode")
                     for r in served
                 ),
                 f"keys={sorted(served[0].keys())}",
@@ -248,7 +250,9 @@ def main():
             labels = rows.locator("span:not(.row-live):not(.row-new)").all_inner_texts()
             check(
                 "the menu renders the served roster, plain console LAST",
-                labels == [r["id"] for r in served] + ["console"],
+                labels
+                == [f"{r['id']} {r['version']}" if r.get("version") else r["id"] for r in served]
+                + ["console"],
                 f"got={labels}",
             )
             digits = rows.locator("kbd").all_inner_texts()

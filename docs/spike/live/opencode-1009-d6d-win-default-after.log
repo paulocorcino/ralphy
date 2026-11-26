@@ -1,0 +1,11 @@
+$ (cwd=<home>\AppData\Local\Temp\ralphy-1009\repos\d6d-after) <home>\AppData\Roaming\npm\opencode.cmd run --auto --format json --print-logs --log-level error -m opencode/big-pickle
+### stdin
+Reply with the word ok.
+### exit 0 after 7.5s
+### stdout
+{"type":"step_start","timestamp":1795602790361,"sessionID":"ses_dedbbdd85ffes8ovh9JTwcUhBn","part":{"id":"prt_2124437d9001prnvy2sZcADz72","sessionID":"ses_dedbbdd85ffes8ovh9JTwcUhBn","messageID":"msg_2124424e4001KRW05VBzI3jc24","type":"step-start","snapshot":"57b37e28e41047d9d375f22a6144934bb658ccde"}}
+{"type":"text","timestamp":1795602790522,"sessionID":"ses_dedbbdd85ffes8ovh9JTwcUhBn","part":{"id":"prt_21244385b002kS3OxGLwTigeii","sessionID":"ses_dedbbdd85ffes8ovh9JTwcUhBn","messageID":"msg_2124424e4001KRW05VBzI3jc24","type":"text","text":"ok","time":{"start":1795602790491,"end":1795602790522}}}
+{"type":"step_finish","timestamp":1795602791143,"sessionID":"ses_dedbbdd85ffes8ovh9JTwcUhBn","part":{"id":"prt_212443ae7001KO43YQBLfBGu2V","sessionID":"ses_dedbbdd85ffes8ovh9JTwcUhBn","messageID":"msg_2124424e4001KRW05VBzI3jc24","type":"step-finish","reason":"stop","snapshot":"57b37e28e41047d9d375f22a6144934bb658ccde","cost":0,"tokens":{"input":13980,"output":3,"reasoning":14,"cache":{"read":1536,"write":0}}}}
+
+### stderr
+

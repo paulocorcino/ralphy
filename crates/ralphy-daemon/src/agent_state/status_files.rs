@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use ralphy_proc_util::hook_form::HookCommand;
+use ralphy_proc_util::opencode::OpenCodeMajor;
 
 use super::{console_settings_json, opencode, HookVendor};
 use crate::session::Agent;
@@ -10,7 +11,8 @@ use crate::session::Agent;
 /// The files one console's hooks need, under `<store>/sessions/`: the
 /// settings file a Claude console is launched with, and the status file the
 /// hooks append to. A Codex console takes its hooks as arguments, so it has
-/// no settings file. An `OpenCode` console has the state plugin file instead.
+/// no settings file. An `OpenCode` console has the state plugin instead: a
+/// file for 1.x and a folder for 2.x.
 /// The files are the session's and go with it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusFiles {
@@ -19,6 +21,8 @@ pub struct StatusFiles {
     pub status: PathBuf,
     /// The state plugin an `OpenCode` console loads.
     pub plugin: Option<PathBuf>,
+    /// The folder of the state plugin a 2.x `OpenCode` console loads.
+    pub plugin_v2: Option<PathBuf>,
 }
 
 impl StatusFiles {
@@ -29,6 +33,7 @@ impl StatusFiles {
             settings: Some(sessions_dir.join(format!("{id}.settings.json"))),
             status: sessions_dir.join(format!("{id}.agent-status.jsonl")),
             plugin: None,
+            plugin_v2: None,
         }
     }
 
@@ -44,12 +49,14 @@ impl StatusFiles {
                 settings: None,
                 status: claude.status,
                 plugin: None,
+                plugin_v2: None,
             }),
             HookVendor::OpenCode => Some(StatusFiles {
                 vendor: HookVendor::OpenCode,
                 settings: None,
                 status: claude.status,
                 plugin: Some(sessions_dir.join(format!("{id}.state-plugin.js"))),
+                plugin_v2: Some(sessions_dir.join(format!("{id}.state-plugin-v2"))),
             }),
         }
     }
@@ -79,6 +86,31 @@ impl StatusFiles {
         }
     }
 
+    /// Write the empty status file and the state plugin of `major`, and give
+    /// the path to name in the config: the file on 1.x, the folder on 2.x.
+    pub fn create_opencode(&self, major: OpenCodeMajor) -> std::io::Result<Option<PathBuf>> {
+        let Some(folder) = &self.plugin_v2 else {
+            return Ok(None);
+        };
+        match major {
+            OpenCodeMajor::V1 => {
+                self.create_status()?;
+                Ok(self.plugin.clone())
+            }
+            OpenCodeMajor::V2 => {
+                if let Some(dir) = self.status.parent() {
+                    std::fs::create_dir_all(dir)?;
+                }
+                std::fs::write(&self.status, b"")?;
+                std::fs::create_dir_all(folder)?;
+                for (name, text) in opencode::STATE_PLUGIN_V2 {
+                    std::fs::write(folder.join(name), text)?;
+                }
+                Ok(Some(folder.clone()))
+            }
+        }
+    }
+
     pub fn remove(&self) {
         // Best effort, and quiet: a session that ended has nothing to report
         // about a file the daemon itself created.
@@ -87,6 +119,9 @@ impl StatusFiles {
         }
         if let Some(plugin) = &self.plugin {
             let _plugin = std::fs::remove_file(plugin);
+        }
+        if let Some(folder) = &self.plugin_v2 {
+            let _folder = std::fs::remove_dir_all(folder);
         }
         let _status = std::fs::remove_file(&self.status);
     }

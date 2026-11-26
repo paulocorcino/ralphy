@@ -4,6 +4,8 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use ralphy_proc_util::opencode::{OpenCodeVersion, OpenCodeVersionError};
+
 mod console;
 mod naming;
 #[cfg(test)]
@@ -307,25 +309,55 @@ fn add_codex_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::S
     tail_status_file(spec, files);
 }
 
-/// The `OpenCode` part of [`spec_with_status`]: the state plugin file, named
+/// The `OpenCode` part of [`spec_with_status`]: the state plugin, named
 /// in `OPENCODE_CONFIG_CONTENT`, and `RALPHY_STATUS_FILE` (ADR-0085 D2). The
 /// config holds the plugin only: `OpenCode` merges it with the operator's own
 /// config, so their settings and plugins still load. A failed write launches
-/// the console without the plugin, as for Claude.
+/// the console without the plugin, as for Claude. `PWD` is the folder of the
+/// console, set before every early return: 2.x reads it as the project folder.
 fn add_opencode_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::StatusFiles>) {
+    add_opencode_launch_with(
+        spec,
+        status,
+        ralphy_proc_util::opencode::read_opencode_version,
+    );
+}
+
+/// [`add_opencode_launch`] with the version read as a parameter. The plugin
+/// is the one of the version of the program the console launches: a file on
+/// 1.x, a folder on 2.x. A version that is unreadable or unsupported launches
+/// the console with no plugin, never refused (ADR-0094 D1c).
+fn add_opencode_launch_with(
+    spec: &mut SessionSpec,
+    status: Option<crate::agent_state::StatusFiles>,
+    read_version: impl Fn(&Path) -> Result<OpenCodeVersion, OpenCodeVersionError>,
+) {
+    let folder = spec.cwd.clone().into_os_string();
+    spec.env.push((OsString::from("PWD"), folder));
     let Some(files) = status else {
         return;
     };
-    let Some(plugin) = files.plugin.clone() else {
-        return;
+    let major = match read_version(Path::new(&spec.program)) {
+        Ok(version) => version.major,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "could not read the OpenCode version; launching without the agent-state plugin"
+            );
+            return;
+        }
     };
-    if let Err(e) = files.create_status() {
-        tracing::warn!(
-            error = %e,
-            "could not write the console's agent-state plugin; launching without it"
-        );
-        return;
-    }
+    let plugin = match files.create_opencode(major) {
+        Ok(Some(plugin)) => plugin,
+        Ok(None) => return,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "could not write the console's agent-state plugin; launching without it"
+            );
+            return;
+        }
+    };
     spec.env.push((
         OsString::from("OPENCODE_CONFIG_CONTENT"),
         OsString::from(crate::agent_state::opencode::console_config(&plugin)),

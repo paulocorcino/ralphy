@@ -1,0 +1,10 @@
+$ (cwd=<home>\AppData\Local\Temp\ralphy-1009\repos\d6d-after) <home>\AppData\Roaming\npm\opencode.cmd run --auto --format json --print-logs --log-level error -m opencode/mimo-v2.6-flash-free
+### stdin
+Reply with the word ok.
+### exit 1 after 18.5s
+### stdout
+{"type":"step_start","timestamp":1795602662853,"sessionID":"ses_dedbddaedffekurhdyC3hCLe7r","part":{"id":"prt_2124245c5001kTUrdMQJ1jYRXu","sessionID":"ses_dedbddaedffekurhdyC3hCLe7r","messageID":"msg_21242323e001nStyt7pAqwXmI1","type":"step-start","snapshot":"57b37e28e41047d9d375f22a6144934bb658ccde"}}
+{"type":"error","timestamp":1795602664608,"sessionID":"ses_dedbddaedffekurhdyC3hCLe7r","error":{"type":"provider.free-limit","message":"Free usage limit reached. Connect a provider or subscribe to OpenCode Go to keep going, or switch models.","status":429,"response":{"body":"{\"type\":\"error\",\"error\":{\"type\":\"FreeUsageLimitError\",\"message\":\"Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go\"}}"},"retryAfterMs":50056000}}
+
+### stderr
+

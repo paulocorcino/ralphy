@@ -169,6 +169,18 @@ pub(crate) async fn about_route() -> Response {
     .into_response()
 }
 
+/// The roster of this daemon. The first read of the `OpenCode` version starts
+/// a program, so it is built off the async worker.
+async fn local_roster(locator: AgentLocator) -> Response {
+    match tokio::task::spawn_blocking(move || roster::roster_with(locator.as_ref())).await {
+        Ok(rows) => Json(rows).into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "the roster task did not finish");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
 /// `GET /api/agents[?repo=<routed-ref>]`: roster and presence snapshot from the
 /// environment that owns `repo`. A peer request deliberately omits `repo`, so
 /// the owning daemon computes locally and federation cannot recurse.
@@ -180,11 +192,11 @@ pub(crate) async fn agents_route(
     bound_port: u16,
 ) -> Response {
     let Some(repo_ref) = query.repo.as_deref() else {
-        return Json(roster::roster_with(locator.as_ref())).into_response();
+        return local_roster(locator).await;
     };
     let (descriptors, rejects) = read_peer_store(peers_dir).await;
     match fleet::route(repo_ref, &daemon_id, &descriptors) {
-        fleet::Route::Local { .. } => Json(roster::roster_with(locator.as_ref())).into_response(),
+        fleet::Route::Local { .. } => local_roster(locator).await,
         fleet::Route::Peer { peer, .. } => {
             let status = peer::client::probe(
                 peer,
@@ -261,4 +273,34 @@ pub(crate) fn read_routes(s: &RouterShared) -> Router {
                 move || repos_route(p, memo)
             }),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    #[tokio::test]
+    async fn the_roster_route_reads_versions_off_the_async_worker() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let recorder = Arc::clone(&seen);
+        let locator: AgentLocator = Arc::new(move |_| {
+            recorder.lock().unwrap().push(std::thread::current().id());
+            None
+        });
+        agents_route(
+            Query(AgentsQuery { repo: None }),
+            PathBuf::new(),
+            String::new(),
+            locator,
+            0,
+        )
+        .await;
+        let seen = seen.lock().unwrap();
+        assert!(!seen.is_empty(), "the locator never ran");
+        assert!(
+            seen.iter().all(|id| *id != std::thread::current().id()),
+            "the roster was built on the async worker"
+        );
+    }
 }

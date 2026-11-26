@@ -23,7 +23,8 @@
 //!   redrawing the last three after every twenty with a cursor-up (a TUI redraw
 //!   that is right at one width only) and ends with `FLOOD-DONE <bytes>`; any
 //!   other line echoes as `GOT:<line>`.
-//! - `--version` prints `2.1.312 (Claude Code)` and exits, as Claude Code does.
+//! - `--version` prints `2.1.312 (Claude Code)` and exits, as Claude Code does;
+//!   when `SESSION_TEST_CHILD_VERSION` is set it prints that text instead.
 //! - `sleep` mode sleeps ~60s — the grandchild that holds stdout open.
 
 #![expect(
@@ -54,7 +55,9 @@ fn main() {
     // Answered like Claude Code, so a daemon that reads the version of the
     // program a console runs picks the exec hook form.
     if mode == "--version" {
-        println!("2.1.312 (Claude Code)");
+        let text = std::env::var("SESSION_TEST_CHILD_VERSION")
+            .unwrap_or_else(|_| "2.1.312 (Claude Code)".to_owned());
+        println!("{text}");
         return;
     }
     if mode == "sleep" {
