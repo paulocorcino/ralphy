@@ -124,7 +124,6 @@ alacritty_terminal = { version = "=0.26.0", default-features = false }
 # `since`, and the activity band walks civil dates to zero-fill a window's quiet
 # days. The fold itself stays clock-free — it only compares against the instant
 # it was handed. Already a workspace dependency, so this costs no new tree.
-chrono.workspace = true
 ralphy-time.workspace = true
 jiff.workspace = true
 

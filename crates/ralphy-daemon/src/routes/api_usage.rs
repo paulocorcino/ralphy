@@ -162,13 +162,18 @@ pub(crate) async fn usage_route(
 /// day that under-reads against full-day peaks, and would make the activity
 /// band's zero-fill emit a column for a day it never seeded.
 pub(crate) fn window_since(window: spend::Window) -> Option<String> {
-    window.days().map(|days| {
-        (chrono::Utc::now() - chrono::Duration::days(i64::from(days) - 1))
-            .date_naive()
-            .and_time(chrono::NaiveTime::MIN)
-            .and_utc()
-            .to_rfc3339()
-    })
+    let days = window.days()?;
+    let back = jiff::SignedDuration::from_hours(24 * (i64::from(days) - 1));
+    let day = jiff::Timestamp::now()
+        .checked_sub(back)
+        .ok()?
+        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+        .date();
+    let start = day
+        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+        .ok()?
+        .timestamp();
+    Some(ralphy_time::rfc3339(start, jiff::tz::Offset::UTC))
 }
 
 /// `GET /api/spend?project=<owner/repo>&period=<all|7d|30d|90d>`: that project's
@@ -320,4 +325,22 @@ pub(crate) fn usage_routes(s: &RouterShared) -> Router {
                 }
             }),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_usage_stamp_keeps_the_utc_rfc3339_form() {
+        let stamp = window_since(spend::Window::Week).expect("a bounded window has a start");
+        let day = stamp.get(..10).expect("a date prefix");
+        assert!(
+            day.bytes()
+                .enumerate()
+                .all(|(i, b)| matches!(i, 4 | 7) == (b == b'-')),
+            "{stamp}"
+        );
+        assert_eq!(stamp.get(10..), Some("T00:00:00+00:00"), "{stamp}");
+    }
 }

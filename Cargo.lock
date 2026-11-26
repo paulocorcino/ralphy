@@ -2344,7 +2344,6 @@ dependencies = [
  "alacritty_terminal",
  "anyhow",
  "axum",
- "chrono",
  "data-encoding",
  "directories",
  "encoding_rs",
