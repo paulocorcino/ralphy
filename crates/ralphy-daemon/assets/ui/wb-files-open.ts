@@ -59,9 +59,7 @@ export function searchFindTerm(files: OpenFiles) {
 // insecure non-loopback origin, so the call is optional-chained.
 export function copyEntryPath(files: OpenFiles, node: WunderbaumNode, full: boolean) {
   const rel = files.relPath(node);
-  const root = full
-    ? files.$store.projects.projects.find((p) => p.slug === files.$store.projects.openSlug)?.root
-    : "";
+  const root = full ? files.$store.projects.openProject()?.root : "";
   const path = root != null && root !== "" ? fullPath(root, rel) : rel;
   // oxlint-disable-next-line typescript/no-unnecessary-condition -- absent on an insecure origin
   navigator.clipboard?.writeText(path).catch(() => {});

@@ -23,6 +23,7 @@ import "./wb-connection-store.test.mjs";
 import "./wb-branch-dialog.test.mjs";
 import "./wb-changes-open.test.mjs";
 import "./wb-columns.test.mjs";
+import "./wb-copy-path.test.mjs";
 import "./wb-stage-chrome.test.mjs";
 import "./wb-stage-stack.test.mjs";
 import "./wb-desk.test.mjs";
