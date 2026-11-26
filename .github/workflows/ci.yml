@@ -113,10 +113,49 @@ jobs:
 
       # The ratchets and fitness functions of docs/ARCHITECTURE.md §8 that live
       # in crates/xtask/tests. They read the source tree and build no product
-      # crate, so they stay on a pull request. The product is built and tested
-      # in release.yml, before the packages.
+      # crate. The product suite runs in the `test` job on Linux, and on all
+      # three systems in release.yml, before the packages.
       - name: Ratchets (xtask tests)
         run: cargo test --locked -q -p xtask
+
+  test:
+    name: test (ubuntu-latest)
+    # The suite on each pull request, on Linux only (ADR-0095): macOS and
+    # Windows run in release.yml, and the author runs the Windows suite locally.
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: "1.99.1"
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-nextest
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      # `--profile ci` is `release` without its ship-only link cost (Cargo.toml).
+      # `--all-targets` builds the test binaries here, so the Test step times
+      # tests and a compile blowup never reads as a hang.
+      - name: Build
+        run: cargo build --locked --workspace --profile ci --all-targets
+
+      # The Test step carries its own, shorter bound than the job (#441).
+      # PTY tests drive sh on Linux (portable-pty).
+      - name: Test
+        timeout-minutes: 18
+        run: cargo nextest run --locked --workspace --cargo-profile ci --no-fail-fast
+
+      - name: Doctests
+        run: cargo test --locked --workspace --profile ci --doc
 
   checks:
     name: actionlint · machete · typos · doc

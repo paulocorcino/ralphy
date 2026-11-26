@@ -1,6 +1,6 @@
 # A pull request runs the Linux test suite, and the Windows suite stays local
 
-Status: proposed
+Status: accepted
 Kind: process
 Protects: integrity of change, testability
 
