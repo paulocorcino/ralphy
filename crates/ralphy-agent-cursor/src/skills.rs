@@ -171,6 +171,8 @@ mod tests {
         );
     }
 
+    // pin: skills need no plugin flag, env var or plugin manifest —
+    // the env var and manifest half is an absence in the source.
     #[test]
     fn the_skills_root_needs_no_flag_env_var_or_manifest() {
         let unpinned = crate::command::build_cursor_command(
@@ -203,6 +205,8 @@ mod tests {
     /// materialize BEFORE spawning the child, on both the success and error
     /// paths — the D6 gate runs first, so a run it stops must not have already
     /// materialized skills into the operator's repo.
+    // pin: plan and execute both materialize skills before they spawn —
+    // no test spawns the vendor CLI, so only the source shows it.
     #[test]
     fn skills_are_materialized_on_both_phases() {
         let src = include_str!("lib.rs");

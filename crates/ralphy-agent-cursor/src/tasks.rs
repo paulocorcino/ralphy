@@ -359,6 +359,8 @@ mod tests {
     /// child runs in `neutral_cwd`, so that is what the gate must be given —
     /// passing `repo` instead would refuse a verb that uploads nothing. Source pin:
     /// no test here spawns a real child, so nothing else would catch the swap.
+    // pin: diagnose gates on the child's neutral cwd, not the target repo —
+    // no test spawns the vendor CLI, so only the source shows it.
     #[test]
     fn diagnose_gates_on_the_child_cwd_not_the_target_repo() {
         let src = include_str!("tasks.rs");

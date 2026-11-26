@@ -55,6 +55,8 @@ pub(crate) fn fn_body<'a>(code: &'a str, header: &str) -> &'a str {
     panic!("the body after {header:?} is not balanced")
 }
 
+// pin: the source-scan helper keeps code after an item-level test attribute —
+// it tests test code that the pins of this crate rely on.
 #[test]
 fn production_text_reads_past_a_test_item() {
     let src = "use a;\r\n\
@@ -71,6 +73,8 @@ fn production_text_reads_past_a_test_item() {
     );
 }
 
+// pin: the source-scan helper cuts at the test module —
+// it tests test code that the pins of this crate rely on.
 #[test]
 fn production_text_drops_the_test_module() {
     let src = "fn shipped() {}\n#[cfg(test)]\nmod tests {\n    fn t() {}\n}\n";
@@ -137,6 +141,8 @@ fn the_idle_watchdog_default_tolerates_the_vendor_cadence() {
 /// Story 33: both phases must report the stream's OWN usage, not the
 /// requested-model-only attribution — deleting either call site keeps the
 /// suite green unless this pin catches it (#249).
+// pin: plan and execute report the stream's own usage —
+// no test spawns the vendor CLI, so only the source shows it.
 #[test]
 fn both_phases_report_stream_usage() {
     let code = code_of(include_str!("lib.rs"));
@@ -151,6 +157,8 @@ fn both_phases_report_stream_usage() {
 /// Story 33: both phases must state the credit/token unit mismatch —
 /// deleting either call site keeps the suite green unless this pin catches
 /// it.
+// pin: plan and execute log the credit and token unit mismatch —
+// no test spawns the vendor CLI, so only the source shows it.
 #[test]
 fn every_run_notes_the_credit_unit_mismatch() {
     let code = code_of(include_str!("lib.rs"));
@@ -166,6 +174,8 @@ fn every_run_notes_the_credit_unit_mismatch() {
 /// the operator-visible degraded-tool-call note must be raised on BOTH the
 /// `plan` and `execute` paths, and on `execute` only after the fold has run —
 /// deleting either call keeps the suite green unless this pin catches it.
+// pin: both phases log degraded calls and the vendor error, after the fold —
+// no test spawns the vendor CLI, so only the source shows it.
 #[test]
 fn execute_notes_the_degraded_calls() {
     let code = code_of(include_str!("lib.rs"));
@@ -235,6 +245,8 @@ fn prompt_plan_cursor_requires_the_planner_to_write_the_file() {
 /// `--model` refusal is checked FIRST — it will not heal on a retry, so
 /// scheduling a wait for it would burn the issue's budget re-asking an
 /// already-answered question.
+// pin: plan checks a model refusal before it routes a quota stop to PlanLimit —
+// no test spawns the vendor CLI, so only the source shows it.
 #[test]
 fn the_plan_path_routes_a_quota_stop_to_plan_limit() {
     let code = code_of(include_str!("lib.rs"));
@@ -258,6 +270,8 @@ fn the_plan_path_routes_a_quota_stop_to_plan_limit() {
 /// stop. The probe is short-circuited on `plan_is_finalized_for` so a fresh plan
 /// pays no extra spawn. Needles assembled from fragments so this cannot match
 /// itself.
+// pin: plan probes the login before it resumes a finalized plan —
+// no test spawns the vendor CLI, so only the source shows it.
 #[test]
 fn the_resume_path_is_gated_on_a_fresh_login_verdict() {
     let code = code_of(include_str!("lib.rs"));
@@ -285,6 +299,8 @@ fn the_resume_path_is_gated_on_a_fresh_login_verdict() {
 /// no production path may re-spawn on a quota stop. Pins BOTH halves: the
 /// crate's single `HeadlessCall` site stays singular, and no production
 /// source loops around a limit check.
+// pin: no production path spawns again on a quota stop —
+// no test spawns the vendor CLI, so only the source shows it.
 #[test]
 fn no_adapter_side_retry_of_a_quota_stop() {
     fn sources(dir: &std::path::Path, out: &mut Vec<String>) {

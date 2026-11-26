@@ -42,6 +42,8 @@ mod tests {
     /// never write it, require it, or even name it. Fragments are assembled with
     /// `concat!` so this assertion cannot match ITSELF — and the scan runs over
     /// every source file in the crate, not just this one.
+    // pin: the crate never writes or names the plain ignore file —
+    // it is an absence in the source, which no behavior test can see.
     #[test]
     fn no_cursorignore_anywhere_in_the_crate() {
         // Recursive: an ADR-0022 `foo.rs` + `foo/` split must not silently drop a

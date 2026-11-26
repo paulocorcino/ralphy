@@ -206,6 +206,8 @@ mod tests {
     /// The verdict must never be derived from an exit status — pin the source, since
     /// no test here spawns a real child. Fragments assembled with `concat!` so the
     /// assertion cannot match itself.
+    // pin: the login verdict comes from the status JSON, never the exit code —
+    // no test spawns `cursor-agent status`, so only the source shows it.
     #[test]
     fn the_verdict_never_reads_an_exit_status() {
         let production = crate::tests::production_text(include_str!("auth.rs"));
