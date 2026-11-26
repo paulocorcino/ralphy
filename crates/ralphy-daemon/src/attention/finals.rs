@@ -79,8 +79,7 @@ impl Finals {
             _ => FinishedRun {
                 repo: slug.to_owned(),
                 stamp,
-                ended: chrono::DateTime::<chrono::Utc>::from(written)
-                    .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                ended: crate::agent_state::system_secs_z(written),
                 snapshot: read(dir)?,
             },
         };

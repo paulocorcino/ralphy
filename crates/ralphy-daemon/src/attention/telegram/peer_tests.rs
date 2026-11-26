@@ -139,8 +139,7 @@ fn waiting(open_secs: u64) -> AttentionRequest {
         repo: Some("owner/app".to_owned()),
         run: None,
         issue: None,
-        since: chrono::DateTime::<chrono::Utc>::from(since)
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        since: crate::agent_state::system_secs_z(since),
         detail: Some("permission: Bash".to_owned()),
         dismissable: false,
     }

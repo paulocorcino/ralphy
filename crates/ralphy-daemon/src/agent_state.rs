@@ -26,6 +26,11 @@ use serde_json::Value;
 
 use crate::session::Agent;
 
+/// `t` as `2026-11-26T13:00:00Z`; a time outside the calendar is the epoch.
+pub(crate) fn system_secs_z(t: SystemTime) -> String {
+    ralphy_time::secs_z(jiff::Timestamp::try_from(t).unwrap_or_default())
+}
+
 pub mod fold;
 
 mod antigravity;
@@ -105,8 +110,7 @@ impl AgentState {
     pub fn unreported(why: Unreported, reason: String, since: SystemTime) -> Self {
         AgentState {
             state: None,
-            since: chrono::DateTime::<chrono::Utc>::from(since)
-                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            since: system_secs_z(since),
             detail: None,
             source: Some(why),
             reason: Some(reason),
@@ -337,8 +341,7 @@ impl HookVendor {
         if self.sends_a_grant() {
             return None;
         }
-        let ts = chrono::DateTime::<chrono::Utc>::from(now)
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let ts = system_secs_z(now);
         Some(observed(fold.operator_input(ts)?, now))
     }
 

@@ -279,7 +279,11 @@ fn finished_request(run: &FinishedRun, issue: &IssueBlock) -> Option<AttentionRe
 /// finished, has `number` in its issues. The order is the snapshots' own
 /// `started_at`; a run whose start cannot be read is never "after".
 fn worked_again(runs: &RunsRead, run: &FinishedRun, number: u64) -> bool {
-    let started = |snap: &RunSnapshot| chrono::DateTime::parse_from_rfc3339(&snap.started_at).ok();
+    let started = |snap: &RunSnapshot| {
+        ralphy_time::parse_rfc3339(&snap.started_at)
+            .ok()
+            .map(|(at, _)| at)
+    };
     let Some(this) = started(&run.snapshot) else {
         return false;
     };

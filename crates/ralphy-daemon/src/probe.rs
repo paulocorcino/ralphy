@@ -115,7 +115,7 @@ fn append(dir: &Path, records: &[Record], device: Option<&DeviceId>) -> Result<(
     let parent = path.parent().context("the probe file has no folder")?;
     owner_only::create_owner_only_dir(parent)?;
     rotate(&path)?;
-    let at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let at = ralphy_time::millis_z(jiff::Timestamp::now());
     let device = device.map(ToString::to_string);
     let mut out = Vec::new();
     for record in records {
@@ -207,6 +207,29 @@ mod tests {
             "{}",
             lines[0]
         );
+    }
+
+    #[tokio::test]
+    async fn the_probe_stamp_has_milliseconds() {
+        let dir = tempfile::tempdir().expect("a temp dir");
+        let payload = serde_json::json!({ "records": [record()] });
+        let reply = reply(payload, None, dir.path().to_path_buf()).await;
+        assert_eq!(reply["status"], "ok", "{reply}");
+        let text = std::fs::read_to_string(path_in(dir.path())).expect("the probe file");
+        let line: serde_json::Value = serde_json::from_str(text.trim()).expect("a JSON line");
+        let at = line["at"].as_str().expect("an at");
+        let bytes = at.as_bytes();
+        let digit_at = |i: usize| bytes.get(i).is_some_and(u8::is_ascii_digit);
+        let shape = at.len() == 24
+            && [4, 7].iter().all(|&i| bytes[i] == b'-')
+            && bytes[10] == b'T'
+            && [13, 16].iter().all(|&i| bytes[i] == b':')
+            && bytes[19] == b'.'
+            && bytes[23] == b'Z'
+            && [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18, 20, 21, 22]
+                .iter()
+                .all(|&i| digit_at(i));
+        assert!(shape, "{at}");
     }
 
     #[tokio::test]

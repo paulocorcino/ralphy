@@ -143,9 +143,9 @@ pub(crate) fn is_device(device: Option<&str>, this: Option<DeviceId>) -> bool {
 }
 
 fn line_secs(at: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(at)
+    ralphy_time::parse_rfc3339(at)
         .ok()
-        .map(|t| t.timestamp())
+        .map(|(t, _)| t.as_second())
 }
 
 /// Give each notice the summary of its device, when that device's page
