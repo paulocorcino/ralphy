@@ -21,6 +21,7 @@ members = [
     "crates/ralphy-pricing",
     "crates/ralphy-release",
     "crates/ralphy-telegram",
+    "crates/ralphy-time",
     "crates/xtask",
 ]
 
@@ -87,6 +88,7 @@ regex = "1"
 include_dir = "0.7"
 clap = { version = "4", features = ["derive"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+jiff = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono"] }
 indicatif = "0.18"
@@ -129,6 +131,7 @@ ralphy-usage-scan = { path = "crates/ralphy-usage-scan" }
 ralphy-pricing = { path = "crates/ralphy-pricing" }
 ralphy-release = { path = "crates/ralphy-release" }
 ralphy-telegram = { path = "crates/ralphy-telegram" }
+ralphy-time = { path = "crates/ralphy-time" }
 
 [profile.release]
 strip = true

@@ -138,6 +138,7 @@ The component names are CONTEXT.md terms.
 | Composition root (names every vendor, wires everything) | `ralphy-cli` |
 | Workbench UI | `crates/ralphy-daemon/assets/ui/` |
 | Process and PTY helpers | `ralphy-proc-util`, `ralphy-pty` |
+| Timestamp forms: the four written forms and the RFC 3339 and RFC 2822 readers (proposed, [ADR-0096](./adr/0096-one-crate-owns-the-timestamp-forms.md)) | `ralphy-time` |
 | Wording catalog, Text domain ([ADR-0078](./adr/0078-one-wording-catalog-for-every-surface.md)); Failure (planned) | the format in `ralphy-wording` (real, and read by `ralphy-cli` and, as a JSON module, by the workbench); the text in `assets/wording/<text-domain>.json`; the enum of each text domain in the crate that owns its facts |
 
 ## 5. Allowed edges
