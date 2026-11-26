@@ -342,6 +342,8 @@ test("a closed tunnel is grey and reconnecting; a silent daemon behind it is a f
   assert.ok(groupTitle(hostGroup("tunnel-silent")).includes("not answering"));
 });
 
+// pin: each group header draws its system icon and label and opens no menu —
+// the header is only markup, and node runs no Alpine over it.
 test("every group header shows its system's icon and the group label, and has no menu", () => {
   const html = readFileSync(join(import.meta.dirname, "../assets/ui/index.html"), "utf8");
   const start = html.indexOf('class="env-group"');
