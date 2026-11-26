@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
 use ralphy_adapter_support::agent_state::{self, Signal, StatusLine, WaitKind};
+use ralphy_proc_util::opencode::OpenCodeMajor;
 
 /// The file name of the status file under the run dir.
 pub(crate) const STATUS_FILE: &str = "agent-status.jsonl";
@@ -25,6 +26,23 @@ pub(crate) const PLUGIN_FILE: &str = "ralphy-state-plugin.js";
 
 /// The plugin source. The daemon writes the same file for a console.
 const STATE_PLUGIN: &str = include_str!("../../../assets/opencode/ralphy-state-plugin.js");
+
+/// The folder name of the 2.x state plugin under the run dir (2.x loads a
+/// folder, never a file).
+pub(crate) const PLUGIN_DIR_V2: &str = "ralphy-state-plugin-v2";
+
+/// The files of the 2.x plugin folder. The daemon writes the same files for a
+/// console.
+const STATE_PLUGIN_V2: [(&str, &str); 2] = [
+    (
+        "index.js",
+        include_str!("../../../assets/opencode/ralphy-state-plugin-v2/index.js"),
+    ),
+    (
+        "package.json",
+        include_str!("../../../assets/opencode/ralphy-state-plugin-v2/package.json"),
+    ),
+];
 
 // The same map is in `ralphy-daemon/src/agent_state/opencode.rs`, and it
 // stays two copies: the daemon imports no adapter crate (ADR-0059 §5). The
@@ -73,18 +91,19 @@ pub(crate) fn opencode_signal(line: &StatusLine) -> Option<Signal> {
 
 /// The run dir's status file, tailed from a thread while a child runs; each
 /// state change is emitted as an `agent state` event. `start` writes the
-/// state plugin, truncates the status file, and gives both paths to hand
-/// the child.
+/// state plugin of the major (a file on 1.x, a folder on 2.x), truncates the
+/// status file, and gives both paths to hand the child.
 pub(crate) struct Watcher {
     inner: agent_state::Watcher,
     plugin: PathBuf,
 }
 
 impl Watcher {
-    pub(crate) fn start(run_dir: &Path) -> anyhow::Result<Self> {
-        let plugin = run_dir.join(PLUGIN_FILE);
-        std::fs::write(&plugin, STATE_PLUGIN)
-            .with_context(|| format!("writing {}", plugin.display()))?;
+    pub(crate) fn start(run_dir: &Path, major: OpenCodeMajor) -> anyhow::Result<Self> {
+        let plugin = match major {
+            OpenCodeMajor::V1 => write_plugin_file(run_dir)?,
+            OpenCodeMajor::V2 => write_plugin_folder(run_dir)?,
+        };
         let inner = agent_state::Watcher::start(run_dir.join(STATUS_FILE), opencode_signal)?;
         Ok(Watcher { inner, plugin })
     }
@@ -94,7 +113,7 @@ impl Watcher {
         self.inner.path()
     }
 
-    /// The plugin file, for the `plugin` entry of the config.
+    /// The plugin file or folder, for the `plugin` entry of the config.
     pub(crate) fn plugin(&self) -> &Path {
         &self.plugin
     }
@@ -102,6 +121,23 @@ impl Watcher {
     pub(crate) fn stop(self) {
         self.inner.stop();
     }
+}
+
+fn write_plugin_file(run_dir: &Path) -> anyhow::Result<PathBuf> {
+    let plugin = run_dir.join(PLUGIN_FILE);
+    std::fs::write(&plugin, STATE_PLUGIN)
+        .with_context(|| format!("writing {}", plugin.display()))?;
+    Ok(plugin)
+}
+
+fn write_plugin_folder(run_dir: &Path) -> anyhow::Result<PathBuf> {
+    let folder = run_dir.join(PLUGIN_DIR_V2);
+    std::fs::create_dir_all(&folder).with_context(|| format!("creating {}", folder.display()))?;
+    for (name, text) in STATE_PLUGIN_V2 {
+        let file = folder.join(name);
+        std::fs::write(&file, text).with_context(|| format!("writing {}", file.display()))?;
+    }
+    Ok(folder)
 }
 
 #[cfg(test)]

@@ -3,6 +3,7 @@ use super::*;
 mod classic_screen;
 mod console_name;
 mod console_workflow;
+mod opencode_plugin;
 
 #[test]
 fn console_cwd_prefers_chosen_repo_then_falls_back_to_home() {

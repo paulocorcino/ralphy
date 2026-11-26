@@ -8,6 +8,7 @@ use super::*;
 #[tokio::test]
 async fn an_opencode_console_is_launched_with_the_state_plugin() {
     let dir = tempfile::tempdir().unwrap();
+    std::env::set_var("SESSION_TEST_CHILD_VERSION", "1.19.0");
     let (port, store) = start_daemon(dir.path()).await;
     let mut ws = page::console(
         port,

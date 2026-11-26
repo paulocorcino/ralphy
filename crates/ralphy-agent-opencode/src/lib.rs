@@ -51,10 +51,8 @@ mod usage;
 /// input)` (ADR-0025 §4). A future vision `OpenCode` flips this in its own crate.
 pub const ACCEPTS_IMAGES: bool = false;
 
-use command::{
-    build_opencode_command, build_watched_opencode_command, checked_opencode, RunArgs, StatePlugin,
-};
-use ralphy_proc_util::opencode::{LocatedOpenCode, OpenCodeMajor};
+use command::{build_watched_opencode_command, checked_opencode, RunArgs, StatePlugin};
+use ralphy_proc_util::opencode::LocatedOpenCode;
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, list_models, triage_issues};
 
 /// The `OpenCode` planning prompt, embedded so the binary is self-contained as a
@@ -138,7 +136,11 @@ impl OpenCodeAgent {
     ) -> Self {
         self.run_hook = Some(std::sync::Arc::new(hook));
         if self.version_seam.is_none() {
-            self = self.with_version(|| Ok(command::tests::located(OpenCodeMajor::V1)));
+            self = self.with_version(|| {
+                Ok(command::tests::located(
+                    ralphy_proc_util::opencode::OpenCodeMajor::V1,
+                ))
+            });
         }
         self
     }
@@ -164,9 +166,10 @@ impl OpenCodeAgent {
     }
 
     /// One `opencode run` call. The version is read first, so a refused
-    /// version spawns nothing. On 1.x the state plugin and the status file
-    /// are written in the run dir before the child starts, and the status
-    /// file is tailed while it runs (ADR-0085 D2); 2.x loads no plugin file.
+    /// version spawns nothing. The state plugin of the major (a file on 1.x,
+    /// a folder on 2.x) and the status file are written in the run dir before
+    /// the child starts, and the status file is tailed while it runs
+    /// (ADR-0085 D2, ADR-0094 D5b).
     fn run_watched(
         &self,
         skills_dir: &std::path::Path,
@@ -178,27 +181,21 @@ impl OpenCodeAgent {
         // Clock the budget at the spawn, not method entry, so the run_deadline
         // clamp isn't eroded by the preceding dir/skills setup.
         let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
-        let status = match located.version.major {
-            OpenCodeMajor::V1 => Some(status::Watcher::start(&self.run_dir)?),
-            OpenCodeMajor::V2 => None,
-        };
+        let status = status::Watcher::start(&self.run_dir, located.version.major)?;
         let run = RunArgs {
             model: self.model.as_deref(),
             variant: self.variant.as_deref(),
             root,
             skills_dir: Some(skills_dir),
         };
-        let cmd = match &status {
-            Some(s) => build_watched_opencode_command(
-                &located,
-                run,
-                &StatePlugin {
-                    plugin: s.plugin(),
-                    status: s.path(),
-                },
-            ),
-            None => build_opencode_command(&located, run),
-        };
+        let cmd = build_watched_opencode_command(
+            &located,
+            run,
+            &StatePlugin {
+                plugin: status.plugin(),
+                status: status.path(),
+            },
+        );
         #[cfg(test)]
         let r = match &self.run_hook {
             Some(hook) => hook(),
@@ -206,9 +203,7 @@ impl OpenCodeAgent {
         };
         #[cfg(not(test))]
         let r = self.run_opencode(cmd, prompt, timeout, kill_on_stderr_line);
-        if let Some(status) = status {
-            status.stop();
-        }
+        status.stop();
         r
     }
 

@@ -382,20 +382,29 @@ fn a_dropped_2x_variant_is_logged() {
     );
 }
 
+/// The 2.x command names the plugin folder under `plugin` (2.x loads a
+/// folder) and gives the plugin the status file; the deny map stays.
 #[test]
-fn a_2x_command_names_no_plugin() {
+fn a_2x_command_names_the_plugin_folder() {
+    let folder = Path::new("/run/ralphy-state-plugin-v2");
     let state = StatePlugin {
-        plugin: Path::new("/run/plugin.js"),
+        plugin: folder,
         status: Path::new("/run/status"),
     };
     let run = run_args(None, None, Path::new("/repo"), None);
     let cmd = build_watched_opencode_command(&located(OpenCodeMajor::V2), run, &state);
-    assert!(injected_config(&cmd).get("plugin").is_none());
-    assert!(!cmd.get_envs().any(|(k, _)| k == "RALPHY_STATUS_FILE"));
+    let cfg = injected_config(&cmd);
     assert_eq!(
-        injected_config(&cmd)["permission"]["bash"]["git push"],
-        "deny"
+        cfg["plugin"],
+        serde_json::json!([plugin_entry(folder)]),
+        "{cfg}"
     );
+    let status = cmd
+        .get_envs()
+        .find(|(k, _)| *k == "RALPHY_STATUS_FILE")
+        .and_then(|(_, v)| v);
+    assert_eq!(status, Some(Path::new("/run/status").as_os_str()));
+    assert_eq!(cfg["permission"]["bash"]["git push"], "deny");
 }
 
 /// The checked `OpenCode` of this host when it is 2.x; a live test skips otherwise.

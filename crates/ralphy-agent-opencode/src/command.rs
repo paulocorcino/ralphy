@@ -33,16 +33,15 @@ pub(crate) fn build_opencode_command(located: &LocatedOpenCode, run: RunArgs<'_>
     command_with(located, run, None)
 }
 
-/// The state plugin of a run (ADR-0085 D2): the plugin file `OpenCode` loads,
-/// and the status file the plugin appends to.
+/// The state plugin of a run (ADR-0085 D2): the plugin file (1.x) or folder
+/// (2.x) `OpenCode` loads, and the status file the plugin appends to.
 pub(crate) struct StatePlugin<'a> {
     pub(crate) plugin: &'a Path,
     pub(crate) status: &'a Path,
 }
 
-/// [`build_opencode_command`] for a plan or an execute. On 1.x it also loads
-/// the state plugin and points it at the status file; 2.x loads no plugin
-/// file (ADR-0094 D5a).
+/// [`build_opencode_command`] for a plan or an execute. It also loads the
+/// state plugin and points it at the status file, whatever the major.
 pub(crate) fn build_watched_opencode_command(
     located: &LocatedOpenCode,
     run: RunArgs<'_>,
@@ -71,16 +70,10 @@ fn command_with(
     state: Option<&StatePlugin<'_>>,
 ) -> Command {
     let mut cmd = Command::new(&located.program);
-    let state = match located.version.major {
-        OpenCodeMajor::V1 => {
-            v1_args(&mut cmd, run);
-            state
-        }
-        OpenCodeMajor::V2 => {
-            v2_args(&mut cmd, run);
-            None
-        }
-    };
+    match located.version.major {
+        OpenCodeMajor::V1 => v1_args(&mut cmd, run),
+        OpenCodeMajor::V2 => v2_args(&mut cmd, run),
+    }
     cmd.current_dir(run.root)
         .env("PWD", run.root)
         .stdin(Stdio::piped())
@@ -152,7 +145,7 @@ pub(crate) fn plugin_entry(path: &Path) -> String {
 /// 2.x reads the same key as its `shell` rules and refuses the call under
 /// `--auto` (measured with 2.3.2 on Windows).
 /// The map has no `"*"` entry, so the operator's own bash rules still apply.
-/// A 1.x plan or execute also names Ralphy's state plugin under `plugin`;
+/// A plan or execute also names Ralphy's state plugin under `plugin`;
 /// `OpenCode` joins that list with the operator's own plugins.
 fn opencode_config(skills_dir: Option<&Path>, plugin: Option<&Path>) -> String {
     let mut bash = serde_json::Map::new();
