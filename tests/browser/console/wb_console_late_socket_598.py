@@ -430,9 +430,14 @@ def main():
             page.wait_for_timeout(DEBOUNCE_MS)
             old = routes[-1]
             n = old["sock"]["n"]
+            # The page resumes as soon as the heartbeat is lost, so the store's
+            # one-second `presenceStale` sample can miss it: read the resume itself.
+            page.evaluate("() => { window.__resumes = [];"
+                          " WBDaemon.onPageResume((stale, trigger) => __resumes.push({ stale, trigger })); }")
             half_open_socket(old)
             known = len(seen.channels)
-            stale = pump(page, lambda: page.evaluate("() => Alpine.store('connection').presenceStale"), 15)
+            stale = pump(page, lambda: page.evaluate(
+                "() => __resumes.some((r) => r.stale && r.trigger === 'heartbeat')"), 15)
             pump(page, lambda: bool(on_socket_after(seen.channels[known:], n)), 15)
             fresh = on_socket_after(seen.channels[known:], n)
             fourth = fresh[0] if fresh else None
