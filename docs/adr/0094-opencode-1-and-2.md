@@ -166,6 +166,9 @@ The 1.x readers stay as they are. For 2.x (`stream-and-outcomes.md`, Q3 and Q4):
   on one scratch database at once with no error (Q5, *Two runs at once*). #1009 probes the
   case with the operator's state on Windows and WSL before it ships D6a. If the probe
   fails, this ADR is amended before the code, not worked around in it.
+  Result: the probe passed on Windows and WSL. A 2.3.2 `--standalone` run on the
+  operator's state exited 0 and committed while the service ran, and the service still
+  answered after it (`docs/research/opencode-2-spike/live-checks-1009.md`).
 - **D6e.** `opencode models` is a passthrough that writes nothing; it may use the
   service. #1009 passes `--standalone` to it when 2.x accepts the flag there, so a model
   list does not start a service the operator did not start.
@@ -232,20 +235,47 @@ As built by #1008 (commits `8b32f21e` and `a66a3c30`):
 
 ## Compliance
 
-- D1: not checked by code yet: #1009 adds an argv test per supported major and a test
-  that a third major and an unreadable version stop the run before the spawn.
-- D2: not checked by code yet: #1009 adds a parser test for both outputs, and a check that
-  no crate other than `ralphy-proc-util` runs `opencode --version`. The core-free rule is
-  checked by `daemon_manifest_has_no_vendor_dependency`
-  (`crates/ralphy-daemon/src/roster.rs`).
-- D3: not checked by code yet: #1009 adds one argv test per version in
-  `crates/ralphy-agent-opencode/src/command.rs`, each seen red, and a test that the
-  child gets `PWD` equal to its folder.
-- D4: not checked by code yet: #1009 adds tests that read the fixtures in
-  `crates/ralphy-agent-opencode/tests/fixtures/v1/` and `v2/`.
-- D5: not checked by code yet: #1009 adds a test that a 2.x command has no `plugin` entry.
-- D6: not checked by code yet: the argv test of D3 pins `--standalone`; D6d needs a live
-  vendor CLI and is a manual probe in #1009.
+- D1: checked by `the_1x_argv_is_unchanged` and `the_2x_argv_runs_standalone_with_auto`
+  (`crates/ralphy-agent-opencode/src/command/tests.rs`), and by
+  `a_third_major_stops_the_run_before_the_spawn` and
+  `an_unreadable_version_stops_the_run_before_the_spawn`
+  (`crates/ralphy-agent-opencode/src/phases.rs`).
+- D2: checked by `crates/ralphy-proc-util/src/opencode/tests.rs`
+  (`the_version_is_read_from_both_outputs`, `an_unreadable_version_is_refused`,
+  `a_third_major_is_refused_with_the_text_it_read`), by
+  `crates/ralphy-proc-util/tests/opencode_version.rs`
+  (`a_version_read_past_its_limit_is_unreadable`,
+  `the_opencode_version_is_read_once_per_binary`), by
+  `doctor_reads_the_opencode_version_through_proc_util`
+  (`crates/ralphy-cli/src/doctor/probe.rs`) and by `the_opencode_row_carries_its_version`
+  (`crates/ralphy-daemon/src/roster.rs`). The core-free rule is checked by
+  `daemon_manifest_has_no_vendor_dependency` (`crates/ralphy-daemon/src/roster.rs`).
+- D3: checked by `the_2x_argv_runs_standalone_with_auto`,
+  `a_2x_variant_without_a_model_is_not_passed`, `a_dropped_2x_variant_is_logged` and
+  `the_run_command_sets_pwd_to_its_folder`
+  (`crates/ralphy-agent-opencode/src/command/tests.rs`), and by
+  `an_opencode_console_sets_pwd_to_its_folder` (`crates/ralphy-daemon/src/session/spec/tests.rs`).
+  The deny map under `--auto` is checked live by `a_denied_call_is_refused_under_auto_on_2x`
+  (ignored by default; it needs a vendor CLI and a model that answers).
+- D4: checked by `v1_fixtures_classify_as_before` (`crates/ralphy-agent-opencode/src/events/tests.rs`)
+  and `crates/ralphy-agent-opencode/src/events/v2/tests.rs` (`v2_execute_fixtures_end_done`,
+  `a_2x_retry_event_is_not_an_error`, `the_2x_auth_fixture_is_the_auth_error`,
+  `every_2x_limit_type_is_an_unschedulable_limit`, `an_unknown_2x_error_type_is_stuck`),
+  which read `crates/ralphy-agent-opencode/tests/fixtures/v1/` and `v2/`. D4h is checked by
+  `a_1x_session_is_read_from_the_message_table`, `a_2x_session_is_read_from_session_message`
+  and `an_upgraded_database_reads_both_sessions` (`crates/ralphy-agent-opencode/src/usage.rs`)
+  and by `opencode_scan_reads_both_table_sets` (`crates/ralphy-usage-scan/src/opencode/tests.rs`).
+- D5: checked by `a_2x_command_names_the_plugin_folder`
+  (`crates/ralphy-agent-opencode/src/command/tests.rs`), `a_2x_watcher_writes_the_plugin_folder`
+  (`crates/ralphy-agent-opencode/src/status/tests.rs`) and `a_2x_console_loads_the_2x_plugin` and
+  `a_1x_console_keeps_the_file_plugin` (`crates/ralphy-daemon/src/session/spec/tests/opencode_plugin.rs`).
+  That the 2.x plugin writes the same status lines as 1.x is a live probe
+  (`docs/research/opencode-2-spike/plugin-v2.md`).
+- D6: D6a is checked by `the_2x_argv_runs_standalone_with_auto`, and D6e by
+  `the_models_command_follows_the_version` (`crates/ralphy-agent-opencode/src/tasks.rs`).
+  D6b and D6d need a live vendor CLI: the D6d probe passed on Windows and WSL
+  (`docs/research/opencode-2-spike/live-checks-1009.md`), and the live acceptance
+  runs are in `docs/spike/evidence/1009-opencode-1-and-2-live.md`.
 - D7: not checked by code: needs a live vendor CLI; manual, reviewed in the PR of the
   console change.
 - D8: checked by `crates/ralphy-proc-util/src/opencode/tests.rs`

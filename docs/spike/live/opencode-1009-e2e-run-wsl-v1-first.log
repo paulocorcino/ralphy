@@ -1,0 +1,61 @@
+$ (cwd = the clone; scratch opencode-ai 1.19.0 first on PATH; XDG_* under <root>/xdg-v1) /tmp/ralphy-1009-e2e/ralphy/target/debug/ralphy run --repo . --agent opencode --only-issue 136 --branch-mode current --plan-model opencode/deepseek-v4.1-flash-free --exec-model opencode/deepseek-v4.1-flash-free --max-minutes-per-issue 25 --no-telegram --verbose
+2026-11-25 21:49:43  INFO ralphy::run: ralphy run repo=/tmp/ralphy-1009-e2e/repos/wsl-v1 stamp=20261125-214943 dry_run=false
+🐻 Ralphy - v0.1.0-rc.46
+wsl-v1 · e2e · https://github.com/<user>/FinCal
+2026-11-25 21:49:45  INFO ralphy_core::emit: queue built count=1 order=#136 stop_before=0 issues_json=[{"number":136,"title":"Smoke e2e wsl-v1: add a marker file","labels":["ready-for-agent"],"queue_status":"eligible","skip_reason":null,"blocked_by":[],"position":1}] assignee_filter= scope=issue #136
+2026-11-25 21:49:45  INFO ralphy_core::emit: run started repo=<user>/FinCal queue_labels=ready-for-agent,AFK agent="opencode" plan_agent="opencode" branch_mode="current" base=origin/main deadline_hours=0.0
+2026-11-25 21:49:48  INFO ralphy_core::runner::branch: running in place on current branch branch=e2e
+2026-11-25 21:49:49  INFO ralphy_core::emit: issue started number=136 title=Smoke e2e wsl-v1: add a marker file
+2026-11-25 21:49:49  INFO ralphy_core::emit: planning cmd=opencode run model=opencode/deepseek-v4.1-flash-free effort= variant=
+2026-11-25 21:50:02  INFO ralphy_core::emit: agent state state="done" since="2026-11-26T00:50:02.248Z" detail=""
+2026-11-25 21:50:03  INFO ralphy_core::emit: agent state state="working" since="2026-11-26T00:50:03.014Z" detail=""
+2026-11-25 21:50:32  INFO ralphy_core::emit: agent state state="done" since="2026-11-26T00:50:32.730Z" detail=""
+2026-11-25 21:50:33  INFO ralphy_agent_opencode::phases: opencode plan resolved model model="<unknown>"
+2026-11-25 21:50:33  INFO ralphy_core::emit: plan written number=136 open_steps=3 up=0 cr=0 cw=0 out=0 model="" steps_json=[{"status":"open","text":"Create directory `smoke/` and file `smoke/e2e-wsl-v1.txt` containing exactly the single line `ok` (newline-terminated)."},{"status":"open","text":"Stage and commit only `smoke/e2e-wsl-v1.txt` with a message referencing the smoke check (e.g. `chore: add smoke e2e marker for wsl-v1`); leave every other path untouched."},{"status":"open","text":"Run the green gate: `sh -c \"test \\\"$(wc -l < smoke/e2e-wsl-v1.txt)\\\" -eq 1 && grep -qx ok smoke/e2e-wsl-v1.txt\"` and confirm exit 0, and confirm `git show --stat HEAD` lists only `smoke/e2e-wsl-v1.txt`."}]
+2026-11-25 21:50:33  INFO ralphy_core::emit: plan opened number=136 plan_md=# Plan for #136: Smoke e2e wsl-v1: add a marker file
+
+## Feasible: yes
+Trivial, fully specified: create `smoke/e2e-wsl-v1.txt` containing exactly one line `ok` and commit it. No `smoke/` directory exists yet on the working tree or on any ref (`git log --all --oneline -- smoke/e2e-wsl-v1.txt` empty), and `smoke/` is not ignored by `.gitignore`.
+
+## Done when
+- `smoke/e2e-wsl-v1.txt` exists, contains exactly one line, and that line is the literal `ok` — proven by `sh -c "test \"$(wc -l < smoke/e2e-wsl-v1.txt)\" -eq 1 && grep -qx ok smoke/e2e-wsl-v1.txt"` exiting 0.
+- The new file is committed (issue body: "Commit the file").
+
+## Acceptance ledger
+- [verified] `smoke/e2e-wsl-v1.txt` exists and holds `ok`. — evidence: `sh -c "test \"$(wc -l < smoke/e2e-wsl-v1.txt)\" -eq 1 && grep -qx ok smoke/e2e-wsl-v1.txt"` exits 0 (exactly one line, equal to `ok`).
+
+## Verify
+sh -c "test \"$(wc -l < smoke/e2e-wsl-v1.txt)\" -eq 1 && grep -qx ok smoke/e2e-wsl-v1.txt"
+
+## Decisions
+- Decision: omit the self-review step. Why: the change is a single-line data file with no control flow or domain logic, so a reviewer pass yields no information.
+- Decision: commit the file directly on the run branch as the issue instructs. Why: body explicitly says "Commit the file".
+
+## Caveats
+- Issue is a temporary live smoke check, to be closed after the check (source: #136 body) — handled: plan stays minimal and changes nothing beyond the marker file.
+- `.ralphy/` is gitignored (source: `.gitignore` line `.ralphy/`) — handled: this plan file is not part of the committed deliverable; only `smoke/e2e-wsl-v1.txt` is added.
+
+## Steps
+- [ ] Create directory `smoke/` and file `smoke/e2e-wsl-v1.txt` containing exactly the single line `ok` (newline-terminated).
+- [ ] Stage and commit only `smoke/e2e-wsl-v1.txt` with a message referencing the smoke check (e.g. `chore: add smoke e2e marker for wsl-v1`); leave every other path untouched.
+- [ ] Run the green gate: `sh -c "test \"$(wc -l < smoke/e2e-wsl-v1.txt)\" -eq 1 && grep -qx ok smoke/e2e-wsl-v1.txt"` and confirm exit 0, and confirm `git show --stat HEAD` lists only `smoke/e2e-wsl-v1.txt`.
+
+<!-- ralphy-plan: issue=136 -->
+
+2026-11-25 21:50:33  INFO ralphy_core::emit: executing cmd=opencode run budget_min=0 model=opencode/deepseek-v4.1-flash-free effort= variant=
+2026-11-25 21:50:34  INFO ralphy_core::emit: agent state state="done" since="2026-11-26T00:50:34.638Z" detail=""
+2026-11-25 21:50:35  INFO ralphy_core::emit: agent state state="working" since="2026-11-26T00:50:35.316Z" detail=""
+2026-11-25 21:50:59  INFO ralphy_core::emit: agent state state="done" since="2026-11-26T00:50:59.525Z" detail=""
+2026-11-25 21:50:59  INFO ralphy_agent_opencode::phases: opencode execution ended outcome=Done model="<unknown>" exited_cleanly=true timed_out=false committed=true saw_error=false
+2026-11-25 21:50:59  INFO ralphy_core::runner::phases::verify: verify gate — malformed `## Verify` section, issue not closed number=136 error=`## Verify` runs each command as argv with no shell, and its tokenizer does not honor backslash-escaped quotes (`\"`/`\'`). Rewrite with single outer quotes (e.g. `sh -c 'test "$x" = y'`) or as one bare command per line (e.g. a `python -c "..."` one-liner). Offending line(s): `sh -c "test \"$(wc -l < smoke/e2e-wsl-v1.txt)\" -eq 1 && grep -qx ok smoke/e2e-wsl-v1.txt"`
+2026-11-25 21:51:02  INFO ralphy_core::emit: verify gate failed — skipping issue number=136 summary=`## Verify` runs each command as argv with no shell, and its tokenizer does not honor backslash-escaped quotes (`\"`/`\'`). Rewrite with single outer quotes (e.g. `sh -c 'test "$x" = y'`) or as one bare command per line (e.g. a `python -c "..."` one-liner). Offending line(s): `sh -c "test \"$(wc -l < smoke/e2e-wsl-v1.txt)\" -eq 1 && grep -qx ok smoke/e2e-wsl-v1.txt"`
+2026-11-25 21:51:02  INFO ralphy_core::emit: run finished outcome="completed" issues_done=0 issues_skipped=1 issues_total=1 issues_blocked=0 issues_hitl=0 issues_json=[{"blocked_by":[],"kind":"verify_failed","number":136,"status":"skipped"}] up=0 cr=0 cw=0 out=0 duration_s=76
+2026-11-25 21:51:02  WARN ralphy_pricing: unknown model — add `big-pickle` to pricing.toml to price it model="big-pickle"
+2026-11-25 21:51:02  WARN ralphy_pricing: unknown model — add `claude-haiku-5-5` to pricing.toml to price it model="claude-haiku-5-5"
+2026-11-25 21:51:02  WARN ralphy_pricing: some tokens had no model attribution — not priced (shown as +?) model="unknown"
+[ok] 0 done · [blocked] 0 blocked · [skip] 1 skipped
+1 commit(s) on 'e2e'
+Clean run: 1 commit(s) added to 'e2e' in place.
+[undo]  undo (pre-run tag 'ralphy/pre-run-20261125-214943'): git reset --hard ralphy/pre-run-20261125-214943
+run: in 0 cr 0 cw 0 out 0 · $? · project: <user>/FinCal in 507.1k cr 3.8M cw 354.4k out 167.7k · $1.28+?
+exit=0

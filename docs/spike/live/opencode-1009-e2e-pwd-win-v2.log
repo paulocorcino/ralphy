@@ -1,0 +1,11 @@
+$ ls -A <root>/elsewhere  (cwd and PWD of the 2.x run)
+$ git -C <root>/elsewhere rev-parse --show-toplevel
+fatal: not a git repository (or any of the parent directories): .git
+$ git -C <root>/repos/win-v2 log --oneline -2
+4af63f1f feat: add smoke e2e marker file (#135)
+6092733e feat: enhance issue publishing scripts to resolve "Slice NN" dependencies for clickable links
+$ git -C <root>/repos/win-v1 log --oneline -2  (the other clone, untouched by the 2.x run)
+92cfddd2 chore: add smoke e2e win-v1 marker (#134)
+6092733e feat: enhance issue publishing scripts to resolve "Slice NN" dependencies for clickable links
+$ grep 'repo=' run log
+pwd check: pass when <root>/elsewhere is empty, is no git tree, and the 2.x clone has the commit

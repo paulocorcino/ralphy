@@ -1,0 +1,142 @@
+$ C:/Dev/ralphy/target/debug/ralphy.exe run --repo . --agent opencode --only-issue 134 --branch-mode current --plan-model opencode/deepseek-v4.1-flash-free --exec-model opencode/deepseek-v4.1-flash-free --max-minutes-per-issue 25 --no-telegram --verbose  (PATH: scratch opencode-ai 1.19.0 first; XDG_* under <root>/xdg-v1; GH_CONFIG_DIR = the gh config)
+2026-11-25 21:41:24  INFO ralphy::run: ralphy run repo=<home>/AppData/Local/Temp/ralphy-1009-e2e/repos/win-v1 stamp=20261125-214124 dry_run=false
+🐺 Ralphy - v0.1.0-rc.46
+win-v1 · e2e · https://github.com/<user>/FinCal
+2026-11-25 21:41:29  INFO ralphy_core::emit: queue built count=1 order=#134 stop_before=0 issues_json=[{"number":134,"title":"Smoke e2e win-v1: add a marker file","labels":["ready-for-agent"],"queue_status":"eligible","skip_reason":null,"blocked_by":[],"position":1}] assignee_filter= scope=issue #134
+2026-11-25 21:41:29  INFO ralphy_core::emit: run started repo=<user>/FinCal queue_labels=ready-for-agent,AFK agent="opencode" plan_agent="opencode" branch_mode="current" base=origin/main deadline_hours=0.0
+2026-11-25 21:41:32  INFO ralphy_core::runner::branch: running in place on current branch branch=e2e
+2026-11-25 21:41:33  INFO ralphy_core::emit: issue started number=134 title=Smoke e2e win-v1: add a marker file
+2026-11-25 21:41:33  INFO ralphy_core::emit: planning cmd=opencode run model=opencode/deepseek-v4.1-flash-free effort= variant=
+2026-11-25 21:41:46  INFO ralphy_core::emit: agent state state="done" since="2026-11-26T00:41:46.415Z" detail=""
+2026-11-25 21:41:47  INFO ralphy_core::emit: agent state state="working" since="2026-11-26T00:41:47.194Z" detail=""
+2026-11-25 21:43:30  INFO ralphy_core::emit: agent state state="done" since="2026-11-26T00:43:30.186Z" detail=""
+2026-11-25 21:43:30  INFO ralphy_agent_opencode::phases: opencode plan resolved model model="<unknown>"
+2026-11-25 21:43:30  INFO ralphy_core::emit: plan written number=134 open_steps=6 up=0 cr=0 cw=0 out=0 model="" steps_json=[{"status":"open","text":"Capture the RED baseline: run `git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt` and record that it exits 1 (path absent from HEAD). This is the failing oracle the change must flip."},{"status":"open","text":"Create `smoke/e2e-win-v1.txt` (new `smoke/` directory) containing exactly one line `ok` and nothing else."},{"status":"open","text":"`git add smoke/e2e-win-v1.txt` and commit with a repo-style message (`chore: add smoke e2e win-v1 marker`); stage only that path and confirm `git show --stat HEAD` lists only `smoke/e2e-win-v1.txt`."},{"status":"open","text":"Confirm the oracle flips GREEN: `git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt` exits 0; a miss control `git grep -q -E -e ^nope$ HEAD -- smoke/e2e-win-v1.txt` exits 1."},{"status":"open","text":"Self-review: adversarial re-read of `git show HEAD` — diff adds only `smoke/e2e-win-v1.txt`, content exactly `ok`, no stray tracked files, `git status --porcelain` empty apart from ignored paths."},{"status":"open","text":"Final green gate: re-run `git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt` and confirm exit 0."}]
+2026-11-25 21:43:30  INFO ralphy_core::emit: plan opened number=134 plan_md=# Plan for #134: Smoke e2e win-v1: add a marker file
+
+## Feasible: yes
+Fully specified, one-file change: create `smoke/e2e-win-v1.txt` holding exactly `ok`, commit it, touch nothing else. Nothing is pre-implemented — `smoke/` is absent from the working tree and from every ref (`git log --all --oneline -- smoke/` printed nothing this pass).
+
+## Done when
+- `smoke/e2e-win-v1.txt` is committed at HEAD and holds the single line `ok` — `git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt` exits 0 (oracle proven RED this pass: exits 1 today, path absent from HEAD; proven GREEN on a control, `^## Relationships$` over `CONTEXT.md` → exit 0).
+
+## Acceptance ledger
+- [verified] `smoke/e2e-win-v1.txt` exists and holds `ok`. — evidence: `git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt` exits 0 on the committed blob (RED before the change: exit 1).
+
+## Verify
+git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt
+
+## Decisions
+- Decision: gate on `git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt` instead of `findstr`. Why: findstr slash-options (`/X`, `/C:ok`) get mangled by MSYS path conversion in this shell (probed: `findstr /X /C:ok` tried to open `C:ok`), while git grep takes bare tokens the runner can spawn with no shell and asserts the committed blob — existence and exact content in one check.
+- Decision: no quoting around the pattern in `## Verify` (`^ok$`, not `"^ok$"`). Why: the runner tokenizes without a shell, so an unquoted pattern is passed literally; embedded quotes would be searched as characters if the tokenizer preserves them.
+- Decision: one commit adding only `smoke/e2e-win-v1.txt`, content `ok` + trailing newline (blob stored LF; `core.autocrlf=true`). Why: body says "Commit the file. Change nothing else."
+- Decision: keep the self-review step as the light variant (adversarial re-read of the single-commit diff), not the full `reviewer` skill. Why: pure-data one-line fixture, no control flow or domain logic; a multi-minute review pass buys nothing.
+
+## Caveats
+- `.ralphy/` is git-ignored (`.gitignore` line 2, plus `.ralphy/.gitignore` containing `*`) — handled: only `smoke/e2e-win-v1.txt` is staged/committed; plan and run artifacts never enter the commit.
+- Repo has no application code or test suite yet (root holds only `CONTEXT.md`, `docs/`, `scripts/`), so there is no build/test command to run — handled: the green gate is the content assertion above, and the final step runs it.
+- Issue is a temporary live check, "closed after the check" (source: #134 body) — handled: scope is exactly the marker file, no extra files or docs.
+- No `.ralphy/handoffs.md` or `.ralphy/knowledge/` exists (absent from the `.ralphy/` listing this pass) — handled: no predecessor knowledge to reconcile; no ref archaeology needed.
+- `docs/issues/14-smoke-e2e.md` describes an unrelated browser smoke test (app flow), not this marker file (source: file read this pass) — handled: ignored as a lead that does not bear on #134.
+
+## Steps
+- [ ] Capture the RED baseline: run `git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt` and record that it exits 1 (path absent from HEAD). This is the failing oracle the change must flip.
+- [ ] Create `smoke/e2e-win-v1.txt` (new `smoke/` directory) containing exactly one line `ok` and nothing else.
+- [ ] `git add smoke/e2e-win-v1.txt` and commit with a repo-style message (`chore: add smoke e2e win-v1 marker`); stage only that path and confirm `git show --stat HEAD` lists only `smoke/e2e-win-v1.txt`.
+- [ ] Confirm the oracle flips GREEN: `git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt` exits 0; a miss control `git grep -q -E -e ^nope$ HEAD -- smoke/e2e-win-v1.txt` exits 1.
+- [ ] Self-review: adversarial re-read of `git show HEAD` — diff adds only `smoke/e2e-win-v1.txt`, content exactly `ok`, no stray tracked files, `git status --porcelain` empty apart from ignored paths.
+- [ ] Final green gate: re-run `git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt` and confirm exit 0.
+
+<!-- ralphy-plan: issue=134 -->
+
+2026-11-25 21:43:30  INFO ralphy_core::emit: executing cmd=opencode run budget_min=0 model=opencode/deepseek-v4.1-flash-free effort= variant=
+2026-11-25 21:43:32  INFO ralphy_core::emit: agent state state="done" since="2026-11-26T00:43:32.594Z" detail=""
+2026-11-25 21:43:33  INFO ralphy_core::emit: agent state state="working" since="2026-11-26T00:43:33.534Z" detail=""
+2026-11-25 21:44:15  INFO ralphy_core::emit: agent state state="done" since="2026-11-26T00:44:15.708Z" detail=""
+2026-11-25 21:44:16  INFO ralphy_agent_opencode::phases: opencode execution ended outcome=Done model="<unknown>" exited_cleanly=true timed_out=false committed=true saw_error=false
+2026-11-25 21:44:16  INFO ralphy_core::runner::phases::verify: verify gate — running number=134 commands=1
+2026-11-25 21:44:17  INFO ralphy_core::runner::phases::verify: verify gate passed number=134
+2026-11-25 21:44:20  INFO ralphy_core::emit: green — issue closed number=134 tokens=0 invocations=2 up=0 cr=0 cw=0 out=0 model=""
+2026-11-25 21:44:20  INFO ralphy_core::emit: plan closed number=134 plan_md=# Plan for #134: Smoke e2e win-v1: add a marker file
+
+## Feasible: yes
+Fully specified, one-file change: create `smoke/e2e-win-v1.txt` holding exactly `ok`, commit it, touch nothing else. Nothing is pre-implemented — `smoke/` is absent from the working tree and from every ref (`git log --all --oneline -- smoke/` printed nothing this pass).
+
+## Done when
+- `smoke/e2e-win-v1.txt` is committed at HEAD and holds the single line `ok` — `git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt` exits 0 (oracle proven RED this pass: exits 1 today, path absent from HEAD; proven GREEN on a control, `^## Relationships$` over `CONTEXT.md` → exit 0).
+
+## Acceptance ledger
+- [verified] `smoke/e2e-win-v1.txt` exists and holds `ok`. — evidence: commit 92cfddd2; `git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt` exit 0 (RED baseline exit 1; miss control ^nope$ exit 1); blob content = `ok` + LF.
+
+## Verify
+git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt
+
+## Decisions
+- Decision: gate on `git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt` instead of `findstr`. Why: findstr slash-options (`/X`, `/C:ok`) get mangled by MSYS path conversion in this shell (probed: `findstr /X /C:ok` tried to open `C:ok`), while git grep takes bare tokens the runner can spawn with no shell and asserts the committed blob — existence and exact content in one check.
+- Decision: no quoting around the pattern in `## Verify` (`^ok$`, not `"^ok$"`). Why: the runner tokenizes without a shell, so an unquoted pattern is passed literally; embedded quotes would be searched as characters if the tokenizer preserves them.
+- Decision: one commit adding only `smoke/e2e-win-v1.txt`, content `ok` + trailing newline (blob stored LF; `core.autocrlf=true`). Why: body says "Commit the file. Change nothing else."
+- Decision: keep the self-review step as the light variant (adversarial re-read of the single-commit diff), not the full `reviewer` skill. Why: pure-data one-line fixture, no control flow or domain logic; a multi-minute review pass buys nothing.
+
+## Caveats
+- `.ralphy/` is git-ignored (`.gitignore` line 2, plus `.ralphy/.gitignore` containing `*`) — handled: only `smoke/e2e-win-v1.txt` is staged/committed; plan and run artifacts never enter the commit.
+- Repo has no application code or test suite yet (root holds only `CONTEXT.md`, `docs/`, `scripts/`), so there is no build/test command to run — handled: the green gate is the content assertion above, and the final step runs it.
+- Issue is a temporary live check, "closed after the check" (source: #134 body) — handled: scope is exactly the marker file, no extra files or docs.
+- No `.ralphy/handoffs.md` or `.ralphy/knowledge/` exists (absent from the `.ralphy/` listing this pass) — handled: no predecessor knowledge to reconcile; no ref archaeology needed.
+- `docs/issues/14-smoke-e2e.md` describes an unrelated browser smoke test (app flow), not this marker file (source: file read this pass) — handled: ignored as a lead that does not bear on #134.
+
+## Steps
+- [x] Capture the RED baseline: run `git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt` and record that it exits 1 (path absent from HEAD). This is the failing oracle the change must flip.
+- [x] Create `smoke/e2e-win-v1.txt` (new `smoke/` directory) containing exactly one line `ok` and nothing else.
+- [x] `git add smoke/e2e-win-v1.txt` and commit with a repo-style message (`chore: add smoke e2e win-v1 marker`); stage only that path and confirm `git show --stat HEAD` lists only `smoke/e2e-win-v1.txt`.
+- [x] Confirm the oracle flips GREEN: `git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt` exits 0; a miss control `git grep -q -E -e ^nope$ HEAD -- smoke/e2e-win-v1.txt` exits 1.
+- [x] Self-review: adversarial re-read of `git show HEAD` — diff adds only `smoke/e2e-win-v1.txt`, content exactly `ok`, no stray tracked files, `git status --porcelain` empty apart from ignored paths.
+- [x] Final green gate: re-run `git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt` and confirm exit 0.
+
+<!-- ralphy-plan: issue=134 -->
+
+
+## Notes & decisions
+- RED baseline before change: oracle exit 1 (path absent). After commit 92cfddd2: exit 0; miss control exit 1.
+- git warned LF->CRLF on add; blob stored as LF (`ok` + LF) — oracle ^ok$ matches as planned.
+
+## Self-review findings
+- 0 HIGH, 0 MEDIUM, 0 LOW. Light adversarial re-read of `git show HEAD`: diff adds only smoke/e2e-win-v1.txt, content exactly `ok`, no stray tracked files, `git status --porcelain` empty.
+
+## Plan friction
+- none
+
+## Handoff
+- **Delivered**: smoke/e2e-win-v1.txt (content `ok`) committed at 92cfddd2.
+- **Environment facts & traps**: git warned LF->CRLF on add (core.autocrlf=true); blob still stored LF so ^ok$ oracle matches. No blocker.
+- **Commands that work**: `git grep -q -E -e ^ok$ HEAD -- smoke/e2e-win-v1.txt` (exit 0 = pass).
+- **Residue**: none.
+- **Knowledge used**: none (no handoffs.md/knowledge/ existed).
+
+2026-11-25 21:44:23  INFO ralphy_core::runner::artifacts: knowledge note written number=134 path=<home>/AppData/Local/Temp/ralphy-1009-e2e/repos/win-v1\.ralphy\knowledge\issue-134.md
+2026-11-25 21:44:23  INFO ralphy_core::runner::artifacts: knowledge citations recorded number=134 citations=1
+2026-11-25 21:44:23  INFO ralphy_core::emit: consolidating knowledge count=1
+2026-11-25 21:44:23  INFO ralphy_agent_opencode::tasks: consolidating knowledge with opencode run model=None
+2026-11-25 21:45:06  INFO ralphy_core::emit: knowledge consolidated count=1
+2026-11-25 21:45:06  INFO ralphy_core::emit: run finished outcome="completed" issues_done=1 issues_skipped=0 issues_total=1 issues_blocked=0 issues_hitl=0 issues_json=[{"number":134,"status":"done"}] up=0 cr=0 cw=0 out=0 duration_s=221
+2026-11-25 21:45:06  WARN ralphy_pricing: unknown model — add `big-pickle` to pricing.toml to price it model="big-pickle"
+2026-11-25 21:45:06  WARN ralphy_pricing: unknown model — add `claude-haiku-5-5` to pricing.toml to price it model="claude-haiku-5-5"
+2026-11-25 21:45:06  WARN ralphy_pricing: unknown model — add `gpt-6-luna` to pricing.toml to price it model="gpt-6-luna"
+2026-11-25 21:45:06  WARN ralphy_pricing: unknown model — add `mai-code-1.1-flash` to pricing.toml to price it model="mai-code-1.1-flash"
+2026-11-25 21:45:06  WARN ralphy_pricing: some tokens had no model attribution — not priced (shown as +?) model="unknown"
+[ok] 1 done · [blocked] 0 blocked · [skip] 0 skipped
+1 commit(s) on 'e2e'
+Clean run: 1 commit(s) added to 'e2e' in place.
+[undo]  undo (pre-run tag 'ralphy/pre-run-20261125-214124'): git reset --hard ralphy/pre-run-20261125-214124
+run: in 0 cr 0 cw 0 out 0 · $? · project: <user>/FinCal in 25.0M cr 521.9M cw 752.1k out 3.2M · $37.12+?
+exit=0
+
+--- the run's result in its issue list
+--- git -C <root>/repos/win-v1 log --oneline -2
+92cfddd2 chore: add smoke e2e win-v1 marker (#134)
+6092733e feat: enhance issue publishing scripts to resolve "Slice NN" dependencies for clickable links
+--- git -C <root>/repos/win-v1 show --stat HEAD
+chore: add smoke e2e win-v1 marker (#134)
+
+ smoke/e2e-win-v1.txt | 1 +
+ 1 file changed, 1 insertion(+)
+--- git -C <root>/repos/win-v1 status --porcelain
