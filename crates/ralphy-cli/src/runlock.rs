@@ -118,10 +118,32 @@ pub(crate) fn guard_run_lock(
     Ok(())
 }
 
+/// A lock's `started_at` as `YYYY-MM-DD HH:MM:SS` at its own offset; the raw text when unreadable.
+pub(crate) fn since_text(started_at: &str) -> String {
+    ralphy_time::parse_rfc3339(started_at).map_or_else(
+        |_| started_at.to_owned(),
+        |(at, offset)| {
+            offset
+                .to_datetime(at)
+                .strftime("%Y-%m-%d %H:%M:%S")
+                .to_string()
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU32, Ordering};
+
+    #[test]
+    fn since_text_keeps_the_offset_of_the_lock() {
+        assert_eq!(
+            since_text("2026-11-26T10:05:09.123-03:00"),
+            "2026-11-26 10:05:09"
+        );
+        assert_eq!(since_text("not a time"), "not a time");
+    }
 
     /// Hand-rolled unique temp dir (same idiom as `tmp_ws` in config.rs).
     fn tmp_lock(name: &str) -> PathBuf {
