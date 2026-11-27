@@ -7,6 +7,7 @@ mod agent_state;
 mod attempt;
 mod replay;
 mod resume;
+mod start_notice;
 
 /// Attaches while a pump publishes `chunks`, with one attach in the middle
 /// for certain: the pump publishes the first half, waits until the test

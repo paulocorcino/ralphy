@@ -236,7 +236,10 @@ impl SessionManager {
     ) -> Result<(SessionId, Attachment)> {
         // The PTY and the screen start at the same clamped size (ADR-0079 D3).
         (spec.rows, spec.cols) = screen::clamp_size(spec.rows, spec.cols);
-        let kept = KeptOutput::new(id, spec.rows, spec.cols);
+        let mut kept = KeptOutput::new(id, spec.rows, spec.cols);
+        if let Some(notice) = spec.start_notice.take() {
+            kept.push(notice.as_bytes());
+        }
         // Lifted before the spec is consumed by the spawn.
         let name = spec.name.clone();
         let unreported = spec
