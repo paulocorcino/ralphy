@@ -9,38 +9,6 @@ fn verify_section(line: &str) -> String {
 }
 
 #[test]
-fn verify_gate_passes_and_issue_closes() {
-    // A plan with a `## Verify` section whose command passes: the runner re-runs
-    // it, sees it pass, posts the honesty artifact, and closes the issue.
-    let root = test_dir("q-verify-pass");
-    let agent =
-        ScriptedAgent::new(vec![Outcome::Done]).with_plan_extra(verify_section(verify_ok_line()));
-    let tracker = RecordingTracker::default();
-
-    let (report, _) = run_on_fake(
-        &test_cfg(&root, "stamp-verify-pass"),
-        &[test_issue(1)],
-        &agent,
-        &tracker,
-    );
-
-    assert!(
-        report.stop.is_none(),
-        "a passing gate does not stop the run"
-    );
-    assert_eq!(closed(&tracker), vec![1], "issue closed on a passing gate");
-    let comments = tracker.comments.borrow();
-    assert!(
-        comments
-            .iter()
-            .any(|(n, b)| *n == 1 && b.contains("## Verify (Ralphy run stamp-verify-pass)")),
-        "verify artifact comment posted on pass: {comments:?}"
-    );
-
-    remove_scratch(&root);
-}
-
-#[test]
 fn a_resumed_plan_with_every_step_done_runs_the_gates_and_closes() {
     // A finalized plan with every step checked is finished work: the runner
     // skips the executor, runs the gates, and closes the issue. It never parks
@@ -171,66 +139,65 @@ fn verify_gate_repairs_then_closes() {
     remove_scratch(&root);
 }
 
-#[test]
-fn verify_none_opts_out_and_skips_settings_fallback() {
-    // `## Verify: none` is the explicit opt-out: even with a failing settings
-    // fallback configured, the gate is skipped and the issue closes.
-    let root = test_dir("q-verify-none");
-    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_plan_extra("## Verify\n\nnone\n");
-    let tracker = RecordingTracker::default();
-    let mut config = test_cfg(&root, "stamp-verify-none");
-    config.verify_fallback = Some(vec![tokenize(verify_fail_line())]);
-
-    let (report, _) = run_on_fake(&config, &[test_issue(1)], &agent, &tracker);
-
-    assert!(report.stop.is_none(), "opt-out closes without a gate");
-    assert_eq!(
-        closed(&tracker),
-        vec![1],
-        "issue closed under `## Verify: none`"
-    );
-    assert!(
-        !tracker
-            .comments
-            .borrow()
-            .iter()
-            .any(|(_, b)| b.contains("## Verify (")),
-        "opt-out posts no verify artifact"
-    );
-
-    remove_scratch(&root);
+struct VerifySectionRow {
+    name: &'static str,
+    plan_extra: Option<&'static str>,
+    closed: Vec<u64>,
+    artifact: Option<&'static str>,
 }
 
 #[test]
-fn verify_falls_back_to_settings_when_plan_section_absent() {
-    // No `## Verify` in the plan: the settings fallback runs, fails on every
-    // attempt, and the issue is skipped without stopping the run.
-    let root = test_dir("q-verify-fallback");
-    let agent = ScriptedAgent::new(vec![Outcome::Done]);
-    let tracker = RecordingTracker::default();
-    let mut config = test_cfg(&root, "stamp-verify-fallback");
-    config.verify_fallback = Some(vec![tokenize(verify_fail_line())]);
+fn the_verify_section_decides_the_gate() {
+    // Both rows carry a failing settings fallback. `none` opts out of every
+    // gate; an absent section runs the fallback, which fails and skips the issue.
+    let rows = [
+        VerifySectionRow {
+            name: "none opts out and skips the settings fallback",
+            plan_extra: Some(
+                "## Verify
 
-    let (report, _) = run_on_fake(&config, &[test_issue(1)], &agent, &tracker);
+none
+",
+            ),
+            closed: vec![1],
+            artifact: None,
+        },
+        VerifySectionRow {
+            name: "an absent section falls back to the settings",
+            plan_extra: None,
+            closed: vec![],
+            artifact: Some("Verify gate FAILED"),
+        },
+    ];
+    for row in rows {
+        let root = test_dir("q-verify-section");
+        let mut agent = ScriptedAgent::new(vec![Outcome::Done]);
+        if let Some(extra) = row.plan_extra {
+            agent = agent.with_plan_extra(extra);
+        }
+        let tracker = RecordingTracker::default();
+        let mut config = test_cfg(&root, "stamp-verify-section");
+        config.verify_fallback = Some(vec![tokenize(verify_fail_line())]);
 
-    assert!(
-        report.stop.is_none(),
-        "a failed fallback gate skips the issue, it does not stop the run: {:?}",
-        report.stop
-    );
-    assert!(
-        tracker.closes.borrow().is_empty(),
-        "fallback gate failure leaves the issue open"
-    );
-    let comments = tracker.comments.borrow();
-    assert!(
-        comments
-            .iter()
-            .any(|(n, b)| *n == 1 && b.contains("Verify gate FAILED")),
-        "fallback gate failure posts the verify artifact: {comments:?}"
-    );
+        let (report, _) = run_on_fake(&config, &[test_issue(1)], &agent, &tracker);
 
-    remove_scratch(&root);
+        let name = row.name;
+        assert!(report.stop.is_none(), "{name}: the run does not stop");
+        assert_eq!(closed(&tracker), row.closed, "{name}: closed issues");
+        let comments = tracker.comments.borrow();
+        match row.artifact {
+            Some(text) => assert!(
+                comments.iter().any(|(n, b)| *n == 1 && b.contains(text)),
+                "{name}: the artifact says {text:?}: {comments:?}"
+            ),
+            None => assert!(
+                !comments.iter().any(|(_, b)| b.contains("## Verify (")),
+                "{name}: no verify artifact is posted"
+            ),
+        }
+
+        remove_scratch(&root);
+    }
 }
 
 #[test]

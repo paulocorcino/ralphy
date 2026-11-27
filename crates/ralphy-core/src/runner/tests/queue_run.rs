@@ -26,6 +26,14 @@ fn green_close_runs_through_fakes_only() {
     assert!(report.stop.is_none());
     assert_eq!(report.commits, 1, "commit count read through the fake");
     assert_eq!(*tracker.closes.borrow(), vec![7]);
+    assert!(
+        tracker
+            .comments
+            .borrow()
+            .iter()
+            .any(|(n, b)| *n == 7 && b.contains("## Verify (Ralphy run ut-green)")),
+        "the verify artifact is posted on a passing gate"
+    );
 
     // One plan + one execute ledger line, folded into the run totals.
     let phases: Vec<String> = sink
