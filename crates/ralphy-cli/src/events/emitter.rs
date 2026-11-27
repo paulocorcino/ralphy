@@ -49,6 +49,11 @@ pub(crate) struct Emitter {
 
 /// Detect the emitter identity for this process and repo. Every probe is
 /// best-effort and falls back to a safe default rather than failing.
+/// The numeric offset, `-03:00`, of `tz` at `now`.
+fn tz_text(now: jiff::Timestamp, tz: jiff::tz::TimeZone) -> String {
+    now.to_zoned_datetime(tz).strftime("%:z").to_string()
+}
+
 pub(crate) fn detect(repo_root: &Path) -> Emitter {
     Emitter {
         version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -62,10 +67,7 @@ pub(crate) fn detect(repo_root: &Path) -> Emitter {
         // Best-effort public egress IP (#96); falls back to the primary local IP,
         // then `0.0.0.0` when every probe fails (offline/firewalled host).
         ip: public_ip().unwrap_or_else(local_ip),
-        tz: jiff::Timestamp::now()
-            .to_zoned_datetime(jiff::tz::TimeZone::system())
-            .strftime("%:z")
-            .to_string(),
+        tz: tz_text(jiff::Timestamp::now(), jiff::tz::TimeZone::system()),
         // Daemon-only: the daemon injects DAEMON_ID_ENV on dispatched children;
         // an empty value is treated as absent (truthful absence off that path).
         daemon_id: std::env::var(DAEMON_ID_ENV).ok().filter(|s| !s.is_empty()),
@@ -236,9 +238,9 @@ mod tests {
 
     #[test]
     fn the_tz_field_is_a_numeric_offset() {
-        let shape = regex::Regex::new(r"^[+-]\d{2}:\d{2}$").expect("regex");
-        let tz = detect(Path::new(".")).tz;
-        assert!(shape.is_match(&tz), "tz: {tz}");
+        let at = jiff::Timestamp::new(1_795_698_309, 0).expect("a valid instant");
+        let tz = jiff::tz::TimeZone::fixed(jiff::tz::Offset::constant(-3));
+        assert_eq!(tz_text(at, tz), "-03:00");
     }
 
     #[test]
