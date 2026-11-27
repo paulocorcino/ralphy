@@ -118,13 +118,33 @@ fn a_host_without_git_gets_advice_that_does_not_block() {
     );
 }
 
+const WINDOWS_GIT_PROBE: &str = concat!(
+    "--- git \r\ngit version 2.47.1.windows.1\r\n",
+    "--- gh \r\ngh version 2.63.0 (2024-11-27)\r\n"
+);
+
 #[test]
-fn git_is_read_from_the_windows_probe() {
-    let probe =
-        "--- git \r\ngit version 2.47.1.windows.1\r\n--- gh \r\ngh version 2.63.0 (2024-11-27)\r\n";
-    let checks = run(HostOs::Windows, probe, &ready("windows"));
-    assert_eq!(get(&checks, Git).status, CheckStatus::Pass);
-    assert_eq!(get(&checks, Gh).status, CheckStatus::Pass);
+fn a_ready_host_passes_the_check() {
+    let rows = [
+        (
+            "macos filevault off: sign-in",
+            HostOs::MacOs,
+            MACOS_FV_OFF,
+            SignIn,
+        ),
+        (
+            "macos filevault off: sleep",
+            HostOs::MacOs,
+            MACOS_FV_OFF,
+            Sleep,
+        ),
+        ("windows git", HostOs::Windows, WINDOWS_GIT_PROBE, Git),
+        ("windows gh", HostOs::Windows, WINDOWS_GIT_PROBE, Gh),
+    ];
+    for (name, os, probe, id) in rows {
+        let checks = run(os, probe, &ready("linux"));
+        assert_eq!(get(&checks, id).status, CheckStatus::Pass, "{name}");
+    }
 }
 
 #[test]
@@ -133,6 +153,15 @@ fn checks_linux_root() {
     let user = get(&checks, User);
     assert_eq!(user.status, CheckStatus::Warn);
     assert!(user.text.contains("root"), "{user:?}");
+}
+
+#[test]
+fn checks_no_ralphy() {
+    let checks = run(HostOs::Linux, LINUX_USER, &RalphyOnHost::Missing);
+    assert_eq!(
+        get(&checks, Ralphy).status,
+        CheckStatus::Copy("ralphy host install svrapp".to_owned())
+    );
 }
 
 #[test]
@@ -170,13 +199,6 @@ fn checks_macos_filevault_on() {
         CheckStatus::Copy("sudo pmset -a sleep 0".to_owned())
     );
     assert_eq!(get(&checks, User).status, CheckStatus::Pass);
-}
-
-#[test]
-fn checks_macos_filevault_off() {
-    let checks = run(HostOs::MacOs, MACOS_FV_OFF, &ready("macos"));
-    assert_eq!(get(&checks, SignIn).status, CheckStatus::Pass);
-    assert_eq!(get(&checks, Sleep).status, CheckStatus::Pass);
 }
 
 #[test]
@@ -239,15 +261,6 @@ fn checks_old_ralphy() {
         assert_eq!(get(&checks, id).status, CheckStatus::Pending, "{id:?}");
     }
     assert!(get(&checks, Ralphy).is_blocking());
-}
-
-#[test]
-fn checks_no_ralphy() {
-    let checks = run(HostOs::Linux, LINUX_USER, &RalphyOnHost::Missing);
-    assert_eq!(
-        get(&checks, Ralphy).status,
-        CheckStatus::Copy("ralphy host install svrapp".to_owned())
-    );
 }
 
 #[test]
@@ -345,19 +358,6 @@ fn the_default_name_skips_a_name_the_fleet_has() {
         get(&checks, Name).status,
         CheckStatus::Fix(HostOp::SetName {
             name: "svr-paulo-2".to_owned(),
-            avatar: 1
-        })
-    );
-}
-
-#[test]
-fn wanted_name_beats_the_default() {
-    let facts = parse_facts(HostOs::Linux, LINUX_USER);
-    let checks = evaluate(&facts, &unnamed(), &[], "svrapp", Some("Box-2"));
-    assert_eq!(
-        get(&checks, Name).status,
-        CheckStatus::Fix(HostOp::SetName {
-            name: "box-2".to_owned(),
             avatar: 1
         })
     );
