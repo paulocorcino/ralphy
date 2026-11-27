@@ -69,63 +69,44 @@ fn parse_single_quotes_too() {
     );
 }
 
-/// A bulleted checklist is rejected at parse time: the leading `-` would tokenize
-/// into a bogus `-` program the gate spawn-fails on, so the real command never runs
-/// (#181). The error must name the offending line so the plan author can fix it.
+/// Markdown prose and an unparseable quote are rejected at parse time, and the error
+/// names the offending line (#181, #268). Each row: name, section body, substrings.
 #[test]
-fn parse_bulleted_list_is_invalid() {
-    let md = "## Verify\n\n- cargo test\n- cargo fmt --check\n";
-    match parse_verify(md) {
-        VerifySpec::Invalid(error) => {
-            assert!(
-                error.contains("one bare command per line"),
-                "names the contract: {error}"
-            );
-            assert!(error.contains("`- cargo test`"), "names offender: {error}");
-        }
-        other @ (VerifySpec::None | VerifySpec::Unspecified | VerifySpec::Commands(_)) => {
-            panic!("expected Invalid, got {other:?}")
+fn parse_invalid_sections_name_the_offender() {
+    let nested = "sh -c \"test \\\"$(git diff-tree --name-only -r HEAD)\\\" = \
+    \\\"README.md\\\"\"\n";
+    let cases: &[(&str, &str, &[&str])] = &[
+        (
+            "bulleted",
+            "- cargo test\n- cargo fmt --check\n",
+            &["one bare command per line", "`- cargo test`"],
+        ),
+        ("checkbox", "- [ ] cargo test\n", &["`- [ ] cargo test`"]),
+        (
+            "backtick prose",
+            "- `npm run lint` - passou, sem warnings\n",
+            &[],
+        ),
+        ("star bullet", "* cargo test\n", &[]),
+        ("bare backtick", "`cargo test`\n", &[]),
+        (
+            "nested escaped quote",
+            nested,
+            &["no shell", "backslash-escaped quotes", "sh -c"],
+        ),
+    ];
+    for (name, body, wanted) in cases {
+        match parse_verify(&format!("## Verify\n\n{body}")) {
+            VerifySpec::Invalid(error) => {
+                for part in *wanted {
+                    assert!(error.contains(part), "{name}: wants {part}: {error}");
+                }
+            }
+            other @ (VerifySpec::None | VerifySpec::Unspecified | VerifySpec::Commands(_)) => {
+                panic!("{name}: expected Invalid, got {other:?}")
+            }
         }
     }
-}
-
-/// A `- [ ]` checkbox line is markdown prose, not a command — rejected (#181).
-#[test]
-fn parse_checkbox_list_is_invalid() {
-    let md = "## Verify\n\n- [ ] cargo test\n";
-    match parse_verify(md) {
-        VerifySpec::Invalid(error) => {
-            assert!(
-                error.contains("`- [ ] cargo test`"),
-                "names offender: {error}"
-            );
-        }
-        other @ (VerifySpec::None | VerifySpec::Unspecified | VerifySpec::Commands(_)) => {
-            panic!("expected Invalid, got {other:?}")
-        }
-    }
-}
-
-/// The real-world trigger (#181): a backtick-wrapped command with trailing prose.
-/// The leading `-` and the backticks both mark it as markdown, not a command.
-#[test]
-fn parse_backtick_prose_is_invalid() {
-    let md = "## Verify\n\n- `npm run lint` — passou, sem warnings\n";
-    assert!(matches!(parse_verify(md), VerifySpec::Invalid(_)));
-}
-
-/// A `*`/`+` bullet or a bare backtick-wrapped command (no leading bullet) is also
-/// markdown prose — the leading backtick alone marks it (#181).
-#[test]
-fn parse_star_bullet_and_bare_backtick_are_invalid() {
-    assert!(matches!(
-        parse_verify("## Verify\n\n* cargo test\n"),
-        VerifySpec::Invalid(_)
-    ));
-    assert!(matches!(
-        parse_verify("## Verify\n\n`cargo test`\n"),
-        VerifySpec::Invalid(_)
-    ));
 }
 
 /// The clean bare-command path is untouched: a section that is one bare command
@@ -140,28 +121,6 @@ fn parse_bare_commands_unaffected() {
             vec!["cargo".into(), "fmt".into(), "--check".into()],
         ])
     );
-}
-
-/// The live #268 trigger: a cursor plan authored a defensive `sh -c` check with a
-/// nested backslash-escaped quote. The tokenizer cannot honor `\"`, so instead of
-/// mis-splitting it into a garbage argv that fails opaquely at runtime (spending the
-/// repair budget), it is rejected at parse time with an actionable message.
-#[test]
-fn parse_nested_escaped_quote_is_invalid() {
-    let md = "## Verify\n\nsh -c \"test \\\"$(git diff-tree --name-only -r HEAD)\\\" = \
-    \\\"README.md\\\"\"\n";
-    match parse_verify(md) {
-        VerifySpec::Invalid(error) => {
-            assert!(
-                error.contains("no shell") && error.contains("backslash-escaped quotes"),
-                "names the contract: {error}"
-            );
-            assert!(error.contains("sh -c"), "names offender: {error}");
-        }
-        other @ (VerifySpec::None | VerifySpec::Unspecified | VerifySpec::Commands(_)) => {
-            panic!("expected Invalid, got {other:?}")
-        }
-    }
 }
 
 /// The two tokenizer-safe rewrites of the same check parse cleanly to `Commands`:

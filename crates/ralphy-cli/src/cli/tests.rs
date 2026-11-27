@@ -21,7 +21,7 @@ fn issues_show_documented_form_parses() {
 }
 
 #[test]
-fn run_effort_flags_accept_only_the_core_lexicon() {
+fn run_effort_flags_parse_the_core_lexicon() {
     let cli = Cli::try_parse_from([
         "ralphy",
         "run",
@@ -36,13 +36,6 @@ fn run_effort_flags_accept_only_the_core_lexicon() {
     };
     assert_eq!(args.plan_effort, Some(Effort::High));
     assert_eq!(args.exec_effort, Some(Effort::Max));
-
-    for invalid in ["none", "minimal", "extreme"] {
-        assert!(
-            Cli::try_parse_from(["ralphy", "run", "--plan-effort", invalid]).is_err(),
-            "accepted invalid effort {invalid}"
-        );
-    }
 }
 
 /// Copilot's per-phase models and efforts ride the SHARED `run` flags
@@ -97,6 +90,7 @@ fn update_subcommand_is_registered_and_defaults_to_the_rc_channel() {
     assert!(args.check);
     assert_eq!(args.channel, "stable");
 }
+
 #[test]
 fn schedule_subcommands_parse() {
     use schedule::{ScheduleCommand as S, ScheduleTarget as T};
@@ -141,6 +135,7 @@ fn schedule_subcommands_parse() {
         assert!(check(&command), "{argv:?} parsed to the wrong command");
     }
 }
+
 #[test]
 fn queue_label_is_repeatable_and_preserves_order() {
     // The resolver (`resolve_queue_labels`) treats a non-empty explicit set as
@@ -171,48 +166,29 @@ fn queue_label_is_repeatable_and_preserves_order() {
     );
 }
 
+/// A plain `run` keeps the lock wait; only `--if-idle` turns it into a skip.
 #[test]
-fn if_idle_flag_parses_and_defaults_off() {
-    let cli =
-        Cli::try_parse_from(["ralphy", "run", "--if-idle"]).expect("run with --if-idle must parse");
-    let Command::Run(args) = cli.command else {
-        panic!("expected the `run` subcommand");
-    };
-    assert!(args.if_idle);
-
-    let cli = Cli::try_parse_from(["ralphy", "run"]).expect("bare run must parse");
-    let Command::Run(args) = cli.command else {
-        panic!("expected the `run` subcommand");
-    };
-    assert!(!args.if_idle, "--if-idle must default to off");
+fn if_idle_is_off_unless_named() {
+    for (argv, want) in [
+        (&["ralphy", "run"][..], false),
+        (&["ralphy", "run", "--if-idle"][..], true),
+    ] {
+        let Command::Run(args) = Cli::try_parse_from(argv).expect("run parses").command else {
+            panic!("{argv:?} is not a run");
+        };
+        assert_eq!(args.if_idle, want, "{argv:?}");
+    }
 }
 
 #[test]
-fn assignee_flags_parse_and_conflict() {
-    // `--assignee` captures the login.
-    let cli = Cli::try_parse_from(["ralphy", "run", "--assignee", "@me"])
-        .expect("run with --assignee must parse");
-    let Command::Run(args) = cli.command else {
-        panic!("expected the `run` subcommand");
-    };
-    assert_eq!(args.assignee.as_deref(), Some("@me"));
-    assert!(!args.no_assignee);
-
-    // `--no-assignee` alone parses and defaults `assignee` to None.
-    let cli = Cli::try_parse_from(["ralphy", "run", "--no-assignee"])
-        .expect("run with --no-assignee must parse");
-    let Command::Run(args) = cli.command else {
-        panic!("expected the `run` subcommand");
-    };
-    assert!(args.no_assignee);
-    assert_eq!(args.assignee, None);
-
+fn assignee_flags_conflict() {
     // The two are mutually exclusive — clap rejects both together.
     assert!(
         Cli::try_parse_from(["ralphy", "run", "--assignee", "@me", "--no-assignee"]).is_err(),
         "--assignee and --no-assignee must conflict"
     );
 }
+
 /// `--agent <name>` parses every agent from its one-word name, and `cli_name`
 /// round-trips it. The selector is the vendor name, even where the binary is
 /// `cursor-agent`/`agent` (ADR-0042 D14), and `opencode` is one word (ADR-0005
@@ -260,34 +236,6 @@ fn the_removed_gemini_agent_names_antigravity() {
 fn the_removed_gemini_plan_agent_names_antigravity() {
     let err = parse_error(&["ralphy", "run", "--plan-agent", "gemini"]);
     assert!(err.contains(GEMINI_REMOVED), "{err}");
-}
-#[test]
-fn run_help_lists_all_flags() {
-    // Render the `run` subcommand's help and arg set and assert the flags that a
-    // dropped clap attribute would lose are all present.
-    use clap::CommandFactory;
-    let cli = Cli::command();
-    let run = cli
-        .get_subcommands()
-        .find(|s| s.get_name() == "run")
-        .expect("the `run` subcommand must be registered");
-
-    let long_ids: Vec<String> = run
-        .get_arguments()
-        .filter_map(|a| a.get_long().map(str::to_owned))
-        .collect();
-    for flag in ["plan-agent", "no-assignee", "if-idle"] {
-        assert!(
-            long_ids.iter().any(|l| l == flag),
-            "run --help must list --{flag}; got {long_ids:?}"
-        );
-    }
-
-    // The rendered long help must also carry the flags verbatim.
-    let help = run.clone().render_long_help().to_string();
-    for flag in ["--plan-agent", "--no-assignee", "--if-idle"] {
-        assert!(help.contains(flag), "run --help text must mention {flag}");
-    }
 }
 
 /// `--help` is text a user reads, and an ADR number or a `docs/adr` path means

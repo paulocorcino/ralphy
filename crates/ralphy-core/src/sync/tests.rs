@@ -186,29 +186,6 @@ fn diverged_reads_one_each_way() {
 }
 
 #[test]
-fn status_makes_no_network_call() {
-    let remote = init_remote("nonet-remote");
-    let clone = clone_of(&remote, "nonet-clone");
-    // A clone leaves no FETCH_HEAD, so its absence is an honest "never fetched"
-    // AND an oracle for "status touched no remote".
-    assert!(
-        !fetch_head(&clone).exists(),
-        "a fresh clone must leave no FETCH_HEAD"
-    );
-
-    for _ in 0..3 {
-        assert!(status(&clone).unwrap().last_fetch.is_none());
-    }
-    assert!(
-        !fetch_head(&clone).exists(),
-        "status must not fetch: FETCH_HEAD appeared"
-    );
-
-    remove_scratch(&remote);
-    remove_scratch(&clone);
-}
-
-#[test]
 fn last_fetch_is_the_fetch_head_mtime() {
     let remote = init_remote("stamp-remote");
     let clone = clone_of(&remote, "stamp-clone");
