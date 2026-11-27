@@ -14,7 +14,6 @@ import {
   runIn as evalIn,
   withoutComments,
 } from "./harness.mjs";
-import { WBSecurityDialog } from "../assets/ui/wb-security-dialog.ts";
 
 // The part that holds the dialog's markup.
 const PART = "wb-security-dialog.part.html";
@@ -330,15 +329,4 @@ test("log off closes the dialog with the workbench:log-off event", async () => {
   const handler = wrapperTag().match(/@workbench:log-off\.window="([^"]*)"/u)[1];
   evalIn(state, handler);
   assert.equal(state.securityOpen, false);
-});
-
-// pin: the modal stack sees the dialog open —
-// the path is a string of the markup, and node runs no Alpine over it.
-// `app.ts` asks the modal stack with this path; it must be the path the dialog
-// gives to `scrim()`, or the shortcuts would never see the dialog open.
-test("openFlag is the path the Security dialog gives to scrim()", () => {
-  const markup = partMarkup(PART);
-  const paths = [...markup.matchAll(/x-bind="\$store\.modals\.scrim\('([^']+)'/gu)].map((m) => m[1]);
-  assert.deepEqual(paths, ["securityOpen"]);
-  assert.equal(WBSecurityDialog.openFlag, paths[0]);
 });

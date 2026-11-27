@@ -6,7 +6,9 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { WBColumns } from "../assets/ui/wb-columns.ts";
+import { WBChanges } from "../assets/ui/wb-changes.ts";
 import { createConsole } from "../assets/ui/wb-console.ts";
+import { WBGeometry } from "../assets/ui/wb-geometry.ts";
 import { createSpawn } from "../assets/ui/wb-console-spawn.ts";
 import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
 import { idLookups } from "./fake-document.mjs";
@@ -1075,6 +1077,61 @@ test("the pure folds mutate none of their arguments", () => {
     peer({ type: "beat", at: SEEN + 10 }),
     peer({ type: "tick", at: SEEN + WINDOW_MS + 1 }),
     peer({ type: "gone" }),
+    [
+      "stageExtent",
+      [
+        [
+          { left: 900, top: 40, width: 600, height: 380 },
+          { left: 40, top: 600, width: 600, height: 380 },
+        ],
+        { width: 1000, height: 700 },
+        200,
+      ],
+      (...args) => WBGeometry.stageExtent(...args),
+    ],
+    [
+      "fold",
+      [
+        {
+          status: "ok",
+          changes: {
+            changes: [
+              {
+                path: "docs/a.txt",
+                original_path: null,
+                status: "added",
+                index_status: "added",
+                worktree_status: "modified",
+              },
+            ],
+          },
+        },
+      ],
+      (...args) => WBChanges.fold(...args),
+    ],
+    [
+      "foldSync",
+      [
+        {
+          status: "ok",
+          sync: {
+            sync: {
+              head: { kind: "branch", name: "main" },
+              tracking: { upstream: "origin/main", ahead: 1, behind: 2 },
+              last_fetch: "2026-07-25T11:00:00Z",
+            },
+          },
+        },
+        Date.parse("2026-07-25T12:00:00Z"),
+      ],
+      (...args) => WBChanges.foldSync(...args),
+    ],
+    [
+      "discardConfirm",
+      [{ path: "a.txt", name: "a.txt", status: "untracked" }],
+      (...args) => WBChanges.discardConfirm(...args),
+      () => assert.equal(typeof WBChanges.discardConfirm().message, "string", "no input is answered"),
+    ],
     ["dragBegins", [{ x: 1, y: 2 }, { x: 30, y: 40 }, 10], (...args) => WB.dragBegins(...args)],
     [
       "isDoubleTap",

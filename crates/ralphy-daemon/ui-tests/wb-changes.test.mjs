@@ -5,11 +5,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { WBChanges } from "../assets/ui/wb-changes.ts";
 
-// The fold keeps no state, so one import serves every test.
-function load() {
-  return WBChanges;
-}
-
 const REPLY = {
   status: "ok",
   changes: {
@@ -22,7 +17,7 @@ const REPLY = {
 };
 
 test("an empty change set is zero, not absent", () => {
-  const folded = load().fold({ status: "ok", changes: { changes: [] } });
+  const folded = WBChanges.fold({ status: "ok", changes: { changes: [] } });
   assert.equal(folded.count, 0);
   assert.deepEqual(folded.entries, []);
 });
@@ -42,7 +37,7 @@ test("the list model carries a status marker per row", () => {
       ],
     },
   };
-  const folded = load().fold(reply);
+  const folded = WBChanges.fold(reply);
   assert.equal(folded.count, 7);
   assert.deepEqual(
     folded.entries.map((e) => e.mark),
@@ -65,7 +60,7 @@ test("the list model carries a status marker per row", () => {
 });
 
 test("an error, absent or malformed reply reads as zero — never a stale count", () => {
-  const fold = load().fold;
+  const fold = WBChanges.fold;
   for (const reply of [
     { status: "error", message: "query read failed" },
     // An error frame that DOES carry rows: folding its body would report a
@@ -88,7 +83,7 @@ test("an error, absent or malformed reply reads as zero — never a stale count"
 });
 
 test("a file staged and then modified again is in both groups (#315)", () => {
-  const folded = load().fold({
+  const folded = WBChanges.fold({
     status: "ok",
     changes: {
       changes: [
@@ -136,7 +131,7 @@ test("a file staged and then modified again is in both groups (#315)", () => {
 });
 
 test("a row splits into base name and dimmed directory (#315)", () => {
-  const folded = load().fold({
+  const folded = WBChanges.fold({
     status: "ok",
     changes: {
       changes: [
@@ -155,7 +150,7 @@ test("a row splits into base name and dimmed directory (#315)", () => {
 });
 
 test("an out-of-vocabulary side status still groups and still marks ? (#315)", () => {
-  const folded = load().fold({
+  const folded = WBChanges.fold({
     status: "ok",
     changes: {
       changes: [
@@ -181,7 +176,7 @@ test("an out-of-vocabulary side status still groups and still marks ? (#315)", (
 test("an entry carrying neither side field still renders, under Changes (#315)", () => {
   // An older daemon (or a payload that lost the fields) must not make a row
   // vanish from a list whose badge still counts it.
-  const folded = load().fold({
+  const folded = WBChanges.fold({
     status: "ok",
     changes: { changes: [{ path: "legacy.txt", original_path: null, status: "modified" }] },
   });
@@ -196,7 +191,7 @@ test("an entry carrying neither side field still renders, under Changes (#315)",
 test("a conflict groups under Changes, never under Staged (#315)", () => {
   // The producer's decision, mirrored here: an unresolved conflict is worktree
   // work, so it must never read as "what a commit would contain".
-  const folded = load().fold({
+  const folded = WBChanges.fold({
     status: "ok",
     changes: {
       changes: [
@@ -221,7 +216,7 @@ test("a conflict groups under Changes, never under Staged (#315)", () => {
 const dirty = (repo) => ({ verb: "changes.dirty", payload: { repo } });
 
 test("shouldReload fires only on a changes.dirty naming the OPEN repo (#310)", () => {
-  const shouldReload = load().shouldReload;
+  const shouldReload = WBChanges.shouldReload;
   assert.equal(shouldReload(dirty("owner/a"), "owner/a"), true);
   assert.equal(shouldReload(dirty("owner/b"), "owner/a"), false);
   // The socket carries the watcher's pushes too — only OUR verb reloads.
@@ -234,7 +229,7 @@ test("shouldReload fires only on a changes.dirty naming the OPEN repo (#310)", (
 });
 
 test("shouldReload answers false — never throws — on a malformed frame (#310)", () => {
-  const shouldReload = load().shouldReload;
+  const shouldReload = WBChanges.shouldReload;
   // The daemon is the only sender today, but a throw here dies inside the
   // socket's `onmessage` and kills the nudge path for that connection.
   for (const frame of [
@@ -252,7 +247,7 @@ test("shouldReload answers false — never throws — on a malformed frame (#310
 });
 
 test("diffTarget resolves both sides of one changes entry (#311)", () => {
-  const diffTarget = load().diffTarget;
+  const diffTarget = WBChanges.diffTarget;
   const P = "owner/repo";
 
   // A rename diffs the OLD path at HEAD against the NEW path on disk: reading
@@ -317,7 +312,7 @@ const tracking = (ahead, behind, lastFetch = null) =>
   });
 
 test("foldSync reads the branch, its upstream and the counts (#316)", () => {
-  const s = load().foldSync(tracking(1, 2), NOW);
+  const s = WBChanges.foldSync(tracking(1, 2), NOW);
   assert.equal(s.state, "tracking");
   assert.equal(s.branch, "main");
   assert.equal(s.upstream, "origin/main");
@@ -330,7 +325,7 @@ test("foldSync reads the branch, its upstream and the counts (#316)", () => {
 test("foldSync marks a branch with no upstream (#316)", () => {
   // The whole point: an absent upstream must never render as `↑0 ↓0`, which
   // would claim the branch is in sync with something it does not track.
-  const s = load().foldSync(
+  const s = WBChanges.foldSync(
     syncReply({ head: { kind: "branch", name: "wip" }, tracking: null, last_fetch: null }),
     NOW,
   );
@@ -341,7 +336,7 @@ test("foldSync marks a branch with no upstream (#316)", () => {
 });
 
 test("foldSync marks a detached HEAD (#316)", () => {
-  const s = load().foldSync(
+  const s = WBChanges.foldSync(
     syncReply({ head: { kind: "detached", sha: "0018522" }, tracking: null, last_fetch: null }),
     NOW,
   );
@@ -352,14 +347,14 @@ test("foldSync marks a detached HEAD (#316)", () => {
 });
 
 test("foldSync reads a tracking that is not an object as no upstream", () => {
-  const s = load().foldSync(syncReply({ head: { kind: "branch", name: "wip" }, tracking: "origin/wip" }), NOW);
+  const s = WBChanges.foldSync(syncReply({ head: { kind: "branch", name: "wip" }, tracking: "origin/wip" }), NOW);
   assert.equal(s.state, "no-upstream");
   assert.equal(s.upstream, "");
   assert.equal(s.counts, "");
 });
 
 test("foldSync reads a count that is not a number as 0", () => {
-  const s = load().foldSync(
+  const s = WBChanges.foldSync(
     syncReply({
       head: { kind: "branch", name: "main" },
       tracking: { upstream: "origin/main", ahead: "many", behind: null },
@@ -373,7 +368,7 @@ test("foldSync reads a count that is not a number as 0", () => {
 });
 
 test("foldSync never throws on a malformed or failed frame (#316)", () => {
-  const foldSync = load().foldSync;
+  const foldSync = WBChanges.foldSync;
   for (const reply of [
     null,
     undefined,
@@ -393,7 +388,7 @@ test("foldSync never throws on a malformed or failed frame (#316)", () => {
 });
 
 test("headBranch gives the project row the HEAD a sync read saw", () => {
-  const { foldSync, headBranch } = load();
+  const { foldSync, headBranch } = WBChanges;
   assert.equal(headBranch(foldSync(tracking(0, 0), NOW)), "main");
   assert.equal(
     headBranch(foldSync(syncReply({ head: { kind: "branch", name: "wip" }, tracking: null }), NOW)),
@@ -410,7 +405,7 @@ test("headBranch gives the project row the HEAD a sync read saw", () => {
 });
 
 test("headOf gives the project row the head a sync read saw, in the /api/repos shape", () => {
-  const { foldSync, headOf } = load();
+  const { foldSync, headOf } = WBChanges;
   assert.deepEqual(
     headOf(foldSync(syncReply({ head: { kind: "detached", sha: "abc1234" }, tracking: null }), NOW)),
     { kind: "detached", sha: "abc1234" },
@@ -422,7 +417,7 @@ test("headOf gives the project row the head a sync read saw, in the /api/repos s
 const at = (ms) => new Date(NOW - ms).toISOString();
 
 test("foldSync labels how stale the counts are (#316)", () => {
-  const foldSync = load().foldSync;
+  const foldSync = WBChanges.foldSync;
   const cases = [
     [null, "Never fetched"],
     ["not-a-date", "Fetch time unknown"],
@@ -449,14 +444,14 @@ test("projectBadge shows the count of a dirty tree, and nothing otherwise (#317)
     ["a dirty tree", { a: 3 }, { show: true, text: "3" }],
   ];
   for (const [name, counts, want] of rows) {
-    const badge = load().projectBadge(counts, "a");
+    const badge = WBChanges.projectBadge(counts, "a");
     const got = Object.fromEntries(Object.keys(want).map((k) => [k, badge[k]]));
     assert.deepEqual(got, want, name);
   }
 });
 
 test("projectBadge cannot aggregate across repos (#317)", () => {
-  const projectBadge = load().projectBadge;
+  const projectBadge = WBChanges.projectBadge;
   const counts = { a: 2, b: 3 };
   // The anti-aggregate property as a unit assertion: a many-entry map must still
   // answer per slug. A regression to `sum(Object.values(counts))` reads 5 here.
@@ -467,7 +462,7 @@ test("projectBadge cannot aggregate across repos (#317)", () => {
 });
 
 test("groupPaths emits both sides of a rename, de-duplicated (#318)", () => {
-  const { fold, groupPaths } = load();
+  const { fold, groupPaths } = WBChanges;
   const folded = fold({
     status: "ok",
     changes: {
@@ -490,7 +485,7 @@ test("groupPaths emits both sides of a rename, de-duplicated (#318)", () => {
 });
 
 test("groupPaths never sends a rename's old path on the STAGE direction (#318)", () => {
-  const { fold, groupPaths } = load();
+  const { fold, groupPaths } = WBChanges;
   // `RM`: renamed in the index, then edited on disk — so it lands in the
   // UNSTAGED group carrying `originalPath`. After `git mv a b` the old path is
   // in neither the index nor the worktree, so `git add a` is fatal AND aborts
@@ -519,7 +514,7 @@ test("groupPaths never sends a rename's old path on the STAGE direction (#318)",
 });
 
 test("groupPaths can only name paths it was given (#318)", () => {
-  const groupPaths = load().groupPaths;
+  const groupPaths = WBChanges.groupPaths;
   assert.deepEqual(groupPaths([]), []);
   assert.deepEqual(groupPaths(), []);
   assert.deepEqual(groupPaths(null), []);
@@ -530,7 +525,7 @@ test("groupPaths can only name paths it was given (#318)", () => {
 });
 
 test("commitTarget names the branch the commit lands on (#318)", () => {
-  const commitTarget = load().commitTarget;
+  const commitTarget = WBChanges.commitTarget;
   const landing = commitTarget({ state: "tracking", branch: "main" });
   assert.equal(landing.label, "Commit to main");
   assert.equal(landing.branch, "main");
@@ -540,7 +535,7 @@ test("commitTarget names the branch the commit lands on (#318)", () => {
 });
 
 test("commitTarget refuses to name a detached HEAD as a branch (#318)", () => {
-  const commitTarget = load().commitTarget;
+  const commitTarget = WBChanges.commitTarget;
   const detached = commitTarget({ state: "detached", branch: "abc1234" });
   assert.equal(detached.label, "Commit (detached HEAD)");
   assert.equal(detached.detached, true);
@@ -552,7 +547,7 @@ test("commitTarget refuses to name a detached HEAD as a branch (#318)", () => {
 });
 
 test("pushAct offers to publish a branch with no upstream", () => {
-  const pushAct = load().pushAct;
+  const pushAct = WBChanges.pushAct;
   assert.equal(pushAct({ state: "no-upstream", branch: "feat/x" }).label, "Publish branch");
   assert.match(pushAct({ state: "no-upstream", branch: "feat/x" }).title, /track it/u);
   for (const s of [{ state: "tracking", branch: "main" }, { state: "detached" }, { state: "unknown" }, null, undefined]) {
@@ -562,7 +557,7 @@ test("pushAct offers to publish a branch with no upstream", () => {
 });
 
 test("pullBlocked closes Pull only for a branch with no upstream", () => {
-  const pullBlocked = load().pullBlocked;
+  const pullBlocked = WBChanges.pullBlocked;
   assert.match(pullBlocked({ state: "no-upstream", branch: "feat/x" }), /no upstream/u);
   for (const s of [{ state: "tracking", branch: "main" }, { state: "detached" }, { state: "unknown" }, null, undefined]) {
     assert.equal(pullBlocked(s), "");
@@ -570,7 +565,7 @@ test("pullBlocked closes Pull only for a branch with no upstream", () => {
 });
 
 test("writeLockReason speaks only when a run holds the lock (#318)", () => {
-  const writeLockReason = load().writeLockReason;
+  const writeLockReason = WBChanges.writeLockReason;
   assert.equal(writeLockReason([]), "");
   assert.equal(writeLockReason(), "");
   assert.equal(writeLockReason(null), "");
@@ -588,7 +583,7 @@ test("writeLockReason speaks only when a run holds the lock (#318)", () => {
 });
 
 test("discardConfirm names the file in a tracked discard (#319)", () => {
-  const discardConfirm = load().discardConfirm;
+  const discardConfirm = WBChanges.discardConfirm;
   const c = discardConfirm({ path: "src/app.js", name: "app.js", status: "modified" });
   assert.match(c.message, /app\.js/u);
   assert.equal(c.danger, true);
@@ -600,7 +595,7 @@ test("discardConfirm names the file in a tracked discard (#319)", () => {
 });
 
 test("discardConfirm is more emphatic for the untracked case (#319)", () => {
-  const discardConfirm = load().discardConfirm;
+  const discardConfirm = WBChanges.discardConfirm;
   const tracked = discardConfirm({ path: "a.txt", name: "a.txt", status: "modified" });
   const loose = discardConfirm({ path: "fresh.txt", name: "fresh.txt", status: "untracked" });
   assert.match(loose.message, /fresh\.txt/u);
@@ -614,7 +609,7 @@ test("discardConfirm is more emphatic for the untracked case (#319)", () => {
 });
 
 test("discardConfirm names an untracked directory entry (#319)", () => {
-  const discardConfirm = load().discardConfirm;
+  const discardConfirm = WBChanges.discardConfirm;
   // git reports an untracked DIRECTORY as ONE entry `newdir/`, whose split name
   // is the empty string — the dialog must still name something.
   const c = discardConfirm({ path: "newdir/", name: "", status: "untracked" });
@@ -623,7 +618,7 @@ test("discardConfirm names an untracked directory entry (#319)", () => {
 });
 
 test("groupDiscardNote states what each group's discard removes (#319)", () => {
-  const groupDiscardNote = load().groupDiscardNote;
+  const groupDiscardNote = WBChanges.groupDiscardNote;
   const unstaged = groupDiscardNote("unstaged");
   const staged = groupDiscardNote("staged");
   assert.ok(unstaged.length > 0 && staged.length > 0);
@@ -633,42 +628,3 @@ test("groupDiscardNote states what each group's discard removes (#319)", () => {
   assert.equal(groupDiscardNote("nope"), "");
   assert.equal(groupDiscardNote(), "");
 });
-
-test("the folds are pure: they never mutate what they are given (#316, #319)", () => {
-  const m = load();
-  // [fold, its input, the call] — no DOM, no fetch, no mutation.
-  const rows = [
-    [
-      "fold",
-      {
-        status: "ok",
-        changes: {
-          changes: [
-            {
-              path: "docs/a.txt",
-              original_path: null,
-              status: "added",
-              index_status: "added",
-              worktree_status: "modified",
-            },
-          ],
-        },
-      },
-      (reply) => m.fold(reply),
-    ],
-    ["foldSync", tracking(1, 2, "2026-07-25T11:00:00Z"), (reply) => m.foldSync(reply, NOW)],
-    [
-      "discardConfirm",
-      { path: "a.txt", name: "a.txt", status: "untracked" },
-      (entry) => m.discardConfirm(entry),
-    ],
-  ];
-  for (const [name, input, call] of rows) {
-    const before = structuredClone(input);
-    call(input);
-    assert.deepEqual(input, before, `${name} stays pure`);
-  }
-  // …and no input at all is answered, never thrown on.
-  assert.equal(typeof m.discardConfirm().message, "string");
-});
-
