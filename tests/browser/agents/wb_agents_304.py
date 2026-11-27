@@ -250,9 +250,7 @@ def main():
             labels = rows.locator("span:not(.row-live):not(.row-new)").all_inner_texts()
             check(
                 "the menu renders the served roster, plain console LAST",
-                labels
-                == [f"{r['id']} {r['version']}" if r.get("version") else r["id"] for r in served]
-                + ["console"],
+                labels == [r["id"] for r in served] + ["console"],
                 f"got={labels}",
             )
             digits = rows.locator("kbd").all_inner_texts()

@@ -1,9 +1,9 @@
-"""Browser check: the console menu shows the OpenCode version of this machine.
+"""Browser check: the roster serves the OpenCode version of this machine; the menu shows none.
 
 One Playwright pass over a REAL daemon on a SCRATCH `RALPHY_DAEMON_DIR`. The
-expected version is what `opencode --version` prints here; the `opencode` row of
-the "New console" menu must read `opencode <version>`, and no other row may
-carry a version.
+expected version is what `opencode --version` prints here; `/api/agents` must
+serve it on the `opencode` row only, and no row of the "New console" menu shows
+a version: the label is the plain agent name.
 
 The daemon is stopped by its own subprocess handle, never by name.
 Run: python tests/browser/agents/wb_agents_version.py   (exit 0 = all pass)
@@ -88,13 +88,14 @@ def main():
             page.evaluate(f"() => {{ {MENUS}.agentMenu = true; }}")
             page.wait_for_timeout(400)
             labels = page.locator(f"{MENU} .dropdown-item span:not(.row-live):not(.row-new)").all_inner_texts()
-            want = f"opencode {expected}"
-            check("the opencode menu row shows the version of this machine", want in labels, f"want={want!r} got={labels}")
+            served_version = next((r.get("version") for r in served if r["id"] == "opencode"), None)
+            check("the roster serves the version of this machine", served_version == expected, f"want={expected!r} got={served_version!r}")
+            check("the opencode menu row is the plain name, with no version", "opencode" in labels, f"got={labels}")
             check("the other rows keep their plain label", "claude" in labels and "codex" in labels, f"got={labels}")
             browser.close()
     finally:
         stop(proc)
-    ok = all(results) and len(results) == 3
+    ok = all(results) and len(results) == 4
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     sys.exit(0 if ok else 1)
 

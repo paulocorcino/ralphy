@@ -50,7 +50,11 @@ async fn assert_codex_hooks_inline(
     ws.send(terminal(b"env RALPHY_STATUS_FILE\r"))
         .await
         .expect("send the env request");
-    ws.send(terminal(b"argv\r"))
+    // The argv is read from a file: on an 80-column ConPTY its ~2.5 KB line
+    // wraps, and the wrap repaints a character that breaks the match.
+    let argv_file = sessions_dir.with_file_name("codex-argv.txt");
+    let request = format!("argv-file {}\r", argv_file.to_string_lossy());
+    ws.send(terminal(request.as_bytes()))
         .await
         .expect("send the argv request");
     let want_env = flatten(&format!(
@@ -59,10 +63,12 @@ async fn assert_codex_hooks_inline(
     ));
     let events = ralphy_proc_util::hook_form::CODEX_STATUS_EVENTS;
     let want_hook = |event: &str| format!("-chooks.{event}=[{{hooks=[{{type=");
-    let got = read_echo(ws, |flat| {
-        flat.contains(&want_env) && flat.matches("hookstatuscodex").count() >= events.len()
+    let echo = read_echo(ws, |flat| {
+        flat.contains(&want_env) && flat.contains("ARGV-FILE:ok")
     })
     .await;
+    let argv = std::fs::read_to_string(&argv_file).expect("read the argv file");
+    let got = format!("{echo}\n{argv}");
     let flat = flatten(&got);
     assert!(flat.contains(&want_env), "wanted {want_env}, got:\n{got}");
     assert!(

@@ -19,7 +19,10 @@
 //!   `env <NAME>` prints `ENV:<NAME>=<value>` and `argv` prints
 //!   `ARGV:<args…>` — the only way a test can observe the environment and the
 //!   command line the launcher actually gave the child, rather than the spec it
-//!   built; `flood <kib>` writes about that many KiB of colored numbered lines,
+//!   built; `argv-file <path>` writes that `ARGV:` line to `<path>` and prints
+//!   `ARGV-FILE:<ok|error>`, for an argv too long to read back off the console
+//!   (the Windows console wraps a long line and repaints a character at the edge);
+//!   `flood <kib>` writes about that many KiB of colored numbered lines,
 //!   redrawing the last three after every twenty with a cursor-up (a TUI redraw
 //!   that is right at one width only) and ends with `FLOOD-DONE <bytes>`; any
 //!   other line echoes as `GOT:<line>`.
@@ -43,6 +46,8 @@ pub const GOT_MARKER: &str = "GOT:";
 pub const ENV_MARKER: &str = "ENV:";
 /// Prefix of the line reporting the child's own argv (`ARGV:<a> <b> …`).
 pub const ARGV_MARKER: &str = "ARGV:";
+/// Prefix of the line answering `argv-file <path>` (`ARGV-FILE:ok`).
+pub const ARGV_FILE_MARKER: &str = "ARGV-FILE:";
 /// Prefix of the line reporting the current terminal size (`SIZE <cols>x<rows>`).
 pub const SIZE_MARKER: &str = "SIZE";
 
@@ -138,6 +143,16 @@ fn main() {
             "argv" => {
                 let args: Vec<String> = std::env::args().skip(1).collect();
                 println!("{ARGV_MARKER}{}", args.join(" "));
+                flush_stdout();
+            }
+            other if other.starts_with("argv-file ") => {
+                let path = other.split_at("argv-file ".len()).1.trim();
+                let args: Vec<String> = std::env::args().skip(1).collect();
+                let line = format!("{ARGV_MARKER}{}", args.join(" "));
+                match std::fs::write(path, line) {
+                    Ok(()) => println!("{ARGV_FILE_MARKER}ok"),
+                    Err(e) => println!("{ARGV_FILE_MARKER}error {e}"),
+                }
                 flush_stdout();
             }
             other if other.starts_with("flood ") => {
