@@ -1,6 +1,53 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.47",
+      "date": "2026-11-26",
+      "announce": false,
+      "entries": [
+        {
+          "id": "1008",
+          "kind": "fix",
+          "text": "Ralphy finds OpenCode in the folder its installer uses, `~/.opencode/bin`, when that folder is not on `PATH`."
+        },
+        {
+          "id": "1009",
+          "kind": "fix",
+          "text": "Runs, plans and the one-shot sessions work with OpenCode 2 as well as OpenCode 1."
+        },
+        {
+          "id": "1040",
+          "kind": "fix",
+          "text": "OpenCode token counts include reasoning tokens and the sessions of OpenCode 2."
+        },
+        {
+          "id": "1041",
+          "kind": "fix",
+          "text": "OpenCode 2 runs and consoles work in their own project folder."
+        },
+        {
+          "id": "1042",
+          "kind": "fix",
+          "text": "The attention list shows the state of OpenCode 2 runs and consoles."
+        },
+        {
+          "id": "copy-full-path-wsl",
+          "kind": "fix",
+          "text": "Copy full path and the Full path line of Properties now show the absolute path in a project that runs in WSL."
+        },
+        {
+          "id": "opencode-usage-followups",
+          "kind": "fix",
+          "text": "OpenCode token counts follow `XDG_DATA_HOME`, and one unreadable message row no longer hides the rest."
+        },
+        {
+          "id": "sidebar-empty-machine-note",
+          "kind": "fix",
+          "text": "A machine with no project shows \"No projects\" under its header in the sidebar."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.46",
       "date": "2026-11-24",
       "announce": true,
