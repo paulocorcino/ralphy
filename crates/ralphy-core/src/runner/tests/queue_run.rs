@@ -265,3 +265,28 @@ fn protocol_bounce_repairs_then_closes() {
 
     remove_scratch(&root);
 }
+
+#[test]
+fn an_injected_probe_writes_its_brief() {
+    let root = test_dir("probe");
+    let mut cfg = test_cfg(&root, "ut-probe");
+    cfg.environment = crate::environment::EnvironmentProbe::Fixed("brief-under-test\n".into());
+    let agent = MiniAgent::new(vec![Outcome::Done])
+        .with_extra(format!("## Verify\n\n{}\n", verify_ok_line()));
+
+    run_queue_with(
+        &cfg,
+        &[test_issue(7)],
+        &agent,
+        &FakeTracker::default(),
+        &FakeClock,
+        &FakeRepo::new(),
+        &FakeLedger::default(),
+    )
+    .expect("run succeeds");
+
+    let brief = fs::read_to_string(root.join(".ralphy").join("environment.md")).expect("brief");
+    assert_eq!(brief, "brief-under-test\n");
+
+    remove_scratch(&root);
+}

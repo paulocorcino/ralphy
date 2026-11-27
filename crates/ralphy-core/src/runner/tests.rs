@@ -317,6 +317,7 @@ fn test_cfg(root: &std::path::Path, stamp: &str) -> QueueConfig {
             "wontfix".into(),
             "triage-agent".into(),
         ],
+        environment: crate::environment::EnvironmentProbe::Fixed("test brief\n".into()),
     }
 }
 

@@ -110,6 +110,7 @@ pub(crate) fn cfg(repo: &Path, stamp: &str) -> QueueConfig {
         require_verify_gate: false,
         done_signal: "DONE_TOKEN".into(),
         human_return_labels: Vec::new(),
+        environment: ralphy_core::EnvironmentProbe::Fixed("test brief\n".into()),
     }
 }
 

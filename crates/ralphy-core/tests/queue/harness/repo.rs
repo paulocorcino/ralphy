@@ -4,7 +4,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use ralphy_core::{BranchMode, Issue, QueueConfig};
+use ralphy_core::{BranchMode, EnvironmentProbe, Issue, QueueConfig};
 
 /// Remove a scratch directory at the end of a test, or before a test starts. The
 /// directory may be gone already, and a failed removal must not fail the test.
@@ -233,6 +233,7 @@ pub(crate) fn cfg(repo: &Path, stamp: &str, dry_run: bool) -> QueueConfig {
         require_verify_gate: false,
         done_signal: "DONE_TOKEN".into(),
         human_return_labels: default_human_return(),
+        environment: EnvironmentProbe::Fixed("test brief\n".into()),
     }
 }
 
@@ -251,6 +252,7 @@ pub(crate) fn cfg_only(repo: &Path, stamp: &str, only: u64) -> QueueConfig {
         require_verify_gate: false,
         done_signal: "DONE_TOKEN".into(),
         human_return_labels: default_human_return(),
+        environment: EnvironmentProbe::Fixed("test brief\n".into()),
     }
 }
 
@@ -269,6 +271,7 @@ pub(crate) fn cfg_forced(repo: &Path, stamp: &str, forced: Vec<u64>) -> QueueCon
         require_verify_gate: false,
         done_signal: "DONE_TOKEN".into(),
         human_return_labels: default_human_return(),
+        environment: EnvironmentProbe::Fixed("test brief\n".into()),
     }
 }
 
@@ -287,6 +290,7 @@ pub(crate) fn cfg_current(repo: &Path, stamp: &str) -> QueueConfig {
         require_verify_gate: false,
         done_signal: "DONE_TOKEN".into(),
         human_return_labels: default_human_return(),
+        environment: EnvironmentProbe::Fixed("test brief\n".into()),
     }
 }
 
@@ -307,6 +311,7 @@ pub(crate) fn cfg_stop_on_limit(repo: &Path, stamp: &str) -> QueueConfig {
         require_verify_gate: false,
         done_signal: "DONE_TOKEN".into(),
         human_return_labels: default_human_return(),
+        environment: EnvironmentProbe::Fixed("test brief\n".into()),
     }
 }
 
@@ -329,6 +334,7 @@ pub(crate) fn cfg_split_limit(repo: &Path, stamp: &str) -> QueueConfig {
         require_verify_gate: false,
         done_signal: "DONE_TOKEN".into(),
         human_return_labels: default_human_return(),
+        environment: EnvironmentProbe::Fixed("test brief\n".into()),
     }
 }
 
