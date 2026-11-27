@@ -120,7 +120,7 @@ pub(crate) fn notices(
     open.retain(|n| {
         !dismissed.contains(&(n.login.clone(), n.device.clone()))
             && !revoked(&n.login)
-            && line_secs(&n.at).is_some_and(|at| at > cutoff)
+            && super::at_secs(&n.at).is_some_and(|at| at > cutoff)
     });
     for notice in &mut open {
         notice.here = is_device(notice.device.as_deref(), this);
@@ -140,12 +140,6 @@ pub(crate) fn is_device(device: Option<&str>, this: Option<DeviceId>) -> bool {
         (None, None) => true,
         (Some(_), None) | (None, Some(_)) => false,
     }
-}
-
-fn line_secs(at: &str) -> Option<i64> {
-    ralphy_time::parse_rfc3339(at)
-        .ok()
-        .map(|(t, _)| t.as_second())
 }
 
 /// Give each notice the summary of its device, when that device's page

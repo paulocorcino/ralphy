@@ -14,20 +14,6 @@ pub(super) enum PresenceGate {
     Defer(String),
 }
 
-/// Format an RFC 3339 timestamp as `%Y-%m-%d %H:%M:%S`, falling back to the raw
-/// string on parse failure (mirrors `run_cmd`'s formatting, run.rs L76-78).
-fn format_since(started_at: &str) -> String {
-    ralphy_time::parse_rfc3339(started_at).map_or_else(
-        |_| started_at.to_owned(),
-        |(at, offset)| {
-            offset
-                .to_datetime(at)
-                .strftime("%Y-%m-%d %H:%M:%S")
-                .to_string()
-        },
-    )
-}
-
 /// Classify the repo-scoped presence lock into what `triage::run` should do.
 /// Pure over an injected liveness predicate so it unit-tests without a real
 /// second process (mirrors `runlock::inspect`'s own test pattern).
@@ -39,7 +25,7 @@ pub(super) fn presence_gate(
     match runlock::inspect(path, is_alive) {
         LockState::HeldAlive(info) if if_idle => PresenceGate::Defer(format!(
             "skipped: run in progress since {}, pid {}",
-            format_since(&info.started_at),
+            runlock::since_text(&info.started_at),
             info.pid
         )),
         LockState::HeldAlive(info) => PresenceGate::Proceed {

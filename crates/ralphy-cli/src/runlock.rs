@@ -61,9 +61,13 @@ pub(crate) fn inspect(path: &Path, is_alive: impl Fn(u32) -> bool) -> LockState 
 /// Write the lock (over anything stale or corrupt) and return the guard that
 /// removes it on drop.
 pub(crate) fn acquire(path: &Path) -> Result<RunLockGuard> {
+    acquire_since(path, crate::run::local_rfc3339_now())
+}
+
+fn acquire_since(path: &Path, started_at: String) -> Result<RunLockGuard> {
     let info = LockInfo {
         pid: std::process::id(),
-        started_at: crate::run::local_rfc3339_now(),
+        started_at,
     };
     let payload = serde_json::to_string(&info)?;
     fs::write(path, payload)
@@ -118,10 +122,32 @@ pub(crate) fn guard_run_lock(
     Ok(())
 }
 
+/// A lock's `started_at` as `YYYY-MM-DD HH:MM:SS` at its own offset; the raw text when unreadable.
+pub(crate) fn since_text(started_at: &str) -> String {
+    ralphy_time::parse_rfc3339(started_at).map_or_else(
+        |_| started_at.to_owned(),
+        |(at, offset)| {
+            offset
+                .to_datetime(at)
+                .strftime("%Y-%m-%d %H:%M:%S")
+                .to_string()
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU32, Ordering};
+
+    #[test]
+    fn since_text_keeps_the_offset_of_the_lock() {
+        assert_eq!(
+            since_text("2026-11-26T10:05:09.123-03:00"),
+            "2026-11-26 10:05:09"
+        );
+        assert_eq!(since_text("not a time"), "not a time");
+    }
 
     /// Hand-rolled unique temp dir (same idiom as `tmp_ws` in config.rs).
     fn tmp_lock(name: &str) -> PathBuf {
@@ -147,18 +173,12 @@ mod tests {
 
     #[test]
     fn the_run_lock_keeps_the_local_rfc3339_form() {
-        let shape = regex::Regex::new(
-            r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3}|\.\d{6}|\.\d{9})?([+-]\d{2}:\d{2})$",
-        )
-        .expect("regex");
+        let at = jiff::Timestamp::new(1_795_698_309, 0).expect("a valid instant");
+        let since = ralphy_time::rfc3339(at, jiff::tz::Offset::constant(-3));
         let path = tmp_lock("form");
-        let _guard = acquire(&path).unwrap();
+        let _guard = acquire_since(&path, since).unwrap();
         let info: LockInfo = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert!(
-            shape.is_match(&info.started_at),
-            "started_at: {}",
-            info.started_at
-        );
+        assert_eq!(info.started_at, "2026-11-26T10:05:09-03:00");
     }
 
     #[test]

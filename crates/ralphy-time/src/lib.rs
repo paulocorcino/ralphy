@@ -40,7 +40,7 @@ pub fn secs_z(t: Timestamp) -> String {
 
 /// `2026-11-26T13:00:00.123Z`: UTC, always three fraction digits, cut off.
 pub fn millis_z(t: Timestamp) -> String {
-    let millis = t.subsec_nanosecond() / 1_000_000;
+    let millis = Offset::UTC.to_datetime(t).subsec_nanosecond() / 1_000_000;
     format!("{}.{millis:03}Z", civil_seconds(Offset::UTC, t))
 }
 
@@ -85,7 +85,7 @@ fn fraction(nanos: i32) -> String {
 fn offset_text(offset: Offset) -> String {
     let seconds = offset.seconds();
     let sign = if seconds < 0 { '-' } else { '+' };
-    let minutes = seconds.unsigned_abs() / 60;
+    let minutes = (seconds.unsigned_abs() + 30) / 60;
     format!("{sign}{:02}:{:02}", minutes / 60, minutes % 60)
 }
 
