@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openAfterRead } from "../assets/ui/wb-projects-rekey.ts";
 import { projectsStore } from "../assets/ui/wb-projects-store.ts";
+import { loadShell } from "./harness.mjs";
 
 const repo = (slug, former_slugs) => ({ slug, former_slugs });
 
@@ -32,4 +33,32 @@ test("hasOpen is false while the open slug names no row", () => {
   assert.equal(store.hasOpen(), false);
   store.setOpen("owner/repo");
   assert.equal(store.hasOpen(), true);
+});
+
+test("a read that re-keys the open project sends workbench:project-changed", async () => {
+  const sent = [];
+  const { state } = loadShell({
+    window: {
+      addEventListener: () => {},
+      dispatchEvent: (e) => {
+        if (e.type === "workbench:project-changed") sent.push(e.detail);
+        return true;
+      },
+    },
+  });
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (url) => {
+    const rows = String(url).endsWith("/api/repos")
+      ? [{ slug: "owner/repo", former_slugs: ["path-3f2a"], reachable: true }]
+      : [];
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(rows) });
+  };
+  try {
+    state.$store.projects.setOpen("path-3f2a");
+    await state.$store.projects.loadRepos({ git: false });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(state.$store.projects.openSlug, "owner/repo");
+  assert.deepEqual(sent, [{ slug: "owner/repo", previous: "path-3f2a" }]);
 });

@@ -105,6 +105,7 @@ function keepTabInside(e: KeyboardEvent, scrimEl: Element) {
 function nameProblem(name: string) {
   if (!name) return "name is required";
   if (name.includes("\\")) return "use / to separate folders";
+  if (name.includes(":")) return "a name cannot contain :";
   const bad = name.split("/").some((part) => part === "" || part === "." || part === "..");
   return bad ? "a folder name cannot be empty, . or .." : "";
 }

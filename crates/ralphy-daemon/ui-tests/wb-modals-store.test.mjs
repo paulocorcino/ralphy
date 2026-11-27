@@ -178,6 +178,7 @@ test("the prompt refuses a malformed path", () => {
     ["a dot folder", "./a", empty],
     ["a backslash", "a\\b", "use / to separate folders"],
     ["a trailing slash", "a/", empty],
+    ["a colon", "a:b", "a name cannot contain :"],
   ]) {
     const store = storeOnly();
     store.askPrompt({ title: "New folder in docs" });
