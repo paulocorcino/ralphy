@@ -46,8 +46,8 @@ async fn the_debounce_is_the_one_the_manager_was_built_with() {
 
 #[tokio::test]
 async fn storm_coalesces_to_few_nudges() {
-    // The storm must fit in one quiet gap even on a loaded host, so this gap is longer.
-    let storm_debounce = Duration::from_millis(250);
+    // The storm must fit in one quiet gap even on a loaded host: the production gap.
+    let storm_debounce = DEBOUNCE_TIMEOUT;
     let dir = tempfile::tempdir().unwrap();
     let mgr = WatcherManager::with_debounce(MAX_WATCHES, storm_debounce);
     let mut rx = mgr.watch("owner/repo", dir.path(), "").unwrap();
