@@ -246,9 +246,8 @@ export function projectsStore(deps: ProjectsStoreDeps) {
               tree: [],
             };
           });
-          const rowsBefore = this.projects;
           this.setProjects(local.concat(this._fleetRows));
-          this.followOpen(openAfterRead(this.openSlug, repos, rowsBefore));
+          this.followOpen(openAfterRead(this.openSlug, repos));
           this.shareProjectNames();
           this.reposError = "";
           this.reposRead = WBFail.readFold(this.reposRead, {

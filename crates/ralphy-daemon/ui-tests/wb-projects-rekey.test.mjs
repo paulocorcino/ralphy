@@ -9,20 +9,20 @@ const repo = (slug, former_slugs) => ({ slug, former_slugs });
 
 test("the open project follows a re-key to its new slug", () => {
   const repos = [repo("owner/other"), repo("owner/repo", ["path-3f2a"])];
-  assert.equal(openAfterRead("path-3f2a", repos, []), "owner/repo");
+  assert.equal(openAfterRead("path-3f2a", repos), "owner/repo");
 });
 
 test("the open project stays when its row is still listed", () => {
-  assert.equal(openAfterRead("owner/repo", [repo("owner/repo")], []), "owner/repo");
+  assert.equal(openAfterRead("owner/repo", [repo("owner/repo")]), "owner/repo");
 });
 
 test("the open project closes a project that is gone", () => {
-  assert.equal(openAfterRead("path-3f2a", [repo("owner/repo")], []), null);
+  assert.equal(openAfterRead("path-3f2a", [repo("owner/repo")]), null);
 });
 
 test("an open peer project is left for the fleet read", () => {
-  const peer = { key: "01KY/owner/repo", slug: "owner/repo", daemon: "01KY" };
-  assert.equal(openAfterRead("01KY/owner/repo", [], [peer]), "01KY/owner/repo");
+  const ref = "01KYZ8Q3W4E5R6T7Y8V9J0P1A2/owner/repo";
+  assert.equal(openAfterRead(ref, []), ref);
 });
 
 test("hasOpen is false while the open slug names no row", () => {
