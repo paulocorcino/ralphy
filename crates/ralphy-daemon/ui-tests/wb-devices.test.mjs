@@ -3,21 +3,11 @@
 // (`fixtures/api-audit-devices.json`, `fixtures/api-audit-events.json`).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import * as WBDevices from "../assets/ui/wb-devices.ts";
-import { loadComponent } from "./harness.mjs";
-
-const HERE = import.meta.dirname;
-
-const load = () => WBDevices;
-
-function fixture(name) {
-  return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));
-}
+import { fixture, loadComponent, swapFetch } from "./harness.mjs";
 
 test("a device the daemon lists is one row: its system, browser and form, then where and when", () => {
-  const D = load();
+  const D = WBDevices;
   const rows = D.rows(fixture("api-audit-devices"), (at) => `t(${at})`);
   assert.deepEqual(rows, [
     {
@@ -30,16 +20,19 @@ test("a device the daemon lists is one row: its system, browser and form, then w
 });
 
 test("one event is one event", () => {
-  const [row] = load().rows({ devices: [{ device: "d", events: 1, last_seen: "x" }] }, (at) => at);
+  const [row] = WBDevices.rows(
+    { devices: [{ device: "d", events: 1, last_seen: "x" }] },
+    (at) => at,
+  );
   assert.equal(row.detail, "last seen x · 1 event");
 });
 
 test("a device that sent no facts still has a name", () => {
-  assert.equal(load().deviceName({}), "A device that sent no facts yet");
+  assert.equal(WBDevices.deviceName({}), "A device that sent no facts yet");
 });
 
 test("each line of a device is one plain sentence, newest first", () => {
-  const D = load();
+  const D = WBDevices;
   const rows = D.eventRows(fixture("api-audit-events"), (at) => at);
   assert.deepEqual(
     rows.map((r) => [r.text, r.ip]),
@@ -52,11 +45,11 @@ test("each line of a device is one plain sentence, newest first", () => {
 });
 
 test("a command with no project names only its verb", () => {
-  assert.equal(load().eventLine({ event: "command", verb: "host.trust" }), "Command host.trust");
+  assert.equal(WBDevices.eventLine({ event: "command", verb: "host.trust" }), "Command host.trust");
 });
 
 test("a console launch names the agent and the project", () => {
-  const { eventLine } = load();
+  const { eventLine } = WBDevices;
   assert.equal(
     eventLine({ event: "console_launch", agent: "console", repo: "owner/repo" }),
     "Opened a console in owner/repo",
@@ -69,9 +62,14 @@ test("a console launch names the agent and the project", () => {
 });
 
 test("a line names the project by the name the daemon gives", () => {
-  const { eventLine } = load();
+  const { eventLine } = WBDevices;
   assert.equal(
-    eventLine({ event: "console_launch", agent: "console", repo: "path-0123", repo_name: "widget" }),
+    eventLine({
+      event: "console_launch",
+      agent: "console",
+      repo: "path-0123",
+      repo_name: "widget",
+    }),
     "Opened a console in widget",
   );
   assert.equal(
@@ -81,7 +79,7 @@ test("a line names the project by the name the daemon gives", () => {
 });
 
 test("a take-over is one plain sentence", () => {
-  const { eventLine } = load();
+  const { eventLine } = WBDevices;
   assert.equal(eventLine({ event: "console_takeover", session: 7 }), "Took over a console");
   assert.equal(
     eventLine({ event: "console_takeover", repo: "owner/repo" }),
@@ -90,20 +88,38 @@ test("a take-over is one plain sentence", () => {
 });
 
 test("a desk save is named in plain words", () => {
-  const line = load().eventLine({ event: "action", method: "PUT", path: "/api/desk", status: 200 });
+  const line = WBDevices.eventLine({
+    event: "action",
+    method: "PUT",
+    path: "/api/desk",
+    status: 200,
+  });
   assert.equal(line, "Saved the desk");
 });
 
 test("a request with no plain name shows its method, path and status", () => {
-  const line = load().eventLine({ event: "action", method: "POST", path: "/api/fleet/nudge", status: 200 });
+  const line = WBDevices.eventLine({
+    event: "action",
+    method: "POST",
+    path: "/api/fleet/nudge",
+    status: 200,
+  });
   assert.equal(line, "POST /api/fleet/nudge (200)");
 });
 
 const out = (at, ip = "a") => ({ event: "logout", at, ip });
 
 test("repeated lines in a row are one row with a count", () => {
-  const rows = load().eventRows(
-    { events: [out("4"), out("3"), out("2", "b"), { event: "login_ok", at: "1", ip: "a" }, out("0")] },
+  const rows = WBDevices.eventRows(
+    {
+      events: [
+        out("4"),
+        out("3"),
+        out("2", "b"),
+        { event: "login_ok", at: "1", ip: "a" },
+        out("0"),
+      ],
+    },
     (at) => at,
   );
   assert.deepEqual(rows, [
@@ -115,21 +131,25 @@ test("repeated lines in a row are one row with a count", () => {
 });
 
 test("a changed profile names what changed in plain words", () => {
-  const line = load().eventLine({ event: "device_profile_changed", changed: ["gpu", "time_zone"] });
+  const line = WBDevices.eventLine({
+    event: "device_profile_changed",
+    changed: ["gpu", "time_zone"],
+  });
   assert.equal(line, "Its device facts changed: graphics card, time zone");
 });
 
 // The component reads no `shell()` name, and a failed read is never an empty
 // list (ADR-0070 D3).
-test("the Devices section says why it could not read the devices", async () => {
+test("the Devices section says why it could not read the devices", async (t) => {
   const { scope } = loadComponent("wbDevices");
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = () => Promise.resolve({ ok: false, status: 503, json: () => Promise.resolve({ error: "the audit log is closed" }) });
-  try {
-    await scope.load();
-  } finally {
-    globalThis.fetch = realFetch;
-  }
+  swapFetch(t, () =>
+    Promise.resolve({
+      ok: false,
+      status: 503,
+      json: () => Promise.resolve({ error: "the audit log is closed" }),
+    }),
+  );
+  await scope.load();
   assert.equal(scope.loaded, false);
   assert.deepEqual(scope.devices, []);
   assert.equal(scope.error, "Could not read the devices: the audit log is closed.");

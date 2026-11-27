@@ -4,7 +4,7 @@
 // it does not list in `uses`, or assigns a shell() field (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadComponent, loadShell } from "./harness.mjs";
+import { fakeWindow, loadComponent, loadShell } from "./harness.mjs";
 
 // ---- the component and its markup ---------------------------------------------
 
@@ -21,16 +21,7 @@ test("wbBranchDialog lists only shell() names in uses, and its members left shel
 // One page with the shell, the files, the Changes view and the branch dialog,
 // and a window that delivers the events it is sent, as the browser does.
 function page() {
-  const listeners = {};
-  const loaded = loadShell({
-    window: {
-      addEventListener: (type, fn) => (listeners[type] ||= []).push(fn),
-      dispatchEvent: (e) => {
-        for (const fn of listeners[e.type] || []) fn(e);
-        return true;
-      },
-    },
-  });
+  const loaded = loadShell({ window: fakeWindow() });
   const dialog = loadComponent("wbBranchDialog", { from: loaded }).scope;
   const files = loadComponent("wbFiles", { from: loaded }).scope;
   const changes = loadComponent("wbChanges", { from: loaded }).scope;

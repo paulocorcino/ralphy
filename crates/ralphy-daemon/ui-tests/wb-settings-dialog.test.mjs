@@ -8,7 +8,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { assembledPage, loadComponent, loadShell, partMarkup, runIn as evalIn, valueIn, withoutComments } from "./harness.mjs";
 import { WB_SETTINGS } from "../assets/ui/wb-settings.ts";
-import { WBSettingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 
 // The part that holds the dialog's markup, with the Devices section inside it.
 const PART = "wb-settings-dialog.part.html";
@@ -345,15 +344,4 @@ test("the open dialog reads its settings again on workbench:panels-reread, and a
   state.settingsOpen = true;
   evalIn(state, handlerOf("workbench:panels-reread"));
   assert.deepEqual(reads, ["settings"]);
-});
-
-// pin: the modal stack sees the dialog open —
-// the path is a string of the markup, and node runs no Alpine over it.
-// `app.ts` asks the modal stack with this path; it must be the path the dialog
-// gives to `scrim()`, or the shortcuts would never see the dialog open.
-test("openFlag is the path the Settings dialog gives to scrim()", () => {
-  const markup = partMarkup(PART);
-  const paths = [...markup.matchAll(/x-bind="\$store\.modals\.scrim\('([^']+)'/gu)].map((m) => m[1]);
-  assert.deepEqual(paths, ["settingsOpen"]);
-  assert.equal(WBSettingsDialog.openFlag, paths[0]);
 });

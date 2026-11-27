@@ -6,7 +6,7 @@
 // field (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadComponent, loadShell } from "./harness.mjs";
+import { fakeWindow, loadComponent, loadShell } from "./harness.mjs";
 
 // `init()` starts the backstop on the global timer; here it never ticks.
 // Returns the intervals it asked for.
@@ -26,17 +26,7 @@ function initQuietly(scope) {
 // the events it is sent, as the browser does. `init()` adds the listeners, as
 // Alpine does when it builds the component.
 function page(opts = {}) {
-  const listeners = {};
-  const loaded = loadShell({
-    ...opts,
-    window: {
-      addEventListener: (type, fn) => (listeners[type] ||= []).push(fn),
-      dispatchEvent: (e) => {
-        for (const fn of listeners[e.type] || []) fn(e);
-        return true;
-      },
-    },
-  });
+  const loaded = loadShell({ ...opts, window: fakeWindow() });
   const changes = loadComponent("wbChanges", { from: loaded, magics: { $nextTick: (fn) => fn() } });
   const timers = initQuietly(changes.scope);
   const fire = (type, detail) => loaded.window.dispatchEvent({ type, detail });

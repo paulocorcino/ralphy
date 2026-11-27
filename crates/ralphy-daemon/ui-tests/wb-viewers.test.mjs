@@ -22,7 +22,7 @@ function fakeEl(tag) {
     innerHTML: "",
     textContent: "",
     children: [],
-    classList: { add() {}, remove() {}, toggle: () => false, contains: () => false },
+    classList: { add() {}, remove() {}, toggle: () => false, contains: () => false }, // own: a no-op, toggle answers false
     append(...kids) {
       el.children.push(...kids);
     },
@@ -122,26 +122,26 @@ test("an avif file classifies as image", () => {
 
 test("loadVendor imports a path once: a second load of it returns the same promise", async () => {
   const asked = [];
-  const load = createVendorLoader((path) => {
+  const loadVendor = createVendorLoader((path) => {
     asked.push(path);
     return Promise.resolve({ path });
   });
-  const first = load("./vendor/lib/a.mjs");
-  assert.equal(load("./vendor/lib/a.mjs"), first);
+  const first = loadVendor("./vendor/lib/a.mjs");
+  assert.equal(loadVendor("./vendor/lib/a.mjs"), first);
   assert.deepEqual(await first, { ok: true, module: { path: "./vendor/lib/a.mjs" } });
-  assert.equal(load("./vendor/lib/a.mjs"), first, "a finished load is shared too");
-  load("./vendor/lib/b.mjs");
+  assert.equal(loadVendor("./vendor/lib/a.mjs"), first, "a finished load is shared too");
+  loadVendor("./vendor/lib/b.mjs");
   assert.deepEqual(asked, ["./vendor/lib/a.mjs", "./vendor/lib/b.mjs"]);
 });
 
 test("loadVendor turns a failed import into the viewer's failure text, not a throw", async () => {
   let calls = 0;
-  const load = createVendorLoader(() => {
+  const loadVendor = createVendorLoader(() => {
     calls += 1;
     return Promise.reject(new Error("404"));
   });
-  const outcome = await load("./vendor/lib/missing.mjs");
+  const outcome = await loadVendor("./vendor/lib/missing.mjs");
   assert.deepEqual(outcome, { ok: false, text: VENDOR_FAILURE_TEXT });
-  await load("./vendor/lib/missing.mjs");
+  await loadVendor("./vendor/lib/missing.mjs");
   assert.equal(calls, 2, "after a failure, the next open tries again");
 });

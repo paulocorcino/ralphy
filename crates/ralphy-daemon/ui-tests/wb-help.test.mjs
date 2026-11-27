@@ -2,7 +2,7 @@
 // and the keys that open it. The component is built with `loadComponent`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadComponent, loadShell } from "./harness.mjs";
+import { fakeWindow, loadComponent, loadShell } from "./harness.mjs";
 import { componentKeys, helpSections } from "../assets/ui/wb-help.ts";
 import { bindCommand, dispatchKey } from "../assets/ui/wb-commands.ts";
 
@@ -53,16 +53,7 @@ test("? opens the help only outside a terminal; Alt+Shift+/ opens it from a term
 });
 
 test("the help opens on its key and on the account menu's row, and only once", () => {
-  const listeners = {};
-  const loaded = loadShell({
-    window: {
-      addEventListener: (type, fn) => (listeners[type] ||= []).push(fn),
-      dispatchEvent: (e) => {
-        for (const fn of listeners[e.type] || []) fn(e);
-        return true;
-      },
-    },
-  });
+  const loaded = loadShell({ window: fakeWindow() });
   const { scope } = loadComponent("wbHelp", { from: loaded });
   scope.init();
   loaded.window.dispatchEvent({ type: "workbench:help-open", detail: null });

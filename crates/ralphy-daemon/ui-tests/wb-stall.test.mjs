@@ -2,47 +2,34 @@
 // its daemon. No DOM; `fetch` is replaced, as the module reads it at call time.
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { forgetStalls, reportStall, STALL_REPEAT_MS } from "../assets/ui/wb-stall.ts";
+import { fixture, swapFetch } from "./harness.mjs";
 
-function fixture(name) {
-  return JSON.parse(readFileSync(new URL(`fixtures/${name}.json`, import.meta.url), "utf8"));
-}
-
-function recordFetch() {
-  const prev = globalThis.fetch;
-  const calls = [];
-  globalThis.fetch = (url, init) => {
-    calls.push({ url, init });
-    return Promise.resolve(new Response(null, { status: 204 }));
-  };
+function recordFetch(t) {
+  const calls = swapFetch(t, () => Promise.resolve(new Response(null, { status: 204 })));
   forgetStalls();
-  return { calls, restore: () => (globalThis.fetch = prev) };
+  return { calls };
 }
 
-test("reportStall posts the stall to the daemon", async () => {
-  const f = recordFetch();
-  try {
-    await reportStall("read-deadline", "GET /api/repos", 20000);
-    assert.equal(f.calls.length, 1);
-    const { url, init } = f.calls[0];
-    assert.equal(url, "/api/device/stall");
-    assert.equal(init.method, "POST");
-    assert.equal(init.headers["content-type"], "application/json");
-    const body = JSON.parse(init.body);
-    // The body the daemon reads (`fixtures/api-device-stall--report.json`).
-    assert.deepEqual(Object.keys(body).toSorted(), Object.keys(fixture("api-device-stall--report")).toSorted());
-    assert.equal(body.kind, "read-deadline");
-    assert.equal(body.what, "GET /api/repos");
-    assert.equal(body.waited_ms, 20000);
-    assert.equal(typeof body.holder, "string");
-  } finally {
-    f.restore();
-  }
+test("reportStall posts the stall to the daemon", async (t) => {
+  const f = recordFetch(t);
+  await reportStall("read-deadline", "GET /api/repos", 20000);
+  assert.equal(f.calls.length, 1);
+  const { url, init } = f.calls[0];
+  assert.equal(url, "/api/device/stall");
+  assert.equal(init.method, "POST");
+  assert.equal(init.headers["content-type"], "application/json");
+  const body = JSON.parse(init.body);
+  // The body the daemon reads (`fixtures/api-device-stall--report.json`).
+  assert.deepEqual(Object.keys(body).toSorted(), Object.keys(fixture("api-device-stall--report")).toSorted());
+  assert.equal(body.kind, "read-deadline");
+  assert.equal(body.what, "GET /api/repos");
+  assert.equal(body.waited_ms, 20000);
+  assert.equal(typeof body.holder, "string");
 });
 
-test("reportStall sends one report per kind and what each minute", async () => {
-  const f = recordFetch();
+test("reportStall sends one report per kind and what each minute", async (t) => {
+  const f = recordFetch(t);
   mock.timers.enable({ apis: ["Date", "setTimeout"], now: 1_000_000 });
   try {
     await reportStall("read-deadline", "GET /api/repos", 20000);
@@ -56,6 +43,5 @@ test("reportStall sends one report per kind and what each minute", async () => {
     assert.deepEqual(rows, ["GET /api/repos", "GET /api/usage", "GET /api/repos"]);
   } finally {
     mock.timers.reset();
-    f.restore();
   }
 });

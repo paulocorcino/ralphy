@@ -10,7 +10,7 @@ import { colKey, matchSchema, parseDbml, refsOf, sameColumns, shownColumns, toMe
 import { groupTables } from "../assets/ui/wb-dbml-groups.ts";
 
 const HERE = import.meta.dirname;
-const fixture = (name) => readFileSync(join(HERE, "fixtures", "dbml", name), "utf8");
+const fixture = (name) => readFileSync(join(HERE, "fixtures", "dbml", name), "utf8"); // own: reads DBML text under fixtures/dbml, not the JSON that harness fixture reads
 
 const col = (name, type, over = {}) => ({
   name,

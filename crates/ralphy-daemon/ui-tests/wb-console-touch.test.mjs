@@ -4,6 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { wireTouch } from "../assets/ui/wb-console-touch.ts";
+import { fakeClassList } from "./harness.mjs";
 
 // A console body that keeps its listeners, a terminal of 10 rows of 20 px
 // that records the lines it selects, and a workspace scrolled to (100, 50).
@@ -17,7 +18,7 @@ function touchConsole() {
     buffer: { active: { viewportY: 0 } },
     selectLines: (from, to) => selected.push([from, to]),
   };
-  const ws = { scrollLeft: 100, scrollTop: 50, classList: { contains: () => false } };
+  const ws = { scrollLeft: 100, scrollTop: 50, classList: fakeClassList() };
   const classes = { add() {}, remove() {} };
   const touch = wireTouch({
     term,

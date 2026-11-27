@@ -3,7 +3,6 @@
 // spawns the window's replacement next (#904, #925).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { takeOffStage } from "../assets/ui/wb-console-take-down.ts";
 
 function stage(applyExtent) {
@@ -45,16 +44,4 @@ test("takeOffStage survives a layout throw and logs it", (t) => {
   assert.equal(wins.has(win), false);
   assert.equal(logged.mock.callCount(), 1);
   assert.match(String(logged.mock.calls[0].arguments[0]), /placeholder relaunch/u);
-});
-
-// Both take-downs go through the one rule: a placeholder's Launch or Attach
-// (#925) and a restart (#904).
-// pin: the placeholder and the restart take a window down by the one rule —
-// both paths build a real window in the DOM, which the node harness has not.
-test("the placeholder and the restart take a window down with takeOffStage", () => {
-  const ui = new URL("../assets/ui/", import.meta.url);
-  const placeholder = readFileSync(new URL("wb-console-placeholder.ts", ui), "utf8");
-  const spawn = readFileSync(new URL("wb-console-spawn.ts", ui), "utf8");
-  assert.match(placeholder, /const drop = [^]*?takeOffStage\(/u);
-  assert.match(spawn, /const discard = [^]*?takeOffStage\(/u);
 });

@@ -56,7 +56,7 @@ function fakeConsole({ covered = false, focused = false, watching = false, width
   const body = {
     clientWidth: width,
     clientHeight: height,
-    classList: {
+    classList: { // own: the test asserts on the set with has()
       toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)),
     },
   };

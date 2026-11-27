@@ -6,6 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createView } from "../assets/ui/wb-stage-view.ts";
 import { WBGeometry } from "../assets/ui/wb-geometry.ts";
+import { fakeClassList } from "./harness.mjs";
 
 // Something on the page that keeps its listeners, so a test can fire them.
 function listening(fields) {
@@ -30,7 +31,7 @@ function harness({ width = 1000, height = 700, stored = null, settled = false } 
   const st = listening({
     offsetWidth: 3000,
     offsetHeight: 2000,
-    classList: { add() {}, remove() {} },
+    classList: fakeClassList(),
     querySelectorAll: (sel) => (sel === ".session-window" ? wins : []),
     querySelector: () => null,
   });
@@ -126,7 +127,7 @@ test("the scroll listeners keep their order, and the page-hide flush writes the 
 
 test("a reveal on a hidden viewport is parked and wins over the stored offset", () => {
   const h = harness({ width: 0, height: 0, stored: { left: 0, top: 0 }, settled: true });
-  const win = { _deskId: "w1", rect: { left: 2200, top: 1500, width: 400, height: 300 }, classList: { contains: () => false } };
+  const win = { _deskId: "w1", rect: { left: 2200, top: 1500, width: 400, height: 300 }, classList: fakeClassList() };
   h.wins.push(win);
   assert.equal(h.view.reveal("w1"), win);
   assert.deepEqual(h.focused, [win]);
@@ -142,8 +143,8 @@ test("a reveal on a hidden viewport is parked and wins over the stored offset", 
 
 test("a parked reveal whose window is gone leaves the landing to the content", () => {
   const h = harness({ width: 0, height: 0 });
-  const gone = { _deskId: "w1", rect: { left: 200, top: 100, width: 400, height: 300 }, classList: { contains: () => false } };
-  const kept = { _deskId: "w2", rect: { left: 2000, top: 1200, width: 400, height: 300 }, classList: { contains: () => false } };
+  const gone = { _deskId: "w1", rect: { left: 200, top: 100, width: 400, height: 300 }, classList: fakeClassList() };
+  const kept = { _deskId: "w2", rect: { left: 2000, top: 1200, width: 400, height: 300 }, classList: fakeClassList() };
   h.wins.push(gone, kept);
   assert.equal(h.view.reveal("w1"), gone);
   // The window closes while the tab is hidden; then the tab shows, with no

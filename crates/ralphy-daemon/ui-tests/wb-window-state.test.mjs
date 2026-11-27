@@ -6,9 +6,6 @@ import assert from "node:assert/strict";
 import { WBWindowState } from "../assets/ui/wb-window-state.ts";
 
 // The module touches nothing when it is imported.
-function load() {
-  return WBWindowState;
-}
 
 // The shapes a window is actually found in, named once so each table below
 // reads as the situation rather than as a literal.
@@ -23,7 +20,7 @@ const asleep = (id, watching = false) => ({
 const spawning = (id) => ({ _term: null, _wantsSession: id });
 
 test("initWindow writes every declared field, so no window is born half-stated", () => {
-  const { FIELDS, initWindow } = load();
+  const { FIELDS, initWindow } = WBWindowState;
   const win = {};
   initWindow(win);
   assert.deepEqual(Object.keys(win).toSorted(), Object.keys(FIELDS).toSorted());
@@ -33,7 +30,7 @@ test("initWindow writes every declared field, so no window is born half-stated",
 });
 
 test("initWindow applies the seed over the defaults and leaves the rest declared", () => {
-  const { initWindow } = load();
+  const { initWindow } = WBWindowState;
   const win = initWindow({}, { _deskId: "d1", _deskRepo: "owner/repo", _deskLocked: true });
   assert.equal(win._deskId, "d1");
   assert.equal(win._deskRepo, "owner/repo");
@@ -51,14 +48,14 @@ test("initWindow applies the seed over the defaults and leaves the rest declared
 // nothing can notice. `_sessionOwner` was written on every announcement and read
 // nowhere for months because there was no place for it to look wrong.
 test("initWindow refuses a field the inventory does not declare", () => {
-  const { initWindow } = load();
+  const { initWindow } = WBWindowState;
   assert.throws(() => initWindow({}, { _sessionOwner: "01ARZ3NDEKTSV4RRFFQ69G5FAY" }), {
     message: /unknown window field _sessionOwner/u,
   });
 });
 
 test("initWindow overwrites a recycled element rather than merging into it", () => {
-  const { initWindow } = load();
+  const { initWindow } = WBWindowState;
   const win = { _deskId: "old", _wantsSession: 7, _dormant: true };
   initWindow(win, { _deskId: "new" });
   assert.equal(win._deskId, "new");
@@ -67,7 +64,7 @@ test("initWindow overwrites a recycled element rather than merging into it", () 
 });
 
 test("sessionIdOf answers one id from whichever source the window has", () => {
-  const { sessionIdOf, initWindow } = load();
+  const { sessionIdOf, initWindow } = WBWindowState;
   const table = [
     ["a live terminal", live(4), 4],
     ["a sleeping console", asleep(9), 9],
@@ -84,7 +81,7 @@ test("sessionIdOf answers one id from whichever source the window has", () => {
 // than `||` for exactly that reason. Pinned so a later "simplification" cannot
 // quietly make session 0 unreachable.
 test("sessionIdOf treats id 0 as an id, not as absence", () => {
-  const { sessionIdOf } = load();
+  const { sessionIdOf } = WBWindowState;
   assert.equal(sessionIdOf(live(0)), 0);
   assert.equal(sessionIdOf(asleep(0)), 0);
   assert.equal(sessionIdOf(spawning(0)), 0);
@@ -94,13 +91,13 @@ test("sessionIdOf treats id 0 as an id, not as absence", () => {
 // ids, and a live handle outranks both — a window that woke onto a different
 // session must not answer with the one it went to sleep holding.
 test("sessionIdOf prefers the live handle over either carried id", () => {
-  const { sessionIdOf } = load();
+  const { sessionIdOf } = WBWindowState;
   assert.equal(sessionIdOf({ ...asleep(9), _term: { sessionId: 4 } }), 4);
   assert.equal(sessionIdOf({ _term: null, _dormantSession: 9, _wantsSession: 3 }), 9);
 });
 
 test("watchingOf answers false for a window with no session to watch", () => {
-  const { watchingOf, initWindow } = load();
+  const { watchingOf, initWindow } = WBWindowState;
   assert.equal(watchingOf(live(4, true)), true);
   assert.equal(watchingOf(live(4, false)), false);
   assert.equal(watchingOf(asleep(9, true)), true);
@@ -114,13 +111,13 @@ test("watchingOf answers false for a window with no session to watch", () => {
 // across dormancy: waking onto a busy session parks the window as a watcher
 // (ADR-0051 §9), and the stale flag must not outvote that.
 test("watchingOf prefers the live handle over the carried flag", () => {
-  const { watchingOf } = load();
+  const { watchingOf } = WBWindowState;
   assert.equal(watchingOf({ ...asleep(9, false), _term: { sessionId: 9, watching: true } }), true);
   assert.equal(watchingOf({ ...asleep(9, true), _term: { sessionId: 9, watching: false } }), false);
 });
 
 test("windowCheckout lets the daemon's announcement beat the request beat the record", () => {
-  const { windowCheckout, initWindow } = load();
+  const { windowCheckout, initWindow } = WBWindowState;
   const announced = initWindow({}, {
     _sessionCheckout: "wt/announced",
     _deskCheckout: "wt/recorded",
@@ -138,7 +135,7 @@ test("windowCheckout lets the daemon's announcement beat the request beat the re
 // ANSWER: a console announced as running in the primary must not fall through
 // to a stale recorded worktree.
 test("windowCheckout does not treat the primary worktree as an unanswered question", () => {
-  const { windowCheckout, initWindow } = load();
+  const { windowCheckout, initWindow } = WBWindowState;
   const win = initWindow({}, { _sessionCheckout: null, _deskCheckout: "wt/stale" });
   // `_sessionCheckout` is null (its default) — indistinguishable from "never
   // announced", which is why the DESK mirror is overwritten on announcement too.

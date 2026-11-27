@@ -4,20 +4,13 @@
 // `uses`, or assigns a shell() field (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadComponent, loadShell } from "./harness.mjs";
+import { fakeWindow, loadComponent, loadShell } from "./harness.mjs";
 
 // One page with the shell and the gate, and a window that delivers the events
 // it is sent, as the browser does. `init()` adds the listeners, as Alpine does
 // when it builds the component.
 function page(opts = {}) {
-  const listeners = {};
-  const loaded = loadShell({
-    ...opts,
-    window: {
-      addEventListener: (type, fn) => (listeners[type] ||= []).push(fn),
-      dispatchEvent: (e) => ((listeners[e.type] || []).forEach((fn) => fn(e)), true),
-    },
-  });
+  const loaded = loadShell({ ...opts, window: fakeWindow() });
   const gate = loadComponent("wbLogin", { from: loaded });
   gate.scope.init();
   return { loaded, shell: loaded.state, gate: gate.scope };

@@ -129,7 +129,7 @@ test("a period change drops the Ledger rows and reads the pane that is shown", (
 async function withUsage(reply, run) {
   const real = globalThis.fetch;
   const urls = [];
-  globalThis.fetch = (url) => {
+  globalThis.fetch = (url) => { // own: a test calls withUsage in a loop; each swap ends before the next
     urls.push(String(url));
     if (reply instanceof Error) throw reply;
     return Promise.resolve(reply);
@@ -137,7 +137,7 @@ async function withUsage(reply, run) {
   try {
     return await run(urls);
   } finally {
-    globalThis.fetch = real;
+    globalThis.fetch = real; // own: the restore of the swap above
   }
 }
 

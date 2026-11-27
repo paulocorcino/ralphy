@@ -8,6 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createCheckoutSwitcher } from "../assets/ui/wb-console-checkout.ts";
 import { checkoutsStore } from "../assets/ui/wb-checkouts-store.ts";
+import { fakeClassList } from "./harness.mjs";
 
 // An element with the few DOM members the menu and the prompt use. `all`
 // records every element the document made, so a test finds the prompt's
@@ -105,7 +106,7 @@ function openPrompt({ branchList, adds }) {
     ...document.createElement("div"),
     _deskRepo: "o/r",
     _deskCheckout: null,
-    classList: { contains: () => false },
+    classList: fakeClassList(),
     _relaunchIn: (name) => relaunched.push(name),
   };
   switcher.openCheckoutMenu(win, document.createElement("button"));

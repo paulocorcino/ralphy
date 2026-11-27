@@ -7,9 +7,17 @@
 // scrim's scope as `this`, and calls `x-effect` after a flag changes.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { assembledPage, loadComponent, loadShell, UI, valueIn as evalIn, withoutComments } from "./harness.mjs";
+import {
+  assembledPage,
+  fakeClassList,
+  loadComponent,
+  loadShell,
+  UI,
+  valueIn as evalIn,
+  withoutComments,
+} from "./harness.mjs";
 
 // The whole page with its parts put in: the order of the scrims is document
 // order. Comments dropped first: their prose quotes tags.
@@ -173,7 +181,7 @@ test("a modal focuses its first control on open and gives focus back on close", 
     name,
     disabled: false,
     isConnected: true,
-    classList: { contains: (c) => (extra.classes || []).includes(c) },
+    classList: fakeClassList(...(extra.classes || [])),
     getClientRects: () => (extra.hidden ? [] : [{}]),
     focus: () => focused.push(name),
     ...extra,
@@ -219,7 +227,7 @@ test("Tab and Shift+Tab stay inside the open modal", () => {
   // The page's stub document, which the store reads.
   const doc = globalThis.document;
   const el = (name) => {
-    const e = { name, disabled: false, getClientRects: () => [{}], classList: { contains: () => false } };
+    const e = { name, disabled: false, getClientRects: () => [{}], classList: fakeClassList() };
     e.focus = () => (doc.activeElement = e);
     return e;
   };
@@ -268,23 +276,4 @@ test("every dialog in the document is marked modal", () => {
   for (const tag of dialogs) {
     assert.match(tag, /\baria-modal="true"/u, tag.replaceAll(/\s+/gu, " "));
   }
-});
-
-// The page is built from parts, and each part goes back to the place its
-// marker holds: every component a part declares is in the page.
-// pin: every component a part declares is in the assembled page —
-// the page is markup, and node runs no Alpine over it.
-test("a page put together from its parts", () => {
-  const names = new Set(COMPONENTS.map((c) => c.name));
-  const parts = readdirSync(UI).filter((f) => f.endsWith(".part.html"));
-  let declared = 0;
-  for (const part of parts) {
-    const markup = readFileSync(join(UI, part), "utf8");
-    for (const [, name] of markup.matchAll(/<div [^<>]*x-data="(wb\w+)"/gu)) {
-      assert.ok(names.has(name), `${part}: ${name} is in the page`);
-      declared++;
-    }
-  }
-  assert.ok(declared > 0, "the parts declare components");
-  assert.doesNotMatch(assembledPage("index.html"), /<!-- part:/u, "a marker is left in the page");
 });

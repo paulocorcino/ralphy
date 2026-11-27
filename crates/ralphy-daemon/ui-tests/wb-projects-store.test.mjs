@@ -5,7 +5,7 @@
 // stores are real.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadShell } from "./harness.mjs";
+import { loadShell, swapFetch } from "./harness.mjs";
 import { projectsStore } from "../assets/ui/wb-projects-store.ts";
 
 test("a new store has no open project and no projects", () => {
@@ -84,7 +84,7 @@ test("wakePeerFor wakes the daemon of a sleeping peer's row only", () => {
 
 // `/api/repos` carries `head` beside `branch` (#510): a detached HEAD has no
 // branch, and the row must still name its commit.
-test("loadRepos keeps the head of a detached repo for the row title", async () => {
+test("loadRepos keeps the head of a detached repo for the row title", async (t) => {
   const { state: shell } = loadShell();
   const state = shell.$store.projects;
   state.loadFleet = () => {};
@@ -98,13 +98,8 @@ test("loadRepos keeps the head of a detached repo for the row title", async () =
     dirty: false,
     remote: null,
   };
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve([row]) });
-  try {
-    await state.loadRepos();
-  } finally {
-    globalThis.fetch = realFetch;
-  }
+  swapFetch(t, () => Promise.resolve({ ok: true, json: () => Promise.resolve([row]) }));
+  await state.loadRepos();
   assert.equal(state.projects.length, 1);
   assert.equal(shell.rowTitle(state.projects[0]), "o/r · abc1234");
 });
@@ -112,7 +107,7 @@ test("loadRepos keeps the head of a detached repo for the row title", async () =
 const projectRow = (slug, remote) => ({ slug, path: "/" + slug, reachable: true, branch: "main", dirty: false, remote });
 
 // The sidebar dot says GitHub only when github.com is the remote's host.
-test("loadRepos marks a row github only for a remote hosted on github.com", async () => {
+test("loadRepos marks a row github only for a remote hosted on github.com", async (t) => {
   const state = loadShell().state.$store.projects;
   state.loadFleet = () => {};
   state.refreshLive = () => {};
@@ -121,13 +116,8 @@ test("loadRepos marks a row github only for a remote hosted on github.com", asyn
     projectRow("o/fake", "https://github.com.evil.example/o/fake"),
     projectRow("o/none", null),
   ];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(rows) });
-  try {
-    await state.loadRepos();
-  } finally {
-    globalThis.fetch = realFetch;
-  }
+  swapFetch(t, () => Promise.resolve({ ok: true, json: () => Promise.resolve(rows) }));
+  await state.loadRepos();
   assert.deepEqual(
     state.projects.map((p) => [p.slug, p.remote]),
     [["o/gh", "github"], ["o/fake", "local"], ["o/none", "local"]],
@@ -135,73 +125,70 @@ test("loadRepos marks a row github only for a remote hosted on github.com", asyn
 });
 
 // Answers each fetch with the next reply in `replies` (`{ status, body }`).
-function scriptedFetch(replies) {
+function scriptedFetch(t, replies) {
+  swapFetch(t, () => {
+    const { status, body } = replies.shift() || { status: 500, body: null };
+    return Promise.resolve({ ok: status === 200, status, json: () => Promise.resolve(body) });
+  });
+}
+
+// For the one test that swaps fetch more than once: each swap must end before
+// the next starts, which `swapFetch` (restoring at the test's end) cannot do.
+function restorableFetch(replies) {
   const realFetch = globalThis.fetch;
-  globalThis.fetch = () => {
+  globalThis.fetch = () => { // own: each swap is restored before the next one
     const { status, body } = replies.shift() || { status: 500, body: null };
     return Promise.resolve({ ok: status === 200, status, json: () => Promise.resolve(body) });
   };
-  return () => (globalThis.fetch = realFetch);
+  return () => (globalThis.fetch = realFetch); // own: the restore of the swap above
 }
 
-test("a failed project read after a good one keeps the list, marked not current", async () => {
+test("a failed project read after a good one keeps the list, marked not current", async (t) => {
   const state = loadShell().state.$store.projects;
   state.loadFleet = () => {};
   state.refreshLive = () => {};
-  const restore = scriptedFetch([
+  scriptedFetch(t, [
     { status: 200, body: [{ slug: "a/b", path: "/ab", reachable: true }] },
     { status: 500, body: null },
   ]);
-  try {
-    await state.loadRepos();
-    await state.loadRepos();
-  } finally {
-    restore();
-  }
+  await state.loadRepos();
+  await state.loadRepos();
   assert.equal(state.projects.length, 1);
   assert.equal(state.projects[0].slug, "a/b");
   assert.match(state.reposError, /Not current: the daemon answered 500/u);
 });
 
-test("a failed first project read is empty and says why", async () => {
+test("a failed first project read is empty and says why", async (t) => {
   const state = loadShell().state.$store.projects;
   state.refreshLive = () => {};
-  const restore = scriptedFetch([{ status: 500, body: null }]);
-  try {
-    await state.loadRepos();
-  } finally {
-    restore();
-  }
+  scriptedFetch(t, [{ status: 500, body: null }]);
+  await state.loadRepos();
   assert.deepEqual(state.projects, []);
   assert.equal(state.reposError, "Could not load the projects from the daemon: the daemon answered 500.");
 });
 
-test("a failed fleet read after a good one keeps the peers and their rows", async () => {
+test("a failed fleet read after a good one keeps the peers and their rows", async (t) => {
   const state = loadShell().state.$store.projects;
   const fleet = {
     peers: [{ daemon_id: "p1", name: "wsl", environment: "WSL: U", state: "reachable" }],
     repos: [{ key: "p1/o/r", slug: "o/r", daemon_id: "p1", reachable: true }],
   };
-  const restore = scriptedFetch([
+  scriptedFetch(t, [
     { status: 200, body: fleet },
     { status: 502, body: null },
   ]);
-  try {
-    await state.loadFleet();
-    state.setProjects(state.projects.filter((p) => !p.daemon));
-    await state.loadFleet();
-  } finally {
-    restore();
-  }
+  await state.loadFleet();
+  state.setProjects(state.projects.filter((p) => !p.daemon));
+  await state.loadFleet();
   assert.equal(state.fleetPeers.length, 1);
   assert.equal(state.projects.filter((p) => p.daemon === "p1").length, 1);
   assert.match(state.fleetError, /Not current: the daemon answered 502/u);
 });
 
-test("the fleet row marked local stamps its environment, os and name on the local rows", async () => {
+test("the fleet row marked local stamps its environment, os and name on the local rows", async (t) => {
   const state = loadShell().state.$store.projects;
   state.setProjects([{ slug: "o/a" }, { slug: "o/b" }]);
-  const restore = scriptedFetch([
+  scriptedFetch(t, [
     {
       status: 200,
       body: {
@@ -210,11 +197,7 @@ test("the fleet row marked local stamps its environment, os and name on the loca
       },
     },
   ]);
-  try {
-    await state.loadFleet();
-  } finally {
-    restore();
-  }
+  await state.loadFleet();
   assert.deepEqual(
     state.projects.map((p) => [p.slug, p.env, p.os, p.daemonName]),
     [
@@ -224,10 +207,10 @@ test("the fleet row marked local stamps its environment, os and name on the loca
   );
 });
 
-test("with no local project, the fleet's own entry heads this computer's group", async () => {
+test("with no local project, the fleet's own entry heads this computer's group", async (t) => {
   const state = loadShell().state.$store.projects;
   state.setProjects([]);
-  const restore = scriptedFetch([
+  scriptedFetch(t, [
     {
       status: 200,
       body: {
@@ -237,11 +220,7 @@ test("with no local project, the fleet's own entry heads this computer's group",
       },
     },
   ]);
-  try {
-    await state.loadFleet();
-  } finally {
-    restore();
-  }
+  await state.loadFleet();
   assert.deepEqual(
     state.fleetGroups().map((g) => [g.environment, g.header, g.rows.map((r) => r.slug)]),
     [
@@ -251,88 +230,70 @@ test("with no local project, the fleet's own entry heads this computer's group",
   );
 });
 
-test("an unreachable repo is offline, and an offline row that answers again is idle", async () => {
+test("an unreachable repo is offline, and an offline row that answers again is idle", async (t) => {
   const state = loadShell().state.$store.projects;
   state.loadFleet = () => {};
   state.refreshLive = () => {};
-  const restore = scriptedFetch([
+  scriptedFetch(t, [
     { status: 200, body: [{ slug: "a/b", reachable: false }] },
     { status: 200, body: [{ slug: "a/b", reachable: true }] },
     { status: 200, body: [{ slug: "a/b", reachable: true }] },
     { status: 200, body: [{ slug: "a/b", reachable: false }] },
   ]);
-  try {
-    await state.loadRepos();
-    assert.equal(state.projects[0].state, "offline");
-    await state.loadRepos();
-    assert.equal(state.projects[0].state, "idle", "it answers again");
-    state.projects[0].state = "running";
-    state.projects[0].env = "WSL: U";
-    state.projects[0].daemonName = "anvil";
-    await state.loadRepos();
-    assert.deepEqual(
-      [state.projects[0].state, state.projects[0].env, state.projects[0].daemonName],
-      ["running", "WSL: U", "anvil"],
-      "a row that stays reachable keeps its state and its environment",
-    );
-    await state.loadRepos();
-    assert.equal(state.projects[0].state, "offline", "an unreachable repo is offline, whatever it was");
-  } finally {
-    restore();
-  }
+  await state.loadRepos();
+  assert.equal(state.projects[0].state, "offline");
+  await state.loadRepos();
+  assert.equal(state.projects[0].state, "idle", "it answers again");
+  state.projects[0].state = "running";
+  state.projects[0].env = "WSL: U";
+  state.projects[0].daemonName = "anvil";
+  await state.loadRepos();
+  assert.deepEqual(
+    [state.projects[0].state, state.projects[0].env, state.projects[0].daemonName],
+    ["running", "WSL: U", "anvil"],
+    "a row that stays reachable keeps its state and its environment",
+  );
+  await state.loadRepos();
+  assert.equal(state.projects[0].state, "offline", "an unreachable repo is offline, whatever it was");
 });
 
-test("a failed session read after a good one keeps the list, marked not current", async () => {
+test("a failed session read after a good one keeps the list, marked not current", async (t) => {
   const state = loadShell().state.$store.projects;
-  const restore = scriptedFetch([
+  scriptedFetch(t, [
     { status: 200, body: [{ id: 1, repo: "o/r" }] },
     { status: 500, body: null },
   ]);
-  try {
-    await state.refreshLive();
-    await state.refreshLive();
-  } finally {
-    restore();
-  }
+  await state.refreshLive();
+  await state.refreshLive();
   assert.equal(state.liveSessions.length, 1);
   assert.match(state.sessionsError(), /Not current/u);
 });
 
-test("two fleet reads close together list each peer row once", async () => {
+test("two fleet reads close together list each peer row once", async (t) => {
   const state = loadShell().state.$store.projects;
   state.setProjects([{ slug: "a/b", tree: [] }]);
   const fleet = {
     peers: [{ daemon_id: "p1", name: "wsl", environment: "WSL: U", state: "reachable" }],
     repos: [{ key: "p1/o/r", slug: "o/r", daemon_id: "p1", reachable: true }],
   };
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(fleet) });
-  try {
-    await Promise.all([state.loadFleet(), state.loadFleet()]);
-  } finally {
-    globalThis.fetch = realFetch;
-  }
+  swapFetch(t, () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(fleet) }));
+  await Promise.all([state.loadFleet(), state.loadFleet()]);
   assert.equal(state.projects.filter((p) => p.daemon === "p1").length, 1);
   assert.equal(state.projects.filter((p) => !p.daemon).length, 1);
 });
 
-test("fleet reads asked now share the read in flight, and a later ask reads again", async () => {
+test("fleet reads asked now share the read in flight, and a later ask reads again", async (t) => {
   const state = loadShell().state.$store.projects;
   state.setProjects([]);
   let reads = 0;
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = (url) => {
+  swapFetch(t, (url) => {
     if (url === "/api/fleet") reads += 1;
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ peers: [], repos: [] }) });
-  };
-  try {
-    await Promise.all([state.readFleetNow(), state.readFleetNow(), state.readFleetNow()]);
-    assert.equal(reads, 1);
-    await state.readFleetNow();
-    assert.equal(reads, 2);
-  } finally {
-    globalThis.fetch = realFetch;
-  }
+  });
+  await Promise.all([state.readFleetNow(), state.readFleetNow(), state.readFleetNow()]);
+  assert.equal(reads, 1);
+  await state.readFleetNow();
+  assert.equal(reads, 2);
 });
 
 test("the consoles get the store's fleet read with the fleet", () => {
@@ -350,36 +311,27 @@ test("the consoles get the store's fleet read with the fleet", () => {
   assert.equal(asked, 1);
 });
 
-test("a good fleet read is sent to the files", async () => {
+test("a good fleet read is sent to the files", async (t) => {
   const events = [];
   const state = loadShell({ window: { dispatchEvent: (e) => (events.push(e), true) } }).state.$store.projects;
   const sent = (type) => events.filter((e) => e.type === type).map((e) => e.detail ?? null);
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ peers: [], repos: [] }) });
-  try {
-    await state.loadFleet();
-  } finally {
-    globalThis.fetch = realFetch;
-  }
+  swapFetch(t, () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ peers: [], repos: [] }) }));
+  await state.loadFleet();
   assert.deepEqual(sent("workbench:fleet-read"), [null]);
 });
 
-test("a project read keeps the peer rows and the live dots until the fleet and the sessions answer", async () => {
+test("a project read keeps the peer rows and the live dots until the fleet and the sessions answer", async (t) => {
   const state = loadShell(VISIBLE).state.$store.projects;
   const peer = { key: "d/x", slug: "x", daemon: "d", state: "idle" };
   state.setProjects([{ slug: "a", state: "working", env: "wsl" }, peer]);
   state._fleetRows = [peer];
-  const realFetch = globalThis.fetch;
   // `/api/repos` answers; the fleet and the sessions never do.
-  globalThis.fetch = (url) =>
+  swapFetch(t, (url) =>
     String(url) === "/api/repos"
       ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([{ slug: "a", reachable: true }]) })
-      : new Promise(() => {});
-  try {
-    await state.loadRepos({ git: false });
-  } finally {
-    globalThis.fetch = realFetch;
-  }
+      : new Promise(() => {}),
+  );
+  await state.loadRepos({ git: false });
   assert.deepEqual(
     state.projects.map((p) => p.slug),
     ["a", "x"],
@@ -391,10 +343,10 @@ test("a project read keeps the peer rows and the live dots until the fleet and t
 
 // ADR-0070 D4: a peer the daemon cannot read lists no project, so the sidebar
 // says so instead of showing a fleet with that peer missing.
-test("a peer the daemon could not read is named in the sidebar", async () => {
+test("a peer the daemon could not read is named in the sidebar", async (t) => {
   const state = loadShell(VISIBLE).state.$store.projects;
   state.setProjects([]);
-  const restore = scriptedFetch([
+  scriptedFetch(t, [
     {
       status: 200,
       body: {
@@ -406,11 +358,7 @@ test("a peer the daemon could not read is named in the sidebar", async () => {
       },
     },
   ]);
-  try {
-    await state.loadFleet();
-  } finally {
-    restore();
-  }
+  await state.loadFleet();
   assert.equal(state.fleetRejectNote, "Could not read a peer: cannot list /p/peers: access denied");
   // NEGATIVE CONTROL: a fleet with no bad peer says nothing.
   assert.equal(state.fleetRejectText([{ state: "online" }]), "");
@@ -457,7 +405,7 @@ test("updatePeer installs on the host, adds it again, and stops at a failure", a
   assert.equal(reloads, 1);
 });
 
-test("a fleet read lists each peer repo as a row of its daemon", async () => {
+test("a fleet read lists each peer repo as a row of its daemon", async (t) => {
   const state = loadShell().state.$store.projects;
   state.setProjects([{ slug: "o/a" }]);
   const peerRepo = {
@@ -471,12 +419,8 @@ test("a fleet read lists each peer repo as a row of its daemon", async () => {
     os: "linux",
     peer_state: "online",
   };
-  const restore = scriptedFetch([{ status: 200, body: { peers: [], repos: [peerRepo] } }]);
-  try {
-    await state.loadFleet();
-  } finally {
-    restore();
-  }
+  scriptedFetch(t, [{ status: 200, body: { peers: [], repos: [peerRepo] } }]);
+  await state.loadFleet();
   const row = state.projects.find((p) => p.key === "d2/o/p");
   assert.deepEqual(
     [row.name, row.path, row.branch, row.state, row.remote, row.remoteUrl, row.daemon, row.daemonName, row.env, row.os, row.peerState],
@@ -496,7 +440,7 @@ async function wake(replies) {
   shell.$store.modals.flash = (text) => flashed.push(text);
   const reloads = [];
   state.loadRepos = () => Promise.resolve(reloads.push("repos"));
-  const restore = scriptedFetch(replies);
+  const restore = restorableFetch(replies);
   try {
     return { woke: await state.wakePeer("d2"), flashed, reloads };
   } finally {

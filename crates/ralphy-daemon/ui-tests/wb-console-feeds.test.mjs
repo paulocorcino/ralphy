@@ -3,6 +3,7 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { createFeeds } from "../assets/ui/wb-console-feeds.ts";
+import { swapFetch } from "./harness.mjs";
 
 function feeds() {
   return createFeeds({
@@ -67,14 +68,13 @@ test("ingestFleet keeps only peer groups", () => {
   assert.equal(f.peerGroups.get("d2"), peer);
 });
 
-test("a shared sessions read that passed its deadline is not shared again", async () => {
-  const prev = globalThis.fetch;
+test("a shared sessions read that passed its deadline is not shared again", async (t) => {
   let fetches = 0;
   // The stall report that the deadline sends is not a sessions read.
-  globalThis.fetch = (url) => {
+  swapFetch(t, (url) => {
     if (url !== "/api/device/stall") fetches += 1;
     return new Promise(() => {});
-  };
+  });
   mock.timers.enable({ apis: ["setTimeout"] });
   try {
     const f = feeds();
@@ -89,6 +89,5 @@ test("a shared sessions read that passed its deadline is not shared again", asyn
     assert.equal(fetches, 2, "a read after the deadline makes a new request");
   } finally {
     mock.timers.reset();
-    globalThis.fetch = prev;
   }
 });

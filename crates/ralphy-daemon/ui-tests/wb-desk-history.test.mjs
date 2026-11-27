@@ -3,22 +3,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { WBDeskHistory } from "../assets/ui/wb-desk-history.ts";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
-const HERE = import.meta.dirname;
-// The module keeps no state, so one import serves every test.
-function load() {
-  return WBDeskHistory;
-}
-
-function fixture(name) {
-  return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));
-}
+import { fixture } from "./harness.mjs";
 
 test("each version the daemon lists is one row, newest first, with its reason and counts", () => {
-  const H = load();
-  const rows = H.rows(fixture("api-desk-history"), (ms) => `t${ms}`);
+  const rows = WBDeskHistory.rows(fixture("api-desk-history"), (ms) => `t${ms}`);
   assert.deepEqual(
     rows.map((r) => [r.reason, r.counts, r.when]),
     [
@@ -34,16 +22,16 @@ test("each version the daemon lists is one row, newest first, with its reason an
 });
 
 test("a reply that is not a list shows no rows", () => {
-  assert.deepEqual(load().rows({ error: "x" }, String), []);
+  assert.deepEqual(WBDeskHistory.rows({ error: "x" }, String), []);
 });
 
 test("a downloaded file is named for its local save time", () => {
   const savedAt = new Date(2026, 9, 4, 9, 7).getTime();
-  assert.equal(load().fileName({ savedAt }), "ralphy-desk-2026-10-04-0907.json");
+  assert.equal(WBDeskHistory.fileName({ savedAt }), "ralphy-desk-2026-10-04-0907.json");
 });
 
 test("an upload must be a desk version file", () => {
-  const H = load();
+  const H = WBDeskHistory;
   assert.deepEqual(H.parseUpload("{ nope"), { cause: "the file is not JSON" });
   assert.deepEqual(H.parseUpload(JSON.stringify({ kind: "other", desk: {} })), {
     cause: "the file is not a desk layout saved by Ralphy",

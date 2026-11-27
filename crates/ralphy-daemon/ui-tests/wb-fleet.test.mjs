@@ -7,11 +7,6 @@ import { WBFleet } from "../assets/ui/wb-fleet.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-// The module keeps no state, so one import serves every test.
-function load() {
-  return WBFleet;
-}
-
 const LOCAL_ROW = { key: "01ABC/owner/repo", slug: "owner/repo", path: "C:/Dev/repo" };
 const PEER_ROW = {
   key: "01XYZ/owner/repo",
@@ -32,7 +27,7 @@ const PEER = {
 };
 
 test("the same slug on two daemons is two rows in two groups", () => {
-  const groups = load().fleetGroups([LOCAL_ROW, PEER_ROW], [PEER]);
+  const groups = WBFleet.fleetGroups([LOCAL_ROW, PEER_ROW], [PEER]);
   assert.equal(groups.length, 2);
   assert.equal(groups[0].local, true, "local sorts first");
   assert.equal(groups[0].rows.length, 1);
@@ -51,7 +46,7 @@ test("an unreachable peer's group still carries its rows", () => {
     diagnosis: "peer WSL: Ubuntu-22.04 did not answer (connection refused)",
   });
   const downRow = Object.assign({}, PEER_ROW, { peerState: "unreachable" });
-  const groups = load().fleetGroups([LOCAL_ROW, downRow], [down]);
+  const groups = WBFleet.fleetGroups([LOCAL_ROW, downRow], [down]);
   const peerGroup = groups.find((g) => g.daemon === "01XYZ");
   assert.ok(peerGroup, "the peer must still be a group");
   assert.equal(peerGroup.state, "unreachable");
@@ -60,7 +55,7 @@ test("an unreachable peer's group still carries its rows", () => {
 });
 
 test("a peer that contributed no rows is still a group", () => {
-  const groups = load().fleetGroups([LOCAL_ROW], [Object.assign({}, PEER, { state: "unauthorized" })]);
+  const groups = WBFleet.fleetGroups([LOCAL_ROW], [Object.assign({}, PEER, { state: "unauthorized" })]);
   assert.equal(groups.length, 2);
   const peerGroup = groups.find((g) => g.daemon === "01XYZ");
   assert.equal(peerGroup.rows.length, 0);
@@ -71,7 +66,7 @@ const group = (state, extra) =>
   Object.assign({ daemon: "01XYZ", local: false, nudgeable: true, state: state }, extra);
 
 test("only the states a nudge can answer offer to wake", () => {
-  const { wakeable } = load();
+  const { wakeable } = WBFleet;
   for (const state of ["asleep", "unreachable"]) {
     assert.equal(wakeable(group(state)), true, `${state} must be wakeable`);
   }
@@ -93,7 +88,7 @@ test("only the states a nudge can answer offer to wake", () => {
 const reachableGroup = (state, extra) => Object.assign({ daemon: "01XYZ", local: false, state: state }, extra);
 
 test("only a reachable peer, or one not yet heard of, has projects that open", () => {
-  const { available } = load();
+  const { available } = WBFleet;
   assert.equal(available(reachableGroup("reachable")), true);
   assert.equal(available(reachableGroup("")), true, "the fleet list has not arrived yet");
   assert.equal(available(reachableGroup("", { local: true })), true, "this daemon always answers its own rows");
@@ -103,7 +98,7 @@ test("only a reachable peer, or one not yet heard of, has projects that open", (
 });
 
 test("a peer ref names the daemon to wake, a local one names none", () => {
-  const { refDaemon } = load();
+  const { refDaemon } = WBFleet;
   assert.equal(refDaemon("01ARZ3NDEKTSV4RRFFQ69G5FAV/owner/repo"), "01ARZ3NDEKTSV4RRFFQ69G5FAV");
   assert.equal(refDaemon("owner/repo"), "", "a local slug has no daemon at its head");
   assert.equal(refDaemon(null), "");
@@ -117,14 +112,14 @@ test("environment headers show only when the fleet has two environments", () => 
     ["two environments", [LOCAL_ROW, PEER_ROW], [PEER], [true, true]],
   ];
   for (const [name, fleetRows, peers, want] of rows) {
-    const groups = load().fleetGroups(fleetRows, peers);
+    const groups = WBFleet.fleetGroups(fleetRows, peers);
     assert.deepEqual(
       groups.map((g) => g.header),
       want,
       name,
     );
   }
-  assert.equal(load().fleetGroups([LOCAL_ROW], [])[0].state, "local");
+  assert.equal(WBFleet.fleetGroups([LOCAL_ROW], [])[0].state, "local");
 });
 
 // ---- the environment header ------------------------------------------------
@@ -133,14 +128,14 @@ test("environment headers show only when the fleet has two environments", () => 
 
 test("a daemon's name shows only when two groups share an environment", () => {
   const local = Object.assign({}, LOCAL_ROW, { env: "Windows", daemonName: "anvil" });
-  const distinct = load().fleetGroups([local, PEER_ROW], [PEER]);
+  const distinct = WBFleet.fleetGroups([local, PEER_ROW], [PEER]);
   assert.deepEqual(
     distinct.map((g) => g.showName),
     [false, false],
     "`WSL: Ubuntu-22.04 wsl-box` says the environment twice",
   );
   const twin = { daemon_id: "01AAA", name: "twin-box", environment: "WSL: Ubuntu-22.04", state: "reachable" };
-  const shared = load().fleetGroups([local, PEER_ROW], [PEER, twin]);
+  const shared = WBFleet.fleetGroups([local, PEER_ROW], [PEER, twin]);
   assert.deepEqual(
     shared.map((g) => [g.name, g.showName]),
     [
@@ -153,7 +148,7 @@ test("a daemon's name shows only when two groups share an environment", () => {
   // A nameless daemon has nothing to disambiguate with.
   const nameless = Object.assign({}, twin, { name: "" });
   assert.equal(
-    load().fleetGroups([PEER_ROW], [PEER, nameless]).find((g) => g.daemon === "01AAA").showName,
+    WBFleet.fleetGroups([PEER_ROW], [PEER, nameless]).find((g) => g.daemon === "01AAA").showName,
     false,
   );
 });
@@ -161,7 +156,7 @@ test("a daemon's name shows only when two groups share an environment", () => {
 const glyphGroup = (state, extra) => Object.assign({ local: false, state: state }, extra);
 
 test("the state glyph: none for local, plugged for reachable, unplug for the rest", () => {
-  const { stateIcon, stateFault } = load();
+  const { stateIcon, stateFault } = WBFleet;
   assert.equal(stateIcon(glyphGroup("local", { local: true })), "", "the local group is the machine you are at");
   assert.equal(stateIcon(glyphGroup("reachable")), "plugged");
   assert.equal(stateFault(glyphGroup("reachable")), false);
@@ -177,7 +172,7 @@ test("the state glyph: none for local, plugged for reachable, unplug for the res
 });
 
 test("the header tooltip carries what the header no longer prints", () => {
-  const { groupTitle } = load();
+  const { groupTitle } = WBFleet;
   assert.equal(
     groupTitle({ local: false, name: "wsl-box", state: "reachable", diagnosis: "" }),
     "wsl-box · reachable",
@@ -201,8 +196,8 @@ test("the order peers arrive in does not change the grouping", () => {
     env: "WSL: Debian",
     peerState: "reachable",
   };
-  const forward = load().fleetGroups([LOCAL_ROW, PEER_ROW, otherRow], [PEER, other]);
-  const reversed = load().fleetGroups([otherRow, PEER_ROW, LOCAL_ROW], [other, PEER]);
+  const forward = WBFleet.fleetGroups([LOCAL_ROW, PEER_ROW, otherRow], [PEER, other]);
+  const reversed = WBFleet.fleetGroups([otherRow, PEER_ROW, LOCAL_ROW], [other, PEER]);
   assert.deepEqual(
     forward.map((g) => g.key),
     reversed.map((g) => g.key),
@@ -210,7 +205,7 @@ test("the order peers arrive in does not change the grouping", () => {
 });
 
 test("a missing repos or peers list is not a crash", () => {
-  const fleet = load();
+  const fleet = WBFleet;
   assert.deepEqual(fleet.fleetGroups(), []);
   assert.equal(fleet.fleetGroups(null, [PEER]).length, 1);
 });
@@ -218,7 +213,7 @@ test("a missing repos or peers list is not a crash", () => {
 const SELF = { daemon_id: "01ME", daemon_name: "anvil", environment: "Windows 11", os: "windows" };
 
 test("with peers and no local row, this daemon still has its headed group", () => {
-  const groups = load().fleetGroups([PEER_ROW], [PEER], SELF);
+  const groups = WBFleet.fleetGroups([PEER_ROW], [PEER], SELF);
   assert.deepEqual(
     groups.map((g) => [g.local, g.environment, g.os, g.header, g.rows.length]),
     [
@@ -227,12 +222,12 @@ test("with peers and no local row, this daemon still has its headed group", () =
     ],
   );
   // CONTROLS: alone, this daemon gets no group; an older daemon sends no self.
-  assert.deepEqual(load().fleetGroups([], [], SELF), []);
-  assert.equal(load().fleetGroups([PEER_ROW], [PEER]).length, 1);
+  assert.deepEqual(WBFleet.fleetGroups([], [], SELF), []);
+  assert.equal(WBFleet.fleetGroups([PEER_ROW], [PEER]).length, 1);
 });
 
 test("repo refs keep local slugs and use peer keys", () => {
-  const fleet = load();
+  const fleet = WBFleet;
   assert.equal(fleet.repoRef({ slug: "owner/repo" }), "owner/repo");
   assert.equal(
     fleet.repoRef({
@@ -244,7 +239,7 @@ test("repo refs keep local slugs and use peer keys", () => {
 });
 
 test("peer refs require a Crockford ULID head", () => {
-  const fleet = load();
+  const fleet = WBFleet;
   assert.equal(fleet.isPeerRef("owner/repo"), false);
   assert.equal(fleet.isPeerRef("01ARZ3NDEKTSV4RRFFQ69G5FAW"), false);
   assert.equal(fleet.isPeerRef("01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo"), true);
@@ -258,7 +253,7 @@ test("peer refs require a Crockford ULID head", () => {
 // hand-written stub in wb-console.test.mjs — so a broken fold passed everywhere.
 
 test("refSlug strips a ULID routing head and nothing else", () => {
-  const wb = load();
+  const wb = WBFleet;
   assert.equal(wb.refSlug("01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/repo"), "owner/repo");
   // A plain local ref has no head to strip.
   assert.equal(wb.refSlug("owner/repo"), "owner/repo");
@@ -280,7 +275,7 @@ test("refSlug strips a ULID routing head and nothing else", () => {
 });
 
 test("refLabel appends the environment only for a peer", () => {
-  const wb = load();
+  const wb = WBFleet;
   const peer = "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/repo";
   assert.equal(wb.refLabel(peer, "WSL: Ubuntu-22.04"), "owner/repo · WSL: Ubuntu-22.04");
   // A local ref takes no environment segment even when one is offered — the
@@ -305,7 +300,7 @@ const TUNNEL_PEER = {
 };
 
 test("a tunnel peer's header is its name and its OS; a WSL peer's stays its distro", () => {
-  const wb = load();
+  const wb = WBFleet;
   const groups = wb.fleetGroups([LOCAL_ROW, PEER_ROW], [PEER, TUNNEL_PEER]);
   const tunnel = groups.find((g) => g.daemon === TUNNEL_PEER.daemon_id);
   assert.equal(tunnel.tunnel, true);
@@ -321,7 +316,7 @@ test("a tunnel peer's header is its name and its OS; a WSL peer's stays its dist
 });
 
 test("a group takes its OS from its rows, and the peer list wins", () => {
-  const { fleetGroups } = load();
+  const { fleetGroups } = WBFleet;
   const local = Object.assign({}, LOCAL_ROW, { os: "windows" });
   const row = Object.assign({}, PEER_ROW, { os: "" });
   const peer = Object.assign({}, PEER, { os: "linux" });
@@ -333,7 +328,7 @@ test("a group takes its OS from its rows, and the peer list wins", () => {
 const hostGroup = (state) => ({ local: false, state: state, name: "svrapp", tunnel: true, diagnosis: "" });
 
 test("a closed tunnel is grey and reconnecting; a silent daemon behind it is a fault", () => {
-  const { stateIcon, stateFault, groupTitle } = load();
+  const { stateIcon, stateFault, groupTitle } = WBFleet;
   assert.equal(stateIcon(hostGroup("tunnel-closed")), "unplug");
   assert.equal(stateIcon(hostGroup("tunnel-silent")), "unplug");
   assert.equal(stateFault(hostGroup("tunnel-closed")), false, "a VPN drop is not a fault");
@@ -365,7 +360,7 @@ test("every group header shows its system's icon and the group label, and has no
 });
 
 test("a group's system comes from its OS, whatever its label says", () => {
-  const { system } = load();
+  const { system } = WBFleet;
   assert.equal(system("linux", "Ubuntu 24.04"), "linux");
   assert.equal(system("linux", "WSL: Ubuntu-22.04"), "linux");
   assert.equal(system("macos", "macOS 15"), "macos");
@@ -373,7 +368,7 @@ test("a group's system comes from its OS, whatever its label says", () => {
 });
 
 test("a descriptor without an OS falls back to its older environment label", () => {
-  const { system } = load();
+  const { system } = WBFleet;
   assert.equal(system("", "Linux"), "linux");
   assert.equal(system(undefined, "WSL: Ubuntu-22.04"), "linux");
   assert.equal(system("", "macOS"), "macos");
@@ -387,7 +382,7 @@ test("a descriptor without an OS falls back to its older environment label", () 
 const sshGroup = (state, extra) => Object.assign({ daemon: "01XYZ", local: false, tunnel: true, state: state }, extra);
 
 test("only an SSH host on another protocol offers to update", () => {
-  const { updatable } = load();
+  const { updatable } = WBFleet;
   assert.equal(updatable(sshGroup("version-mismatch")), true);
   // A WSL peer is updated with the workbench; other states need no install.
   assert.equal(updatable(sshGroup("version-mismatch", { tunnel: false })), false);
@@ -410,13 +405,13 @@ const seed = (g) => ({ environment: g.environment, os: g.os, daemon: g.daemon, n
 // peer list says more.
 test("a row with no environment, OS or daemon name gives a group of empty words", () => {
   const peerRow = { key: "01XYZ/owner/repo", slug: "owner/repo", daemon: "01XYZ" };
-  const [local, peer] = load().fleetGroups([LOCAL_ROW, peerRow], []);
+  const [local, peer] = WBFleet.fleetGroups([LOCAL_ROW, peerRow], []);
   assert.deepEqual(seed(local), { environment: "", os: "", daemon: "", name: "", state: "local", local: true });
   assert.deepEqual(seed(peer), { environment: "", os: "", daemon: "01XYZ", name: "", state: "", local: false });
 });
 
 test("a headed group with no row says it has no projects", () => {
-  const wb = load();
+  const wb = WBFleet;
   const empty = { header: true, rows: [] };
   assert.equal(wb.emptyNote(empty, false), "No projects");
   assert.equal(wb.emptyNote(empty, true), "No matching projects");

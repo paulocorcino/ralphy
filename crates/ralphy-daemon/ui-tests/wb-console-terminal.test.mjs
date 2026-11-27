@@ -9,6 +9,7 @@ import { gzipSync } from "node:zlib";
 import { createTerminal } from "../assets/ui/wb-console-terminal.ts";
 import { forgetStalls } from "../assets/ui/wb-stall.ts";
 import { CONNECT_TIMEOUT_MS } from "../assets/ui/wb-resume.ts";
+import { fakeClassList, swapFetch } from "./harness.mjs";
 import {
   encodeDetach,
   encodeShown,
@@ -137,8 +138,16 @@ function fakePage() {
   }
   const globals = {
     Terminal: FakeTerminal,
-    FitAddon: { FitAddon: class { fit() {} } },
-    WebLinksAddon: { WebLinksAddon: class { dispose() {} } },
+    FitAddon: {
+      FitAddon: class {
+        fit() {}
+      },
+    },
+    WebLinksAddon: {
+      WebLinksAddon: class {
+        dispose() {}
+      },
+    },
     Unicode11Addon: {
       Unicode11Addon: class {
         activate(term) {
@@ -205,7 +214,9 @@ test("a terminal takes its font size from deps, and opens its channel through th
 test("a terminal counts character widths by Unicode 11, so an emoji takes two columns", () => {
   const page = fakePage();
   try {
-    const handle = createTerminal(fakeDeps(page).deps).attachTerminal(fakeElement(), { console: true });
+    const handle = createTerminal(fakeDeps(page).deps).attachTerminal(fakeElement(), {
+      console: true,
+    });
     assert.equal(page.terminals[0].unicode.activeVersion, "11");
     handle.dispose();
   } finally {
@@ -286,7 +297,10 @@ test("a pasted image is dropped under the terminal's repo", async () => {
         },
       },
     });
-    const handle = createTerminal(deps).attachTerminal(fakeElement(), { repo: "acme/app", agent: "claude" });
+    const handle = createTerminal(deps).attachTerminal(fakeElement(), {
+      repo: "acme/app",
+      agent: "claude",
+    });
     const pasted = [];
     page.terminals[0].paste = (text) => pasted.push(text);
     assert.equal(handle.pasteImage({ type: "image/png", size: 3 }), true);
@@ -305,7 +319,10 @@ test("a deps member left out fails the call that needs it", () => {
   try {
     const noFont = fakeDeps(page).deps;
     delete noFont.fontSize;
-    assert.throws(() => createTerminal(noFont).attachTerminal(fakeElement(), { console: true }), TypeError);
+    assert.throws(
+      () => createTerminal(noFont).attachTerminal(fakeElement(), { console: true }),
+      TypeError,
+    );
 
     const noCopy = fakeDeps(page).deps;
     delete noCopy.writeClipboard;
@@ -442,7 +459,9 @@ test("a second session-open on one socket resets the terminal and sets the count
     open(page.channels[0], { offset: 40, replay: true });
     page.channels[0].frame(terminalFrame(5, "SNAP"));
     page.channels[0].frame(terminalFrame(5, "abc"));
-    page.channels[0].frame(commandFrame("session-open", { session: 5, offset: 900, replay: true, resume: false }));
+    page.channels[0].frame(
+      commandFrame("session-open", { session: 5, offset: 900, replay: true, resume: false }),
+    );
     page.channels[0].frame(terminalFrame(5, "SCREEN"));
     page.channels[0].frame(terminalFrame(5, "de"));
     assert.equal(term.resets, 1, "the screen of now replaces what the terminal shows");
@@ -567,7 +586,9 @@ test("a gzip tail is not counted, and the live frames after it are", async () =>
     // The decode runs on real promises and a real worker thread; the mocked
     // timers do not hold it. A count of turns was too few on a slow CI runner.
     const until = performance.now() + 5000;
-    while (!page.terminals[0].written.includes("live") && performance.now() < until) await new Promise(setImmediate);
+    while (!page.terminals[0].written.includes("live") && performance.now() < until) {
+      await new Promise(setImmediate);
+    }
     assert.deepEqual(page.terminals[0].written.slice(-2), ["the missing bytes", "live"]);
     handle.takeOver();
     assert.equal(sinceOf(page.channels[2]), 24);
@@ -591,7 +612,10 @@ test("a session-open that says watch makes the terminal a watcher, and tells the
     open(page.channels[0], { watch: true });
     assert.equal(handle.watching, true);
     assert.deepEqual(parks, ["joined"]);
-    assert.ok(term.written.includes("\r\n[read-only: another window has control]\r\n"), JSON.stringify(term.written));
+    assert.ok(
+      term.written.includes("\r\n[read-only: another window has control]\r\n"),
+      JSON.stringify(term.written),
+    );
     page.channels[0].frame(commandFrame("session-open", { session: 5, watch: true }));
     assert.deepEqual(parks, ["joined"], "a watcher is not told again");
 
@@ -614,7 +638,7 @@ test("a session-open that says watch makes the terminal a watcher, and tells the
 test("a session-size frame resizes a watcher's terminal to the session", () => {
   const page = fakePage();
   try {
-    const body = { ...fakeElement(), classList: { toggle() {} } };
+    const body = { ...fakeElement(), classList: fakeClassList() };
     const handle = createTerminal(fakeDeps(page).deps).attachTerminal(body, { id: 5, watch: true });
     const term = page.terminals[0];
     const sizes = [];
@@ -639,7 +663,9 @@ test("a session-end frame names the reason the close is read with", () => {
       onEnded: (reason, message) => ends.push([reason, message]),
     });
     open(page.channels[0], { replay: true });
-    page.channels[0].frame(commandFrame("session-end", { reason: "refused", message: "no such project" }));
+    page.channels[0].frame(
+      commandFrame("session-end", { reason: "refused", message: "no such project" }),
+    );
     page.channels[0].end("done");
     assert.deepEqual(ends, [["refused", "no such project"]]);
     mock.timers.tick(20000);
@@ -668,7 +694,8 @@ test("notePage tells an open channel that the page went hidden or came back, and
   }
 });
 
-const navigatorWith = (value) => Object.defineProperty(globalThis, "navigator", { value, configurable: true });
+const navigatorWith = (value) =>
+  Object.defineProperty(globalThis, "navigator", { value, configurable: true });
 
 test("the channel open names the network the browser reports, and nothing when it reports none", () => {
   const saved = Object.getOwnPropertyDescriptor(globalThis, "navigator");
@@ -690,19 +717,23 @@ test("the channel open names the network the browser reports, and nothing when i
   }
 });
 
-test("a console that gives up reports a stall", () => {
+test("a console that gives up reports a stall", (t) => {
   const page = fakePage();
-  const prev = globalThis.fetch;
   const reports = [];
-  globalThis.fetch = (_url, init) => {
+  swapFetch(t, (_url, init) => {
     reports.push(JSON.parse(init.body));
     return Promise.resolve(new Response(null, { status: 204 }));
-  };
+  });
   forgetStalls();
   try {
-    const handle = createTerminal(fakeDeps(page).deps).attachTerminal(fakeElement(), { id: 6, onEnded() {} });
+    const handle = createTerminal(fakeDeps(page).deps).attachTerminal(fakeElement(), {
+      id: 6,
+      onEnded() {},
+    });
     open(page.channels[0], { replay: true });
-    page.channels[0].frame(commandFrame("session-end", { reason: "refused", message: "no such project" }));
+    page.channels[0].frame(
+      commandFrame("session-end", { reason: "refused", message: "no such project" }),
+    );
     page.channels[0].end("done");
     assert.deepEqual(
       reports.map((r) => [r.kind, r.what]),
@@ -710,7 +741,6 @@ test("a console that gives up reports a stall", () => {
     );
     handle.dispose();
   } finally {
-    globalThis.fetch = prev;
     page.restore();
   }
 });
@@ -720,7 +750,10 @@ test("a console that gives up reports a stall", () => {
 test("a console opens a channel with its resume fields", () => {
   const page = fakePage();
   try {
-    const handle = createTerminal(fakeDeps(page).deps).attachTerminal(fakeElement(), { id: 5, repo: "o/r" });
+    const handle = createTerminal(fakeDeps(page).deps).attachTerminal(fakeElement(), {
+      id: 5,
+      repo: "o/r",
+    });
     open(page.channels[0], { offset: 100, replay: true });
     page.channels[0].frame(terminalFrame(5, "SNAP"));
     page.channels[0].frame(terminalFrame(5, "abcd"));

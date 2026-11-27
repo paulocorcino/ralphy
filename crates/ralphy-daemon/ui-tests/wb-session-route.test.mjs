@@ -5,14 +5,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { WBSessionRoute } from "../assets/ui/wb-session-route.ts";
 
-function load() {
-  return WBSessionRoute;
-}
-
 const OPEN = { sessionId: 1, daemonId: "d", environment: "Windows" };
 
 test("the open payload carries the checkout only on a new agent launch that names one", () => {
-  const { openPayload } = load();
+  const { openPayload } = WBSessionRoute;
   assert.deepEqual(openPayload({ repo: "o/r", agent: "claude", checkout: "wt-a" }), {
     repo: "o/r",
     agent: "claude",
@@ -30,7 +26,7 @@ test("the open payload carries the checkout only on a new agent launch that name
 });
 
 test("requestOpts builds each kind of connect, and never sends null as a value", () => {
-  const { openPayload, requestOpts } = load();
+  const { openPayload, requestOpts } = WBSessionRoute;
   const at = (req) => openPayload(requestOpts(req, "h1"));
   const rows = [
     [
@@ -48,7 +44,7 @@ test("requestOpts builds each kind of connect, and never sends null as a value",
 // The daemon's `peer_session_query_forwards_the_link_the_browser_reported`
 // test reads these same keys. The daemon reads them as strings.
 test("the open payload carries the network the browser reports, and nothing when it reports none", () => {
-  const { openPayload } = load();
+  const { openPayload } = WBSessionRoute;
   const link = { effectiveType: "4g", rtt: 100, downlink: 1.75 };
   const net = { net: "4g", net_rtt: "100", net_down: "1.75" };
   assert.deepEqual(openPayload({ id: 3, link }), { id: 3, ...net });
@@ -69,7 +65,7 @@ test("the open payload carries the network the browser reports, and nothing when
 });
 
 test("the open payload carries the console name only on a new agent launch", () => {
-  const { openPayload } = load();
+  const { openPayload } = WBSessionRoute;
   assert.deepEqual(openPayload({ repo: "o/r", agent: "claude", name: "fincal #1" }), {
     repo: "o/r",
     agent: "claude",
@@ -92,7 +88,7 @@ test("the open payload carries the console name only on a new agent launch", () 
 });
 
 test("announcement folds the checkout and keeps the prior when a payload omits it", () => {
-  const { announcement } = load();
+  const { announcement } = WBSessionRoute;
   assert.equal(
     announcement({ ...OPEN, name: null, checkout: "wt-a" }, { name: "x" }).checkout,
     "wt-a",
@@ -108,7 +104,7 @@ test("announcement folds the checkout and keeps the prior when a payload omits i
 // --utf-force` keeps its space. A reattach never carries it: the daemon's
 // record owns what the session runs.
 test("the console launch carries its startup command; a reattach never does", () => {
-  const { openPayload } = load();
+  const { openPayload } = WBSessionRoute;
   assert.deepEqual(openPayload({ console: true, repo: "o/r", command: "htop -d 5" }), {
     console: 1,
     repo: "o/r",
@@ -128,7 +124,7 @@ test("the console launch carries its startup command; a reattach never does", ()
 // socket still holds. A watcher claims nothing and names nothing, and a
 // malformed holder is left out.
 test("the open payload names the holder on every claim of the writer slot, never on a watch", () => {
-  const { openPayload } = load();
+  const { openPayload } = WBSessionRoute;
   const h = "0f3a-tab_B";
   assert.deepEqual(openPayload({ id: 3, repo: "o/r", holder: h }), { id: 3, repo: "o/r", holder: h });
   assert.deepEqual(openPayload({ id: 3, takeover: true, holder: h }), { id: 3, takeover: 1, holder: h });
@@ -159,7 +155,7 @@ function memoryStorage(seed) {
 }
 
 test("holder keeps the tab's name across a reload and mints only when there is none", () => {
-  const { holder } = load();
+  const { holder } = WBSessionRoute;
   let minted = 0;
   const mint = () => `m${++minted}`;
   const storage = memoryStorage();
@@ -174,7 +170,7 @@ test("holder keeps the tab's name across a reload and mints only when there is n
 });
 
 test("holder still names the tab when storage is absent or throws", () => {
-  const { holder } = load();
+  const { holder } = WBSessionRoute;
   assert.equal(holder(null, () => "fresh"), "fresh");
   const throwing = {
     getItem() {
@@ -190,7 +186,7 @@ test("holder still names the tab when storage is absent or throws", () => {
 // ADR-0079 D7: the attempt orders the claims of one tab, so it only grows,
 // across a reload too, and rides in the open payload beside the holder.
 test("nextAttempt only grows and survives a reload in sessionStorage", () => {
-  const { nextAttempt } = load();
+  const { nextAttempt } = WBSessionRoute;
   const storage = memoryStorage({ "ralphy.attempt": "41" });
   const first = nextAttempt(storage);
   assert.ok(first >= 42, `kept 41, got ${first}`);
@@ -218,7 +214,7 @@ test("nextAttempt only grows and survives a reload in sessionStorage", () => {
 // attempts in the order of their connects.
 test("two windows that copied one storage order their attempts by the clock", async () => {
   const { WBSessionRoute: popup } = await import("../assets/ui/wb-session-route.ts?window=popup");
-  const { nextAttempt } = load();
+  const { nextAttempt } = WBSessionRoute;
   const t = Date.now();
   const copied = { "ralphy.attempt": String(nextAttempt(memoryStorage(), t)) };
   const opener = memoryStorage(copied);
@@ -231,7 +227,7 @@ test("two windows that copied one storage order their attempts by the clock", as
 });
 
 test("the attempt is in the open payload only beside a holder", () => {
-  const { openPayload, requestOpts } = load();
+  const { openPayload, requestOpts } = WBSessionRoute;
   const at = (req, holder) => openPayload(requestOpts(req, holder, { gzip: false, attempt: 9 }));
   assert.deepEqual(at({ id: 3, repo: "o/r" }, "h1"), { id: 3, repo: "o/r", holder: "h1", attempt: 9 });
   assert.deepEqual(at({ console: true }, "h1"), { console: 1, holder: "h1", attempt: 9 });
@@ -249,7 +245,7 @@ test("the attempt is in the open payload only beside a holder", () => {
 
 // ADR-0079 D8: the byte count the terminal shows rides only on a reattach.
 test("since is in the open payload of a reattach only, a watch's included", () => {
-  const { openPayload, requestOpts } = load();
+  const { openPayload, requestOpts } = WBSessionRoute;
   const at = (req) => openPayload(requestOpts(req, "h1", { gzip: false, since: 4096 }));
   assert.deepEqual(at({ id: 3, repo: "o/r" }), { id: 3, repo: "o/r", since: 4096, holder: "h1" });
   assert.deepEqual(at({ id: 3, watch: true }), { id: 3, since: 4096, watch: 1 });
@@ -261,14 +257,14 @@ test("since is in the open payload of a reattach only, a watch's included", () =
 });
 
 test("tabAttempt raises the tab's counter on every call", () => {
-  const { tabAttempt } = load();
+  const { tabAttempt } = WBSessionRoute;
   const first = tabAttempt();
   assert.ok(Number.isSafeInteger(first) && first > 0);
   assert.ok(tabAttempt() > first);
 });
 
 test("tabHolder mints one well-formed holder per document and keeps it", () => {
-  const { tabHolder } = load();
+  const { tabHolder } = WBSessionRoute;
   const first = tabHolder();
   assert.match(first, /^[0-9a-f]{32}$/u);
   assert.equal(tabHolder(), first, "every console of the tab claims as the same holder");
@@ -280,7 +276,7 @@ test("tabHolder mints one well-formed holder per document and keeps it", () => {
 const PEER_REPO = "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/shared";
 
 test("every id reconnect and close retains the composite repo", () => {
-  const { openPayload, closeUrl } = load();
+  const { openPayload, closeUrl } = WBSessionRoute;
   const plain = openPayload({ id: 7, repo: PEER_REPO });
   const watch = openPayload({ id: 7, repo: PEER_REPO, watch: true });
   const takeover = openPayload({ id: 7, repo: PEER_REPO, takeover: true });
@@ -292,7 +288,7 @@ test("every id reconnect and close retains the composite repo", () => {
 });
 
 test("session-open supplies id and owner before terminal output", () => {
-  const { announcement } = load();
+  const { announcement } = WBSessionRoute;
   assert.deepEqual(
     announcement(
       { sessionId: null, daemonId: null, environment: null },
@@ -309,7 +305,7 @@ test("session-open supplies id and owner before terminal output", () => {
 });
 
 test("the vendor session name arrives with the announcement and survives a re-announcement", () => {
-  const { announcement } = load();
+  const { announcement } = WBSessionRoute;
   const opened = announcement(
     { sessionId: null, daemonId: null, environment: null },
     { session: 4, daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5FAW", name: "wb-ralphy-7f3a" },
@@ -326,20 +322,20 @@ test("the vendor session name arrives with the announcement and survives a re-an
 });
 
 test("a local slug never marks the peer composite repo live", () => {
-  const { matchesRepo } = load();
+  const { matchesRepo } = WBSessionRoute;
   assert.equal(matchesRepo({ repo: "owner/shared" }, PEER_REPO), false);
   assert.equal(matchesRepo({ repo: PEER_REPO }, PEER_REPO), true);
 });
 
 test("a failed peer close keeps the window available for retry", () => {
-  const { closeSucceeded } = load();
+  const { closeSucceeded } = WBSessionRoute;
   assert.equal(closeSucceeded(200), true);
   assert.equal(closeSucceeded(404), true);
   assert.equal(closeSucceeded(502), false);
 });
 
 test("the open payload names the window record on a new launch only", () => {
-  const { openPayload } = load();
+  const { openPayload } = WBSessionRoute;
   // The daemon keeps one session per record, so both launch shapes carry it.
   assert.deepEqual(openPayload({ console: true, repo: "o/r", record: "w-a_1" }), {
     console: 1,
@@ -360,7 +356,7 @@ test("the open payload names the window record on a new launch only", () => {
 });
 
 test("unanswered reads the peers a session list did not hear from", () => {
-  const { unanswered, UNANSWERED_HEADER } = load();
+  const { unanswered, UNANSWERED_HEADER } = WBSessionRoute;
   assert.equal(UNANSWERED_HEADER, "x-ralphy-unanswered");
   // No header: every peer answered.
   assert.deepEqual([...unanswered(null)], []);

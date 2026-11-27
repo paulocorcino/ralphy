@@ -20,7 +20,7 @@ async function toggle({ enrolled, requireLogin, ok = true, code = "", unreachabl
   scope.askFreshCode = () => Promise.resolve(code);
   const requests = [];
   const real = globalThis.fetch;
-  globalThis.fetch = (url, init) => {
+  globalThis.fetch = (url, init) => { // own: toggle runs once per row of a loop; each swap ends before the next
     requests.push([url, init.body]);
     if (unreachable) throw new TypeError("Failed to fetch");
     return Promise.resolve({ ok, status: ok ? 200 : 401, headers: { get: () => null } });
@@ -31,7 +31,7 @@ async function toggle({ enrolled, requireLogin, ok = true, code = "", unreachabl
   try {
     await scope.toggleRequireLogin({ target: box });
   } finally {
-    globalThis.fetch = real;
+    globalThis.fetch = real; // own: the restore of the swap above
   }
   return { scope, connection, box, calls, requests };
 }

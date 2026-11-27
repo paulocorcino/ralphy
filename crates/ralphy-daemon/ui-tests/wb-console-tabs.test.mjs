@@ -3,7 +3,7 @@
 // back, and the stage's rules leave a window in a tab alone.
 import { afterEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { loadComponent, loadShell } from "./harness.mjs";
+import { fakeClassList, loadComponent, loadShell } from "./harness.mjs";
 import { WBColumns } from "../assets/ui/wb-columns.ts";
 import { createPlace } from "../assets/ui/wb-console-place.ts";
 import { createStageWindow } from "../assets/ui/wb-stage-window.ts";
@@ -234,7 +234,6 @@ function node() {
 const shadowsOf = (stage) => stage.children.filter((c) => c.className === "console-shadow");
 
 function consoleWin(id, classes = []) {
-  const set = new Set(classes);
   const vars = {};
   return {
     _deskId: id,
@@ -249,10 +248,7 @@ function consoleWin(id, classes = []) {
       setProperty: (k, v) => (vars[k] = v),
       removeProperty: (k) => delete vars[k],
     },
-    classList: {
-      contains: (c) => set.has(c),
-      toggle: (c, on) => (on ? set.add(c) : set.delete(c), on),
-    },
+    classList: fakeClassList(...classes),
   };
 }
 
@@ -403,14 +399,13 @@ test("a tab's grid gives each window its box, and a phone width paints only the 
 
 // A window that measures, with the classes `classes`.
 function measuredWin(classes) {
-  const set = new Set(classes);
   return {
     offsetLeft: 0,
     offsetTop: 0,
     offsetWidth: 1280,
     offsetHeight: 700,
     style: { left: "40px", top: "50px", width: "600px", height: "400px" },
-    classList: { contains: (c) => set.has(c) },
+    classList: fakeClassList(...classes),
   };
 }
 
@@ -431,8 +426,7 @@ test("the rect of a console in its tab is its stage rect, never the pane's box",
 // The dormancy of the windows `wins`, each `[classes, visible]`.
 function dormancyOf(wins) {
   const els = wins.map(([classes, visible]) => {
-    const set = new Set(classes);
-    return { _visible: visible, classList: { contains: (c) => set.has(c) } };
+    return { _visible: visible, classList: fakeClassList(...classes) };
   });
   const d = createDormancy({
     window: { addEventListener() {} },
@@ -544,10 +538,9 @@ function stackPage(onStage, inPane) {
 }
 
 function surface() {
-  const set = new Set(["session-window"]);
   return {
     style: { zIndex: "" },
-    classList: { add: (c) => set.add(c), remove: (c) => set.delete(c), contains: (c) => set.has(c) },
+    classList: fakeClassList("session-window"),
   };
 }
 

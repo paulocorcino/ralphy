@@ -4,20 +4,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createStageWindow } from "../assets/ui/wb-stage-window.ts";
+import { fakeClassList } from "./harness.mjs";
 
 // A window with a real class set and a style that records its custom properties.
 function fakeWin(...classes) {
-  const set = new Set(classes);
   const props = new Map([
     ["--max-left", "40px"],
     ["--max-top", "20px"],
   ]);
   return {
     props,
-    classList: {
-      contains: (c) => set.has(c),
-      toggle: (c, on) => (on ? set.add(c) : set.delete(c), on),
-    },
+    classList: fakeClassList(...classes),
     style: { removeProperty: (p) => props.delete(p) },
   };
 }

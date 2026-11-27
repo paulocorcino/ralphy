@@ -4,11 +4,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { WBAddProject } from "../assets/ui/wb-add-project.ts";
 
-// The module keeps no state, so one import serves every test.
-function load() {
-  return WBAddProject;
-}
-
 const WSL_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
 const PEERS = [
   { daemon_id: WSL_ID, name: "ubuntu", environment: "WSL: Ubuntu", state: "reachable" },
@@ -37,7 +32,7 @@ const DEV = {
 };
 
 test("opening asks for no path, and the start folder fills the field", () => {
-  const P = load();
+  const P = WBAddProject;
   let s = P.next(P.initial(), { type: "open" });
   assert.deepEqual(P.request(s), { daemon: "" });
   s = listed(P, s, { start: "C:\\Dev", dir: { path: "C:\\Dev\\", root: null, added: false }, entries: [] });
@@ -50,7 +45,7 @@ test("opening asks for no path, and the start folder fills the field", () => {
 });
 
 test("the start folder is not a choice until the operator makes one", () => {
-  const P = load();
+  const P = WBAddProject;
   const home = { start: "/home/me", dir: { path: "/home/me/", root: null, added: false }, entries: [] };
   let s = listed(P, P.next(P.initial(), { type: "open" }), home);
   assert.deepEqual(P.primary(s), { label: "Add project", disabled: true });
@@ -59,7 +54,7 @@ test("the start folder is not a choice until the operator makes one", () => {
 });
 
 test("the button names what adding the typed folder does", () => {
-  const P = load();
+  const P = WBAddProject;
   const cases = [
     ["C:\\Dev\\fincal", "Add project", false],
     ["C:\\Dev\\FINCAL", "Add project", false],
@@ -82,7 +77,7 @@ test("the button names what adding the typed folder does", () => {
 });
 
 test("a missing last folder is created only by a click, with its path shown", () => {
-  const P = load();
+  const P = WBAddProject;
   const s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\my notes"), DEV);
   assert.deepEqual(P.primary(s), { label: "Create folder and repository", disabled: false });
   assert.equal(P.help(s), "Ralphy creates the folder C:\\Dev\\my notes and a git repository in it.");
@@ -101,7 +96,7 @@ test("a missing last folder is created only by a click, with its path shown", ()
 });
 
 test("a subfolder of a repo adds the repo root, and says so", () => {
-  const P = load();
+  const P = WBAddProject;
   const inside = {
     dir: { path: "/home/me/fincal/", root: "/home/me/fincal", added: false },
     entries: [{ name: "src", repo: false, added: false }],
@@ -121,7 +116,7 @@ test("a subfolder of a repo adds the repo root, and says so", () => {
 });
 
 test("a text that ends with a separator names the listed folder, without its last separator", () => {
-  const P = load();
+  const P = WBAddProject;
   // The listed folder is a repo: its path loses the separator it was typed with.
   const repo = { dir: { path: "/home/me/fincal/", root: "/home/me/fincal", added: false }, entries: [] };
   let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "/home/me/fincal/"), repo);
@@ -139,7 +134,7 @@ test("a text that ends with a separator names the listed folder, without its las
 });
 
 test("the drive list names no folder to add, even when a typed name matches a drive", () => {
-  const P = load();
+  const P = WBAddProject;
   const drives = { dir: { path: "", root: null, added: false }, entries: [{ name: "D:", repo: false, added: false }] };
   const s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "D:"), drives);
   assert.deepEqual(P.primary(s), { label: "Add project", disabled: true });
@@ -147,7 +142,7 @@ test("the drive list names no folder to add, even when a typed name matches a dr
 });
 
 test("a missing parent folder is refused by the daemon and labelled", () => {
-  const P = load();
+  const P = WBAddProject;
   let s = typed(P, P.next(P.initial(), { type: "open" }), "C:\\Nope\\x");
   s = P.next(s, { type: "sent", seq: 1 });
   s = P.next(s, { type: "reply", seq: 1, reply: { status: "error", message: "this folder does not exist" } });
@@ -155,7 +150,7 @@ test("a missing parent folder is refused by the daemon and labelled", () => {
 });
 
 test("a stale reply never replaces a newer one", () => {
-  const P = load();
+  const P = WBAddProject;
   let s = typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\f");
   s = P.next(s, { type: "sent", seq: 1 });
   s = typed(P, s, "C:\\Dev\\fincal");
@@ -168,14 +163,14 @@ test("a stale reply never replaces a newer one", () => {
 });
 
 test("a reply to an older text labels nothing until the new text is listed", () => {
-  const P = load();
+  const P = WBAddProject;
   let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\fincal"), DEV);
   s = typed(P, s, "C:\\Dev\\ralph");
   assert.deepEqual(P.primary(s), { label: "Add project", disabled: true });
 });
 
 test("Loading… shows only for the newest request that is still waiting", () => {
-  const P = load();
+  const P = WBAddProject;
   let s = P.next(P.initial(), { type: "open" });
   s = P.next(s, { type: "sent", seq: 1 });
   s = P.next(s, { type: "sent", seq: 2 });
@@ -194,7 +189,7 @@ test("Loading… shows only for the newest request that is still waiting", () =>
 });
 
 test("a peer with an older Ralphy says to update it and hides the Folder field", () => {
-  const P = load();
+  const P = WBAddProject;
   let s = P.next(P.next(P.initial(), { type: "open", daemon: WSL_ID }), { type: "sent", seq: 1 });
   assert.equal(P.listable(s), true);
   s = P.next(s, { type: "reply", seq: 1, reply: { status: "error", message: "unknown verb" } });
@@ -204,7 +199,7 @@ test("a peer with an older Ralphy says to update it and hides the Folder field",
 });
 
 test("a pasted WSL path moves to the WSL peer and becomes a Linux path", () => {
-  const P = load();
+  const P = WBAddProject;
   let s = typed(P, P.next(P.initial(), { type: "open" }), "\\\\wsl.localhost\\Ubuntu\\home\\me\\code");
   assert.equal(s.daemon, WSL_ID);
   assert.equal(s.text, "/home/me/code");
@@ -215,7 +210,7 @@ test("a pasted WSL path moves to the WSL peer and becomes a Linux path", () => {
 });
 
 test("a WSL path with no peer says to add the host first, and adds nothing", () => {
-  const P = load();
+  const P = WBAddProject;
   const s = typed(P, P.next(P.initial(), { type: "open" }), "\\\\wsl.localhost\\Debian\\home");
   assert.equal(s.daemon, "");
   assert.equal(s.wslMissing, "Debian");
@@ -224,7 +219,7 @@ test("a WSL path with no peer says to add the host first, and adds nothing", () 
 });
 
 test("changing Where resets the field to that daemon's start folder", () => {
-  const P = load();
+  const P = WBAddProject;
   let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\fincal"), DEV);
   s = P.next(s, { type: "where", daemon: WSL_ID });
   assert.equal(s.text, "");
@@ -233,7 +228,7 @@ test("changing Where resets the field to that daemon's start folder", () => {
 });
 
 test("a peer that does not answer is shown but cannot be chosen", () => {
-  const P = load();
+  const P = WBAddProject;
   const places = P.places(PEERS);
   assert.deepEqual(places.map((p) => [p.label, p.disabled]), [
     ["This computer", false],
@@ -244,7 +239,7 @@ test("a peer that does not answer is shown but cannot be chosen", () => {
 });
 
 test("picking a folder goes down one level; `..` goes up", () => {
-  const P = load();
+  const P = WBAddProject;
   let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\fi"), DEV);
   s = P.next(s, { type: "pick", name: "fincal" });
   assert.equal(s.text, "C:\\Dev\\fincal\\");
@@ -259,7 +254,7 @@ test("picking a folder goes down one level; `..` goes up", () => {
 });
 
 test("a pick before the next listing arrives names a folder of the rows on screen", () => {
-  const P = load();
+  const P = WBAddProject;
   let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\"), DEV);
   s = P.next(s, { type: "pick", name: "fincal" });
   // The rows are still those of C:\Dev\: the same row again is the same folder.
@@ -276,7 +271,7 @@ test("a pick before the next listing arrives names a folder of the rows on scree
 });
 
 test("the `..` row goes up one folder, to the drive list above a drive root", () => {
-  const P = load();
+  const P = WBAddProject;
   let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\"), DEV);
   const rows = P.entries(s);
   assert.deepEqual(rows[0], { name: "..", up: true, repo: false, added: false });
@@ -299,7 +294,7 @@ test("the `..` row goes up one folder, to the drive list above a drive root", ()
 });
 
 test("the arrows move the highlight and wrap around", () => {
-  const P = load();
+  const P = WBAddProject;
   let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\"), DEV);
   s = P.next(s, { type: "move", by: 1 });
   assert.equal(s.active, 0);
@@ -308,7 +303,7 @@ test("the arrows move the highlight and wrap around", () => {
 });
 
 test("while adding, the controls are locked; a failure keeps the path", () => {
-  const P = load();
+  const P = WBAddProject;
   let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\fincal"), DEV);
   s = P.next(s, { type: "adding" });
   assert.deepEqual(P.primary(s), { label: "Adding…", disabled: true });
@@ -321,7 +316,7 @@ test("while adding, the controls are locked; a failure keeps the path", () => {
 });
 
 test("the arrows change nothing when no folder is listed", () => {
-  const P = load();
+  const P = WBAddProject;
   const s = P.next(P.initial(), { type: "open" });
   assert.equal(P.entries(s).length, 0);
   assert.equal(P.next(s, { type: "move", by: 1 }).active, -1);
@@ -329,7 +324,7 @@ test("the arrows change nothing when no folder is listed", () => {
 });
 
 test("while adding, a pick leaves the path as it is", () => {
-  const P = load();
+  const P = WBAddProject;
   let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\"), DEV);
   s = P.next(s, { type: "adding" });
   assert.equal(P.next(s, { type: "pick", name: "notes" }).text, "C:\\Dev\\");
@@ -337,7 +332,7 @@ test("while adding, a pick leaves the path as it is", () => {
 });
 
 test("close hides the dialog and keeps its fields; added also ends the adding", () => {
-  const P = load();
+  const P = WBAddProject;
   let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\fincal"), DEV);
   const closed = P.next(s, { type: "close" });
   assert.equal(closed.open, false);
@@ -350,7 +345,7 @@ test("close hides the dialog and keeps its fields; added also ends the adding", 
 });
 
 test("git with no name and email asks for both, then sends them with the same folder", () => {
-  const P = load();
+  const P = WBAddProject;
   let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\my notes"), DEV);
   s = P.next(s, { type: "adding" });
   s = P.next(s, { type: "addFailed", message: "git has no name", needsIdentity: true, place: "ubuntu" });
@@ -383,7 +378,7 @@ test("git with no name and email asks for both, then sends them with the same fo
 });
 
 test("a name with a control character or a leading dash is not sent", () => {
-  const P = load();
+  const P = WBAddProject;
   let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\notes"), DEV);
   s = P.next(s, { type: "addFailed", needsIdentity: true, place: "this computer" });
   s = P.next(s, { type: "identity", email: "ana@example.com" });

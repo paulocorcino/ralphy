@@ -3,21 +3,17 @@
 // engines are checked by tests/browser/files/wb_html_file.py.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { createViewerScripts, previewUrl } from "../assets/ui/wb-viewer-scripts.ts";
+import { fixture, swapFetch } from "./harness.mjs";
 
-// `pane` puts a fake `fetch` on the page and takes its daemon client away.
-// Each test that calls it gives both back when it ends.
-const REAL = { fetch: globalThis.fetch, daemon: globalThis.WBDaemon };
-function restoreGlobals() {
-  globalThis.fetch = REAL.fetch;
+// `pane` takes the daemon client away from the page and sets `answering`, the
+// reply to the page's `fetch`. Each test swaps `fetch` once, with `swapFetch`,
+// and gives the daemon client back when it ends.
+const REAL = { daemon: globalThis.WBDaemon };
+let answering = null;
+function restoreDaemon() {
   if (REAL.daemon === undefined) delete globalThis.WBDaemon;
   else globalThis.WBDaemon = REAL.daemon;
-}
-
-// The reply the daemon writes, shared with the daemon's own tests.
-function fixture(name) {
-  return JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), "utf8"));
 }
 
 const settle = () => new Promise((resolve) => { setTimeout(resolve, 5); });
@@ -32,7 +28,7 @@ function element(tag) {
 // file window has none.
 function pane(reply, over = {}) {
   const log = { asked: [], routes: [], flashed: [], drawn: 0, captions: [], frames: [] };
-  const button = { classList: { toggle: (name, on) => log.captions.push([name, on]) } };
+  const button = { classList: { toggle: (name, on) => log.captions.push([name, on]) } }; // own: logs each toggle, no set
   const article = {
     innerHTML: "<p>static</p>",
     append: (frame) => log.frames.push(frame),
@@ -48,7 +44,7 @@ function pane(reply, over = {}) {
     ...over,
   };
   delete globalThis.WBDaemon;
-  globalThis.fetch = (url, init) => {
+  answering = (url, init) => {
     const { verb, payload } = JSON.parse(init.body);
     log.asked.push([verb, payload]);
     log.routes.push([init.method, url]);
@@ -79,7 +75,8 @@ test("the address of a preview file keeps the folders and encodes each name", ()
 });
 
 test("Run scripts asks the daemon for a token and shows the file from its route", async (t) => {
-  t.after(restoreGlobals);
+  t.after(restoreDaemon);
+  swapFetch(t, (url, init) => answering(url, init));
   const reply = { ...fixture("file.preview"), token: "t0" };
   assert.deepEqual(Object.keys(reply).toSorted(), ["status", "token"]);
   const { scripts, rec, log } = pane(reply, { checkout: "wt-a" });
@@ -96,7 +93,8 @@ test("Run scripts asks the daemon for a token and shows the file from its route"
 });
 
 test("a second click ends the token and draws the file with no script", async (t) => {
-  t.after(restoreGlobals);
+  t.after(restoreDaemon);
+  swapFetch(t, (url, init) => answering(url, init));
   const { scripts, rec, log } = pane({ status: "ok", token: "t0" });
   scripts.toggle(rec);
   await settle();
@@ -113,7 +111,8 @@ test("a second click ends the token and draws the file with no script", async (t
 });
 
 test("no script runs for unsaved text, a refusal, or a pane that went away", async (t) => {
-  t.after(restoreGlobals);
+  t.after(restoreDaemon);
+  swapFetch(t, (url, init) => answering(url, init));
   // [the reply of the daemon, the pane, what the operator is told, what the daemon is asked]
   const text = { cause: "the ralphy command failed", remedy: "The daemon log has the reason." };
   const refused = { status: "error", failure: { domain: "daemon", code: "ralphy-failed", text } };

@@ -5,9 +5,7 @@
 // wb-modals.test.mjs.
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { loadComponent, partMarkup, UI } from "./harness.mjs";
+import { fixture, loadComponent, partMarkup } from "./harness.mjs";
 
 // The part that holds the properties dialog's markup.
 const PART = "wb-properties-dialog.part.html";
@@ -18,9 +16,6 @@ after(() => delete globalThis.WBDaemon);
 
 // The replies the daemon's own tests wrote (ADR-0070, shared replies). Their
 // `modified` is a marker there: the time of a file made a moment ago cannot be pinned.
-function fixture(name) {
-  return JSON.parse(readFileSync(join(UI, "..", "..", "ui-tests", "fixtures", name + ".json"), "utf8"));
-}
 
 const STAT_FILE = {
   status: "ok",

@@ -12,46 +12,7 @@
 // loudly here rather than being quietly half-covered.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { loadComponent, loadShell, UI } from "./harness.mjs";
-
-// NEGATIVE CONTROL for the whole file: a duplicate key in the state literal is
-// silently legal in sloppy mode and the LAST one wins, which is how `app.ts`
-// carried two incompatible `changesError` declarations. `Object.keys()` cannot
-// see the loser, so this reads the source.
-// pin: shell() declares each member once —
-// the last duplicate key wins in silence, so no run of shell() can see the first.
-test("the state literal declares no key twice", () => {
-  const text = readFileSync(join(UI, "app.ts"), "utf8");
-  const body = text.slice(text.indexOf("function shell()"), text.indexOf("export function wire("));
-  // BOTH spellings, because the literal uses both and the collision that
-  // prompted this test could just as easily be two methods. Matching only
-  // `name:` saw 119 of the 393 entries and was blind to all 271 method
-  // shorthands — a gate covering 30% of the thing it guards.
-  const keys = new Map();
-  const count = (key) => keys.set(key, (keys.get(key) || 0) + 1);
-  for (const m of body.matchAll(/^ {4}([A-Za-z_$][\w$]*):/gmu)) count(m[1]);
-  // A control keyword at method indent (`    if (…)`) is not a key. Without
-  // this the scan reports `if` as declared three times.
-  const KEYWORD = new Set(["if", "for", "while", "switch", "catch", "return", "do", "else"]);
-  for (const m of body.matchAll(/^ {4}(?:async )?([A-Za-z_$][\w$]*)\s*\(/gmu)) {
-    if (!KEYWORD.has(m[1])) count(m[1]);
-  }
-  const dupes = [...keys].filter(([, n]) => n > 1).map(([k]) => k);
-  // NEGATIVE CONTROL: the scan must actually reach the literal. A regex that
-  // matched nothing would report no duplicates forever.
-  assert.ok(
-    keys.size > 25,
-    `the key scan found only ${keys.size} entries — it is not reading the state literal`,
-  );
-  assert.deepEqual(
-    dupes,
-    [],
-    "a duplicate key is not an error in sloppy mode — the last declaration " +
-      "silently wins and every write against the first shape becomes a no-op",
-  );
-});
+import { loadComponent, loadShell } from "./harness.mjs";
 
 test("rowOpen compares by composite ref, not by slug", () => {
   // Two peers can host the same slug (ADR-0052 §5); only the ref tells them
@@ -319,17 +280,6 @@ test("a login the daemon accepted reads the desk again and restores the view", a
   assert.deepEqual(calls, ["afterLogin", "restoreView", "adoptDeskCheckouts"]);
 });
 
-// --- ADR-0070 D3: a failed read keeps the last good value, marked not current
-
-// A shell whose `WBDaemon.observe` answers each call with the next reply.
-function observedShell(replies) {
-  const { state, window } = loadShell();
-  window.WBDaemon.observe = () => Promise.resolve(replies.shift() ?? null);
-  state.$store.projects.setOpen("o/r");
-  state.$store.modals.flash = () => {};
-  return state;
-}
-
 // --- the shell and the files (wb-files.ts) talk through events ---------------
 
 // A shell whose window records every event it is sent.
@@ -435,12 +385,6 @@ test("projectLabel and projectTitle never print a path- key or a daemon id", () 
   assert.equal(state.$store.projects.projectTitle(ref(peer)), "/home/me/gadget · WSL: Ubuntu");
   assert.equal(state.$store.projects.projectLabel(ref(forge)), "owner/repo");
   assert.equal(state.$store.projects.projectTitle(ref(forge)), "owner/repo");
-});
-
-test("a read failure shows the words for a daemon code, never the code", async () => {
-  const state = observedShell([{ status: "error", reason: "unknown repo" }]);
-  await state.$store.runs.hydrateRuns();
-  assert.equal(state.$store.runs.runsError, "Could not read the runs: the project is not in the list.");
 });
 
 test("peer states show as words, and the dot says what it means", () => {

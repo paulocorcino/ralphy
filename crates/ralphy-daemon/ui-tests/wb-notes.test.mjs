@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createNotes } from "../assets/ui/wb-notes.ts";
 import { idLookups } from "./fake-document.mjs";
+import { fakeClassList } from "./harness.mjs";
 
 // A stage the module can read: `list()` walks the LIVE cards, because the
 // title is the card's text and not the desk's. The fake is
@@ -138,7 +139,7 @@ test("a card that handed its draft to a popup does not write the note", async ()
       _noteDirty: true,
       _noteMarkdown: "typed\n",
       _noteClaim: "t.note",
-      classList: { add() {}, remove() {}, contains: () => false },
+      classList: fakeClassList(),
       querySelector: () => null,
     },
   ];
@@ -231,7 +232,7 @@ function fakeEl(tag) {
       classes.clear();
       for (const c of String(v).split(/\s+/u).filter(Boolean)) classes.add(c);
     },
-    classList: {
+    classList: { // own: the className setter and this classList share one set
       add: (...cs) => cs.forEach((c) => classes.add(c)),
       remove: (...cs) => cs.forEach((c) => classes.delete(c)),
       toggle: (c, force) => {

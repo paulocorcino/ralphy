@@ -6,7 +6,7 @@
 // `WBDaemon`; the viewer is a recorder, since the pane's DOM is not the fold.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { loadComponent, loadShell } from "./harness.mjs";
+import { fakeClassList, loadComponent, loadShell } from "./harness.mjs";
 import { createViewer } from "../assets/ui/wb-file-viewer.ts";
 import { WBMonaco } from "../assets/ui/wb-monaco.ts";
 import { idLookups } from "./fake-document.mjs";
@@ -201,7 +201,7 @@ function fakeNode() {
   const node = {
     style: {},
     dataset: {},
-    classList: { add() {}, remove() {}, toggle: () => false, contains: () => false },
+    classList: fakeClassList(),
     children: [],
     append(...kids) {
       node.children.push(...kids);

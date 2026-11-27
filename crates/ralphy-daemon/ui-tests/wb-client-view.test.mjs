@@ -11,7 +11,7 @@ function useStorage(storage) {
   Object.defineProperty(globalThis, "localStorage", { value: storage, configurable: true, writable: true });
 }
 
-function load(raw) {
+function viewOf(raw) {
   useStorage({
     getItem: () => raw,
     setItem() {},
@@ -24,30 +24,30 @@ const record = (split) => JSON.stringify({ v: 1, split });
 // back as they are, and anything else is "no slot" — a hand-edited or
 // half-written record must not reach `--wb-split` or name a tab.
 test("a stored pin comes back with its file and ratio; a mirror with its ratio only", () => {
-  assert.deepEqual(load(record({ kind: "pin", project: "o/r", path: "b.js", checkout: null, ratio: 0.6 })).read().split, {
+  assert.deepEqual(viewOf(record({ kind: "pin", project: "o/r", path: "b.js", checkout: null, ratio: 0.6 })).read().split, {
     kind: "pin",
     project: "o/r",
     path: "b.js",
     checkout: null,
     ratio: 0.6,
   });
-  assert.deepEqual(load(record({ kind: "pin", project: "o/r", path: "b.js", checkout: "wt", ratio: null })).read().split, {
+  assert.deepEqual(viewOf(record({ kind: "pin", project: "o/r", path: "b.js", checkout: "wt", ratio: null })).read().split, {
     kind: "pin",
     project: "o/r",
     path: "b.js",
     checkout: "wt",
     ratio: null,
   });
-  assert.deepEqual(load(record({ kind: "mirror", ratio: 0.35 })).read().split, { kind: "mirror", ratio: 0.35 });
+  assert.deepEqual(viewOf(record({ kind: "mirror", ratio: 0.35 })).read().split, { kind: "mirror", ratio: 0.35 });
 });
 
 test("a ratio outside the divider's range, or not a number, is dropped — the kind survives", () => {
-  assert.equal(load(record({ kind: "mirror", ratio: 5 })).read().split.ratio, null);
-  assert.equal(load(record({ kind: "mirror", ratio: 0.19 })).read().split.ratio, null);
-  assert.equal(load(record({ kind: "mirror", ratio: 0.81 })).read().split.ratio, null);
-  assert.equal(load(record({ kind: "mirror", ratio: "0.5" })).read().split.ratio, null);
-  assert.equal(load(record({ kind: "mirror", ratio: 0.2 })).read().split.ratio, 0.2);
-  assert.equal(load(record({ kind: "mirror", ratio: 0.8 })).read().split.ratio, 0.8);
+  assert.equal(viewOf(record({ kind: "mirror", ratio: 5 })).read().split.ratio, null);
+  assert.equal(viewOf(record({ kind: "mirror", ratio: 0.19 })).read().split.ratio, null);
+  assert.equal(viewOf(record({ kind: "mirror", ratio: 0.81 })).read().split.ratio, null);
+  assert.equal(viewOf(record({ kind: "mirror", ratio: "0.5" })).read().split.ratio, null);
+  assert.equal(viewOf(record({ kind: "mirror", ratio: 0.2 })).read().split.ratio, 0.2);
+  assert.equal(viewOf(record({ kind: "mirror", ratio: 0.8 })).read().split.ratio, 0.8);
 });
 
 test("a pin without a file, an unknown kind, or a non-object is no slot", () => {
@@ -61,24 +61,24 @@ test("a pin without a file, an unknown kind, or a non-object is no slot", () => 
     7,
     null,
   ]) {
-    assert.equal(load(record(bad)).read().split, null, JSON.stringify(bad));
+    assert.equal(viewOf(record(bad)).read().split, null, JSON.stringify(bad));
   }
-  assert.equal(load(JSON.stringify({ v: 1 })).read().split, null, "absent is null, not undefined");
+  assert.equal(viewOf(JSON.stringify({ v: 1 })).read().split, null, "absent is null, not undefined");
 });
 
 test("a non-string checkout on a pin reads as the primary", () => {
-  assert.equal(load(record({ kind: "pin", project: "o/r", path: "b.js", checkout: 3 })).read().split.checkout, null);
+  assert.equal(viewOf(record({ kind: "pin", project: "o/r", path: "b.js", checkout: 3 })).read().split.checkout, null);
 });
 
 // The column list (ADR-0051 §8, columns amendment) is window ids only: any
 // other entry drops, and a value that is not a list is "no columns".
 test("columns reads as a list of strings, or null", () => {
-  assert.deepEqual(load(JSON.stringify({ v: 1, columns: ["a", 2, "b"] })).read().columns, ["a", "b"]);
-  assert.equal(load(JSON.stringify({ v: 1, columns: "x" })).read().columns, null);
-  assert.equal(load(JSON.stringify({ v: 1 })).read().columns, null, "absent is null, not undefined");
+  assert.deepEqual(viewOf(JSON.stringify({ v: 1, columns: ["a", 2, "b"] })).read().columns, ["a", "b"]);
+  assert.equal(viewOf(JSON.stringify({ v: 1, columns: "x" })).read().columns, null);
+  assert.equal(viewOf(JSON.stringify({ v: 1 })).read().columns, null, "absent is null, not undefined");
 });
 
-const readColumns = (columns) => load(JSON.stringify({ v: 1, columns })).read().columns;
+const readColumns = (columns) => viewOf(JSON.stringify({ v: 1, columns })).read().columns;
 
 // Rows (ADR-0051 §8, rows amendment): a column is a list of ids; its other
 // entries drop, and a column that is neither a list nor an id drops.
@@ -88,31 +88,31 @@ test("columns reads a grid of ids, next to the flat list stored before rows", ()
 });
 
 test("columnDir reads right or down, anything else is null", () => {
-  const read = (columnDir) => load(JSON.stringify({ v: 1, columnDir })).read().columnDir;
+  const read = (columnDir) => viewOf(JSON.stringify({ v: 1, columnDir })).read().columnDir;
   assert.equal(read("down"), "down");
   assert.equal(read("right"), "right");
   assert.equal(read("up"), null);
-  assert.equal(load(JSON.stringify({ v: 1 })).read().columnDir, null, "absent is null, not undefined");
+  assert.equal(viewOf(JSON.stringify({ v: 1 })).read().columnDir, null, "absent is null, not undefined");
 });
 
 test("font reads as an integer from 10 to 28, anything else is null", () => {
-  const read = (font) => load(JSON.stringify({ v: 1, font })).read().font;
+  const read = (font) => viewOf(JSON.stringify({ v: 1, font })).read().font;
   assert.equal(read(10), 10);
   assert.equal(read(28), 28);
   assert.equal(read(9), null);
   assert.equal(read(29), null);
   assert.equal(read(12.5), null);
   assert.equal(read("12"), null);
-  assert.equal(load(JSON.stringify({ v: 1 })).read().font, null, "absent is null, not undefined");
+  assert.equal(viewOf(JSON.stringify({ v: 1 })).read().font, null, "absent is null, not undefined");
 });
 
 test("keys reads on or off, anything else is null", () => {
-  const read = (keys) => load(JSON.stringify({ v: 1, keys })).read().keys;
+  const read = (keys) => viewOf(JSON.stringify({ v: 1, keys })).read().keys;
   assert.equal(read("on"), "on");
   assert.equal(read("off"), "off");
   assert.equal(read("auto"), null);
   assert.equal(read(true), null);
-  assert.equal(load(JSON.stringify({ v: 1 })).read().keys, null, "absent is null, not undefined");
+  assert.equal(viewOf(JSON.stringify({ v: 1 })).read().keys, null, "absent is null, not undefined");
 });
 
 // The startup-command setting is gone: an old record's `command` is not read,
@@ -131,7 +131,7 @@ test("a legacy command is dropped on read and on the next patch", () => {
   assert.equal(written.keys, "on", "the other fields survive");
 });
 
-const readFields = (fields) => load(JSON.stringify({ v: 1, ...fields })).read();
+const readFields = (fields) => viewOf(JSON.stringify({ v: 1, ...fields })).read();
 
 // A record an older build wrote may hold a tab of another shape: only a tab
 // that names its file comes back, and `active` is a string or null.
@@ -144,7 +144,7 @@ test("tabs read as the file tabs the shell stored; active as a string or null", 
   assert.equal(readFields({ active: 4 }).active, null);
 });
 
-const tabs = (consoleTabs) => load(JSON.stringify({ v: 1, consoleTabs })).read().consoleTabs;
+const tabs = (consoleTabs) => viewOf(JSON.stringify({ v: 1, consoleTabs })).read().consoleTabs;
 
 // A console tab (ADR-0037 §3d) is read with its grid. One stored before the
 // grid is a grid of its one console, with no id: the store gives it the id it
@@ -158,7 +158,7 @@ test("a console tab is read with its grid, and one stored before the grid is a g
   assert.deepEqual(tabs([{ id: "x", deskId: "a", title: "t", grid: [["a", 3]] }]), []);
 });
 
-const notify = (fields) => load(JSON.stringify({ v: 1, ...fields })).read().notify;
+const notify = (fields) => viewOf(JSON.stringify({ v: 1, ...fields })).read().notify;
 
 // "Notify me in this browser" is on only when the record holds a stored `true`.
 test("the notification switch is read strictly: only a stored true is on", () => {

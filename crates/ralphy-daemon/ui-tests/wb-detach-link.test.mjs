@@ -9,10 +9,7 @@ import { WBDetachLink, isDetachMessage } from "../assets/ui/wb-detach-link.ts";
 // The module touches nothing when it is imported — the storage and the
 // channel are reached as BARE globals, exactly as the browser resolves them
 // and exactly as `wb-desk-sink.ts` reaches `fetch`. So the fakes below are
-// installed on `globalThis`, like that module's `spyFetch`.
-function load() {
-  return WBDetachLink;
-}
+// installed on `globalThis`, as `swapFetch` installs its fake.
 
 // One tab's session-scoped store. A SEPARATE instance is a SEPARATE tab, which
 // is the isolation rule this module exists to enforce.
@@ -47,7 +44,7 @@ function withGlobals(patch, body) {
 
 test("the registry round-trips through the tab's session storage", () => {
   withGlobals({ sessionStorage: fakeStorage() }, () => {
-    const link = load().link();
+    const link = WBDetachLink.link();
     assert.deepEqual(link.readRegistry(), []);
     link.writeRegistry(["f-alpha"]);
     assert.deepEqual(link.readRegistry(), ["f-alpha"]);
@@ -59,7 +56,7 @@ test("the registry round-trips through the tab's session storage", () => {
 test("opening a link writes nothing — a tab that detached nothing leaves no record", () => {
   const store = fakeStorage();
   withGlobals({ sessionStorage: store }, () => {
-    const link = load().link();
+    const link = WBDetachLink.link();
     assert.equal(store.getItem("wb.detach.v1"), null);
     assert.ok(link.tab, "the identity is still minted, in memory");
   });
@@ -68,7 +65,7 @@ test("opening a link writes nothing — a tab that detached nothing leaves no re
 test("the registry is stored under wb.detach.v1 as a versioned record", () => {
   const store = fakeStorage();
   withGlobals({ sessionStorage: store }, () => {
-    const link = load().link();
+    const link = WBDetachLink.link();
     link.writeRegistry(["f-alpha", "f-beta"]);
     const rec = JSON.parse(store.getItem("wb.detach.v1"));
     assert.equal(rec.v, 1);
@@ -82,11 +79,11 @@ test("the registry is stored under wb.detach.v1 as a versioned record", () => {
 test("a second tab sees an empty registry and a different tab id", () => {
   let first;
   withGlobals({ sessionStorage: fakeStorage() }, () => {
-    first = load().link();
+    first = WBDetachLink.link();
     first.writeRegistry(["f-alpha"]);
   });
   withGlobals({ sessionStorage: fakeStorage() }, () => {
-    const second = load().link();
+    const second = WBDetachLink.link();
     assert.deepEqual(second.readRegistry(), [], "a second tab must not see tab one's detaches");
     assert.notEqual(second.tab, first.tab);
   });
@@ -98,11 +95,11 @@ test("re-loading against the same store keeps the tab id and the registry — th
   const store = fakeStorage();
   let before;
   withGlobals({ sessionStorage: store }, () => {
-    before = load().link();
+    before = WBDetachLink.link();
     before.writeRegistry(["f-alpha"]);
   });
   withGlobals({ sessionStorage: store }, () => {
-    const after = load().link();
+    const after = WBDetachLink.link();
     assert.equal(after.tab, before.tab);
     assert.deepEqual(after.readRegistry(), ["f-alpha"]);
   });
@@ -112,17 +109,17 @@ test("a corrupt or foreign-version record reads as an empty registry", () => {
   const store = fakeStorage();
   store.setItem("wb.detach.v1", "{not json");
   withGlobals({ sessionStorage: store }, () => {
-    assert.deepEqual(load().link().readRegistry(), []);
+    assert.deepEqual(WBDetachLink.link().readRegistry(), []);
   });
   store.setItem("wb.detach.v1", JSON.stringify({ v: 9, tab: "t-x", fences: ["f-alpha"] }));
   withGlobals({ sessionStorage: store }, () => {
-    assert.deepEqual(load().link().readRegistry(), []);
+    assert.deepEqual(WBDetachLink.link().readRegistry(), []);
   });
 });
 
 test("no sessionStorage at all (private mode) degrades to an empty registry, never a throw", () => {
   withGlobals({ sessionStorage: undefined }, () => {
-    const link = load().link();
+    const link = WBDetachLink.link();
     assert.deepEqual(link.readRegistry(), []);
     link.writeRegistry(["f-alpha"]);
     assert.deepEqual(link.readRegistry(), []);
@@ -140,7 +137,7 @@ test("a throwing sessionStorage (quota, blocked cookies) degrades the same way",
     },
   };
   withGlobals({ sessionStorage: hostile }, () => {
-    const link = load().link();
+    const link = WBDetachLink.link();
     assert.deepEqual(link.readRegistry(), []);
     link.writeRegistry(["f-alpha"]);
   });
@@ -169,7 +166,7 @@ test("post reaches every other link on the channel", () => {
     }
   }
   withGlobals({ sessionStorage: fakeStorage(), BroadcastChannel: FakeBroadcastChannel }, () => {
-    const mod = load();
+    const mod = WBDetachLink;
     const a = mod.link();
     const b = mod.link();
     const heard = [];
@@ -189,7 +186,7 @@ test("post reaches every other link on the channel", () => {
 
 test("no BroadcastChannel at all degrades to silence, never a throw", () => {
   withGlobals({ sessionStorage: fakeStorage(), BroadcastChannel: undefined }, () => {
-    const link = load().link();
+    const link = WBDetachLink.link();
     link.onMessage(() => {});
     link.post({ type: "origin-beat" });
     link.close();
@@ -203,7 +200,7 @@ test("none() is inert: no tab identity, an empty registry, and writes that go no
   const store = fakeStorage();
   store.setItem("wb.detach.v1", JSON.stringify({ v: 1, tab: "t-opener", fences: ["f-alpha"] }));
   withGlobals({ sessionStorage: store }, () => {
-    const link = load().none();
+    const link = WBDetachLink.none();
     assert.equal(link.tab, null);
     assert.deepEqual(link.readRegistry(), [], "the inherited copy must stay invisible");
     link.writeRegistry(["f-beta"]);
@@ -222,19 +219,19 @@ test("none() is inert: no tab identity, an empty registry, and writes that go no
 test("the registry carries each detached fence's member ids, and they survive a reload", () => {
   const store = fakeStorage();
   withGlobals({ sessionStorage: store }, () => {
-    const link = load().link();
+    const link = WBDetachLink.link();
     assert.deepEqual(link.readMembers(), {});
     link.writeRegistry(["f-alpha"], { "f-alpha": ["w-m1", "w-m2"] });
     assert.deepEqual(link.readMembers(), { "f-alpha": ["w-m1", "w-m2"] });
   });
   withGlobals({ sessionStorage: store }, () => {
-    assert.deepEqual(load().link().readMembers(), { "f-alpha": ["w-m1", "w-m2"] });
+    assert.deepEqual(WBDetachLink.link().readMembers(), { "f-alpha": ["w-m1", "w-m2"] });
   });
 });
 
 test("a registry written with no members reads back an empty map, never undefined", () => {
   withGlobals({ sessionStorage: fakeStorage() }, () => {
-    const link = load().link();
+    const link = WBDetachLink.link();
     link.writeRegistry(["f-alpha"]);
     assert.deepEqual(link.readMembers(), {});
     assert.deepEqual(link.readRegistry(), ["f-alpha"]);
@@ -267,7 +264,7 @@ test("channel() reaches the channel and no store at all", () => {
     }
   }
   withGlobals({ sessionStorage: store, BroadcastChannel: FakeBroadcastChannel }, () => {
-    const mod = load();
+    const mod = WBDetachLink;
     const popup = mod.channel();
     assert.equal(popup.tab, null, "the popup is TOLD its opener's id, never derived one");
     assert.equal(popup.readRegistry, undefined, "channel() exposes no registry surface at all");

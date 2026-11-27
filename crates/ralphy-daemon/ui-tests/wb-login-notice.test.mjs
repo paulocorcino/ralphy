@@ -6,20 +6,12 @@
 // (fixtures/api-audit-logins-dismiss.json).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { bindingNames, partMarkup } from "./harness.mjs";
+import { bindingNames, fixture, partMarkup, swapFetch } from "./harness.mjs";
 import { wbLoginNotice } from "../assets/ui/wb-login-notice.ts";
 import { connectionStore } from "../assets/ui/wb-connection-store.ts";
 
-const HERE = import.meta.dirname;
-
 // The part that holds the notices.
 const PART = "wb-login-notice.part.html";
-
-function fixture(name) {
-  return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));
-}
 
 test("the revoke reply says the login is revoked", () => {
   assert.deepEqual(fixture("api-security-logins-revoke"), { revoked: true });
@@ -51,7 +43,7 @@ test("the dismiss reply says the notice is dismissed", () => {
 // call with the next of `replies` and keeps what was sent. `init` runs only
 // where a test calls it.
 // The test files share one process, so `t.after` puts the globals back.
-const GLOBALS = ["window", "document", "fetch"];
+const GLOBALS = ["window", "document"];
 
 function page(t, replies = []) {
   const saved = GLOBALS.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]);
@@ -64,11 +56,11 @@ function page(t, replies = []) {
   const sent = [];
   globalThis.window = { addEventListener() {}, dispatchEvent() {} };
   globalThis.document = { visibilityState: "visible", addEventListener() {} };
-  globalThis.fetch = (url, init) => {
+  swapFetch(t, (url, init) => {
     sent.push([init.method, url, init.body]);
     const { status, body } = replies.shift();
     return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) });
-  };
+  });
   return { data: wbLoginNotice(), sent };
 }
 

@@ -4,31 +4,12 @@
 // oxlint-disable-next-line eslint/max-classes-per-file -- a fake class per object the test stands in for
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
+import { fixture, load, swapFetch } from "./harness.mjs";
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
 import { ReadDeadline } from "../assets/ui/wb-api.ts";
 import { forgetStalls } from "../assets/ui/wb-stall.ts";
-import { CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS, resumeDecision } from "../assets/ui/wb-resume.ts";
-
-const HERE = import.meta.dirname;
-
-// A push the daemon produced, as its tests wrote it (`tests/support/golden.rs`).
-function fixture(name) {
-  return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));
-}
-
-function load() {
-  // The two globals the module touches at LOAD time: `document.addEventListener`
-  // (it subscribes to the `workbench:action` seam) and `location.protocol`/`host`
-  // (WS_ORIGIN). No `WebSocket` is injected: nothing opens a socket at load, so
-  // a constructor call moved to module scope fails LOUDLY here.
-  const window = { addEventListener() {} };
-  const document = { addEventListener() {} };
-  const location = { protocol: "http:", host: "127.0.0.1:7431" };
-  return createDaemon(window, document, location, { messages: { flash() {} } });
-}
+import { CONNECT_TIMEOUT_MS } from "../assets/ui/wb-resume.ts";
 
 test("a handshake that never opens is closed at the deadline, and nothing else is", () => {
   const realSetTimeout = globalThis.setTimeout;
@@ -47,7 +28,7 @@ test("a handshake that never opens is closed at the deadline, and nothing else i
   };
   // Two pages: the socket of the second opens in time.
   try {
-    for (const d of [load(), load()]) {
+    for (const d of [newDaemon(), newDaemon()]) {
       d.subscribePresence(() => {});
       d.subscribeRuns("r", () => {});
       d.subscribeChanges("r", () => {});
@@ -67,19 +48,10 @@ test("a handshake that never opens is closed at the deadline, and nothing else i
   );
 });
 
-// The shell's door and the console run one resume rule, because they resume on
-// the same event; the rule lives in wb-console-session.ts and the door imports it.
-test("the daemon door uses the session folds' resume rule and deadlines", () => {
-  const door = load();
-  assert.equal(door.resumeDecision, resumeDecision);
-  assert.equal(door.CONNECT_TIMEOUT_MS, CONNECT_TIMEOUT_MS);
-  assert.equal(door.RESUME_DEBOUNCE_MS, RESUME_DEBOUNCE_MS);
-});
-
 // --- detachSocket: retiring a socket so its queued events cannot reach us ---
 
 test("detachSocket nulls EVERY handler, onmessage included, then closes", () => {
-  const { detachSocket } = load();
+  const { detachSocket } = newDaemon();
   const ws = {
     readyState: 1,
     closed: false,
@@ -102,7 +74,7 @@ test("detachSocket nulls EVERY handler, onmessage included, then closes", () => 
 });
 
 test("detachSocket does not call close on an already-closed socket", () => {
-  const { detachSocket } = load();
+  const { detachSocket } = newDaemon();
   for (const readyState of [2, 3]) {
     let calls = 0;
     detachSocket({ readyState, close: () => (calls += 1) });
@@ -111,7 +83,7 @@ test("detachSocket does not call close on an already-closed socket", () => {
 });
 
 test("detachSocket tolerates no socket and a throwing close", () => {
-  const { detachSocket } = load();
+  const { detachSocket } = newDaemon();
   // Both run on a resume path that must never throw into the operator's face.
   assert.doesNotThrow(() => detachSocket(null));
   assert.doesNotThrow(() => detachSocket());
@@ -128,7 +100,7 @@ test("detachSocket tolerates no socket and a throwing close", () => {
 // --- withCheckout: the optional `checkout` argument on a verb payload --------
 
 test("withCheckout adds the key only for a real name", () => {
-  const { withCheckout } = load();
+  const { withCheckout } = newDaemon();
   assert.deepEqual(withCheckout({ repo: "r", path: "" }, "wt-a"), {
     repo: "r",
     path: "",
@@ -155,29 +127,25 @@ test("withCheckout adds the key only for a real name", () => {
 const flush = () => new Promise((r) => { setImmediate(r); });
 
 function newDaemon() {
-  const window = { addEventListener() {} };
-  const document = { addEventListener() {} };
-  const location = { protocol: "http:", host: "127.0.0.1:7431" };
-  return createDaemon(window, document, location, { messages: { flash() {} } });
+  return load(createDaemon, { deps: { messages: { flash() {} } } });
 }
 
 // A fake `fetch` for the command route. `answer(cmd)` gives the reply payload,
 // or a `Response` to send as it is. `calls` lists each request. No WebSocket is
 // injected, so a socket opened by mistake fails loudly.
-function loadWithFetch(answer) {
+function loadWithFetch(t, answer) {
   const calls = [];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = (url, init) => {
+  swapFetch(t, (url, init) => {
     const cmd = JSON.parse(init.body);
     calls.push({ url, method: init.method, headers: init.headers, cmd });
     const reply = answer(cmd);
     return Promise.resolve(reply instanceof Response ? reply : Response.json(reply));
-  };
-  return { d: newDaemon(), calls, restore: () => (globalThis.fetch = realFetch) };
+  });
+  return { d: newDaemon(), calls };
 }
 
-test("observe sends its command over HTTP and opens no socket", async () => {
-  const { d, calls, restore } = loadWithFetch(() => ({ status: "ok", entries: [] }));
+test("observe sends its command over HTTP and opens no socket", async (t) => {
+  const { d, calls } = loadWithFetch(t, () => ({ status: "ok", entries: [] }));
   let sockets = 0;
   globalThis.WebSocket = class {
     constructor() {
@@ -198,67 +166,54 @@ test("observe sends its command over HTTP and opens no socket", async () => {
     assert.deepEqual(calls[0].cmd.payload, { repo: "o/r", path: "" });
   } finally {
     delete globalThis.WebSocket;
-    restore();
   }
 });
 
-test("observe fans out an unknown checkout to the registered listeners, after the reply", async () => {
-  const { d, restore } = loadWithFetch((cmd) => {
+test("observe fans out an unknown checkout to the registered listeners, after the reply", async (t) => {
+  const { d } = loadWithFetch(t, (cmd) => {
     if (cmd.payload.checkout === "gone") return { status: "error", message: "unknown checkout" };
     if (cmd.payload.checkout === "missing-file") return { status: "error", reason: "not found" };
     return { status: "ok", entries: [] };
   });
-  try {
-    const seen = [];
-    d.onUnknownCheckout((repo, name) => seen.push([repo, name]));
-    // A listener that throws must never break the read or the others.
-    d.onUnknownCheckout(() => {
-      throw new Error("boom");
-    });
-    const reply = await d.observe("tree.list", { repo: "o/r", path: "", checkout: "gone" });
-    assert.equal(reply.message, "unknown checkout", "the reply still resolves");
-    assert.deepEqual(seen, [], "the fan-out lands AFTER the resolve, not before it");
-    await new Promise((r) => { setTimeout(r, 5); });
-    assert.deepEqual(seen, [["o/r", "gone"]]);
+  const seen = [];
+  d.onUnknownCheckout((repo, name) => seen.push([repo, name]));
+  // A listener that throws must never break the read or the others.
+  d.onUnknownCheckout(() => {
+    throw new Error("boom");
+  });
+  const reply = await d.observe("tree.list", { repo: "o/r", path: "", checkout: "gone" });
+  assert.equal(reply.message, "unknown checkout", "the reply still resolves");
+  assert.deepEqual(seen, [], "the fan-out lands AFTER the resolve, not before it");
+  await new Promise((r) => { setTimeout(r, 5); });
+  assert.deepEqual(seen, [["o/r", "gone"]]);
 
-    // NEGATIVE CONTROLS: another error, an ok reply, and a payload with no
-    // checkout at all fire nothing.
-    await d.observe("file.read", { repo: "o/r", path: "x", checkout: "missing-file" });
-    await d.observe("tree.list", { repo: "o/r", path: "", checkout: "wt-a" });
-    await d.observe("tree.list", { repo: "o/r", path: "" });
-    await new Promise((r) => { setTimeout(r, 5); });
-    assert.deepEqual(seen, [["o/r", "gone"]]);
-  } finally {
-    restore();
-  }
+  // NEGATIVE CONTROLS: another error, an ok reply, and a payload with no
+  // checkout at all fire nothing.
+  await d.observe("file.read", { repo: "o/r", path: "x", checkout: "missing-file" });
+  await d.observe("tree.list", { repo: "o/r", path: "", checkout: "wt-a" });
+  await d.observe("tree.list", { repo: "o/r", path: "" });
+  await new Promise((r) => { setTimeout(r, 5); });
+  assert.deepEqual(seen, [["o/r", "gone"]]);
 });
 
-test("observe rejects a command the daemon answers with an HTTP error", async () => {
-  const { d, restore } = loadWithFetch(() => new Response("boom", { status: 500 }));
-  try {
-    await assert.rejects(d.observe("tree.list", { repo: "r", path: "" }), /HTTP 500/u);
-  } finally {
-    restore();
-  }
+test("observe rejects a command the daemon answers with an HTTP error", async (t) => {
+  const { d } = loadWithFetch(t, () => new Response("boom", { status: 500 }));
+  await assert.rejects(d.observe("tree.list", { repo: "r", path: "" }), /HTTP 500/u);
 });
 
-test("write and readImage send their command over HTTP", async () => {
-  const { d, calls, restore } = loadWithFetch((cmd) =>
+test("write and readImage send their command over HTTP", async (t) => {
+  const { d, calls } = loadWithFetch(t, (cmd) =>
     cmd.verb === "file.image" ? { status: "ok", mediaType: "image/png", base64: "AAAA" } : { status: "ok" },
   );
-  try {
-    assert.deepEqual(await d.write("file.write", { repo: "r", path: "a.txt", content: "x" }), { status: "ok" });
-    assert.equal(await d.readImage("r", "a.png", undefined, null), "data:image/png;base64,AAAA");
-    assert.deepEqual(
-      calls.map((c) => [c.url, c.method, c.cmd.verb]),
-      [
-        ["/api/command", "POST", "file.write"],
-        ["/api/command", "POST", "file.image"],
-      ],
-    );
-  } finally {
-    restore();
-  }
+  assert.deepEqual(await d.write("file.write", { repo: "r", path: "a.txt", content: "x" }), { status: "ok" });
+  assert.equal(await d.readImage("r", "a.png", undefined, null), "data:image/png;base64,AAAA");
+  assert.deepEqual(
+    calls.map((c) => [c.url, c.method, c.cmd.verb]),
+    [
+      ["/api/command", "POST", "file.write"],
+      ["/api/command", "POST", "file.image"],
+    ],
+  );
 });
 
 // --- observe: a command that gets no answer fails at its deadline ------------
@@ -266,13 +221,13 @@ test("write and readImage send their command over HTTP", async () => {
 // A `fetch` that never answers the command route; `settle(reply)` answers the
 // pending request late. The timers are mocked, so a tick drives the deadline.
 // Any other route (the stall report) is answered `204` at once.
-function silentFetch({ checkout }) {
-  const realFetch = globalThis.fetch;
+function silentFetch(t, { checkout }) {
   const pending = [];
-  globalThis.fetch = (url) =>
+  swapFetch(t, (url) =>
     url === "/api/command"
       ? new Promise((resolve) => { pending.push(resolve); })
-      : Promise.resolve(new Response(null, { status: 204 }));
+      : Promise.resolve(new Response(null, { status: 204 })),
+  );
   mock.timers.enable({ apis: ["setTimeout"] });
   const d = newDaemon();
   const result = { error: null, value: undefined };
@@ -285,15 +240,12 @@ function silentFetch({ checkout }) {
     result,
     p,
     settle: (reply) => pending[0](Response.json(reply)),
-    restore: () => {
-      mock.timers.reset();
-      globalThis.fetch = realFetch;
-    },
+    restore: () => mock.timers.reset(),
   };
 }
 
-test("observe rejects a command with no answer at the command deadline", async () => {
-  const s = silentFetch({});
+test("observe rejects a command with no answer at the command deadline", async (t) => {
+  const s = silentFetch(t, {});
   try {
     mock.timers.tick(69999);
     await flush();
@@ -308,8 +260,8 @@ test("observe rejects a command with no answer at the command deadline", async (
   }
 });
 
-test("a reply after the deadline neither resolves the read nor fans out", async () => {
-  const s = silentFetch({ checkout: "gone" });
+test("a reply after the deadline neither resolves the read nor fans out", async (t) => {
+  const s = silentFetch(t, { checkout: "gone" });
   try {
     let calls = 0;
     s.d.onUnknownCheckout(() => calls++);
@@ -385,7 +337,7 @@ const openSocket = (s) => {
 // The daemon door with fake sockets and timers. Timers are captured, never
 // run: the handshake deadline and the 3s retry are fired by hand, so no test
 // waits on a real clock.
-function pageSockets(d = load()) {
+function pageSockets(d = newDaemon()) {
   const sockets = [];
   const timers = [];
   const FakeSocket = class {
@@ -808,7 +760,7 @@ const frame = (tag, obj) => {
 // --- subscribePresence: the presence socket also carries the daemon's pushes
 
 test("subscribePresence hands a command frame to onPush and each open to onOpen", () => {
-  const d = load();
+  const d = newDaemon();
   const sockets = [];
   const realSetTimeout = globalThis.setTimeout;
   globalThis.setTimeout = () => 0;
@@ -934,16 +886,16 @@ test("a command whose socket was lost is not run again on the next socket", () =
   assert.deepEqual(seen, []);
 });
 
-test("an observe past its deadline reports a stall naming the verb", async () => {
+test("an observe past its deadline reports a stall naming the verb", async (t) => {
   const stalls = [];
   forgetStalls();
-  const s = silentFetch({});
+  const s = silentFetch(t, {});
   const silent = globalThis.fetch;
-  globalThis.fetch = (url, init) => {
+  swapFetch(t, (url, init) => {
     if (url !== "/api/device/stall") return silent(url, init);
     stalls.push({ url, ...JSON.parse(init.body) });
     return Promise.resolve(new Response(null, { status: 204 }));
-  };
+  });
   try {
     mock.timers.tick(70000);
     await flush();

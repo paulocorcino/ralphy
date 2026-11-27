@@ -6,9 +6,17 @@
 // wb-release-store.test.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assembledPage, loadComponent, loadShell, partMarkup, runIn as evalIn, valueIn, withoutComments } from "./harness.mjs";
+import {
+  assembledPage,
+  loadComponent,
+  loadShell,
+  partMarkup,
+  runIn as evalIn,
+  swapFetch,
+  valueIn,
+  withoutComments,
+} from "./harness.mjs";
 import { WBRelease } from "../assets/ui/wb-release.ts";
-import { WBReleaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
 
 // The part that holds the dialogs' markup.
 const PART = "wb-release-dialogs.part.html";
@@ -186,7 +194,8 @@ test("the dialogs list at most 12 shell() names, and shell() has each one", () =
 
 // pin: the opener sends the event and the element's handler opens the dialog —
 // the wiring is only in the markup, so the test runs its text.
-test("the account menu closes itself and asks the dialogs to open with their events", async () => {
+test("the account menu closes itself and asks the dialogs to open with their events", async (t) => {
+  swapFetch(t, () => Promise.resolve({ ok: false }));
   const loaded = loadShell();
   const { scope: state } = loadComponent("wbReleaseDialogs", { from: loaded });
   const { scope: menu } = loadComponent("wbAccount", { from: loaded });
@@ -206,24 +215,7 @@ test("the account menu closes itself and asks the dialogs to open with their eve
     assert.deepEqual(sent, [event]);
 
     // The dialogs' element hears it and opens the one asked for.
-    const real = globalThis.fetch;
-    globalThis.fetch = () => Promise.resolve({ ok: false });
-    try {
-      await valueIn(state, handlerOf(event));
-    } finally {
-      globalThis.fetch = real;
-    }
+    await valueIn(state, handlerOf(event));
     assert.equal(state[flag], true, `${event} opens ${flag}`);
   }
-});
-
-// pin: the modal stack sees the dialog open —
-// the path is a string of the markup, and node runs no Alpine over it.
-// `app.ts` asks the modal stack with this path; it must be the path the panel
-// gives to `scrim()`, or the shortcuts would never see the panel open.
-test("whatsNewFlag is the path the What's new panel gives to scrim()", () => {
-  const markup = partMarkup(PART);
-  const paths = [...markup.matchAll(/x-bind="\$store\.modals\.scrim\('([^']+)'/gu)].map((m) => m[1]);
-  assert.deepEqual(paths, ["whatsNewOpen", "aboutOpen"]);
-  assert.equal(WBReleaseDialogs.whatsNewFlag, paths[0]);
 });

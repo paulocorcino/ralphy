@@ -5,7 +5,7 @@
 // scrims of index.html drive the stack in wb-modals.test.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadShell } from "./harness.mjs";
+import { loadShell, partMarkup } from "./harness.mjs";
 import { modalsStore } from "../assets/ui/wb-modals-store.ts";
 import { WBReleaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
 import { WBSecurityDialog } from "../assets/ui/wb-security-dialog.ts";
@@ -225,4 +225,37 @@ test("dialog resolvers stay out of the reactive data", async () => {
   assert.equal(await second, true);
   store.promptRespond("a");
   assert.equal(await prompt, "a");
+});
+
+// The modal stack sees a dialog open by the flag its module names. The flag is
+// a string of the markup, and node runs no Alpine over it: `app.ts` asks the
+// stack with the flag, so it must be the path the dialog gives to `scrim()`.
+const FLAG_ROWS = [
+  {
+    name: "Security dialog",
+    part: "wb-security-dialog.part.html",
+    paths: ["securityOpen"],
+    flag: WBSecurityDialog.openFlag,
+  },
+  {
+    name: "Settings dialog",
+    part: "wb-settings-dialog.part.html",
+    paths: ["settingsOpen"],
+    flag: WBSettingsDialog.openFlag,
+  },
+  {
+    name: "What's new panel",
+    part: "wb-release-dialogs.part.html",
+    paths: ["whatsNewOpen", "aboutOpen"],
+    flag: WBReleaseDialogs.whatsNewFlag,
+  },
+];
+
+test("each dialog's open flag is the path its markup gives to scrim()", () => {
+  for (const row of FLAG_ROWS) {
+    const markup = partMarkup(row.part);
+    const paths = [...markup.matchAll(/x-bind="\$store\.modals\.scrim\('([^']+)'/gu)].map((m) => m[1]);
+    assert.deepEqual(paths, row.paths, `${row.name}: the scrim paths`);
+    assert.equal(row.flag, paths[0], `${row.name}: the flag is the first path`);
+  }
 });

@@ -10,11 +10,7 @@ import assert from "node:assert/strict";
 import { WBProject } from "../assets/ui/wb-project.ts";
 
 // The module keeps no state, so one import serves every test.
-function load() {
-  return WBProject;
-}
-
-const wb = load();
+const wb = WBProject;
 
 test("repoLabel shows the daemon's project name, never a path- key", () => {
   // A repo with no remote is keyed `path-<hash>` (ADR-0008 D7); the daemon

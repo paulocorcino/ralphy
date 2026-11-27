@@ -7,7 +7,7 @@
 // sends reach their listeners as on the page.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadComponent, loadShell } from "./harness.mjs";
+import { loadComponent, loadShell, swapFetch } from "./harness.mjs";
 import { connectionStore } from "../assets/ui/wb-connection-store.ts";
 import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
 
@@ -63,30 +63,38 @@ function connectedPage(opts = {}) {
   return { ...loaded, store: state.$store.connection };
 }
 
-// Every URL the code under test fetched, answered with an empty 200. A bare
-// `fetch` in app.ts resolves to `globalThis.fetch`, not the harness window's.
-// `until`, when given, names a URL the read must reach: the spy waits for it
-// (up to 2 s) instead of a fixed number of event-loop turns, because a read
+// Every URL the code under test fetched, answered with a 200. A bare
+// `fetch` in app.ts resolves to `globalThis.fetch`, so a test that reads calls
+// `swapFetch(t, answerEmpty)` once, before its first spy. The answer is the
+// `reply` of the spy that runs, an empty list otherwise.
+const fetched = [];
+let reply = [];
+function answerEmpty(url) {
+  fetched.push(String(url));
+  const rows = reply;
+  return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(rows) });
+}
+
+// The URLs fetched while `fn` runs, every read answered with `rows`. `until`,
+// when given, names a URL the read must reach: the spy waits for it (up to
+// 2 s) instead of a fixed number of event-loop turns, because a read
 // scheduled with `setTimeout` can land after any number of turns.
-async function withFetchSpy(fn, until = null, reply = []) {
-  const urls = [];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = (url) => {
-    urls.push(String(url));
-    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(reply) });
-  };
+async function withFetchSpy(fn, until = null, rows = []) {
+  const from = fetched.length;
+  const seen = () => fetched.slice(from);
+  reply = rows;
   try {
-    await fn(urls);
+    await fn();
     // Let the reads chained behind the first await land.
     for (let i = 0; i < 10; i++) await new Promise((r) => { setImmediate(r); });
     const deadline = Date.now() + 2000;
     if (until) {
-      while (!urls.includes(until) && Date.now() < deadline) await new Promise((r) => { setTimeout(r, 5); });
+      while (!seen().includes(until) && Date.now() < deadline) await new Promise((r) => { setTimeout(r, 5); });
     }
   } finally {
-    globalThis.fetch = realFetch;
+    reply = [];
   }
-  return urls;
+  return seen();
 }
 
 test("fmtUptime steps down through the units and never renders a negative", () => {
@@ -108,23 +116,21 @@ test("fmtUptime steps down through the units and never renders a negative", () =
 });
 
 // The binding cannot see ticks STOP; the clock that `init` starts must.
-test("presenceStale turns true on the clock once the heartbeat is older than the limit", () => {
+test("presenceStale turns true on the clock once the heartbeat is older than the limit", (t) => {
   const { store } = storeOnly();
   // The daemon door owns the heartbeat's time and judges it.
   let lost = false;
   window.WBDaemon = { heartbeatStale: () => lost };
   const ticks = [];
   const realSetInterval = globalThis.setInterval;
-  const realFetch = globalThis.fetch;
+  swapFetch(t, () => Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve(null) }));
   globalThis.setInterval = (fn, ms) => (ticks.push({ fn, ms }), 0);
-  globalThis.fetch = () => Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve(null) });
   try {
     store.init();
   } finally {
     globalThis.setInterval = realSetInterval;
-    globalThis.fetch = realFetch;
   }
-  const clock = ticks.find((t) => t.ms === 1000);
+  const clock = ticks.find((tick) => tick.ms === 1000);
   assert.ok(clock, "init starts the one-second presence clock");
   clock.fn();
   assert.equal(store.presenceStale, false, "a fresh heartbeat is not stale");
@@ -135,7 +141,7 @@ test("presenceStale turns true on the clock once the heartbeat is older than the
 
 // #834: the page socket opens after the session read, which mints the
 // device cookie. `init` hands the read to the door before its first join.
-test("init holds the page socket on its session read", () => {
+test("init holds the page socket on its session read", (t) => {
   const { store } = storeOnly();
   const calls = [];
   window.WBDaemon = {
@@ -143,14 +149,12 @@ test("init holds the page socket on its session read", () => {
     subscribePresence: () => (calls.push(["join"]), {}),
   };
   const realSetInterval = globalThis.setInterval;
-  const realFetch = globalThis.fetch;
+  swapFetch(t, () => Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve(null) }));
   globalThis.setInterval = () => 0;
-  globalThis.fetch = () => Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve(null) });
   try {
     store.init();
   } finally {
     globalThis.setInterval = realSetInterval;
-    globalThis.fetch = realFetch;
   }
   assert.deepEqual(calls, [["after", "function"], ["join"]]);
 });
@@ -174,7 +178,8 @@ test("returning to the tab reads the release view again", () => {
   ]);
 });
 
-test("a presence frame reads nothing", async () => {
+test("a presence frame reads nothing", async (t) => {
+  swapFetch(t, answerEmpty);
   const { store, window } = connectedPage();
   let beat = null;
   window.WBDaemon.subscribePresence = (onPresence) => {
@@ -196,7 +201,8 @@ test("the presence subscription stays out of the reactive data", () => {
   assert.equal(store.presenceSub(), handle);
 });
 
-test("a hidden tab reads nothing on a push, and reads when it becomes visible", async () => {
+test("a hidden tab reads nothing on a push, and reads when it becomes visible", async (t) => {
+  swapFetch(t, answerEmpty);
   const { state, store, document } = connectedPage({ document: { visibilityState: "hidden", hasFocus: () => true } });
   // The column check after a desk read is not under test here.
   state.checkColumnDesk = async () => {};
@@ -228,7 +234,8 @@ test("a hidden tab reads nothing on a push, and reads when it becomes visible", 
   assert.ok(visible.includes("/api/desk"), visible.join(", "));
 });
 
-test("peers.dirty and repos.dirty read the project list", async () => {
+test("peers.dirty and repos.dirty read the project list", async (t) => {
+  swapFetch(t, answerEmpty);
   for (const verb of ["peers.dirty", "repos.dirty"]) {
     const { state, store } = connectedPage(VISIBLE);
     state.checkColumnDesk = async () => {};
@@ -252,7 +259,8 @@ test("desk.dirty from this tab is ignored, and from another tab reads the desk",
   assert.equal(reads, 1);
 });
 
-test("a reopened presence socket reads sessions, projects and the desk; the first open reads nothing", async () => {
+test("a reopened presence socket reads sessions, projects and the desk; the first open reads nothing", async (t) => {
+  swapFetch(t, answerEmpty);
   const { state, store } = connectedPage(VISIBLE);
   // The column check after a desk read is not under test here.
   state.checkColumnDesk = async () => {};
@@ -264,14 +272,16 @@ test("a reopened presence socket reads sessions, projects and the desk; the firs
   }
 });
 
-test("sessions.dirty on a visible tab reads the sessions", async () => {
+test("sessions.dirty on a visible tab reads the sessions", async (t) => {
+  swapFetch(t, answerEmpty);
   const { store } = connectedPage(VISIBLE);
   store.LIVE_SETTLE_MS = 0;
   const urls = await withFetchSpy(() => store.onPresencePush("sessions.dirty", {}), "/api/sessions");
   assert.ok(urls.includes("/api/sessions"), urls.join(", "));
 });
 
-test("a tab that becomes visible reads the runs with the Runs panel closed, so an ended run unlocks the writes", async () => {
+test("a tab that becomes visible reads the runs with the Runs panel closed, so an ended run unlocks the writes", async (t) => {
+  swapFetch(t, answerEmpty);
   const { state, store, window } = connectedPage(VISIBLE);
   state.checkColumnDesk = async () => {};
   window.WBDaemon.observe = (verb) => Promise.resolve(verb === "runs.list" ? { status: "ok", runs: [] } : null);
@@ -316,7 +326,8 @@ test("visible and login ask the open panels to read again", () => {
   assert.equal(rereads(), 2, "a login asks the open panels too");
 });
 
-test("the peer tick and a project-list push read no change set and no branch", async () => {
+test("the peer tick and a project-list push read no change set and no branch", async (t) => {
+  swapFetch(t, answerEmpty);
   const git = [];
   const { state, store, window } = connectedPage(VISIBLE);
   window.addEventListener("workbench:changes-read", (e) => git.push(e.detail.ref));
@@ -339,22 +350,15 @@ test("the peer tick and a project-list push read no change set and no branch", a
 // The session read: the store keeps `authed`, the mark and the policy, and the
 // shell takes the restore of the view (the login gate's password flag:
 // wb-login.test.mjs).
-test("a session read keeps the policy, and restores the view only when authorized", async () => {
+test("a session read keeps the policy, and restores the view only when authorized", async (t) => {
+  let session = null;
+  swapFetch(t, () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(session) }));
   for (const authed of [true, false]) {
     const { state, store } = connectedPage(VISIBLE);
     const restored = [];
     state.$store.tabs.restoreView = () => restored.push("restore");
-    const realFetch = globalThis.fetch;
-    globalThis.fetch = () => Promise.resolve({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ authed, password: true, policy: "bearer", avatar: "🦊" }),
-    });
-    try {
-      await store.probeSession();
-    } finally {
-      globalThis.fetch = realFetch;
-    }
+    session = { authed, password: true, policy: "bearer", avatar: "🦊" };
+    await store.probeSession();
     assert.equal(store.authed, authed);
     assert.equal(store.identityAvatar, "🦊");
     assert.equal(store.security.policy, "bearer");

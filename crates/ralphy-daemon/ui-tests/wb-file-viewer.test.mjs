@@ -10,10 +10,11 @@ import { createViewer, isFileDescriptor, isOpenRequest } from "../assets/ui/wb-f
 import { WBMonaco } from "../assets/ui/wb-monaco.ts";
 import { buildImage } from "../assets/ui/wb-file-viewer-read-only.ts";
 import { idLookups } from "./fake-document.mjs";
+import { fakeClassList } from "./harness.mjs";
 
 const REAL_MONACO = { ...WBMonaco };
 
-function load() {
+function bareViewer() {
   const window = {};
   const document = { ...idLookups(() => null) };
   return createViewer(window, document, { messages: { flash() {} } });
@@ -24,7 +25,7 @@ const DIR = "docs/analise";
 const fileTarget = (path, fragment = "") => ({ kind: "file", path, fragment });
 
 test("linkTarget folds a markdown link against the document's own directory", () => {
-  const { linkTarget } = load();
+  const { linkTarget } = bareViewer();
   // [case, document directory, href, expected target; null is refused]
   const rows = [
     ["a relative link", DIR, "../backlog/TASKS.md", fileTarget("docs/backlog/TASKS.md")],
@@ -62,7 +63,7 @@ test("linkTarget folds a markdown link against the document's own directory", ()
 const REPO = "paulocorcino/vibeforge · WSL: Ubuntu-22.04";
 
 test("an attached pane is labelled by its path alone; the full form rides the title", () => {
-  const { pathLabel } = load();
+  const { pathLabel } = bareViewer();
   const got = pathLabel({ label: REPO, path: "docs/COMPARATIVO.md", kind: "markdown", detached: false });
   assert.deepEqual(got, {
     dir: "docs/",
@@ -72,7 +73,7 @@ test("an attached pane is labelled by its path alone; the full form rides the ti
 });
 
 test("a detached pane keeps the repo and its environment in front of the path", () => {
-  const { pathLabel } = load();
+  const { pathLabel } = bareViewer();
   const got = pathLabel({ label: REPO, path: "infra/bootstrap.env.example", kind: "code", detached: true });
   assert.equal(got.dir, `${REPO} / infra/`);
   assert.equal(got.file, "bootstrap.env.example");
@@ -80,7 +81,7 @@ test("a detached pane keeps the repo and its environment in front of the path", 
 });
 
 test("a diff pane keeps its HEAD marker; a root file has no directory to yield", () => {
-  const { pathLabel } = load();
+  const { pathLabel } = bareViewer();
   const diff = pathLabel({ label: REPO, path: "README.md", kind: "diff", detached: false });
   assert.deepEqual(diff, { dir: "", file: "README.md ↔ HEAD", full: `${REPO} / README.md ↔ HEAD` });
 });
@@ -91,7 +92,6 @@ test("a diff pane keeps its HEAD marker; a root file has no directory to yield",
 // their disposal, so the ONE ordering rule — mirror editor before model — is
 // observable.
 function fakeEl(tag) {
-  const classes = new Set();
   const el = {
     tag,
     style: {
@@ -103,17 +103,7 @@ function fakeEl(tag) {
     className: "",
     children: [],
     parent: null,
-    classList: {
-      add: (c) => classes.add(c),
-      remove: (c) => classes.delete(c),
-      toggle: (c, force) => {
-        const on = force === undefined ? !classes.has(c) : Boolean(force);
-        if (on) classes.add(c);
-        else classes.delete(c);
-        return on;
-      },
-      contains: (c) => classes.has(c),
-    },
+    classList: fakeClassList(),
     append(...kids) {
       for (const k of kids) {
         k.parent = el;
@@ -371,7 +361,7 @@ test("a find asked for while its pane was hidden runs when the pane is shown", a
 // (`remoteImageNotice`): a short text that names what and where, and a reason
 // that matches the policy — `https:` is opt-in, plain `http:` is never admitted.
 test("remoteImageNotice names what was refused, where from, and why", () => {
-  const { remoteImageNotice } = load();
+  const { remoteImageNotice } = bareViewer();
   const https = "Turn on Remote images in Security settings, then reload the page.";
   // [case, source, alt, expected notice fields]
   const rows = [

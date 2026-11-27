@@ -5,6 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createStageColumns } from "../assets/ui/wb-stage-columns.ts";
+import { fakeClassList } from "./harness.mjs";
 
 // The title-bar button that opens the list of consoles.
 function fakeButton() {
@@ -23,7 +24,7 @@ const noop = () => {};
 // A maximized window with that button, on a viewport `width` px wide.
 function paint({ width, autoBoot = true }) {
   const btn = fakeButton();
-  const win = { _deskId: "a", _colBtn: btn, classList: { contains: (c) => c === "maximized" } };
+  const win = { _deskId: "a", _colBtn: btn, classList: fakeClassList("maximized") };
   const cols = createStageColumns({
     OPTS: { autoBoot },
     wins: new Set([win]),
@@ -74,7 +75,7 @@ function fakeWindow(id, classes = []) {
   const style = new Map();
   return {
     _deskId: id,
-    classList: {
+    classList: { // own: the test reads the class set as `classes`, which fakeClassList does not expose
       add: (c) => set.add(c),
       remove: (c) => set.delete(c),
       contains: (c) => set.has(c),
