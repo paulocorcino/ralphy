@@ -133,6 +133,7 @@ pub use blocked::{
 pub use changes::{changes, Change, ChangeStatus};
 pub use diagnosis::{DiagnosisReport, RepoKind};
 pub use effort::Effort;
+pub use environment::EnvironmentProbe;
 pub use init_session::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DraftRequest, IssuesMode,
     TriageRequest, PROMPT_CONSOLIDATE, PROMPT_DIAGNOSE, PROMPT_INIT_ISSUES, PROMPT_TRIAGE,

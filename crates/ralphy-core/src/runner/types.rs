@@ -77,6 +77,8 @@ pub struct QueueConfig {
     /// repair briefs so the hand-back speaks the agent's own protocol. Supplied
     /// by the caller (the CLI passes the adapter layer's constant).
     pub done_signal: String,
+    /// Where the run gets its environment brief: the host probe, or a fixed text.
+    pub environment: crate::environment::EnvironmentProbe,
 }
 
 /// The terminal status of one queued issue, in the run's OWN vocabulary — the

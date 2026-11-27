@@ -4,7 +4,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use ralphy_core::{BranchMode, Issue, QueueConfig};
+use ralphy_core::{BranchMode, EnvironmentProbe, Issue, QueueConfig};
 
 /// Remove a scratch directory at the end of a test, or before a test starts. The
 /// directory may be gone already, and a failed removal must not fail the test.
@@ -233,42 +233,7 @@ pub(crate) fn cfg(repo: &Path, stamp: &str, dry_run: bool) -> QueueConfig {
         require_verify_gate: false,
         done_signal: "DONE_TOKEN".into(),
         human_return_labels: default_human_return(),
-    }
-}
-
-pub(crate) fn cfg_only(repo: &Path, stamp: &str, only: u64) -> QueueConfig {
-    QueueConfig {
-        repo_root: repo.to_path_buf(),
-        base_branch: "main".into(),
-        dry_run: false,
-        stamp: stamp.into(),
-        branch_mode: BranchMode::New,
-        forced_issues: vec![only],
-        stop_on_limit_plan: false,
-        stop_on_limit_exec: false,
-        verify_fallback: None,
-        verify_timeout: Duration::from_secs(60),
-        require_verify_gate: false,
-        done_signal: "DONE_TOKEN".into(),
-        human_return_labels: default_human_return(),
-    }
-}
-
-pub(crate) fn cfg_forced(repo: &Path, stamp: &str, forced: Vec<u64>) -> QueueConfig {
-    QueueConfig {
-        repo_root: repo.to_path_buf(),
-        base_branch: "main".into(),
-        dry_run: false,
-        stamp: stamp.into(),
-        branch_mode: BranchMode::New,
-        forced_issues: forced,
-        stop_on_limit_plan: false,
-        stop_on_limit_exec: false,
-        verify_fallback: None,
-        verify_timeout: Duration::from_secs(60),
-        require_verify_gate: false,
-        done_signal: "DONE_TOKEN".into(),
-        human_return_labels: default_human_return(),
+        environment: EnvironmentProbe::Fixed("test brief\n".into()),
     }
 }
 
@@ -287,48 +252,7 @@ pub(crate) fn cfg_current(repo: &Path, stamp: &str) -> QueueConfig {
         require_verify_gate: false,
         done_signal: "DONE_TOKEN".into(),
         human_return_labels: default_human_return(),
-    }
-}
-
-/// A New-mode config with the auto-resume opt-out (`--stop-on-limit`) enabled for
-/// both phases (an explicit `--stop-on-limit` forces plan and execute alike).
-pub(crate) fn cfg_stop_on_limit(repo: &Path, stamp: &str) -> QueueConfig {
-    QueueConfig {
-        repo_root: repo.to_path_buf(),
-        base_branch: "main".into(),
-        dry_run: false,
-        stamp: stamp.into(),
-        branch_mode: BranchMode::New,
-        forced_issues: Vec::new(),
-        stop_on_limit_plan: true,
-        stop_on_limit_exec: true,
-        verify_fallback: None,
-        verify_timeout: Duration::from_secs(60),
-        require_verify_gate: false,
-        done_signal: "DONE_TOKEN".into(),
-        human_return_labels: default_human_return(),
-    }
-}
-
-/// A New-mode config with the per-phase asymmetry a split run produces: the
-/// planner auto-resumes through a plan-time limit (`stop_on_limit_plan = false`,
-/// e.g. a Claude planner) while the executor stops on an execute-time limit
-/// (`stop_on_limit_exec = true`, e.g. an `OpenCode` executor). See docs/adr/0009.
-pub(crate) fn cfg_split_limit(repo: &Path, stamp: &str) -> QueueConfig {
-    QueueConfig {
-        repo_root: repo.to_path_buf(),
-        base_branch: "main".into(),
-        dry_run: false,
-        stamp: stamp.into(),
-        branch_mode: BranchMode::New,
-        forced_issues: Vec::new(),
-        stop_on_limit_plan: false,
-        stop_on_limit_exec: true,
-        verify_fallback: None,
-        verify_timeout: Duration::from_secs(60),
-        require_verify_gate: false,
-        done_signal: "DONE_TOKEN".into(),
-        human_return_labels: default_human_return(),
+        environment: EnvironmentProbe::Fixed("test brief\n".into()),
     }
 }
 
@@ -348,17 +272,5 @@ pub(crate) fn verify_fail_line() -> &'static str {
         "cmd /c \"exit 3\""
     } else {
         "sh -c \"exit 3\""
-    }
-}
-
-/// A `## Verify` line that fails until the agent's second execute lands, then
-/// passes — it keys off the marker file `ScriptedAgent` commits on its 1st repair
-/// (`issue-1-1.txt`, where the suffix is the prior execute count). This lets a
-/// repair attempt actually flip the gate green.
-pub(crate) fn verify_pass_after_repair_line() -> &'static str {
-    if cfg!(windows) {
-        "cmd /c \"if exist issue-1-1.txt (exit 0) else (exit 3)\""
-    } else {
-        "sh -c \"test -f issue-1-1.txt\""
     }
 }

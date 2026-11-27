@@ -1,26 +1,22 @@
 //! What a close leaves behind: evidence, review-only labels, handoff/friction
 //! and knowledge comments, infeasible-plan reasoning, planner inputs.
 
+use std::collections::{HashMap, HashSet};
+
 use super::*;
+use crate::{VerdictKind, Workspace};
 
 #[test]
 fn green_close_writes_evidence_and_adds_no_label_for_a_verified_ledger() {
-    let repo = init_repo("evidence-write");
+    let root = test_dir("q-evidence-write");
     // The ledger contains one verified criterion: the runner must call
     // write_evidence with it after the green close, and apply no label.
     let ledger = "- [verified] Some AC — evidence: unit test proves it\n";
-    let queue = vec![issue(1)];
+    let queue = vec![test_issue(1)];
     let agent = ScriptedAgent::new(vec![Outcome::Done]).with_ledger(ledger);
     let tracker = RecordingTracker::default();
 
-    let report = run_queue(
-        &cfg(&repo, "stamp-evidence", false),
-        &queue,
-        &agent,
-        &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
+    let (report, _) = run_on_fake(&test_cfg(&root, "stamp-evidence"), &queue, &agent, &tracker);
 
     let writes = tracker.evidence_writes.borrow();
     assert_eq!(
@@ -32,7 +28,7 @@ fn green_close_writes_evidence_and_adds_no_label_for_a_verified_ledger() {
     assert_eq!(*number, 1);
     assert_eq!(verdicts.len(), 1);
     assert_eq!(verdicts[0].criterion, "Some AC");
-    assert_eq!(verdicts[0].kind, ralphy_core::VerdictKind::Verified);
+    assert_eq!(verdicts[0].kind, VerdictKind::Verified);
     assert_eq!(verdicts[0].evidence, "unit test proves it");
 
     // The close must actually have happened, or `review_only == 0` is vacuous:
@@ -45,27 +41,25 @@ fn green_close_writes_evidence_and_adds_no_label_for_a_verified_ledger() {
         tracker.labels.borrow()
     );
 
-    remove_scratch(&repo);
+    remove_scratch(&root);
 }
 
 #[test]
 fn green_close_records_review_only_count_and_labels_the_issue() {
-    let repo = init_repo("review-only-label");
+    let root = test_dir("q-review-only-label");
     let ledger = "- [verified] Some AC — evidence: unit test proves it\n\
                   - [review-only] CONTEXT.md reads correctly — evidence: human reads the prose\n\
                   - [review-only] ADR-0037 amended — evidence: human reads the prose\n";
-    let queue = vec![issue(1)];
+    let queue = vec![test_issue(1)];
     let agent = ScriptedAgent::new(vec![Outcome::Done]).with_ledger(ledger);
     let tracker = RecordingTracker::default();
 
-    let report = run_queue(
-        &cfg(&repo, "stamp-review-only", false),
+    let (report, _) = run_on_fake(
+        &test_cfg(&root, "stamp-review-only"),
         &queue,
         &agent,
         &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
+    );
 
     assert_eq!(
         report.worked[0].review_only, 2,
@@ -79,27 +73,20 @@ fn green_close_records_review_only_count_and_labels_the_issue() {
         [(1, "needs-human-review".to_owned())]
     );
 
-    remove_scratch(&repo);
+    remove_scratch(&root);
 }
 
 #[test]
 fn ledgerless_plan_bounces_and_writes_no_evidence() {
-    let repo = init_repo("evidence-noop");
+    let root = test_dir("q-evidence-noop");
     // Otherwise lint-clean plan, but no `## Acceptance ledger` section — the
     // ADR-0015 lint's ledger-presence check ALONE bounces it once (ADR-0015),
     // and write_evidence is never called on the eventual close.
-    let queue = vec![issue(2)];
+    let queue = vec![test_issue(2)];
     let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done]).without_ledger();
     let tracker = RecordingTracker::default();
 
-    run_queue(
-        &cfg(&repo, "stamp-noop", false),
-        &queue,
-        &agent,
-        &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
+    run_on_fake(&test_cfg(&root, "stamp-noop"), &queue, &agent, &tracker);
 
     // One protocol bounce: plan + two executes (the lint fails after the
     // first execute, the runner hands the session back once).
@@ -115,27 +102,20 @@ fn ledgerless_plan_bounces_and_writes_no_evidence() {
         "no evidence-write when ledger is absent"
     );
 
-    remove_scratch(&repo);
+    remove_scratch(&root);
 }
 
 #[test]
 fn green_close_posts_handoff_and_friction_comment() {
-    let repo = init_repo("handoff-close");
+    let root = test_dir("q-handoff-close");
     let extra = "## Handoff\n\n- **Delivered**: lab fixtures (abc1234)\n- **Residue**: \
     Setup-Lab.ps1 never ran clean-slate\n\n## Plan friction\n\n- the plan treated the lab as a \
     given precondition";
-    let queue = vec![issue(1)];
+    let queue = vec![test_issue(1)];
     let agent = ScriptedAgent::new(vec![Outcome::Done]).with_plan_extra(extra);
     let tracker = RecordingTracker::default();
 
-    run_queue(
-        &cfg(&repo, "stamp-handoff", false),
-        &queue,
-        &agent,
-        &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
+    run_on_fake(&test_cfg(&root, "stamp-handoff"), &queue, &agent, &tracker);
 
     let comments = tracker.comments.borrow();
     assert_eq!(comments.len(), 1, "one handoff comment for the green issue");
@@ -152,41 +132,39 @@ fn green_close_posts_handoff_and_friction_comment() {
     );
     // A handoff without a `Knowledge used` block warns but records nothing.
     assert!(
-        !Workspace::new(&repo).citations_path().exists(),
+        !Workspace::new(&root).citations_path().exists(),
         "no citations.jsonl entry when the field is absent"
     );
 
-    remove_scratch(&repo);
+    remove_scratch(&root);
 }
 
 #[test]
 fn green_close_appends_knowledge_used_citations() {
-    let repo = init_repo("citations-close");
+    let root = test_dir("q-citations-close");
     let cited = "## Handoff\n\n- **Delivered**: fix (abc1234)\n- **Knowledge used**:\n  - \
     \"Toolchain & platform\" — cargo test needs docker up first\n  - handoffs.md #5: schema \
     rejects empty DEVICEID\n\n## Plan friction\n\n- none";
     let none = "## Handoff\n\n- **Delivered**: docs (def5678)\n- **Knowledge used**: none\n\n## \
     Plan friction\n\n- none";
-    let queue = vec![issue(1), issue(2)];
+    let queue = vec![test_issue(1), test_issue(2)];
     let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done])
         .with_plan_extra_for(1, cited)
         .with_plan_extra_for(2, none);
     let tracker = RecordingTracker::default();
 
-    run_queue(
-        &cfg(&repo, "stamp-citations", false),
+    run_on_fake(
+        &test_cfg(&root, "stamp-citations"),
         &queue,
         &agent,
         &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
+    );
 
     // One JSON line per green close, in queue order — the hit-rate log the
     // consolidation curator prunes against.
-    let content = fs::read_to_string(Workspace::new(&repo).citations_path())
+    let content = fs::read_to_string(Workspace::new(&root).citations_path())
         .expect("citations.jsonl written");
-    let entries: Vec<ralphy_core::knowledge::CitationEntry> = content
+    let entries: Vec<crate::knowledge::CitationEntry> = content
         .lines()
         .map(|l| serde_json::from_str(l).expect("each line is one CitationEntry"))
         .collect();
@@ -207,28 +185,26 @@ fn green_close_appends_knowledge_used_citations() {
         "an honest `none` is recorded as an empty list"
     );
 
-    remove_scratch(&repo);
+    remove_scratch(&root);
 }
 
 #[test]
 fn infeasible_plan_posts_planner_reasoning_comment() {
-    let repo = init_repo("infeasible-comment");
+    let root = test_dir("q-infeasible-comment");
     let extra =
         "## Feasible: no\nThe issue bundles six PRD breakdown tasks; split into W1-T01..T06.";
-    let queue = vec![issue(3)];
+    let queue = vec![test_issue(3)];
     let agent = ScriptedAgent::new(vec![])
         .infeasible()
         .with_plan_extra(extra);
     let tracker = RecordingTracker::default();
 
-    let report = run_queue(
-        &cfg(&repo, "stamp-infeasible", false),
+    let (report, _) = run_on_fake(
+        &test_cfg(&root, "stamp-infeasible"),
         &queue,
         &agent,
         &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
+    );
 
     // The skip stays a skip: not closed, not executed, run continues.
     assert!(
@@ -242,7 +218,7 @@ fn infeasible_plan_posts_planner_reasoning_comment() {
     assert!(report.stop.is_none(), "infeasible does not stop the run");
     assert_eq!(
         report.worked[0].status,
-        ralphy_core::ResultStatus::NeedsSplit,
+        ResultStatus::NeedsSplit,
         "a bundle verdict is its own status"
     );
 
@@ -268,34 +244,27 @@ fn infeasible_plan_posts_planner_reasoning_comment() {
         "bundle verdict applies the needs-split label"
     );
 
-    remove_scratch(&repo);
+    remove_scratch(&root);
 }
 
 #[test]
 fn infeasible_plan_without_bundle_verdict_stays_generic() {
     // A reason without the word "bundle" takes the generic infeasible path:
     // no label, and the comment is the respecify-oriented one.
-    let repo = init_repo("infeasible-generic");
+    let root = test_dir("q-infeasible-generic");
     let extra = "## Feasible: no\nNo acceptance criteria and no verifiable done condition.";
-    let queue = vec![issue(4)];
+    let queue = vec![test_issue(4)];
     let agent = ScriptedAgent::new(vec![])
         .infeasible()
         .with_plan_extra(extra);
     let tracker = RecordingTracker::default();
 
-    let report = run_queue(
-        &cfg(&repo, "stamp-generic", false),
-        &queue,
-        &agent,
-        &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
+    let (report, _) = run_on_fake(&test_cfg(&root, "stamp-generic"), &queue, &agent, &tracker);
 
     assert!(report.stop.is_none(), "infeasible does not stop the run");
     assert_eq!(
         report.worked[0].status,
-        ralphy_core::ResultStatus::Infeasible,
+        ResultStatus::Infeasible,
         "no bundle verdict is a plain infeasible status"
     );
     assert!(
@@ -314,7 +283,7 @@ fn infeasible_plan_without_bundle_verdict_stays_generic() {
         "generic comment does not prescribe a split: {body}"
     );
 
-    remove_scratch(&repo);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -322,7 +291,7 @@ fn closed_blockers_handoffs_feed_the_planner_and_stale_file_is_removed() {
     // Pass 1: #5 depends on closed #2, which left a handoff comment. The runner
     // must write `.ralphy/handoffs.md` before planning #5.
     {
-        let repo = init_repo("handoff-feed");
+        let root = test_dir("q-handoff-feed");
         let queue = vec![issue_with_body(5, "## Blocked by\n- #2\n")];
         let agent = ScriptedAgent::new(vec![Outcome::Done]);
         let tracker = RecordingTracker {
@@ -336,16 +305,9 @@ fn closed_blockers_handoffs_feed_the_planner_and_stale_file_is_removed() {
             ..Default::default()
         };
 
-        run_queue(
-            &cfg(&repo, "stamp-feed", false),
-            &queue,
-            &agent,
-            &tracker,
-            &ScriptedClock::never(),
-        )
-        .unwrap();
+        run_on_fake(&test_cfg(&root, "stamp-feed"), &queue, &agent, &tracker);
 
-        let handoffs_md = fs::read_to_string(repo.join(".ralphy").join("handoffs.md"))
+        let handoffs_md = fs::read_to_string(root.join(".ralphy").join("handoffs.md"))
             .expect("handoffs.md written");
         assert!(handoffs_md.contains("## From #2"), "names the source issue");
         assert!(
@@ -353,14 +315,14 @@ fn closed_blockers_handoffs_feed_the_planner_and_stale_file_is_removed() {
             "carries the predecessor's handoff content"
         );
 
-        remove_scratch(&repo);
+        remove_scratch(&root);
     }
 
     // Pass 2: an issue with no blockers must not inherit a stale handoffs.md
     // from a previous issue — the runner removes it.
     {
-        let repo = init_repo("handoff-stale");
-        let ralphy = repo.join(".ralphy");
+        let root = test_dir("q-handoff-stale");
+        let ralphy = root.join(".ralphy");
         fs::create_dir_all(&ralphy).unwrap();
         fs::write(
             ralphy.join("handoffs.md"),
@@ -368,25 +330,18 @@ fn closed_blockers_handoffs_feed_the_planner_and_stale_file_is_removed() {
         )
         .unwrap();
 
-        let queue = vec![issue(7)];
+        let queue = vec![test_issue(7)];
         let agent = ScriptedAgent::new(vec![Outcome::Done]);
         let tracker = RecordingTracker::default();
 
-        run_queue(
-            &cfg(&repo, "stamp-stale", false),
-            &queue,
-            &agent,
-            &tracker,
-            &ScriptedClock::never(),
-        )
-        .unwrap();
+        run_on_fake(&test_cfg(&root, "stamp-stale"), &queue, &agent, &tracker);
 
         assert!(
             !ralphy.join("handoffs.md").exists(),
             "stale handoffs.md removed for an issue with no closed blockers"
         );
 
-        remove_scratch(&repo);
+        remove_scratch(&root);
     }
 }
 
@@ -395,7 +350,7 @@ fn issue_comments_are_attached_to_the_planner_issue_json() {
     // The runner fetches the selected issue's comment thread and folds it into
     // `.ralphy/issue.json` (the `comments` array), so the planner reads the
     // discussion, not just the body.
-    let repo = init_repo("comments-attach");
+    let root = test_dir("q-comments-attach");
     let queue = vec![issue_with_body(5, "original body")];
     let agent = ScriptedAgent::new(vec![Outcome::Done]);
     let tracker = RecordingTracker {
@@ -409,22 +364,15 @@ fn issue_comments_are_attached_to_the_planner_issue_json() {
         ..Default::default()
     };
 
-    run_queue(
-        &cfg(&repo, "stamp-comments", false),
-        &queue,
-        &agent,
-        &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
+    run_on_fake(&test_cfg(&root, "stamp-comments"), &queue, &agent, &tracker);
 
     let issue_json =
-        fs::read_to_string(repo.join(".ralphy").join("issue.json")).expect("issue.json written");
+        fs::read_to_string(root.join(".ralphy").join("issue.json")).expect("issue.json written");
     let parsed: serde_json::Value = serde_json::from_str(&issue_json).expect("valid JSON");
     let comments = parsed["comments"].as_array().expect("comments array");
     assert_eq!(comments.len(), 2, "both comments carried into issue.json");
     assert_eq!(comments[0], "first clarification from a human");
     assert_eq!(comments[1], "second: use the staging endpoint");
 
-    remove_scratch(&repo);
+    remove_scratch(&root);
 }

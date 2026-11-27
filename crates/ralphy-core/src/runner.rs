@@ -137,7 +137,7 @@ fn run_queue_with(
     // on, before the first plan pass reads it.
     std::fs::create_dir_all(ws.ralphy_dir())
         .with_context(|| format!("creating {}", ws.ralphy_dir().display()))?;
-    crate::environment::ensure_brief(&ws);
+    crate::environment::ensure_brief(&ws, &cfg.environment);
 
     let (orig, branch, compare_ref) = prepare_branch(
         repo,
