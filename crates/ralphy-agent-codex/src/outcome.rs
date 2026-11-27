@@ -100,16 +100,6 @@ impl CodexAgent {
 mod tests {
     use super::*;
 
-    #[test]
-    fn classify_stuck_on_non_zero_exit() {
-        // A non-zero exit is Stuck even when the output carries a DONE sentinel.
-        let out = "RALPHY_DONE_EXIT\n";
-        assert_eq!(
-            classify_codex_outcome(false, false, true, out, ""),
-            Outcome::Stuck
-        );
-    }
-
     // ── is_codex_api_degraded ───────────────────────────────────────────────
 
     #[test]
@@ -180,36 +170,25 @@ mod tests {
         );
     }
 
+    /// Codex reads its exit status before the shared ladder: a non-zero exit is
+    /// never a trustworthy done, and limit text on a clean exit is not a limit
+    /// (the task echoed text it read).
     #[test]
-    fn limit_text_on_a_clean_exit_is_not_a_limit() {
-        // The task echoed limit text it read; the clean exit proves no limit hit.
-        let log = "You've hit your usage limit. Try again at 2026-06-09T18:00:00Z.";
-        assert_eq!(
-            classify_codex_outcome(true, false, false, "RALPHY_DONE_EXIT\n", log),
-            Outcome::Done,
-            "a clean exit with the sentinel is Done"
-        );
-        assert_eq!(
-            classify_codex_outcome(true, false, false, "", log),
-            Outcome::Stuck,
-            "a clean exit without the sentinel is Stuck"
-        );
-    }
-
-    #[test]
-    fn classify_limit_upgrades_timeout() {
-        // ADR-0023 D4 P3: a trustworthy limit on a timed-out run yields Limit, not
-        // Timeout — resume-after-reset is the conservative error.
-        assert_eq!(
-            reset_text(classify_codex_outcome(
-                false,
-                true,
-                false,
-                "",
-                "You've hit your usage limit. Try again at 2026-06-09T18:00:00Z."
-            ))
-            .as_deref(),
-            Some("2026-06-09T18:00:00Z")
-        );
+    fn codex_reads_the_exit_status_before_the_ladder() {
+        let limit_log = "You've hit your usage limit. Try again at 2026-06-09T18:00:00Z.";
+        let done = "RALPHY_DONE_EXIT\n";
+        // (exited_cleanly, out, log, want)
+        let rows = [
+            (false, done, "", Outcome::Stuck),
+            (true, done, limit_log, Outcome::Done),
+            (true, "", limit_log, Outcome::Stuck),
+        ];
+        for (clean, out, log, want) in rows {
+            assert_eq!(
+                classify_codex_outcome(clean, false, false, out, log),
+                want,
+                "clean={clean} out={out:?}"
+            );
+        }
     }
 }

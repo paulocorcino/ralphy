@@ -203,6 +203,50 @@ mod tests {
     }
 
     #[test]
+    fn expose_skills_links_each_skill_and_keeps_the_operator_skills() {
+        static SKILLS: include_dir::Dir<'_> =
+            include_dir::include_dir!("$CARGO_MANIFEST_DIR/tests/fixtures/sample");
+        let base =
+            std::env::temp_dir().join(format!("ralphy-support-expose-{}", std::process::id()));
+        remove_scratch_dir(&base);
+        let ralphy_dir = base.join(".ralphy");
+        let discovery = base.join(".agents/skills");
+        fs::create_dir_all(discovery.join("my-skill")).unwrap();
+        fs::write(discovery.join("my-skill/SKILL.md"), b"user skill").unwrap();
+        fs::write(
+            discovery.join(".gitignore"),
+            b"my-secret
+",
+        )
+        .unwrap();
+
+        let names = expose_skills(&SKILLS, &ralphy_dir, &discovery).expect("first call");
+        expose_skills(&SKILLS, &ralphy_dir, &discovery).expect("second call");
+
+        assert_eq!(names, vec!["sub".to_owned()]);
+        assert!(
+            ralphy_dir.join("skills/sub/nested.txt").is_file(),
+            "the store holds the skill"
+        );
+        assert!(
+            discovery.join("sub/nested.txt").is_file(),
+            "the skill resolves where found"
+        );
+        assert!(
+            discovery.join("my-skill/SKILL.md").is_file(),
+            "the operator skill survives"
+        );
+        let gi = fs::read_to_string(discovery.join(".gitignore")).unwrap();
+        let lines: Vec<&str> = gi.lines().collect();
+        assert_eq!(
+            lines,
+            ["my-secret", "/.gitignore", "/sub"],
+            "gitignore: {gi:?}"
+        );
+        remove_scratch_dir(&base);
+    }
+
+    #[test]
     fn ensure_gitignore_entries_merges_without_clobbering() {
         let base = std::env::temp_dir().join(format!("ralphy-support-gi-{}", std::process::id()));
         remove_scratch_dir(&base);
