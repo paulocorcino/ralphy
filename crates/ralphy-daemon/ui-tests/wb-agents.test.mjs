@@ -5,11 +5,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { WBAgents } from "../assets/ui/wb-agents.ts";
 
-// The fold keeps no state, so one import serves every test.
-function load() {
-  return WBAgents;
-}
-
 const NEEDS_REPO = "Open a project before you start an agent.";
 
 const ROSTER = [
@@ -19,7 +14,7 @@ const ROSTER = [
 ];
 
 test("roster order is preserved and the console row comes last on digit 0", () => {
-  const rows = load().menuRows({
+  const rows = WBAgents.menuRows({
     roster: ROSTER,
     sessions: [],
     openSlug: "repo",
@@ -38,16 +33,16 @@ test("roster order is preserved and the console row comes last on digit 0", () =
 });
 
 test("an empty roster still yields the plain console row", () => {
-  const rows = load().menuRows({ roster: [], sessions: [], openSlug: "x" });
+  const rows = WBAgents.menuRows({ roster: [], sessions: [], openSlug: "x" });
   assert.equal(rows.length, 1);
   assert.equal(rows[0].kind, "console");
-  const falsy = load().menuRows({ sessions: [], openSlug: "x" });
+  const falsy = WBAgents.menuRows({ sessions: [], openSlug: "x" });
   assert.equal(falsy.length, 1);
   assert.equal(falsy[0].kind, "console");
 });
 
 test("with no open repo every agent row is disabled and says why; the console row is not", () => {
-  const rows = load().menuRows({ roster: ROSTER, sessions: [], openSlug: "" });
+  const rows = WBAgents.menuRows({ roster: ROSTER, sessions: [], openSlug: "" });
   for (const row of rows.filter((r) => !r.plain)) {
     assert.equal(row.disabled, true, `${row.kind} must be disabled`);
     assert.equal(row.title, NEEDS_REPO);
@@ -58,7 +53,7 @@ test("with no open repo every agent row is disabled and says why; the console ro
 });
 
 test("live counts are scoped to the open repo and the row's agent, and stay a readout", () => {
-  const rows = load().menuRows({
+  const rows = WBAgents.menuRows({
     roster: ROSTER,
     sessions: [
       { id: 7, agent: "claude", repo: "mine" },
@@ -68,7 +63,7 @@ test("live counts are scoped to the open repo and the row's agent, and stay a re
     ],
     openSlug: "mine",
   });
-  const api = load();
+  const api = WBAgents;
   const claude = rows.find((r) => r.kind === "claude");
   assert.equal(claude.live, 2);
   // The menu is "New console": a live row still LAUNCHES on click, and the
@@ -105,7 +100,7 @@ test("the plain row's live count is the bare shells of its scope", () => {
     ],
   ];
   for (const [name, sessions, openSlug, want] of rows) {
-    const menu = load().menuRows({ roster: ROSTER, sessions, openSlug });
+    const menu = WBAgents.menuRows({ roster: ROSTER, sessions, openSlug });
     const plain = menu.find((r) => r.plain);
     assert.equal(plain.kind, "console", name);
     assert.equal(plain.live, want, name);
@@ -113,7 +108,7 @@ test("the plain row's live count is the bare shells of its scope", () => {
 });
 
 test("a vendor the frontend has never heard of renders from the roster alone", () => {
-  const rows = load().menuRows({
+  const rows = WBAgents.menuRows({
     roster: [{ id: "newvendor", label: "newvendor", accelerator: "8" }],
     sessions: [],
     openSlug: "mine",
@@ -122,11 +117,11 @@ test("a vendor the frontend has never heard of renders from the roster alone", (
   assert.ok(row, "an unknown roster row must still produce a menu row");
   assert.equal(row.digit, "8");
   assert.equal(row.disabled, false);
-  assert.equal(load().consoleIntent(row), "launch");
+  assert.equal(WBAgents.consoleIntent(row), "launch");
 });
 
 test("an unavailable row remains visible and disabled, while try-anyway still launches", () => {
-  const api = load();
+  const api = WBAgents;
   const rows = api.menuRows({
     roster: [
       {
@@ -153,7 +148,7 @@ test("an unavailable row remains visible and disabled, while try-anyway still la
 });
 
 test("no-repo disablement outranks availability and cannot be bypassed", () => {
-  const api = load();
+  const api = WBAgents;
   const row = api.menuRows({
     roster: [
       {
@@ -174,7 +169,7 @@ test("no-repo disablement outranks availability and cannot be bypassed", () => {
 });
 
 test("repo-specific roster state replaces old rows and signals run-picker availability", () => {
-  const api = load();
+  const api = WBAgents;
   const local = api.rosterState(
     [{ id: "claude", accelerator: "1", available: true }],
     "local/repo",
@@ -211,13 +206,13 @@ test("menuRows mutates neither argument", () => {
   ];
   const rosterBefore = structuredClone(roster);
   const sessionsBefore = structuredClone(sessions);
-  load().menuRows({ roster, sessions, openSlug: "mine" });
+  WBAgents.menuRows({ roster, sessions, openSlug: "mine" });
   assert.deepEqual(roster, rosterBefore);
   assert.deepEqual(sessions, sessionsBefore);
 });
 
 test("runCommand trims the line, and a blank line runs nothing", () => {
-  const { runCommand } = load();
+  const { runCommand } = WBAgents;
   assert.equal(runCommand("  ping -c 2 127.0.0.1 "), "ping -c 2 127.0.0.1");
   for (const text of [undefined, null, "", "   ", 7]) {
     assert.equal(runCommand(text), null, `${JSON.stringify(text)} must run nothing`);
@@ -225,7 +220,7 @@ test("runCommand trims the line, and a blank line runs nothing", () => {
 });
 
 test("a row shows its label without the adapter's version", () => {
-  const rows = load().menuRows({
+  const rows = WBAgents.menuRows({
     roster: [
       { id: "opencode", label: "opencode", accelerator: "3", version: "2.3.2" },
       { id: "claude", label: "claude", accelerator: "1" },

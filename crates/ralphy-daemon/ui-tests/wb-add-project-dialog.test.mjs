@@ -7,16 +7,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { assembledPage, loadComponent, partMarkup, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, fixture, loadComponent, partMarkup, UI, withoutComments } from "./harness.mjs";
 
 // The part that holds the dialog's markup.
 const PART = "wb-add-project-dialog.part.html";
-
-const HERE = import.meta.dirname;
-
-function fixture(name) {
-  return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));
-}
 
 const WSL_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
 

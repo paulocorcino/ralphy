@@ -10,6 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createConsole } from "../assets/ui/wb-console.ts";
 import { createNotes } from "../assets/ui/wb-notes.ts";
+import { withoutBroadcast } from "./harness.mjs";
 
 const CHANGE = "a member list changes only by a design decision (an ADR or an amendment); " +
   "a cut keeps every member, and a member whose last internal user left stays as a delegate";
@@ -25,13 +26,7 @@ function buildConsole() {
   const window = { addEventListener() {} };
   const document = { readyState: "loading", addEventListener() {} };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
-  const realBC = globalThis.BroadcastChannel;
-  delete globalThis.BroadcastChannel;
-  try {
-    return createConsole(window, document, location, {});
-  } finally {
-    globalThis.BroadcastChannel = realBC;
-  }
+  return withoutBroadcast(() => createConsole(window, document, location, {}));
 }
 
 const noop = () => {};

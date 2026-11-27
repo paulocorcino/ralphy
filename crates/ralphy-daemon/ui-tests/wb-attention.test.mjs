@@ -4,23 +4,15 @@
 // the shared one the Rust route test wrote (fixtures/api-attention.json).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { partMarkup } from "./harness.mjs";
+import { fixture, partMarkup, swapFetch } from "./harness.mjs";
 import { LINK_BEAT_MS, LINK_TRIES, ageText, wbAttention } from "../assets/ui/wb-attention.ts";
 import { WBNotify } from "../assets/ui/wb-notify.ts";
 import { WBView } from "../assets/ui/wb-client-view.ts";
 import { connectionStore } from "../assets/ui/wb-connection-store.ts";
 
-const HERE = import.meta.dirname;
-
 // The part that holds the rail button and its panel.
 const PART = "wb-attention.part.html";
 const PEER = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
-
-function fixture(name) {
-  return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));
-}
 
 // The first request of the shared reply: a console that waits.
 const waitingRow = () => fixture("api-attention").requests[0];
@@ -36,12 +28,13 @@ function fromPeer(request) {
 }
 
 // The component as Alpine builds it, with a window, a document, a fetch that
-// answers each read with the next of `replies`, the stores it reads, and the
-// console's `reveal`. `init` is not run: each test calls what it needs. The
-// test files share one process, so `t.after` puts the globals back.
-const GLOBALS = ["window", "document", "WBConsole", "fetch", "Notification", "localStorage"];
+// answers with `answer` (by default each read gets the next of `replies`), the
+// stores it reads, and the console's `reveal`. `init` is not run: each test
+// calls what it needs. The test files share one process, so `t.after` puts
+// the globals back.
+const GLOBALS = ["window", "document", "WBConsole", "Notification", "localStorage"];
 
-function page(t, { replies = [], sessions = [], projects = [], tabOf = () => {} } = {}) {
+function page(t, { replies = [], sessions = [], projects = [], tabOf = () => {}, answer = null } = {}) {
   const saved = GLOBALS.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]);
   t.after(() => {
     for (const [name, d] of saved) {
@@ -60,7 +53,7 @@ function page(t, { replies = [], sessions = [], projects = [], tabOf = () => {} 
   };
   globalThis.document = { title: "Ralphy", hidden: false, addEventListener() {} };
   globalThis.WBConsole = { reveal: (id) => reveals.push(id) };
-  globalThis.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(replies.shift()) });
+  swapFetch(t, answer ?? (() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(replies.shift()) })));
   const tabs = {
     active: "files",
     tabOf,
@@ -193,7 +186,14 @@ test("only a finished run can be dismissed", async (t) => {
   const waiting = fixture("api-attention").requests[0];
   const finished = fixture("api-attention--finished").requests;
   const run = { ...waiting, id: "run:01R", kind: "run-waiting", console: undefined, run: "01R" };
-  const { data } = page(t, { replies: [{ requests: [] }] });
+  // "Dismiss" posts the id, then reads the list again.
+  const sent = [];
+  const replies = { POST: fixture("api-attention-dismiss"), GET: { requests: [finished[1]] } };
+  const answer = (url, init) => {
+    sent.push([init.method, url, init.body]);
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(replies[init.method]) });
+  };
+  const { data } = page(t, { answer });
   for (const row of [waiting, run]) {
     assert.equal(data.canDismiss(row), false, row.kind);
   }
@@ -204,13 +204,6 @@ test("only a finished run can be dismissed", async (t) => {
   const markup = partMarkup(PART);
   assert.match(markup, /x-show="canDismiss\(r\)" @click="dismiss\(r\)"\s+title="Dismiss"/u);
 
-  // "Dismiss" posts the id, then reads the list again.
-  const sent = [];
-  const replies = { POST: fixture("api-attention-dismiss"), GET: { requests: [finished[1]] } };
-  globalThis.fetch = (url, init) => {
-    sent.push([init.method, url, init.body]);
-    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(replies[init.method]) });
-  };
   data.$store.modals = { flash: (m) => assert.fail(`flashed ${m}`) };
   await data.dismiss(finished[0]);
   assert.deepEqual(sent[0], ["POST", "/api/attention/dismiss", JSON.stringify({ id: finished[0].id })]);
@@ -346,15 +339,15 @@ test("opening the console of a done request dismisses it", async (t) => {
   const waiting = waitingRow();
   const done = { ...waiting, id: "done:1:1", kind: "console-done", detail: undefined, dismissable: true };
   const session = { id: 1, repo: waiting.repo, agent: "claude", kind: "agent", started_at: 1, daemon_id: "", environment: "", record: "w-local" };
-  const { data } = page(t, { sessions: [session], replies: [{ requests: [] }] });
-  assert.equal(data.kindOf(done), "Done");
-  assert.equal(data.actionOf(done), "console");
-  assert.equal(data.canDismiss(done), true);
   const sent = [];
-  globalThis.fetch = (url, init) => {
+  const answer = (url, init) => {
     sent.push([init.method, url, init.body]);
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ requests: [] }) });
   };
+  const { data } = page(t, { sessions: [session], answer });
+  assert.equal(data.kindOf(done), "Done");
+  assert.equal(data.actionOf(done), "console");
+  assert.equal(data.canDismiss(done), true);
   data.requests = [done, waiting];
 
   await data.focused(inside("w-other"));
@@ -370,12 +363,12 @@ test("opening the console of a done request dismisses it", async (t) => {
 test("a click on the row of a silent request shows the console and dismisses it", async (t) => {
   const silent = { ...waitingRow(), id: "silent:1", kind: "console-silent", dismissable: true };
   const session = { id: 1, repo: silent.repo, agent: "antigravity", kind: "agent", started_at: 1, daemon_id: "", environment: "", record: "w-local" };
-  const { data } = page(t, { sessions: [session], replies: [{ requests: [] }] });
   const sent = [];
-  globalThis.fetch = (url, init) => {
+  const answer = (url, init) => {
     sent.push([init.method, url, init.body]);
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ requests: [] }) });
   };
+  const { data } = page(t, { sessions: [session], answer });
   data.requests = [silent];
   data.act(silent);
   await new Promise((resolve) => { setImmediate(resolve); });

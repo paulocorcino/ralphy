@@ -4,20 +4,12 @@
 // this file reads the new name.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { loadComponent, loadShell } from "./harness.mjs";
+import { fixture, loadComponent, loadShell } from "./harness.mjs";
 import * as WBHosts from "../assets/ui/wb-hosts.ts";
 import { WBChanges } from "../assets/ui/wb-changes.ts";
 import { WBFail } from "../assets/ui/wb-fail.ts";
 import { WBAddProject } from "../assets/ui/wb-add-project.ts";
 import { uploadsStore } from "../assets/ui/wb-uploads-store.ts";
-
-const HERE = import.meta.dirname;
-
-function fixture(name) {
-  return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));
-}
 
 const NOW = Date.parse("2026-07-03T12:00:00Z");
 

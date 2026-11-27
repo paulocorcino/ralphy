@@ -8,6 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { projectsStore } from "../assets/ui/wb-projects-store.ts";
 import { checkoutsStore } from "../assets/ui/wb-checkouts-store.ts";
+import { fakeWindow } from "./harness.mjs";
 
 const fireListing = (type, detail) => globalThis.window.dispatchEvent({ type, detail });
 
@@ -18,19 +19,11 @@ let landListingDesk = () => {};
 function page({ desk = {} } = {}) {
   const projects = projectsStore();
   projects.setOpen("o/r");
-  const listeners = {};
-  const events = [];
   const flashed = [];
   const hooks = {};
   const landed = new Promise((resolve) => { landListingDesk = resolve; });
-  globalThis.window = {
+  const win = fakeWindow({
     Alpine: { store: (name) => (name === "projects" ? projects : undefined), nextTick: (fn) => fn() },
-    addEventListener: (type, fn) => (listeners[type] ||= []).push(fn),
-    dispatchEvent: (e) => {
-      events.push({ type: e.type, detail: e.detail ?? null });
-      for (const fn of listeners[e.type] || []) fn(e);
-      return true;
-    },
     WBDaemon: {
       observe: () => Promise.resolve(null),
       onUnknownCheckout: (fn) => (hooks.unknownCheckout = fn),
@@ -40,10 +33,11 @@ function page({ desk = {} } = {}) {
       checkouts: () => desk,
       whenDeskLoaded: () => landed,
     },
-  };
+  });
+  globalThis.window = win;
   const store = checkoutsStore({ messages: { flash: (msg) => flashed.push(msg) } });
-  const sent = (type) => events.filter((e) => e.type === type).map((e) => e.detail);
-  return { store, projects, events, sent, fire: fireListing, flashed, hooks, landDesk: () => (landListingDesk(), landed) };
+  const sent = (type) => win.events.filter((e) => e.type === type).map((e) => e.detail ?? null);
+  return { store, projects, events: win.events, sent, fire: fireListing, flashed, hooks, landDesk: () => (landListingDesk(), landed) };
 }
 
 test("checkoutGone resets the checkout to the main tree, and says so", () => {
