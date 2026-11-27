@@ -8,22 +8,25 @@ control, that the Actual-size toggle flips, and that a markdown preview resolves
 its repo-relative image source while leaving a remote one alone.
 
 Scenario 1  `logo.png` opens `file:<slug>:logo.png` at tabs[1] with `.image-viewer`
-            mounted, `img.img-canvas` carrying a `data:image/png;base64,` src
+            mounted, `img.img-canvas` reading the file bytes route, which answers
+            `image/png`
 Scenario 2  that image DECODES: naturalWidth/naturalHeight === the fixture's 64×48,
             and the toolbar's `.img-meta` says so
-Scenario 3  `badge.svg` opens too, as `data:image/svg+xml;base64,`
+Scenario 3  `badge.svg` opens too, and the bytes route answers `image/svg+xml`
 Scenario 4  `evil.png` (HTML bytes under a `.png` name) opens a REFUSED pane
             naming `not an image` — the magic-byte check, end to end (the tab
             stays since the ADR-0036 encoding amendment)
-Scenario 5  `notes.pdf` still flashes `binary`: the refusal narrowed, it did not go
+Scenario 5  `data.bin` still flashes `binary`: the refusal narrowed, it did not go
 Scenario 6  the image pane exposes no Save/Edit/commit control (read-only, §6)
-Scenario 7  Actual size toggles `.actual-size` on the pane and relabels to `Fit`
+Scenario 7  the zoom bar: zoom in raises the percent, `100%` sets it to 100%,
+            Fit restores the fitted percent
 Scenario 8  `docs/guide.md`'s `![](img/inner.png)` becomes a decoded `data:` URL
-            resolved against the DOCUMENT's dir, while the `https://` source is
+            resolved against the DOCUMENT's dir (Markdown images still use
+            `file.image`), while the `https://` source is
             blocked by the CSP (remote images are opt-in) and replaced by a
             `.md-img-blocked` notice naming how to turn them on
 Scenario 9  the REST of the allowlist — jpg, jpeg, gif, webp, bmp, ico — each
-            opens under its own media type and decodes at its own distinct size
+            opens, the bytes route answers its own media type and decodes at its own distinct size
 
 No image fixture is checked in: the PNGs are hand-encoded (zlib + CRC32) and the
 rest are written by Pillow at fixture time, so "the browser decoded it" is a real
@@ -180,7 +183,7 @@ def make_fixture_repo():
     )
     # The magic-byte case: a `.png` whose bytes are a script-bearing document.
     (p / "evil.png").write_bytes(b"<html><script>alert(1)</script></html>")
-    (p / "notes.pdf").write_bytes(b"%PDF-1.7\n\x00\x01binary trailer")
+    (p / "data.bin").write_bytes(b"\x7fELF\x00\x01binary trailer")
     (p / "docs").mkdir()
     (p / "docs" / "img").mkdir()
     (p / "docs" / "img" / "inner.png").write_bytes(png_bytes(INNER_W, INNER_H, (111, 159, 192)))
@@ -256,6 +259,23 @@ def wait_image_mounted(page, tab_id, timeout=20000):
     )
 
 
+def route_type(page, tab_id):
+    """The media type the file bytes route answers for the `src` of a pane's
+    `<img>`: the pane reads the bytes by this address, so this is the type the
+    browser decodes under."""
+    return page.evaluate(
+        """async (id) => {
+          const img = document.querySelector(
+            `.image-viewer[data-tab-id="${id}"] img.img-canvas`);
+          const src = img.getAttribute('src');
+          const reply = await fetch(src);
+          return { src: src.slice(0, 22), status: reply.status,
+                   type: reply.headers.get('content-type') };
+        }""",
+        tab_id,
+    )
+
+
 def expect_refusal(page, title, word):
     """Open a file expected to refuse, and wait for BOTH the flash and the close
     of the optimistically-pushed tab (reading the tab list mid-flight races)."""
@@ -312,17 +332,19 @@ def main():
                 """(id) => {
                   const el = document.querySelector(`.image-viewer[data-tab-id="${id}"]`);
                   const img = el.querySelector('img.img-canvas');
-                  return { prefix: img.getAttribute('src').slice(0, 22),
-                           w: img.naturalWidth, h: img.naturalHeight,
+                  return { w: img.naturalWidth, h: img.naturalHeight,
                            meta: el.querySelector('.img-meta').textContent.trim(),
                            kind: null };
                 }""",
                 png_id,
             )
+            served = route_type(page, png_id)
             check(
-                "the pane's `<img>` is a data: URL of the daemon's verified type",
-                shape["prefix"] == "data:image/png;base64,",
-                f"got={shape['prefix']!r}",
+                "the pane's `<img>` reads the bytes route, which answers image/png",
+                served["src"] == "/api/file/bytes?repo=p"[:22]
+                and served["status"] == 200
+                and served["type"] == "image/png",
+                f"got={served!r}",
             )
 
             # --- scenario 2: the bytes really decode --------------------------
@@ -339,29 +361,31 @@ def main():
 
             page.screenshot(path=os.path.join(SHOT_DIR, "0049-image-viewer-2026-07-26.png"))
 
-            # --- scenario 7: Actual size toggles ------------------------------
+            # --- scenario 7: the zoom bar ---------------------------------------
             zoom = page.evaluate(
                 """(id) => {
                   const el = document.querySelector(`.image-viewer[data-tab-id="${id}"]`);
-                  const btn = el.querySelector('[data-act="zoom"]');
-                  const before = el.classList.contains('actual-size');
-                  btn.click();
-                  const on = { cls: el.classList.contains('actual-size'), label: btn.textContent.trim() };
-                  btn.click();
-                  return { before, on, off: el.classList.contains('actual-size'),
-                           offLabel: btn.textContent.trim() };
+                  const pct = () => el.querySelector('.zoom-bar-percent').textContent.trim();
+                  const press = (act) => el.querySelector(`[data-zoom="${act}"]`).click();
+                  const fitted = pct();
+                  press('in');
+                  const zoomedIn = pct();
+                  press('actual');
+                  const actual = pct();
+                  press('fit');
+                  return { fitted, zoomedIn, actual, refit: pct() };
                 }""",
                 png_id,
             )
             check(
-                "Actual size toggles `.actual-size` on and back off",
-                zoom["before"] is False and zoom["on"]["cls"] is True and zoom["off"] is False,
+                "zoom in raises the percent, and 100% sets it to 100%",
+                zoom["zoomedIn"] != zoom["fitted"] and zoom["actual"] == "100%",
                 f"got={zoom}",
             )
             check(
-                "…and the button relabels to Fit while it is on",
-                zoom["on"]["label"] == "Fit" and zoom["offLabel"] == "Actual size",
-                f"got={zoom['on']['label']!r}/{zoom['offLabel']!r}",
+                "…and Fit restores the fitted percent",
+                zoom["refit"] == zoom["fitted"],
+                f"got={zoom}",
             )
 
             # --- scenario 6: the pane is read-only ----------------------------
@@ -383,8 +407,8 @@ def main():
                 png_id,
             )
             check(
-                "the image toolbar is exactly Actual size · Reload · Detach",
-                controls["vbtns"] == ["Actual size", "Reload", "Detach"],
+                "the image toolbar is exactly Reload · Detach",
+                controls["vbtns"] == ["Reload", "Detach"],
                 f"got={controls['vbtns']}",
             )
             check(
@@ -397,15 +421,11 @@ def main():
             svg_id = f"file:{slug}:badge.svg"
             open_from_tree(page, "badge.svg")
             wait_image_mounted(page, svg_id)
-            svg_prefix = page.evaluate(
-                "(id) => document.querySelector(`.image-viewer[data-tab-id=\"${id}\"] img.img-canvas`)"
-                ".getAttribute('src').slice(0, 26)",
-                svg_id,
-            )
+            svg_served = route_type(page, svg_id)
             check(
                 "an SVG is served as image/svg+xml inside an <img>",
-                svg_prefix == "data:image/svg+xml;base64,",
-                f"got={svg_prefix!r}",
+                svg_served["status"] == 200 and svg_served["type"] == "image/svg+xml",
+                f"got={svg_served!r}",
             )
 
             # --- scenario 9: the WHOLE allowlist opens and decodes -------------
@@ -417,49 +437,52 @@ def main():
                 open_from_tree(page, name)
                 wait_image_mounted(page, tab)
                 got = page.evaluate(
-                    """([id, media]) => {
+                    """(id) => {
                       const img = document.querySelector(
                         `.image-viewer[data-tab-id="${id}"] img.img-canvas`);
-                      const src = img.getAttribute('src');
-                      return { typed: src.startsWith(`data:${media};base64,`),
-                               prefix: src.slice(0, 30),
-                               w: img.naturalWidth, h: img.naturalHeight };
+                      return { w: img.naturalWidth, h: img.naturalHeight };
                     }""",
-                    [tab, media],
+                    tab,
                 )
+                served = route_type(page, tab)
                 check(
                     f"{name} opens as {media} and decodes at {want_w}×{want_h}",
-                    got["typed"] and (got["w"], got["h"]) == (want_w, want_h),
-                    f"got={got['prefix']!r} {got['w']}×{got['h']}",
+                    served["type"] == media and (got["w"], got["h"]) == (want_w, want_h),
+                    f"got={served['type']!r} {got['w']}×{got['h']}",
                 )
 
             # --- scenario 4: bytes that belie the extension refuse ------------
-            # Since the ADR-0036 encoding amendment (2026-09-22) a DAEMON-side
-            # refusal keeps its tab and says why in a refused pane; only the
-            # client's extension classifier (scenario 5) still opens no tab.
+            # The pane reads the bytes route, which answers 404 for bytes that
+            # are no image; the pane stays open and its toolbar says why.
             evil_id = f"file:{slug}:evil.png"
-            page.evaluate(f"() => {{ {MODALS}.runsActionMsg = ''; }}")
             open_from_tree(page, "evil.png")
             page.wait_for_function(
-                "(id) => !!document.querySelector(`.refused-viewer[data-tab-id=\"${id}\"]`)",
+                "(id) => { const el = document.querySelector("
+                "`.image-viewer[data-tab-id=\"${id}\"] .img-meta`);"
+                " return !!el && el.textContent.includes('not an image'); }",
                 arg=evil_id,
                 timeout=15000,
             )
-            why = page.evaluate(
-                "(id) => document.querySelector(`.refused-viewer[data-tab-id=\"${id}\"] .refused-text`).textContent",
+            evil = page.evaluate(
+                """async (id) => {
+                  const img = document.querySelector(
+                    `.image-viewer[data-tab-id="${id}"] img.img-canvas`);
+                  const reply = await fetch(img.getAttribute('src'));
+                  return { status: reply.status, decoded: img.naturalWidth };
+                }""",
                 evil_id,
             )
             check(
-                "HTML wearing a `.png` name keeps its tab as a refused pane naming `not an image`",
-                evil_id in tab_ids(page) and "not an image" in why,
-                f"tabs={tab_ids(page)} why={why!r}",
+                "HTML wearing a `.png` name is refused by the bytes route and the pane says `not an image`",
+                evil_id in tab_ids(page) and evil["status"] == 404 and evil["decoded"] == 0,
+                f"tabs={tab_ids(page)} got={evil!r}",
             )
             page.evaluate(f"() => {TABS}.closeTab('{evil_id}')")
 
             # --- scenario 5: a non-image binary still refuses -----------------
-            before = expect_refusal(page, "notes.pdf", "binary")
+            before = expect_refusal(page, "data.bin", "binary")
             check(
-                "a `.pdf` still refuses as `binary` — the refusal narrowed, it did not go",
+                "a `.bin` still refuses as `binary` — the refusal narrowed, it did not go",
                 tab_ids(page) == before,
                 f"before={before} after={tab_ids(page)}",
             )
