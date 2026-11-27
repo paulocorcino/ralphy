@@ -32,9 +32,9 @@ What shapes the decisions:
 - Its hooks work, and a pre-tool hook fails closed, but a hook is a shell
   string only, and no hook event comes before the first prompt (spike,
   _Hooks and integrations_).
-- Some of its behavior cannot be turned off: a background updater, built-in
-  skills, and the reading of the repository's own `.agents/` files and
-  `AGENTS.md` (spike §8, §9, §11).
+- Some of its behavior cannot be turned off: a background updater (turned
+  off later, D11), built-in skills, and the reading of the repository's own
+  `.agents/` files and `AGENTS.md` (spike §8, §9, §11).
 - On Windows the sign-in lives in Windows Credential Manager, not in the
   state root, so no root Ralphy owns isolates it (spike §5).
 
@@ -318,21 +318,34 @@ that the agent works on can already give the agent instructions through
 `AGENTS.md`, and the agent runs as the operator (ADR-0072 D6); the refusal
 would stop repositories that use `agy` themselves and close no new path.
 
-### D11 — The background updater cannot be turned off; Ralphy records the version
+### D11 — A headless `agy` runs without the updater; Ralphy records the version
 
-**Decision.** Ralphy does not try to stop the updater. At the start of each
-run the adapter reads `agy --version` (that command starts no updater) and
-writes the version into the run's events, so a change of behavior can be
+**Decision.** Every headless `agy` child that Ralphy starts (a run, `models`
+for the sign-in check and the model list, the quota read) gets
+`AGY_CLI_DISABLE_AUTO_UPDATE=true`. A console of the workbench does not get
+it, so `agy` still updates itself when the operator uses it. At the start of
+each run the adapter reads `agy --version` (that command starts no updater)
+and writes the version into the run's events, so a change of behavior can be
 traced to a version. The stream parser ignores unknown fields.
 
 Rests on: [spike §9 and §11](../research/antigravity-cli-adapter-spike.md).
 Every launch except `--version` starts a detached `--bg-updater`, which
 outlived its parent by minutes and replaced the shared binary (1.4.9 to
-1.5.6 during the spike). No flag, setting or variable turns it off.
+1.5.6 during the spike). The spike found no switch for it.
+
+Amended by #1079. On Windows the updater and the `agy --version` it starts
+each opened a console window, although Ralphy starts `agy` with a hidden
+console: the new process gets its own console. Measured on agy 1.5.14: with
+the variable set to `true`, `agy models` started no `--bg-updater`, also
+when the last check (`last_check.timestamp` in the root) was two days old;
+`1` and `TRUE` did not turn it off. The variable is no secret and turns off
+no protection (ADR-0072). A headless run never updates the binary, so it
+also cannot replace it while another run uses it.
 
 Rejected: a private copy of the binary (242 MB, and which path the updater
 rewrites from a copy is not measured). Rejected: blocking the update host
-(a change to the machine outside Ralphy's tree).
+(a change to the machine outside Ralphy's tree). Rejected: turning the
+updater off in the console too; the operator's `agy` would then never update.
 
 Measured in #784 (item 8): on Windows the updater is a child of the
 session's `agy`, so the tree kill reaches it. On Linux the updater starts in
@@ -744,7 +757,7 @@ changes its terms or acts on them.
 | A non-UTF-8 hook error ends the run | D9: a machine fault, fatal for the run; path checks prevent it |
 | No readiness proof before the prompt | D9: the proof turn |
 | The repository's own `.agents/hooks.json` runs | D10: accepted, limited risk with a warning |
-| Self-update has no opt-out | D11: accepted; the version is recorded; tree kill measured in #784 |
+| Self-update has no opt-out | D11: off for a headless child since #1079; the version is recorded; tree kill measured in #784 |
 | Built-in subagent skills cannot be turned off | D13: `swarm` off by setting, the rest a charter rule |
 | WSL is covered only logged out | open: capstone item 3 |
 | Windows logged-out signature and a real limit | open: capstone items 1 and 2 (D7, D6) |
