@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { createTitle } from "../assets/ui/wb-console-title.ts";
 import { checkoutsStore } from "../assets/ui/wb-checkouts-store.ts";
 import { idLookups } from "./fake-document.mjs";
+import { fakeClassList } from "./harness.mjs";
 
 // An element with the few DOM members the title uses. Listeners are kept so a
 // test can fire them.
@@ -25,7 +26,7 @@ function fakeElement(tag = "div") {
     isConnected: true,
     offsetWidth: 80,
     listeners,
-    classList: { contains: () => false },
+    classList: fakeClassList(),
     setAttribute() {},
     append(...kids) {
       for (const k of kids) if (k && typeof k === "object") k.parent = el;

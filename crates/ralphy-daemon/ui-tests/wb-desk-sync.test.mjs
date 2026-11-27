@@ -3,19 +3,8 @@
 // two languages, held by one file.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { WBDeskSync } from "../assets/ui/wb-desk-sync.ts";
-
-const HERE = import.meta.dirname;
-
-function load() {
-  return WBDeskSync;
-}
-
-function fixture(name) {
-  return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));
-}
+import { fixture } from "./harness.mjs";
 
 // The daemon's own reading of a desk: `ts` is its clock, which a page never
 // sees, and an absent key, `null` and `false` are one value (an `Option` or a
@@ -27,7 +16,7 @@ function normal(desk) {
 }
 
 test("every shared case gives the desk the daemon gives", () => {
-  const S = load();
+  const S = WBDeskSync;
   const cases = fixture("api-desk--apply-cases");
   assert.ok(cases.length >= 15, `the table lost cases: ${cases.length}`);
   for (const c of cases) {
@@ -66,7 +55,7 @@ const moveTo = (left) => ({
 // server has not answered. The view is the daemon's desk with this page's
 // pending changes on top.
 test("the view keeps a pending change over a newer desk, and takes the rest", () => {
-  const s = load().createSync();
+  const s = WBDeskSync.createSync();
   // A change made before the desk is read queues, and the view holds it.
   assert.equal(s.phase(), "loading");
   s.emit({ op: "checkout", repo: "o/r", name: "mine" });
@@ -83,7 +72,7 @@ test("the view keeps a pending change over a newer desk, and takes the rest", ()
 });
 
 test("a desk with a lower rev than one already taken is not taken", () => {
-  const s = load().createSync();
+  const s = WBDeskSync.createSync();
   s.take({ rev: 5, windows: [W(500)] });
   assert.equal(s.take({ rev: 3, windows: [W(300)] }), "stale");
   assert.equal(s.view().windows[0].rect.left, 500);
@@ -91,7 +80,7 @@ test("a desk with a lower rev than one already taken is not taken", () => {
 });
 
 test("a newer generation means a restore: the page reloads and takes nothing more", () => {
-  const s = load().createSync();
+  const s = WBDeskSync.createSync();
   s.take({ generation: 0, windows: [W(100)] });
   assert.equal(s.take({ generation: 9, windows: [] }), "reload");
   assert.equal(s.phase(), "restored");
@@ -101,7 +90,7 @@ test("a newer generation means a restore: the page reloads and takes nothing mor
 // The daemon ignores a `seq` it already took from a tab, so a batch resent
 // after a lost reply is not applied twice.
 test("a batch is resent with its seq until the daemon answers it, and the next batch counts on", () => {
-  const s = load().createSync();
+  const s = WBDeskSync.createSync();
   assert.equal(s.nextBatch(), null, "nothing to send");
   s.take({ rev: 1, generation: 4, windows: [W(100)] });
   s.emit(moveTo(400));
@@ -118,7 +107,7 @@ test("a batch is resent with its seq until the daemon answers it, and the next b
 // `pagehide`: every change not yet answered, numbered past the batch on the
 // wire, so that batch is ignored if it lands after this one.
 test("the closing batch carries every pending change with a higher seq", () => {
-  const s = load().createSync();
+  const s = WBDeskSync.createSync();
   s.take({ windows: [W(100)] });
   s.emit(moveTo(200));
   const onWire = s.nextBatch();
@@ -131,7 +120,7 @@ test("the closing batch carries every pending change with a higher seq", () => {
 const deskWith = (key, rec) => ({ windows: [], fences: [], notes: [], checkouts: {}, [key]: [rec] });
 
 test("a blank console name is no name: the stored one stays and nothing changes", () => {
-  const S = load();
+  const S = WBDeskSync;
   const desk = deskWith("windows", W(100, { consoleName: "build" }));
   for (const blank of ["", "   "]) {
     const out = S.applyChange(desk, { op: "set", type: "window", id: "w-1", fields: { consoleName: blank } });
@@ -143,7 +132,7 @@ test("a blank console name is no name: the stored one stays and nothing changes"
 });
 
 test("a note file with an empty path or no path sets the repo and the empty path", () => {
-  const S = load();
+  const S = WBDeskSync;
   const note = { id: "n-1", repo: "o/r", path: "docs/a.md", rect: { left: 0, top: 0, width: 300, height: 200 } };
   for (const file of [{ repo: "o/s", path: "" }, { repo: "o/s" }]) {
     const out = S.applyChange(deskWith("notes", note), { op: "set", type: "note", id: "n-1", fields: { file } });
@@ -158,7 +147,7 @@ test("a note file with an empty path or no path sets the repo and the empty path
 });
 
 test("an unknown op, an unknown record type and a remove of a missing id change nothing", () => {
-  const S = load();
+  const S = WBDeskSync;
   const desk = deskWith("windows", W(100));
   for (const change of [
     { op: "rename", type: "window", id: "w-1" },

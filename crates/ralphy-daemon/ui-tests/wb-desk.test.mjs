@@ -83,12 +83,12 @@ function fakeDesk(over = {}, read = readOk) {
   deps.popups = over.popups || createPopupRegistry({ link: deps.link, startBeat: () => {}, stopBeat: () => {} });
   // The read calls `fetch` while the desk is built, and only then.
   const realFetch = globalThis.fetch;
-  globalThis.fetch = read;
+  globalThis.fetch = read; // own: the swap ends when createDesk returns, not at test end
   let desk;
   try {
     desk = createDesk(deps);
   } finally {
-    globalThis.fetch = realFetch;
+    globalThis.fetch = realFetch; // own: the swap ends when createDesk returns, not at test end
   }
   return { desk, deps, calls, landing };
 }

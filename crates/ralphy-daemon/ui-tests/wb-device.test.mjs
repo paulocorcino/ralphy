@@ -2,21 +2,9 @@
 // the audit log (ADR-0074). Runs the real module against stub windows.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { WBDevice } from "../assets/ui/wb-device.ts";
-
-const HERE = import.meta.dirname;
-
-function fixture(name) {
-  return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));
-}
-
-// Importing the module sends nothing: only `report` does.
-function load() {
-  return WBDevice;
-}
+import { fixture } from "./harness.mjs";
 
 // One macrotask. `report` awaits only promises that are already settled (the
 // stub window has no real I/O), so every send it started has run its course
@@ -32,7 +20,7 @@ async function until(cond, what) {
 }
 
 test("collect: a window with no API reports null facts and never throws", async () => {
-  const facts = await load().collect({});
+  const facts = await WBDevice.collect({});
   assert.equal(facts.ua, null);
   assert.equal(facts.ua_data, null);
   assert.equal(facts.gpu, null);
@@ -48,7 +36,7 @@ test("collect: the voices are a count and the first five, never the list", async
     navigator: { userAgent: "UA", maxTouchPoints: 5 },
     speechSynthesis: { getVoices: () => names },
   };
-  const facts = await load().collect(win);
+  const facts = await WBDevice.collect(win);
   assert.equal(facts.ua, "UA");
   assert.equal(facts.touch_points, 5);
   assert.deepEqual(facts.voices, {
@@ -58,7 +46,7 @@ test("collect: the voices are a count and the first five, never the list", async
 });
 
 test("report: a 401 before login waits for the login action, then sends once", async () => {
-  const D = load();
+  const D = WBDevice;
   const statuses = [401, 204, 204];
   const bodies = [];
   let onAction = null;
@@ -94,7 +82,7 @@ test("report: a 401 before login waits for the login action, then sends once", a
 // one and runs it: no real time passes, and a retry that is not scheduled is
 // seen as an empty list.
 test("report: a 409 before the device cookie sends again later, a few times at most", async () => {
-  const D = load();
+  const D = WBDevice;
   const statuses = [409, 409, 204];
   let sends = 0;
   const timers = [];
@@ -139,7 +127,7 @@ test("report: a 409 before the device cookie sends again later, a few times at m
 // renamed here is not dropped without a word on the other side.
 test("collect: the report has the fields of the shared request body", async () => {
   const body = fixture("api-device-facts--report");
-  const facts = { ...(await load().collect({})), holder: null };
+  const facts = { ...(await WBDevice.collect({})), holder: null };
   assert.deepEqual(Object.keys(facts).toSorted(), Object.keys(body).toSorted());
   assert.deepEqual(Object.keys(facts.media).toSorted(), Object.keys(body.media).toSorted());
   assert.deepEqual(Object.keys(facts.engine_signals).toSorted(), Object.keys(body.engine_signals).toSorted());

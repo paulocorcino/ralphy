@@ -4,7 +4,7 @@
 // the tab's markup and a change of this method never edit one file.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadComponent } from "./harness.mjs";
+import { fakeClassList, loadComponent } from "./harness.mjs";
 
 // `paintColumns` on a stage of `wins` (`[id, maximized, column]`). Every paint
 // is recorded as `[ids, options]`, every restore by id.
@@ -27,7 +27,7 @@ function paintShell(wins) {
   document.querySelectorAll = () =>
     wins.map(([id, max, column]) => ({
       _deskId: id,
-      classList: { contains: (c) => (c === "maximized" && max) || (c === "column" && column) },
+      classList: fakeClassList(...(max ? ["maximized"] : []), ...(column ? ["column"] : [])),
     }));
   document.querySelector = () => null;
   return { state, paints, restored, done: () => (globalThis.WBConsole = real) };
