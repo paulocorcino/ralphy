@@ -9,7 +9,7 @@ use crate::{Offset, ParseError, Timestamp};
 /// Parses `2026-11-26T10:00:00.123-03:00` into its instant and its offset.
 ///
 /// The date and the time may be split by `T`, `t` or a space; the offset is
-/// `Z`, `z` or `±HH:MM`; a fraction keeps nine digits and drops the rest.
+/// `Z`, `z` or `±HH:MM` (U+2212 is a minus too); a fraction keeps nine digits and drops the rest.
 /// A leap second (`:60`) reads as `:59`.
 pub fn parse_rfc3339(text: &str) -> Result<(Timestamp, Offset), ParseError> {
     let mut cursor = Cursor {
@@ -85,7 +85,14 @@ impl Cursor<'_> {
             Some(b'Z' | b'z') => return Ok(Offset::UTC),
             Some(b'+') => 1,
             Some(b'-') => -1,
-            _ => return Err(ParseError::new("no offset")),
+            Some(0xE2) => {
+                self.rest = self
+                    .rest
+                    .strip_prefix(&[0x88, 0x92])
+                    .ok_or_else(no_offset)?;
+                -1
+            }
+            _ => return Err(no_offset()),
         };
         let hours = self.digits(2)?;
         self.byte(b':')?;
@@ -128,6 +135,10 @@ impl Cursor<'_> {
 
 fn narrow<T: TryFrom<i32, Error: std::fmt::Display>>(value: i32) -> Result<T, ParseError> {
     T::try_from(value).map_err(|error| ParseError::new(error.to_string()))
+}
+
+fn no_offset() -> ParseError {
+    ParseError::new("no offset")
 }
 
 fn out_of_range(error: &jiff::Error) -> ParseError {
