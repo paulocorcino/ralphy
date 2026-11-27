@@ -21,7 +21,7 @@ pub(super) fn attributes(html: &str) -> Vec<(String, usize)> {
         .collect()
 }
 
-fn expression(name: &str, value: String) -> Option<String> {
+pub(super) fn expression(name: &str, value: String) -> Option<String> {
     let alpine = name.starts_with("x-") || name.starts_with('@') || name.starts_with(':');
     let holds_none = ["x-data", "x-ref", "x-transition"].iter().any(|n| {
         name == *n || name.starts_with(&format!("{n}:")) || name.starts_with(&format!("{n}."))

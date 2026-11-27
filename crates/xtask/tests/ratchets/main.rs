@@ -41,6 +41,7 @@
 //! with the tag reader of `ui-groups`: a comment other than a part marker alone
 //! on its line fails, and an attribute value or a script body is not read.
 //! The attribute logic ratchet (#942) counts the compound Alpine attributes per file.
+//! The markup binding check (#1056) fails a name a binding reads that its component lacks.
 //!
 //! The failure ratchets (#685) count what has not moved into the failure
 //! catalog yet: the `CAUSE` rows of the workbench, the collected verbs that
@@ -86,6 +87,7 @@ mod jscpd_markers;
 mod leftovers;
 mod lint_expects;
 mod markup;
+mod markup_bindings;
 mod markup_comments;
 mod peer_reply_pin;
 mod rust_coupling;
