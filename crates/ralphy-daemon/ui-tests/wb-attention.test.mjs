@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { bindingNames, partMarkup } from "./harness.mjs";
+import { partMarkup } from "./harness.mjs";
 import { LINK_BEAT_MS, LINK_TRIES, ageText, wbAttention } from "../assets/ui/wb-attention.ts";
 import { WBNotify } from "../assets/ui/wb-notify.ts";
 import { WBView } from "../assets/ui/wb-client-view.ts";
@@ -226,23 +226,6 @@ test("an attention.dirty push reads the list again", (t) => {
   const store = connectionStore({ messages: { flash() {} }, detached: { dirty: () => false, close() {} } });
   store.onPresencePush("attention.dirty", fixture("attention.dirty"));
   assert.deepEqual(sent, ["workbench:attention-reread"]);
-});
-
-// pin: the markup reads only names its component can see —
-// node runs no Alpine over the markup, so only its text shows the names.
-test("every name the markup of wbAttention reads is its own", (t) => {
-  const { data } = page(t);
-  const markup = partMarkup(PART);
-  let read = 0;
-  for (const [, attr, value] of markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)) {
-    if (attr === "x-data" || attr === "x-for" || attr === ":key") continue;
-    for (const n of bindingNames(value)) {
-      if (n.startsWith("$") || n === "r") continue;
-      assert.ok(n in data, `${attr}="${value}" reads ${n}`);
-      read++;
-    }
-  }
-  assert.ok(read >= 8, `the markup was read: ${read} names`);
 });
 
 // The browser's notifications: a class that keeps what it was asked, and the

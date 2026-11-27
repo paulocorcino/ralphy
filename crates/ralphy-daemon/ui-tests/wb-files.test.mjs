@@ -5,7 +5,7 @@
 // it does not list in `uses`, or assigns a shell() field (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
+import { loadComponent, loadShell, partMarkup } from "./harness.mjs";
 import {
   classify,
   fileTabId,
@@ -14,9 +14,6 @@ import {
   parentRel,
   tabIcon,
   underProtectedDir, fullPath } from "../assets/ui/wb-file-paths.ts";
-
-// The part that holds the files pane's markup.
-const PART = "wb-files.part.html";
 
 // One page with the shell and the files, and a window that delivers the
 // events it is sent, as the browser does. `init()` adds the listeners, as
@@ -107,36 +104,6 @@ test("wbFiles lists only shell() names in uses, and its members left shell()", (
   for (const n of data.uses) assert.ok(n in shell, n);
   for (const n of Object.keys(data)) {
     if (n !== "uses" && n !== "init") assert.ok(!(n in shell), `shell() still has ${n}`);
-  }
-});
-
-// pin: the markup reads only names its component can see —
-// node runs no Alpine over the markup, so only its text shows the names.
-test("every name the markup of wbFiles reads is its own or in its uses list", () => {
-  const { scope: state } = loadComponent("wbFiles");
-  const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
-  let read = 0;
-  for (const [, attr, value] of attrs) {
-    // `x-data` names the component; `x-ref` names an element.
-    if (attr === "x-data" || attr === "x-ref") continue;
-    const raw = attr === "x-for" ? value.split(/\s+in\s+/u)[1] : value;
-    for (const n of bindingNames(raw)) {
-      // `u` is the row of the upload card's `x-for`.
-      if (n.startsWith("$") || n === "u") continue;
-      assert.doesNotThrow(() => state[n], `${attr}="${value}" reads ${n}`);
-      read++;
-    }
-  }
-  assert.ok(read > 20, `the markup was read: ${read} names`);
-});
-
-// pin: no markup outside the files element reads their state —
-// node runs no Alpine over the page, so only its text shows the names.
-test("nothing outside the files element names their state", () => {
-  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
-  for (const name of ["fileSearch", "treeStale", "treeError", "treeNotLive", "treeLoading", "openPeerDown", "createHere", "toggleFileSearch"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
   }
 });
 

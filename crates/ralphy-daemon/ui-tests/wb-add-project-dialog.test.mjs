@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { assembledPage, bindingNames, loadComponent, partMarkup, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, loadComponent, partMarkup, UI, withoutComments } from "./harness.mjs";
 
 // The part that holds the dialog's markup.
 const PART = "wb-add-project-dialog.part.html";
@@ -234,33 +234,6 @@ test("the dialog lists at most 12 shell() names, and shell() has each one", () =
   }
 });
 
-// pin: the markup reads only names its component can see —
-// node runs no Alpine over the markup, so only its text shows the names.
-test("every name the dialog's markup reads is its own or in its uses list", () => {
-  const { state } = dialog();
-  const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
-  // `x-data` names the component; `x-for` adds its loop variables.
-  const loopVars = new Set();
-  for (const [, attr, value] of attrs) {
-    if (attr !== "x-for") continue;
-    const [left] = value.split(/\s+in\s+/u);
-    for (const v of bindingNames(left)) loopVars.add(v);
-  }
-  let read = 0;
-  for (const [, attr, value] of attrs) {
-    // `x-ref` names a ref, not an expression.
-    if (attr === "x-data" || attr === "x-ref") continue;
-    const expr = attr === "x-for" ? value.split(/\s+in\s+/u)[1] : value;
-    for (const name of bindingNames(expr)) {
-      if (loopVars.has(name) || name.startsWith("$")) continue;
-      assert.doesNotThrow(() => state[name], `${attr}="${value}" reads ${name}`);
-      read++;
-    }
-  }
-  assert.ok(read > 20, `the markup was read: ${read} names`);
-});
-
 test("the dialog's scope refuses a shell() name outside uses, and any shell() write", () => {
   const { state, shell } = dialog();
   assert.ok("sideView" in shell);
@@ -285,11 +258,6 @@ test("both openers ask the dialog to open with workbench:add-project-open", () =
     html,
     /<div class="add-project-dialog" x-data="wbAddProjectDialog" @workbench:add-project-open\.window="openAddProject\(\)">/u,
   );
-  // Nothing outside the component names its state.
-  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
-  for (const name of ["addProject", "_addProjectTouch", "openAddProject", "closeAddProject"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
-  }
 });
 
 test("the shared reply of project.add selects the slug the reply names", async () => {

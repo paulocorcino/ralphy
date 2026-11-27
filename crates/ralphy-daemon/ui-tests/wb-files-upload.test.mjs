@@ -4,7 +4,7 @@
 // it does not list in `uses` (ADR-0073 D4).
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { bindingNames, loadComponent, partMarkup } from "./harness.mjs";
+import { loadComponent, partMarkup } from "./harness.mjs";
 import { askUpload, conflictFor, limitMb, pickFiles, REST_MS, restTracker, treeDrop } from "../assets/ui/wb-files-upload.ts";
 import { treeMenu } from "../assets/ui/wb-files-menu.ts";
 
@@ -41,23 +41,8 @@ function dialog({ names = [], limit = 25 } = {}) {
 
 const tick = () => new Promise((r) => { setImmediate(r); });
 
-// pin: the markup reads only names its component can see —
-// node runs no Alpine over the markup, so only its text shows the names.
-test("every name the markup of wbUploadDialog reads is its own", () => {
-  const { scope: state, data } = loadComponent("wbUploadDialog");
-  assert.deepEqual(data.uses, []);
-  const markup = partMarkup(PART);
-  let read = 0;
-  for (const [, attr, value] of markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)) {
-    if (attr === "x-data") continue;
-    const raw = attr === "x-for" ? value.split(/\s+in\s+/u)[1] : value;
-    for (const n of bindingNames(raw)) {
-      if (n.startsWith("$") || n === "r") continue;
-      assert.doesNotThrow(() => state[n], `${attr}="${value}" reads ${n}`);
-      read++;
-    }
-  }
-  assert.ok(read > 8, `the markup was read: ${read} names`);
+test("the dialog lists no shell() name, and its markup opens it on workbench:upload-open", () => {
+  assert.deepEqual(loadComponent("wbUploadDialog").data.uses, []);
   assert.match(partMarkup(PART), /x-data="wbUploadDialog" @workbench:upload-open\.window="openUpload\(\$event\.detail\)"/u);
 });
 

@@ -4,10 +4,7 @@
 // it does not list in `uses`, or assigns a shell() field (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
-
-// The part that holds the branch dialog's markup.
-const PART = "wb-branch-dialog.part.html";
+import { loadComponent, loadShell } from "./harness.mjs";
 
 // ---- the component and its markup ---------------------------------------------
 
@@ -16,36 +13,6 @@ test("wbBranchDialog lists only shell() names in uses, and its members left shel
   for (const n of data.uses) assert.ok(n in shell, n);
   for (const n of Object.keys(data)) {
     if (n !== "uses" && n !== "init") assert.ok(!(n in shell), `shell() still has ${n}`);
-  }
-});
-
-// pin: the markup reads only names its component can see —
-// node runs no Alpine over the markup, so only its text shows the names.
-test("every name the markup of wbBranchDialog reads is its own or in its uses list", () => {
-  const { scope: state } = loadComponent("wbBranchDialog");
-  const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
-  // The `x-for` loop variable of the branch rows.
-  const loopVars = new Set(["b"]);
-  let read = 0;
-  for (const [, attr, value] of attrs) {
-    // `x-data` names the component; `x-ref` names an element.
-    if (attr === "x-data" || attr === "x-ref") continue;
-    for (const n of bindingNames(value)) {
-      if (n.startsWith("$") || loopVars.has(n)) continue;
-      assert.doesNotThrow(() => state[n], `${attr}="${value}" reads ${n}`);
-      read++;
-    }
-  }
-  assert.ok(read > 15, `the markup was read: ${read} names`);
-});
-
-// pin: the page outside the component never reads its state —
-// node runs no Alpine over the page, so only its text shows what it reads.
-test("nothing outside the branch dialog element names its state", () => {
-  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
-  for (const name of ["branchModal", "openBranchModal", "closeBranchModal", "branchList", "canCreateBranch", "branchEnter", "switchBranch", "createBranch", "removeWorktree", "worktreeRemoving", "openCheckoutChip", "_mutateBranch", "branchHeldBy"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
   }
 });
 

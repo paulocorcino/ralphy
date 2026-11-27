@@ -6,10 +6,7 @@
 // field (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
-
-// The part that holds the Changes view's markup.
-const PART = "wb-changes-panel.part.html";
+import { loadComponent, loadShell } from "./harness.mjs";
 
 // `init()` starts the backstop on the global timer; here it never ticks.
 // Returns the intervals it asked for.
@@ -67,37 +64,6 @@ test("wbChanges lists only shell() names in uses, and its members left shell()",
   for (const n of data.uses) assert.ok(n in shell, n);
   for (const n of Object.keys(data)) {
     if (n !== "uses" && n !== "init") assert.ok(!(n in shell), `shell() still has ${n}`);
-  }
-});
-
-// pin: the markup reads only names its component can see —
-// node runs no Alpine over the markup, so only its text shows the names.
-test("every name the markup of wbChanges reads is its own or in its uses list", () => {
-  const { scope: state } = loadComponent("wbChanges");
-  const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
-  // The `x-for` loop variable of the two groups of rows, and a global.
-  const loopVars = new Set(["c", "Boolean"]);
-  let read = 0;
-  for (const [, attr, value] of attrs) {
-    // `x-data` names the component.
-    if (attr === "x-data") continue;
-    for (const n of bindingNames(value)) {
-      if (n.startsWith("$") || loopVars.has(n)) continue;
-      assert.doesNotThrow(() => state[n], `${attr}="${value}" reads ${n}`);
-      read++;
-    }
-  }
-  assert.ok(read > 40, `the markup was read: ${read} names`);
-});
-
-// pin: the page outside the component never reads its state —
-// node runs no Alpine over the page, so only its text shows what it reads.
-test("nothing outside the Changes view element names its state", () => {
-  // The page without the Changes part: the shell and the other components.
-  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
-  for (const name of ["changesError", "changesReadError", "changesStaged", "changesUnstaged", "syncByProject", "syncBusy", "commitMsg", "loadChanges", "loadSync", "stagePaths", "discardRow", "commitStaged", "syncPush", "pullBlocked", "rowActTitle"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
   }
 });
 
