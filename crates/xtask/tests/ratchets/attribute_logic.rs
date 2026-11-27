@@ -37,7 +37,7 @@ fn attribute_logic_matches_the_baseline() {
         .map(|(f, n)| ((*f).to_owned(), *n))
         .collect();
     let list = |file: &String| {
-        let lines = sites.get(file).map(Vec::as_slice).unwrap_or_default();
+        let lines = sites.get(file).map_or_default(Vec::as_slice);
         let at: Vec<String> = lines
             .iter()
             .map(|l| format!("  {UI_DIR}/{file}:{l}"))

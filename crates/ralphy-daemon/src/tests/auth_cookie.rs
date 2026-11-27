@@ -225,8 +225,7 @@ async fn the_guard_hands_the_login_id_to_the_request() {
     let probe = |req: Request<Body>| async move {
         req.extensions()
             .get::<cookie::LoginId>()
-            .map(ToString::to_string)
-            .unwrap_or_default()
+            .map_or_default(ToString::to_string)
     };
     let app = Router::new()
         .route("/api/probe", axum::routing::get(probe))

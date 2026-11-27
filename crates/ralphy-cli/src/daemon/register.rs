@@ -143,8 +143,7 @@ pub(crate) fn add_and_report(repo: &Path) -> Result<()> {
     let reg = register_or_migrate(&registry_path, repo)?;
     let former = registry::load_from(&registry_path)?
         .entry(&reg.slug)
-        .map(|e| e.former_slugs.clone())
-        .unwrap_or_default();
+        .map_or_default(|e| e.former_slugs.clone());
     migrate_side_stores(&reg, &former);
     for old in &reg.migrated_from {
         outln!("migrated {old} → {}", reg.slug);
@@ -175,8 +174,7 @@ pub(crate) fn register_repo(repo_root: &Path) {
         let reg = register_repo_at(&path, repo_root)?;
         let former = registry::load_from(&path)?
             .entry(&reg.slug)
-            .map(|e| e.former_slugs.clone())
-            .unwrap_or_default();
+            .map_or_default(|e| e.former_slugs.clone());
         migrate_side_stores(&reg, &former);
         Ok(())
     });

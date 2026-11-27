@@ -102,8 +102,7 @@ impl PeerStatus {
             } => {
                 let said = said
                     .as_ref()
-                    .map(|said| format!(": ssh said \"{said}\""))
-                    .unwrap_or_default();
+                    .map_or_default(|said| format!(": ssh said \"{said}\""));
                 let next = match retry_in {
                     Some(wait) => format!("Ralphy tries again in {}.", in_words(*wait)),
                     None => "Ralphy is opening it again.".to_owned(),

@@ -364,8 +364,7 @@ impl Agent for CopilotAgent {
             // this id exists to read: report zero rather than another run's rows.
             usage: session
                 .as_ref()
-                .map(|_| copilot_usage(&session_id))
-                .unwrap_or_default(),
+                .map_or_default(|_| copilot_usage(&session_id)),
             // `None` = a finalized plan was RESUMED and no `copilot` process ran,
             // so no session by this id exists in the store.
             session_id: session.map(|_| session_id),

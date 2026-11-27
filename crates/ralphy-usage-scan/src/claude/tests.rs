@@ -32,9 +32,7 @@ fn no_runs() -> HashSet<String> {
 
 /// One usage line: an assistant `message` with model, usage, and a timestamp.
 fn usage_line(model: &str, id: &str, req: Option<&str>, input: u64, ts: &str) -> String {
-    let req_field = req
-        .map(|r| format!("\"requestId\":\"{r}\","))
-        .unwrap_or_default();
+    let req_field = req.map_or_default(|r| format!("\"requestId\":\"{r}\","));
     format!(
         "{{{req_field}\"timestamp\":\"{ts}\",\"message\":{{\"id\":\"{id}\",\"model\":\"{model}\",\
          \"usage\":{{\"input_tokens\":{input},\"output_tokens\":0,\"cache_read_input_tokens\":0,\

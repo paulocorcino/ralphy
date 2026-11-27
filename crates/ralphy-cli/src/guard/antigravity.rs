@@ -98,7 +98,7 @@ fn decide(raw: &str, fallback_cwd: Option<&Path>, env: HookEnv) -> GuardDecision
     let args = call.and_then(|c| c.get("args")).unwrap_or(&Value::Null);
     let cwd = match payload.get("cwd").and_then(Value::as_str) {
         Some(cwd) => normalise_path(Path::new(cwd)),
-        None => fallback_cwd.map(normalise_path).unwrap_or_default(),
+        None => fallback_cwd.map_or_default(normalise_path),
     };
     let ctx = env.context(cwd);
     match name {

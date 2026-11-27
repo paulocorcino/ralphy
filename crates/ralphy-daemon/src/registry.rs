@@ -175,8 +175,7 @@ impl RegistryStore {
         let former_slugs = self
             .repos
             .get(slug)
-            .map(|e| e.former_slugs.clone())
-            .unwrap_or_default();
+            .map_or_default(|e| e.former_slugs.clone());
         self.repos.insert(
             slug.into(),
             RepoEntry {

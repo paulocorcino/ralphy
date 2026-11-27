@@ -35,9 +35,7 @@ impl Authenticator {
 /// Interactive setup over the real console: read the password without echo
 /// when stdin is a terminal, and as plain lines otherwise.
 pub(super) fn setup(port: u16) -> Result<()> {
-    let host = hostname::get()
-        .map(|h| h.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    let host = hostname::get().map_or_default(|h| h.to_string_lossy().into_owned());
     let suggested = identity::suggest_name(&host);
 
     let stdin = std::io::stdin();

@@ -67,10 +67,7 @@ pub(crate) fn close_and_record(
             );
         })
         .ok();
-    let verdicts = plan_md
-        .as_deref()
-        .map(acceptance::parse_ledger)
-        .unwrap_or_default();
+    let verdicts = plan_md.as_deref().map_or_default(acceptance::parse_ledger);
     let review_only = verdicts
         .iter()
         .filter(|v| v.kind == acceptance::VerdictKind::ReviewOnly)

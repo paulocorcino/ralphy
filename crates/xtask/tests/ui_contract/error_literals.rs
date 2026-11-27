@@ -161,8 +161,7 @@ fn ui_sources(root: &Path) -> Vec<(String, String)> {
         .filter(|p| {
             let name = p
                 .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
+                .map_or_default(|n| n.to_string_lossy().into_owned());
             let ext = p.extension().and_then(|e| e.to_str());
             p.is_file() && (ext == Some("js") || (ext == Some("ts") && !name.ends_with(".d.ts")))
         })

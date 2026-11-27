@@ -434,8 +434,7 @@ mod tests {
         let rels = lexical("wt-out")
             .expect("name")
             .confine(root)
-            .map(|c| head_rels(root, Some(&c)))
-            .unwrap_or_default();
+            .map_or_default(|c| head_rels(root, Some(&c)));
         assert!(rels.is_empty(), "{rels:?}");
     }
 

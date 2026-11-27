@@ -150,8 +150,7 @@ pub fn consolidate_knowledge(
     let snapshot = || {
         sessions_dir
             .as_deref()
-            .map(|d| list_session_files(d, "jsonl", true, Some("wire")))
-            .unwrap_or_default()
+            .map_or_default(|d| list_session_files(d, "jsonl", true, Some("wire")))
     };
 
     let cmd = build_kimi_init_command(&model, ws.repo_root(), PROMPT_CONSOLIDATE);

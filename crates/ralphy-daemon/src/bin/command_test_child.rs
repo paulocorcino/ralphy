@@ -258,9 +258,7 @@ fn echo_argv_and_cwd() {
 dispatch-cwd: {}
 ",
         std::env::args().skip(1).collect::<Vec<_>>().join(" "),
-        std::env::current_dir()
-            .map(|path| path.display().to_string())
-            .unwrap_or_default()
+        std::env::current_dir().map_or_default(|path| path.display().to_string())
     );
     print!("{echo}");
     if let Ok(echo_file) = std::env::var("RALPHY_TEST_ECHO_FILE") {

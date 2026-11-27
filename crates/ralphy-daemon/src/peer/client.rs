@@ -373,8 +373,7 @@ async fn websocket(
             body: response
                 .body()
                 .as_deref()
-                .map(|body| String::from_utf8_lossy(body).into_owned())
-                .unwrap_or_default(),
+                .map_or_default(|body| String::from_utf8_lossy(body).into_owned()),
         },
         error @ (WsError::ConnectionClosed
         | WsError::AlreadyClosed

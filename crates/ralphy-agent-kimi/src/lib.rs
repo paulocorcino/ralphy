@@ -159,8 +159,7 @@ impl Agent for KimiAgent {
         let snapshot = || {
             sessions_dir
                 .as_deref()
-                .map(|d| list_session_files(d, "jsonl", true, Some("wire")))
-                .unwrap_or_default()
+                .map_or_default(|d| list_session_files(d, "jsonl", true, Some("wire")))
         };
 
         let run = || {
@@ -247,8 +246,7 @@ impl Agent for KimiAgent {
         let snapshot = || {
             sessions_dir
                 .as_deref()
-                .map(|d| list_session_files(d, "jsonl", true, Some("wire")))
-                .unwrap_or_default()
+                .map_or_default(|d| list_session_files(d, "jsonl", true, Some("wire")))
         };
 
         let run = || {

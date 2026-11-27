@@ -22,12 +22,11 @@ impl Open {
         let labels = self
             .locally_owned
             .as_ref()
-            .map(|info| SessionLabels {
+            .map_or_default(|info| SessionLabels {
                 name: info.name.clone(),
                 checkout: info.checkout.clone(),
                 watching: false,
-            })
-            .unwrap_or_default();
+            });
         // A watcher never touches the writer slot, so it is dispatched BEFORE the
         // attach branch and is never refused as busy.
         if self.query.watch == Some(1) {

@@ -212,9 +212,7 @@ pub(crate) fn export_csv(rows: &[UsageRow], table: &PriceTable) -> String {
     out.push_str(CSV_HEADER);
     out.push('\n');
     for r in rows {
-        let usd = row_usd(r, table)
-            .map(|c| format!("{c:.6}"))
-            .unwrap_or_default();
+        let usd = row_usd(r, table).map_or_default(|c| format!("{c:.6}"));
         let cells = [
             csv_field(&r.project),
             csv_field(&r.actor_email),

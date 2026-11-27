@@ -245,8 +245,7 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
             // The rename error is the one reported; a temp file that stays is named in it.
             let kept = std::fs::remove_file(&tmp)
                 .err()
-                .map(|c| format!(" (temp file {} stays: {c})", tmp.display()))
-                .unwrap_or_default();
+                .map_or_default(|c| format!(" (temp file {} stays: {c})", tmp.display()));
             Err(e).with_context(|| format!("replacing {}{kept}", path.display()))
         }
     }

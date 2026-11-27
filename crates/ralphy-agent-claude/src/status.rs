@@ -159,13 +159,12 @@ pub(crate) fn no_session_start(
 fn no_proof_cause(settings: &Path, project: &Path, window: Duration) -> String {
     let home = ralphy_proc_util::home_dir();
     let disabled = ralphy_proc_util::hook_form::disable_all_hooks(home.as_deref(), Some(project))
-        .map(|file| {
+        .map_or_default(|file| {
             format!(
                 "{} sets disableAllHooks to true, so Claude Code runs no hook; ",
                 file.display()
             )
-        })
-        .unwrap_or_default();
+        });
     let program = ralphy_proc_util::exe::running_exe().map_or_else(
         |e| format!("the ralphy program (not found: {e:#})"),
         |p| p.display().to_string(),

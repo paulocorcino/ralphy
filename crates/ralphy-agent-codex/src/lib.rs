@@ -213,9 +213,7 @@ impl CodexAgent {
 
 /// The rollout files under the sessions dir, none when it is unknown.
 fn rollout_files(sessions_dir: Option<&Path>) -> Vec<PathBuf> {
-    sessions_dir
-        .map(|d| list_session_files(d, "jsonl", true, Some("rollout-")))
-        .unwrap_or_default()
+    sessions_dir.map_or_default(|d| list_session_files(d, "jsonl", true, Some("rollout-")))
 }
 
 impl Agent for CodexAgent {

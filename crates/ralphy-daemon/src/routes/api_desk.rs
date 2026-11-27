@@ -367,8 +367,7 @@ pub(crate) async fn desk_new_route(
             push(&pushes, Push::Desk { tab: None });
             let name = moved
                 .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
+                .map_or_default(|n| n.to_string_lossy().into_owned());
             Json(serde_json::json!({ "moved_to": name })).into_response()
         }
         Err(e) => (

@@ -70,8 +70,8 @@ impl Scan<'_> {
         let mut out = Vec::new();
         let mut start = open + 1;
         let mut depth = 0i32;
-        for k in open + 1..close.min(self.toks.len()) {
-            let t = &self.toks[k];
+        let end = close.min(self.toks.len());
+        for (k, t) in self.toks.iter().enumerate().take(end).skip(open + 1) {
             if Self::opens(t) {
                 depth += 1;
             } else if Self::closes(t) {
@@ -126,8 +126,7 @@ impl Scan<'_> {
     fn top_level(&self, a: usize, b: usize, pred: impl Fn(&Token) -> bool) -> Vec<usize> {
         let mut depth = 0i32;
         let mut at = Vec::new();
-        for k in a..b {
-            let t = &self.toks[k];
+        for (k, t) in self.toks.iter().enumerate().take(b).skip(a) {
             if Self::opens(t) {
                 depth += 1;
             } else if Self::closes(t) {

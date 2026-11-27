@@ -248,7 +248,7 @@ fn hunk_start(hunk: &str) -> Option<u32> {
 
 /// A GitHub Actions annotation that shows the finding on the pull request diff.
 fn annotation(f: &Finding) -> String {
-    let line = f.line.map(|l| format!(",line={l}")).unwrap_or_default();
+    let line = f.line.map_or_default(|l| format!(",line={l}"));
     format!(
         "::warning file={}{line},title=capability: {}::{}",
         f.path,

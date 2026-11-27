@@ -59,10 +59,14 @@ fn root_of(args: &[String]) -> PathBuf {
 }
 
 fn say(line: &str) -> ExitCode {
+    print_line(line);
+    ExitCode::SUCCESS
+}
+
+fn print_line(line: &str) {
     let mut out = std::io::stdout().lock();
     writeln!(out, "{line}").expect("the test child can write stdout");
     out.flush().expect("the test child can flush stdout");
-    ExitCode::SUCCESS
 }
 
 fn complain(line: &str) {
@@ -95,7 +99,9 @@ fn session(root: &Path, scenario: &str) -> ExitCode {
     }
     let order = root.join("order.log");
     let lines = read_stdin(order.clone());
-    say(&serde_json::json!({ "event": "init", "conversation_id": CONVERSATION }).to_string());
+    print_line(
+        &serde_json::json!({ "event": "init", "conversation_id": CONVERSATION }).to_string(),
+    );
     if lines.recv().is_err() {
         return ExitCode::from(2);
     }
@@ -184,7 +190,7 @@ fn turn(input: u64, cache_read: u64, output: u64) {
             "output_tokens": output,
         },
     }});
-    say(&step.to_string());
+    print_line(&step.to_string());
 }
 
 fn result(status: &str, response: &str, error: Option<&str>) {
@@ -194,5 +200,5 @@ fn result(status: &str, response: &str, error: Option<&str>) {
         "response": response,
         "error": error,
     }});
-    say(&line.to_string());
+    print_line(&line.to_string());
 }

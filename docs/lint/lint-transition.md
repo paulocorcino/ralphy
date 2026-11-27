@@ -324,7 +324,7 @@ In every phase:
 | `unicorn(new-for-builtins)` | 0 | 1 | fix by command |
 | **17 rules** | **2312** | **523** | |
 
-- **Slices**: one commit per rule: turn the rule on in `.oxlintrc.json` (with its options), run `npx -y oxlint@1.93.0 --fix crates/ralphy-daemon/assets/ui crates/ralphy-daemon/ui-tests`, then the oxfmt step of the gate without `--check`. The whole config stays on: the fix only narrows what it touches.
+- **Slices**: one commit per rule: turn the rule on in `.oxlintrc.json` (with its options), run `npx -y oxlint@1.95.0 --fix crates/ralphy-daemon/assets/ui crates/ralphy-daemon/ui-tests`, then the oxfmt step of the gate without `--check`. The whole config stays on: the fix only narrows what it touches.
 - **How a site is fixed**: Surface: the tool's own command. `curly` adds braces to every one-line `if`: a mass change, landed when no long branch is open. By the user's decision of 2026-11-10, the end state of `curly` is `multi-line` (braces only where the body spans more than one line), because `all` would push 17 modules past 500 lines.
 - **Ratchet**: none.
 - **Agent docs**: none.

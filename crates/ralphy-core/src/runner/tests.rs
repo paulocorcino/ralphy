@@ -187,11 +187,7 @@ impl Agent for MiniAgent {
         } else {
             "- [x] do a thing\n"
         };
-        let extra = self
-            .extra
-            .as_deref()
-            .map(|e| format!("\n{e}\n"))
-            .unwrap_or_default();
+        let extra = self.extra.as_deref().map_or_default(|e| format!("\n{e}\n"));
         let closing = if self.lint_dirty {
             ""
         } else {

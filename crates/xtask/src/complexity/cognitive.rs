@@ -350,7 +350,7 @@ pub(super) fn production_files(crate_dir: &Path) -> Result<Vec<PathBuf>> {
     }
     let mut files = Vec::new();
     for root in roots {
-        let dir = root.parent().map(Path::to_path_buf).unwrap_or_default();
+        let dir = root.parent().map_or_default(Path::to_path_buf);
         walk(&root, &dir, &mut files)?;
     }
     files.sort();

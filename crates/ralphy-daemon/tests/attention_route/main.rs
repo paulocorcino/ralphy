@@ -290,14 +290,11 @@ fn finished_run(home: &Path) {
 }
 
 fn ids(requests: &serde_json::Value) -> Vec<String> {
-    requests
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|r| r["id"].as_str().map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default()
+    requests.as_array().map_or_default(|a| {
+        a.iter()
+            .filter_map(|r| r["id"].as_str().map(str::to_owned))
+            .collect()
+    })
 }
 
 fn issue(n: u64) -> String {

@@ -313,8 +313,8 @@ fn read_copilot(input: &CopilotScan<'_>) -> rusqlite::Result<Vec<InteractiveReco
                 project,
                 actor_email,
                 tokens: Some(agg.tokens),
-                first_ts: agg.first_ts.map(|d| d.to_rfc3339()).unwrap_or_default(),
-                last_ts: agg.last_ts.map(|d| d.to_rfc3339()).unwrap_or_default(),
+                first_ts: agg.first_ts.map_or_default(|d| d.to_rfc3339()),
+                last_ts: agg.last_ts.map_or_default(|d| d.to_rfc3339()),
                 lower_bound: false,
             }
         })

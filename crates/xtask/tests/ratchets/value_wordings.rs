@@ -70,8 +70,7 @@ pub(super) fn rust_hits(src: &str, wanted: &BTreeSet<String>) -> Vec<String> {
             u32::from_str_radix(&c[1], 16)
                 .ok()
                 .and_then(char::from_u32)
-                .map(String::from)
-                .unwrap_or_default()
+                .map_or_default(String::from)
         });
         if wanted.contains(&plain(&decoded)) {
             hits.push(decoded.into_owned());

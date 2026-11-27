@@ -74,8 +74,7 @@ pub fn clear_own_in(dir: &Path, pid: u32) {
 
 fn read_lines(dir: &Path) -> Vec<String> {
     std::fs::read_to_string(pid_path_in(dir))
-        .map(|text| text.lines().map(str::to_owned).collect())
-        .unwrap_or_default()
+        .map_or_default(|text| text.lines().map(str::to_owned).collect())
 }
 
 /// The pid a daemon last recorded, or `None` when there is no readable one.

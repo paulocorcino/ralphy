@@ -71,9 +71,7 @@ pub fn console_spec(cwd: PathBuf, rows: u16, cols: u16, command: Option<&str>) -
         Some(over) => over,
         None => default_shell(),
     };
-    let args = command
-        .map(|command| shell_command_args(Path::new(&program), command))
-        .unwrap_or_default();
+    let args = command.map_or_default(|command| shell_command_args(Path::new(&program), command));
     SessionSpec {
         program,
         args,

@@ -129,7 +129,7 @@ fn status_word(status: QueueStatus) -> &'static str {
 /// stop-before.
 fn status_extra(iv: &IssueView) -> String {
     match iv.queue_status {
-        QueueStatus::Eligible => iv.position.map(|p| format!("pos {p}")).unwrap_or_default(),
+        QueueStatus::Eligible => iv.position.map_or_default(|p| format!("pos {p}")),
         QueueStatus::Skipped => iv.skip_reason.clone().unwrap_or_default(),
         QueueStatus::Blocked => format!(
             "by {}",

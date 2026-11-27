@@ -115,18 +115,12 @@ fn a_member_belongs_to_the_heading_it_sits_under() {
 #[test]
 fn a_heading_with_no_group_is_an_error() {
     let app = APP.replace("Runs panel", "a new section");
-    let err = parse_shell(&app)
-        .err()
-        .map(|e| e.to_string())
-        .unwrap_or_default();
+    let err = parse_shell(&app).err().map_or_default(|e| e.to_string());
     assert!(err.contains("\"a new section\""), "{err}");
 }
 
 fn parse_error(app: &str) -> String {
-    parse_shell(app)
-        .err()
-        .map(|e| e.to_string())
-        .unwrap_or_default()
+    parse_shell(app).err().map_or_default(|e| e.to_string())
 }
 
 #[test]

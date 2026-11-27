@@ -283,9 +283,7 @@ async fn http_exchange(
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
         .expect("the test socket connects");
-    let auth = bearer
-        .map(|token| format!("Authorization: Bearer {token}\r\n"))
-        .unwrap_or_default();
+    let auth = bearer.map_or_default(|token| format!("Authorization: Bearer {token}\r\n"));
     let request = format!(
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{auth}\
         Content-Length: 0\r\nConnection: close\r\n\r\n"
@@ -364,8 +362,7 @@ fn names_cwd(terminal: &str, dir: &Path) -> bool {
     let raw = format!("CWD:{}", dir.display());
     let canonical = dir
         .canonicalize()
-        .map(|c| c.display().to_string())
-        .unwrap_or_default();
+        .map_or_default(|c| c.display().to_string());
     let canonical = format!("CWD:{}", canonical.trim_start_matches("\\\\?\\"));
     terminal.contains(&raw) || terminal.contains(&canonical)
 }

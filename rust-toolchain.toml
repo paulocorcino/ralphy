@@ -2,6 +2,6 @@
 # `ci_uses_the_pinned_rust_toolchain` fails when a workflow names another.
 # A new version is its own commit, measured again by the lint gate.
 [toolchain]
-channel = "1.99.1"
+channel = "1.100.0"
 components = ["rustfmt", "clippy"]
 profile = "minimal"

@@ -198,7 +198,7 @@ fn detect() -> Detected {
         "{} · {}{}",
         info,
         std::env::consts::ARCH,
-        wsl_suffix().map(|w| format!(" ({w})")).unwrap_or_default(),
+        wsl_suffix().map_or_default(|w| format!(" ({w})")),
     );
     let path = std::env::var_os("PATH");
     let pathext = std::env::var_os("PATHEXT");

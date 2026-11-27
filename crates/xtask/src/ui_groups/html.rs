@@ -103,7 +103,7 @@ fn scope(tag: String, attrs: &[Attr], parent: Option<&Open>) -> Open {
         Some(a) => a.value.as_deref().map(str::trim) == Some("shell"),
         None => parent.is_some_and(|p| p.in_shell),
     };
-    let mut vars = parent.map(|p| p.vars.clone()).unwrap_or_default();
+    let mut vars = parent.map_or_default(|p| p.vars.clone());
     if let Some(f) = attrs.iter().find(|a| a.name == "x-for") {
         vars.extend(for_vars(f.value.as_deref().unwrap_or("")));
     }
