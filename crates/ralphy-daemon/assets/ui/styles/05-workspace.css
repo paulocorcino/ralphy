@@ -253,6 +253,7 @@
   .canvas-tools {
     gap: 0.35rem;
     padding: 0 0.45rem;
+    position: relative;
   }
   .canvas-tools .btn {
     gap: var(--space-2);
@@ -260,9 +261,6 @@
   /* A toolbar menu hangs from the toolbar's right edge, not from its own
      button: `.canvas` clips, so the menu of the leftmost button lost its left
      side under the rail (measured at 390px: left 17px, canvas left 48px). */
-  .canvas-tools {
-    position: relative;
-  }
   .canvas-tools .menu-wrap {
     position: static;
   }

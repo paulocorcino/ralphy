@@ -794,6 +794,8 @@
    are within a fifth of an em of body text — means typing `## ` changed
    nothing anyone could see: the marks vanished into the heading they made and
    the line looked like the paragraph it had been (operator, 2026-09-22). */
+/* Upstream leads a heading with 16–32 px of air (reset.css), a page's rhythm.
+   On a 320 px card an `h1` then opens two lines below the one before it. */
 .note-card .milkdown .ProseMirror h1,
 .note-card .milkdown .ProseMirror h2,
 .note-card .milkdown .ProseMirror h3,
@@ -801,6 +803,8 @@
 .note-card .milkdown .ProseMirror h5,
 .note-card .milkdown .ProseMirror h6 {
   font-weight: 600;
+  margin-top: 0.5em;
+  line-height: 1.3;
 }
 /* An EMPTY heading says what it is for. Crepe's placeholder carries ONE text
    for every block (`placeholderConfig` is a single string, read 2026-09-22),
@@ -851,17 +855,6 @@
 .note-title-act:hover {
   text-decoration: underline;
   color: var(--crepe-color-on-background);
-}
-/* Upstream leads a heading with 16–32 px of air (reset.css), a page's rhythm.
-   On a 320 px card an `h1` then opens two lines below the one before it. */
-.note-card .milkdown .ProseMirror h1,
-.note-card .milkdown .ProseMirror h2,
-.note-card .milkdown .ProseMirror h3,
-.note-card .milkdown .ProseMirror h4,
-.note-card .milkdown .ProseMirror h5,
-.note-card .milkdown .ProseMirror h6 {
-  margin-top: 0.5em;
-  line-height: 1.3;
 }
 /* THE ENTER KEY, answered with CSS rather than a keymap (asked 2026-09-22).
    Upstream pads every paragraph `4px 0` — so a paragraph break costs 8 px more

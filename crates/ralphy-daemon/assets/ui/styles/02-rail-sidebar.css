@@ -331,6 +331,7 @@
 }
 .project.open {
   order: -1; /* rises above the collapsed siblings */
+  border-bottom: none;
 }
 /* When any project is open, the siblings step aside so the open one claims
    the whole column. Clicking the open header returns to the full list. */
@@ -544,9 +545,6 @@
   flex: 1 1 auto;
   min-height: 0;
   border-bottom: 1px solid var(--border);
-}
-.project.open {
-  border-bottom: none;
 }
 
 /* Wunderbaum, themed to the warm-dark palette (ADR-0035) via its CSS vars,
