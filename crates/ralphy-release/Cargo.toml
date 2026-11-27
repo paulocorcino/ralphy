@@ -10,7 +10,7 @@ description = "Version identity and the published-release read (ADR-0056)."
 serde.workspace = true
 serde_json.workspace = true
 ureq.workspace = true
-chrono.workspace = true
+ralphy-time.workspace = true
 tracing.workspace = true
 semver.workspace = true
 

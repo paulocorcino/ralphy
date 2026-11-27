@@ -2,8 +2,8 @@
 
 use std::time::Duration;
 
-use chrono::{DateTime, Local};
 use console::Style;
+use jiff::ZonedDateTime;
 use tracing::Level;
 
 use super::meter::fmt_meter;
@@ -144,7 +144,7 @@ pub(crate) fn render_active_line(
 )]
 pub(crate) fn render_line(
     event: &RunEvent,
-    ts: &DateTime<Local>,
+    ts: &ZonedDateTime,
     extra: &LineExtra,
     opts: RenderOpts,
 ) -> Option<String> {
@@ -152,7 +152,7 @@ pub(crate) fn render_line(
         return None;
     }
 
-    let ts_str = ts.format("%Y-%m-%d %H:%M:%S").to_string();
+    let ts_str = ts.strftime("%Y-%m-%d %H:%M:%S").to_string();
     // Generic finished-line duration (` (2m13s)`) for the non-issue outcome lines;
     // the issue lines (`plan written` / `done`) compose their own tail via `issue_tail`.
     let dur = extra

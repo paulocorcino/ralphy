@@ -103,7 +103,7 @@ impl Period {
 /// line for a missing field would silently shrink the total.
 ///
 /// The comparison is lexicographic on RFC3339 text, which orders correctly for
-/// the shape both sides use: the runner writes `chrono::Utc::now().to_rfc3339()`
+/// the shape both sides use: the runner writes `ralphy_time::rfc3339` in UTC
 /// (`+00:00`) and the route derives `since` the same way.
 pub(crate) fn in_window(ts: Option<&str>, since: Option<&str>) -> bool {
     match (ts, since) {

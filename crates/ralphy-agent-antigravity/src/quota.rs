@@ -50,7 +50,7 @@ pub(crate) fn read_reset(program: &Path, root: &Path, model: Option<&str>) -> Op
         }
     };
     let text = reset_time(&out.stdout, model)?;
-    let at = chrono::DateTime::parse_from_rfc3339(&text).ok();
+    let at = ralphy_time::parse_rfc3339(&text).ok().map(|(t, _)| t);
     Some(ResetAt { text, at })
 }
 

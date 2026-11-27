@@ -10,7 +10,6 @@ use std::net::UdpSocket;
 use std::path::Path;
 use std::time::Duration;
 
-use chrono::Local;
 use serde::Serialize;
 
 /// The env var the daemon sets on a dispatched child (`run`/`triage`/`push`) so
@@ -63,7 +62,10 @@ pub(crate) fn detect(repo_root: &Path) -> Emitter {
         // Best-effort public egress IP (#96); falls back to the primary local IP,
         // then `0.0.0.0` when every probe fails (offline/firewalled host).
         ip: public_ip().unwrap_or_else(local_ip),
-        tz: Local::now().format("%:z").to_string(),
+        tz: jiff::Timestamp::now()
+            .to_zoned_datetime(jiff::tz::TimeZone::system())
+            .strftime("%:z")
+            .to_string(),
         // Daemon-only: the daemon injects DAEMON_ID_ENV on dispatched children;
         // an empty value is treated as absent (truthful absence off that path).
         daemon_id: std::env::var(DAEMON_ID_ENV).ok().filter(|s| !s.is_empty()),
@@ -230,6 +232,13 @@ mod tests {
         // caller falls through to the next probe / the local-IP fallback.
         assert_eq!(parse_raw_ip("<html>nope</html>"), None);
         assert_eq!(parse_raw_ip(""), None);
+    }
+
+    #[test]
+    fn the_tz_field_is_a_numeric_offset() {
+        let shape = regex::Regex::new(r"^[+-]\d{2}:\d{2}$").expect("regex");
+        let tz = detect(Path::new(".")).tz;
+        assert!(shape.is_match(&tz), "tz: {tz}");
     }
 
     #[test]

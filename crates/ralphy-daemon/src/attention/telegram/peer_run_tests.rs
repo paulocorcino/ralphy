@@ -24,8 +24,7 @@ fn run_waiting(open_secs: u64) -> AttentionRequest {
         repo: Some("owner/app".to_owned()),
         run: Some("01RUN".to_owned()),
         issue: Some("71".to_owned()),
-        since: chrono::DateTime::<chrono::Utc>::from(since)
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        since: crate::agent_state::system_secs_z(since),
         detail: Some("permission: Bash".to_owned()),
         dismissable: false,
     }

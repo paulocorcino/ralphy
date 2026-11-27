@@ -51,9 +51,13 @@ fn log_path(dir: &Path) -> PathBuf {
 /// test process, so a line written and the value a test expects never fall on two
 /// sides of a second.
 fn at(days_ago: i64) -> String {
-    static NOW: std::sync::OnceLock<chrono::DateTime<chrono::Utc>> = std::sync::OnceLock::new();
-    (*NOW.get_or_init(chrono::Utc::now) - chrono::Duration::days(days_ago))
-        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    static NOW: std::sync::OnceLock<jiff::Timestamp> = std::sync::OnceLock::new();
+    let back = jiff::SignedDuration::from_hours(24 * days_ago);
+    let then = NOW
+        .get_or_init(jiff::Timestamp::now)
+        .checked_sub(back)
+        .expect("a time within range");
+    ralphy_time::secs_z(then)
 }
 
 /// A log where `login` signed in from [`OWN`] and was then used from
@@ -226,7 +230,7 @@ async fn a_revoked_login_is_not_listed() {
     write_log(dir.path(), &revoked.to_string(), 1);
     let auth = AuthState::localhost();
     assert_eq!(notices(&auth, dir.path()).await.len(), 1);
-    auth.revoke_login(revoked, chrono::Utc::now().timestamp().cast_unsigned())
+    auth.revoke_login(revoked, jiff::Timestamp::now().as_second().cast_unsigned())
         .expect("revoke the login");
     let list = notices(&auth, dir.path()).await;
     assert!(list.is_empty(), "{list:?}");

@@ -44,7 +44,7 @@ fn wait_for_reset_returns_at_once_on_a_stop_request() {
     let clock = ralphy_core::WallClock { deadline: None };
     let far_future = ResetAt {
         text: "in three days".to_owned(),
-        at: Some((chrono::Local::now() + chrono::Duration::days(3)).fixed_offset()),
+        at: Some(jiff::Timestamp::now() + jiff::SignedDuration::from_hours(72)),
     };
 
     ralphy_core::stop::request();

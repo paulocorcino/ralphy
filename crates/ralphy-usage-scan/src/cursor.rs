@@ -35,14 +35,7 @@ pub fn scan_cursor(input: &CursorScan<'_>) -> Vec<InteractiveRecord> {
     scan_transcripts(input, &mut by_id, &mut email_cache);
 
     let mut records: Vec<InteractiveRecord> = by_id.into_values().collect();
-    if let Some(since) = input.since {
-        if let Ok(since_dt) = chrono::DateTime::parse_from_rfc3339(since) {
-            records.retain(|r| match chrono::DateTime::parse_from_rfc3339(&r.last_ts) {
-                Ok(last) => last >= since_dt,
-                Err(_) => true, // never hide a session on a parse miss
-            });
-        }
-    }
+    crate::since::retain_since(&mut records, input.since);
     records
 }
 
@@ -215,8 +208,8 @@ fn attribute(
 /// A unix-ms instant → RFC3339 UTC; empty string when absent or out of range.
 /// Duplicated from `opencode.rs` (ADR-0033 §7 accepts per-vendor duplication).
 fn ms_to_rfc3339(ms: Option<i64>) -> String {
-    ms.and_then(chrono::DateTime::from_timestamp_millis)
-        .map_or_default(|d| d.to_rfc3339())
+    ms.and_then(|ms| ralphy_time::Timestamp::from_millisecond(ms).ok())
+        .map_or_default(|t| ralphy_time::rfc3339(t, ralphy_time::Offset::UTC))
 }
 
 #[cfg(test)]

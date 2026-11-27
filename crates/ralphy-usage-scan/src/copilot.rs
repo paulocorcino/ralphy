@@ -198,8 +198,8 @@ pub fn scan_copilot(input: &CopilotScan<'_>) -> Vec<InteractiveRecord> {
 #[derive(Default)]
 struct ModelAgg {
     tokens: Tokens,
-    first_ts: Option<chrono::DateTime<chrono::FixedOffset>>,
-    last_ts: Option<chrono::DateTime<chrono::FixedOffset>>,
+    first_ts: Option<(ralphy_time::Timestamp, ralphy_time::Offset)>,
+    last_ts: Option<(ralphy_time::Timestamp, ralphy_time::Offset)>,
 }
 
 impl ModelAgg {
@@ -207,11 +207,17 @@ impl ModelAgg {
     /// is TEXT, RFC3339-with-`Z` (verified live); a value that does not parse
     /// leaves both times as they are.
     fn widen(&mut self, created_at: Option<&str>) {
-        let Some(ts) = created_at.and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()) else {
+        let Some(ts) = created_at.and_then(|t| ralphy_time::parse_rfc3339(t).ok()) else {
             return;
         };
-        self.first_ts = Some(self.first_ts.map_or(ts, |cur| cur.min(ts)));
-        self.last_ts = Some(self.last_ts.map_or(ts, |cur| cur.max(ts)));
+        self.first_ts = Some(
+            self.first_ts
+                .map_or(ts, |cur| if cur.0 <= ts.0 { cur } else { ts }),
+        );
+        self.last_ts = Some(
+            self.last_ts
+                .map_or(ts, |cur| if cur.0 >= ts.0 { cur } else { ts }),
+        );
     }
 }
 
@@ -313,8 +319,12 @@ fn read_copilot(input: &CopilotScan<'_>) -> rusqlite::Result<Vec<InteractiveReco
                 project,
                 actor_email,
                 tokens: Some(agg.tokens),
-                first_ts: agg.first_ts.map_or_default(|d| d.to_rfc3339()),
-                last_ts: agg.last_ts.map_or_default(|d| d.to_rfc3339()),
+                first_ts: agg
+                    .first_ts
+                    .map_or_default(|(t, o)| ralphy_time::rfc3339(t, o)),
+                last_ts: agg
+                    .last_ts
+                    .map_or_default(|(t, o)| ralphy_time::rfc3339(t, o)),
                 lower_bound: false,
             }
         })
