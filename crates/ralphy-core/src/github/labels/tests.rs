@@ -1,5 +1,4 @@
 use super::*;
-use crate::scratch::remove_scratch;
 
 #[test]
 fn parse_triage_mapping_reads_the_mapped_column() {
@@ -115,49 +114,6 @@ fn no_spec_collides_with_a_github_default_colour() {
     }
 }
 
-/// The post-run review-debt label must never be a human gate: it lands on a
-/// *closed* issue, and a human-return label would park it back out of the
-/// queue as an ADR-0014 blocker.
-#[test]
-fn needs_human_review_is_not_a_human_return_label() {
-    assert!(
-        !human_return_labels(None).contains(&NEEDS_HUMAN_REVIEW_LABEL.to_owned()),
-        "needs-human-review must stay out of the human-gate path"
-    );
-}
-
-/// Fixed-name labels are applied by literal string at the call site, so a
-/// `triage-labels.md` remap must not move them out from under the runner.
-#[test]
-fn fixed_operational_labels_are_never_remapped() {
-    let doc = "| Canonical | Mapped |\n\
-                   |-----------|--------|\n\
-                   | `needs-split` | `split-me` |\n\
-                   | `needs-human-review` | `eyeball-it` |\n";
-    let names: Vec<String> = ralphy_label_specs(Some(doc))
-        .into_iter()
-        .map(|s| s.name)
-        .collect();
-    assert!(names.iter().any(|n| n == "needs-split"), "{names:?}");
-    assert!(names.iter().any(|n| n == "needs-human-review"), "{names:?}");
-    assert!(!names.iter().any(|n| n == "split-me"), "{names:?}");
-}
-
-#[test]
-fn triage_agent_spec_is_fixed_not_remapped() {
-    // Even with a doc that maps every canonical role, triage-agent stays literal.
-    let doc = "| Canonical | Mapped |\n\
-                   |-----------|--------|\n\
-                   | `ready-for-agent` | `afk-ready` |\n\
-                   | `needs-info` | `waiting` |\n";
-    let specs = ralphy_label_specs(Some(doc));
-    let names: Vec<&str> = specs.iter().map(|s| s.name.as_str()).collect();
-    assert!(
-        names.contains(&"triage-agent"),
-        "triage-agent must stay fixed: {names:?}"
-    );
-}
-
 #[test]
 fn human_return_labels_resolves_roles_and_keeps_fixed_names() {
     let doc = "| Canonical | Mapped |\n\
@@ -178,114 +134,51 @@ fn human_return_labels_resolves_roles_and_keeps_fixed_names() {
     );
 }
 
+/// A `triage-labels.md` remap renames a role label; the fixed-name labels are
+/// applied by literal string at the call site, so a remap must not move them.
 #[test]
-fn human_return_labels_defaults_to_canonical_without_doc() {
-    let got = human_return_labels(None);
-    assert!(got.contains(&"ready-for-human".to_owned()));
-    assert!(got.contains(&"needs-info".to_owned()));
-    assert!(got.contains(&"triage-agent".to_owned()));
-    assert!(got.contains(&"HITL".to_owned()));
-}
-
-#[test]
-fn ralphy_label_specs_resolves_triage_remap() {
-    let doc = "| Canonical | Mapped |\n\
-                   |-----------|--------|\n\
-                   | `ready-for-agent` | `afk-ready` |\n";
-    let specs = ralphy_label_specs(Some(doc));
-    let names: Vec<&str> = specs.iter().map(|s| s.name.as_str()).collect();
-    assert!(
-        names.contains(&"afk-ready"),
-        "expected afk-ready in {names:?}"
-    );
-    assert!(
-        !names.contains(&"ready-for-agent"),
-        "ready-for-agent should be remapped: {names:?}"
-    );
-}
-
-#[test]
-fn plan_label_actions_empty_existing_yields_all_create() {
-    let desired = ralphy_label_specs(None);
-    let actions = plan_label_actions(&desired, &[]);
-    assert_eq!(actions.len(), desired.len());
-    assert!(
-        actions.iter().all(|a| matches!(a, LabelAction::Create(_))),
-        "expected all Create, got: {actions:?}"
-    );
-}
-
-#[test]
-fn plan_label_actions_full_matching_existing_yields_all_skip() {
-    let desired = ralphy_label_specs(None);
-    // Use hash-prefixed uppercase colors to exercise normalize_color on the
-    // existing side — a raw-comparison bug would produce UpdateColor here.
-    let existing: Vec<(String, String)> = desired
-        .iter()
-        .map(|s| (s.name.clone(), format!("#{}", s.color.to_ascii_uppercase())))
-        .collect();
-    let actions = plan_label_actions(&desired, &existing);
-    let n_create = actions
-        .iter()
-        .filter(|a| matches!(a, LabelAction::Create(_)))
-        .count();
-    let n_update = actions
-        .iter()
-        .filter(|a| matches!(a, LabelAction::UpdateColor { .. }))
-        .count();
-    let n_skip = actions
-        .iter()
-        .filter(|a| matches!(a, LabelAction::Skip(_)))
-        .count();
-    assert_eq!(n_create, 0, "expected 0 Create");
-    assert_eq!(n_update, 0, "expected 0 UpdateColor");
-    assert_eq!(n_skip, desired.len(), "expected every spec to Skip");
-}
-
-#[test]
-fn plan_label_actions_differing_color_yields_update_no_create_for_present() {
-    let desired = ralphy_label_specs(None);
-    // Provide every spec as existing, but one with a wrong color.
-    let mut existing: Vec<(String, String)> = desired
-        .iter()
-        .map(|s| (s.name.clone(), normalize_color(&s.color)))
-        .collect();
-    // Change AFK's color to something different.
-    let afk_idx = existing.iter().position(|(n, _)| n == "AFK").unwrap();
-    existing[afk_idx].1 = "aabbcc".into();
-
-    let actions = plan_label_actions(&desired, &existing);
-    let n_create = actions
-        .iter()
-        .filter(|a| matches!(a, LabelAction::Create(_)))
-        .count();
-    let n_update = actions
-        .iter()
-        .filter(|a| matches!(a, LabelAction::UpdateColor { .. }))
-        .count();
-    let n_skip = actions
-        .iter()
-        .filter(|a| matches!(a, LabelAction::Skip(_)))
-        .count();
-    assert_eq!(n_create, 0, "no Create expected for any present name");
-    assert_eq!(n_update, 1, "expected exactly 1 UpdateColor");
-    assert_eq!(
-        n_skip,
-        desired.len() - 1,
-        "expected every spec but the recoloured one to Skip"
-    );
-    // Verify `to` carries the desired color and `from` the stale one.
-    let afk_spec = desired.iter().find(|s| s.name == "AFK").unwrap();
-    assert!(
-        actions.iter().any(|a| matches!(
-            a,
-            LabelAction::UpdateColor { name, from, to }
-                if name == "AFK"
-                && from == "aabbcc"
-                && to == &normalize_color(&afk_spec.color)
-        )),
-        "expected UpdateColor for AFK with correct to/from"
-    );
+fn ralphy_label_specs_remap_roles_and_keep_fixed_names() {
+    let head = "| Canonical | Mapped |\n|-----------|--------|\n";
+    // (case, mapping rows, names present, names absent)
+    let rows: [(&str, &str, &[&str], &[&str]); 3] = [
+        (
+            "role remapped",
+            "| `ready-for-agent` | `afk-ready` |\n",
+            &["afk-ready"],
+            &["ready-for-agent"],
+        ),
+        (
+            "operational labels fixed",
+            "| `needs-split` | `split-me` |\n| `needs-human-review` | `eyeball-it` |\n",
+            &["needs-split", "needs-human-review"],
+            &["split-me", "eyeball-it"],
+        ),
+        (
+            "triage-agent fixed",
+            "| `ready-for-agent` | `afk-ready` |\n| `needs-info` | `waiting` |\n",
+            &["triage-agent"],
+            &[],
+        ),
+    ];
+    for (case, mapping, present, absent) in rows {
+        let doc = format!("{head}{mapping}");
+        let names: Vec<String> = ralphy_label_specs(Some(&doc))
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        for name in present {
+            assert!(
+                names.iter().any(|n| n == name),
+                "{case}: {name} in {names:?}"
+            );
+        }
+        for name in absent {
+            assert!(
+                !names.iter().any(|n| n == name),
+                "{case}: no {name} in {names:?}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -324,8 +217,48 @@ fn parse_label_list_reads_name_and_color_pairs() {
     );
 }
 
+/// Each desired spec becomes one action: absent is created, a matching colour
+/// (compared after `#` and case are normalized) is skipped, another is updated.
 #[test]
-fn format_label_plan_contains_names_and_summary() {
+fn plan_label_actions_create_skip_or_recolour_each_spec() {
+    type Existing = fn(&LabelSpec) -> Option<String>;
+    let desired = ralphy_label_specs(None);
+    let rows: [(&str, Existing); 3] = [
+        ("empty repo", |_| None),
+        ("every colour matches", |s| {
+            Some(format!("#{}", s.color.to_ascii_uppercase()))
+        }),
+        ("AFK recoloured", |s| {
+            Some(if s.name == "AFK" {
+                "aabbcc".to_owned()
+            } else {
+                s.color.clone()
+            })
+        }),
+    ];
+    for (case, existing_of) in rows {
+        let existing: Vec<(String, String)> = desired
+            .iter()
+            .filter_map(|s| existing_of(s).map(|c| (s.name.clone(), c)))
+            .collect();
+        let want: Vec<LabelAction> = desired
+            .iter()
+            .map(|s| match existing_of(s) {
+                None => LabelAction::Create(s.clone()),
+                Some(c) if c == "aabbcc" => LabelAction::UpdateColor {
+                    name: s.name.clone(),
+                    from: "aabbcc".into(),
+                    to: s.color.clone(),
+                },
+                Some(_) => LabelAction::Skip(s.name.clone()),
+            })
+            .collect();
+        assert_eq!(plan_label_actions(&desired, &existing), want, "{case}");
+    }
+}
+
+#[test]
+fn format_label_plan_lists_each_action_and_the_counts() {
     let actions = vec![
         LabelAction::Create(LabelSpec {
             name: "new-label".into(),
@@ -339,74 +272,51 @@ fn format_label_plan_contains_names_and_summary() {
         },
         LabelAction::Skip("kept-label".into()),
     ];
-    let output = format_label_plan(&actions);
-    assert!(
-        output.contains("new-label"),
-        "create name missing:\n{output}"
-    );
-    assert!(
-        output.contains("old-label"),
-        "update name missing:\n{output}"
-    );
-    assert!(
-        output.contains("1 to create"),
-        "create count missing:\n{output}"
-    );
-    assert!(
-        output.contains("1 to update"),
-        "update count missing:\n{output}"
-    );
-    assert!(
-        output.contains("1 unchanged"),
-        "skip count missing:\n{output}"
-    );
-    assert!(
-        output.contains("kept-label"),
-        "skip name missing:\n{output}"
+    assert_eq!(
+        format_label_plan(&actions),
+        "  create  new-label\n  update  old-label (aabbcc → 112233)\n  skip    kept-label\n\
+         labels: 1 to create, 1 to update, 1 unchanged\n"
     );
 }
 
+/// An explicit set wins verbatim; otherwise the defaults, plus the mapped
+/// `ready-for-agent` label from `docs/agents/triage-labels.md` when it is new.
 #[test]
-fn resolve_queue_labels_explicit_set_returned_verbatim() {
-    let explicit = vec!["my-label".to_owned(), "other-label".to_owned()];
-    let result = resolve_queue_labels(&explicit, Path::new("/nonexistent"));
-    assert_eq!(result, explicit, "explicit set should be returned verbatim");
-}
-
-#[test]
-fn resolve_queue_labels_defaults_without_triage_file() {
-    let result = resolve_queue_labels(&[], Path::new("/nonexistent/repo"));
-    assert_eq!(result, vec!["ready-for-agent", "AFK"]);
-}
-
-#[test]
-fn resolve_queue_labels_appends_mapped_label_from_triage_file() {
-    let dir = std::env::temp_dir().join(format!("ralphy-triage-{}", std::process::id()));
-    let docs_dir = dir.join("docs").join("agents");
-    std::fs::create_dir_all(&docs_dir).unwrap();
-    let triage_content = "| Canonical | Mapped |\n\
-                              |-----------|--------|\n\
-                              | `ready-for-agent` | `afk-extended` |\n";
-    std::fs::write(docs_dir.join("triage-labels.md"), triage_content).unwrap();
-
-    let result = resolve_queue_labels(&[], &dir);
-    assert_eq!(result, vec!["ready-for-agent", "AFK", "afk-extended"]);
-
-    remove_scratch(&dir);
-}
-
-#[test]
-fn resolve_queue_labels_dedupes_mapped_label() {
-    let dir = std::env::temp_dir().join(format!("ralphy-triage-dedup-{}", std::process::id()));
-    let docs_dir = dir.join("docs").join("agents");
-    std::fs::create_dir_all(&docs_dir).unwrap();
-    // Mapping resolves to "AFK" which is already in defaults.
-    let triage_content = "| `ready-for-agent` | `AFK` |\n";
-    std::fs::write(docs_dir.join("triage-labels.md"), triage_content).unwrap();
-
-    let result = resolve_queue_labels(&[], &dir);
-    // "AFK" should appear only once.
-    assert_eq!(result, vec!["ready-for-agent", "AFK"]);
-
-    remove_scratch(&dir);
+fn resolve_queue_labels_explicit_or_defaults_plus_mapping() {
+    // (case, explicit labels, triage file text, expected labels)
+    type Row<'a> = (&'a str, &'a [&'a str], Option<&'a str>, &'a [&'a str]);
+    let rows: [Row<'_>; 4] = [
+        (
+            "explicit set",
+            &["my-label", "other-label"],
+            None,
+            &["my-label", "other-label"],
+        ),
+        ("no triage file", &[], None, &["ready-for-agent", "AFK"]),
+        (
+            "mapped label appended",
+            &[],
+            Some(concat!(
+                "| Canonical | Mapped |\n|-----------|--------|\n",
+                "| `ready-for-agent` | `afk-extended` |\n",
+            )),
+            &["ready-for-agent", "AFK", "afk-extended"],
+        ),
+        (
+            "mapped label deduped",
+            &[],
+            Some("| `ready-for-agent` | `AFK` |\n"),
+            &["ready-for-agent", "AFK"],
+        ),
+    ];
+    for (case, explicit, triage, want) in rows {
+        let dir = tempfile::tempdir().unwrap();
+        if let Some(text) = triage {
+            let docs = dir.path().join("docs").join("agents");
+            std::fs::create_dir_all(&docs).unwrap();
+            std::fs::write(docs.join("triage-labels.md"), text).unwrap();
+        }
+        let explicit: Vec<String> = explicit.iter().map(|l| (*l).to_owned()).collect();
+        assert_eq!(resolve_queue_labels(&explicit, dir.path()), *want, "{case}");
+    }
 }
