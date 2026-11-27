@@ -110,6 +110,8 @@ test("wbFiles lists only shell() names in uses, and its members left shell()", (
   }
 });
 
+// pin: the markup reads only names its component can see —
+// node runs no Alpine over the markup, so only its text shows the names.
 test("every name the markup of wbFiles reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbFiles");
   const markup = partMarkup(PART);
@@ -129,6 +131,8 @@ test("every name the markup of wbFiles reads is its own or in its uses list", ()
   assert.ok(read > 20, `the markup was read: ${read} names`);
 });
 
+// pin: no markup outside the files element reads their state —
+// node runs no Alpine over the page, so only its text shows the names.
 test("nothing outside the files element names their state", () => {
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["fileSearch", "treeStale", "treeError", "treeNotLive", "treeLoading", "openPeerDown", "createHere", "toggleFileSearch"]) {
@@ -1008,6 +1012,8 @@ test("a nudge re-reads an image tab through the image read, and a text tab throu
   assert.deepEqual(changed, [["i", "data:image/png;base64,AA=="], ["t", "text"]]);
 });
 
+// pin: the search button shows the title with its keys —
+// the binding is only in the markup, and node runs no Alpine over it.
 test("the files search button names its keys from the list of commands", () => {
   assert.equal(loadComponent("wbFiles").scope.searchFilesTitle, "Search files (Ctrl+Shift+F)");
   assert.match(partMarkup("wb-files.part.html"), /:title="searchFilesTitle"/u);

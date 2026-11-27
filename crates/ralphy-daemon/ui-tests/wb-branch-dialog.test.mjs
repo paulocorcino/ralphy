@@ -19,6 +19,8 @@ test("wbBranchDialog lists only shell() names in uses, and its members left shel
   }
 });
 
+// pin: the markup reads only names its component can see —
+// node runs no Alpine over the markup, so only its text shows the names.
 test("every name the markup of wbBranchDialog reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbBranchDialog");
   const markup = partMarkup(PART);
@@ -38,6 +40,8 @@ test("every name the markup of wbBranchDialog reads is its own or in its uses li
   assert.ok(read > 15, `the markup was read: ${read} names`);
 });
 
+// pin: the page outside the component never reads its state —
+// node runs no Alpine over the page, so only its text shows what it reads.
 test("nothing outside the branch dialog element names its state", () => {
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["branchModal", "openBranchModal", "closeBranchModal", "branchList", "canCreateBranch", "branchEnter", "switchBranch", "createBranch", "removeWorktree", "worktreeRemoving", "openCheckoutChip", "_mutateBranch", "branchHeldBy"]) {

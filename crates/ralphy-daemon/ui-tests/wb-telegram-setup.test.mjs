@@ -107,6 +107,8 @@ test("the removal asks first, then shows the daemon's state", async () => {
   });
 });
 
+// pin: the bot token field is a password field —
+// its type is only in the markup, and node runs no Alpine over it.
 // A failed read is never "no bot" (ADR-0070 D3).
 test("the Telegram section says why it could not read the bot", async () => {
   await withDaemon([[503, {}]], async (s) => {
@@ -118,6 +120,8 @@ test("the Telegram section says why it could not read the bot", async () => {
   assert.match(section(), /type="password"[^>]*x-model="token"/u);
 });
 
+// pin: the markup reads only names its component can see —
+// node runs no Alpine over the markup, so only its text shows the names.
 test("every name the Telegram section's markup reads is its own", () => {
   const { scope } = loadComponent("wbTelegramSetup");
   let read = 0;

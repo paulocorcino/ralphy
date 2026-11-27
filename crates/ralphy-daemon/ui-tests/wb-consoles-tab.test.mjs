@@ -297,6 +297,8 @@ for (const name of ["wbConsoleMenus", "wbColumns"]) {
     }
   });
 
+  // pin: the markup reads only names its component can see —
+  // node runs no Alpine over the markup, so only its text shows the names.
   test(`every name the markup of ${name} reads is its own or in its uses list`, () => {
     const { scope: state } = loadComponent(name);
     const markup = partMarkup(PARTS[name]);
@@ -326,6 +328,8 @@ for (const name of ["wbConsoleMenus", "wbColumns"]) {
   });
 }
 
+// pin: the page outside the components never reads their state —
+// node runs no Alpine over the page, so only its text shows what it reads.
 test("nothing outside the two components names their state", () => {
   // The page without the two parts: one is left out by the helper, the other
   // is cut out of the text it put in.
@@ -428,6 +432,8 @@ test("the menu head and the columns list name a project without its path- key or
 // The Consoles tab is hidden with `visibility`, never `display:none`: with
 // `display:none` the consoles leave the dormancy observer, lose their WebGL
 // renderer, and the first frame on return paints stretched text.
+// pin: a hidden tab keeps its consoles laid out, so they keep their renderer —
+// node runs no layout or WebGL, so only the markup and CSS text show it.
 test("the Consoles tab and the console tabs' pane hide without display:none, so their consoles keep their renderer", () => {
   const html = withoutComments(HTML);
   const open = html.match(/<section class="consoles-tab"[^>]*>/u);

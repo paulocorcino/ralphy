@@ -377,6 +377,8 @@ fn malformed_rows_are_skipped_not_fatal() {
 /// compiles: deleting the floor note, or reintroducing a `k`/`M` abbreviation
 /// in JavaScript, leaves the suite green while the operator reads a floor as
 /// a total. Pins both, the way `usage.rs`'s lower-bound test pins its label.
+// pin: the Spend tab shows the daemon's labels and its floor note —
+// node runs no Alpine over the markup, so only its text shows it.
 #[test]
 fn the_spend_tab_renders_the_servers_figures_and_formats_none_of_its_own() {
     let js = [

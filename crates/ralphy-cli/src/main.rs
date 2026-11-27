@@ -455,6 +455,8 @@ mod tests {
     /// #237, #259: each one-shot dispatch arm of each vendor makes its REAL
     /// call, asserted INSIDE the arm: a whole-file `contains` would pass on a
     /// call that drifted into another vendor's arm of the same signature.
+    // pin: each one-shot arm calls its own vendor —
+    // the calls spawn the real vendor CLI, so no test can run them.
     #[test]
     fn every_vendor_one_shot_is_wired() {
         let sites = [

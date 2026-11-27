@@ -6,6 +6,8 @@ use super::*;
 /// position — a gate that runs after the spawn has already uploaded the
 /// repository. Fragments are assembled with `concat!` so the assertion cannot
 /// match itself.
+// pin: the indexing gate and config seed run before the run's spawn —
+// no test spawns the vendor CLI, so only the source shows it.
 #[test]
 fn the_gate_runs_before_any_child_is_spawned() {
     let src = include_str!("../../outcome.rs");
@@ -38,6 +40,8 @@ fn the_gate_runs_before_any_child_is_spawned() {
 /// for: either it is gated (the run path) or it runs in a throwaway cwd and
 /// config dir, where D6 has nothing to refuse and D17 nothing to protect.
 /// Recursive, so an ADR-0022 `foo.rs` + `foo/` split cannot silently drop a file.
+// pin: every spawn site is gated, or runs in a scratch cwd and config dir —
+// no test spawns the vendor CLI, so only the source shows it.
 #[test]
 fn every_spawn_site_in_the_crate_is_gated_or_neutralized() {
     fn sources(dir: &Path, out: &mut Vec<(String, String)>) {
@@ -147,6 +151,8 @@ fn every_spawn_site_in_the_crate_is_gated_or_neutralized() {
 /// `shellToolCall.result.success` carries no file-change data at all, so a
 /// progress number read from the stream would report zero for shell work. The
 /// production half must never name those fields.
+// pin: progress never comes from the stream's edit-tool fields —
+// it is an absence in the source, which no behavior test can see.
 #[test]
 fn no_progress_read_from_the_stream() {
     let production = crate::tests::production_text(include_str!("../../outcome.rs"));
@@ -162,6 +168,8 @@ fn no_progress_read_from_the_stream() {
 /// re-inlined as a literal record — the fixture rule this whole slice exists
 /// to enforce. Recursive over `src/` so a future ADR-0022 split cannot hide a
 /// fixture from the check.
+// pin: every committed fixture is read by a test through include_str —
+// it is a rule over the test files, not a behavior of the crate.
 #[test]
 fn every_fixture_is_read_by_a_test() {
     fn sources(dir: &Path, out: &mut Vec<String>) {

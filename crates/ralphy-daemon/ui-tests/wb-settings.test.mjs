@@ -6,6 +6,8 @@ import assert from "node:assert/strict";
 import { assembledPage, withoutComments } from "./harness.mjs";
 import { WB_SETTINGS } from "../assets/ui/wb-settings.ts";
 
+// pin: a password field renders only while its own modal is open —
+// the gate is an x-if of the markup, and node runs no Alpine over it.
 // A password field is kept out of the DOM while its modal is closed (the
 // browser's password manager pairs any `type="password"` in the document with
 // the next text field typed into). The gate must be the flag of the modal the
@@ -38,6 +40,8 @@ test("each modal's password fields render when THAT modal is open", () => {
   assert.ok(checked >= 4, `expected the Settings and Security password fields, checked ${checked}`);
 });
 
+// pin: the read-only toggle is disabled —
+// the :disabled binding is only in the markup, and node runs no Alpine over it.
 // The daemon refuses to write `queue.trust_all_comments` from a browser, so the
 // row declares it read-only and the toggle that renders it is disabled: a
 // checkbox that takes a click and answers "refused" is the failure.

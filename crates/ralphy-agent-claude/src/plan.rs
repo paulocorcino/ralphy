@@ -194,6 +194,8 @@ mod tests {
         }
     }
 
+    // pin: the staged prompt and its skill read the non-interactive flag the adapter sets —
+    // only a planner reads the prompt, and no test here runs the vendor binary.
     #[test]
     fn staged_prompt_and_skill_reference_noninteractive_flag() {
         // Anti-drift: the env the adapter sets is only meaningful if the staged

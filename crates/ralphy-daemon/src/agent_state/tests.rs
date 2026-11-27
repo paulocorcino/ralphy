@@ -2,6 +2,8 @@ use super::*;
 use ralphy_proc_util::hook_form::{hook_for_version, HookCheck};
 use serde_json::Value;
 
+// pin: the daemon starts the hook check off its start path, unawaited —
+// no test can time the start of serve, so only its source shows it.
 #[test]
 fn the_start_check_runs_in_the_background_and_logs_one_line() {
     let serve: String = include_str!("../serve.rs")
@@ -268,6 +270,8 @@ fn console_hooks_name_the_binary_without_the_verbatim_prefix() {
 /// Claude, Codex and Antigravity have hooks, `OpenCode` has its state
 /// plugin; no other agent gives a state. The match names every variant, so a
 /// new agent has to choose.
+// pin: state_source names every agent, so a new agent must choose —
+// a `_ =>` arm gives the same answers today, so only the source shows it.
 #[test]
 fn every_agent_has_a_state_source() {
     for agent in Agent::ALL {

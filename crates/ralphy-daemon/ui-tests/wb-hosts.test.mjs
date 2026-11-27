@@ -270,6 +270,8 @@ test("the install runs by itself only when asked, offered, and not tried yet", (
   );
 });
 
+// pin: the Hosts button sits in the Projects header, not in a group header —
+// node runs no Alpine over the markup, so only its text shows where the button is.
 test("the add button sits in the Projects header, outside any group header", () => {
   const html = readFileSync(join(UI, "index.html"), "utf8");
   const refresh = html.indexOf('class="side-refresh"');
@@ -279,6 +281,8 @@ test("the add button sits in the Projects header, outside any group header", () 
   assert.ok(add < html.indexOf('class="env-group"'), "not inside a group header");
 });
 
+// pin: each host row has Edit and Remove, and Remove asks in the row —
+// node runs no Alpine over the markup, so only its text shows the row.
 test("each row of Your hosts has Edit and Remove, and Remove asks in that row", () => {
   const html = dialogPart();
   const start = html.indexOf('<ul class="host-list"');
@@ -293,6 +297,8 @@ test("each row of Your hosts has Edit and Remove, and Remove asks in that row", 
   assert.doesNotMatch(assembledPage("index.html"), /scrim\('removeHost\.open'/u, "no second dialog for Remove");
 });
 
+// pin: host text from the daemon is never written as HTML —
+// node runs no Alpine over the markup, so only its text shows the bindings.
 test("the Hosts dialog renders host text with x-text only", () => {
   const html = dialogPart();
   const start = html.indexOf("scrim('addHost.open'");
@@ -403,6 +409,8 @@ test("the main button is Install while Ralphy can be sent to the host", () => {
   assert.equal(H.primary(H.initial()), "", "no main button outside the checks");
 });
 
+// pin: the connection fields turn off autofill and password managers —
+// the browser reads these attributes, and node runs no browser over the markup.
 test("the connection fields are never offered to autofill or a password manager", () => {
   const html = dialogPart();
   const start = html.indexOf('class="host-conn"');

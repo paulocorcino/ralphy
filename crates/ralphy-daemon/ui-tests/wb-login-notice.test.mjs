@@ -74,6 +74,8 @@ function page(t, replies = []) {
 
 const ok = (body) => ({ status: 200, body });
 
+// pin: the notice shows the device and the act, through names of the component —
+// node runs no Alpine over the markup, so only its text shows the two lines.
 test("a notice shows the device and what it did", async (t) => {
   const reply = fixture("api-audit-logins-notices");
   const { data, sent } = page(t, [ok(reply)]);
@@ -105,6 +107,8 @@ test("a notice shows the device and what it did", async (t) => {
   }
 });
 
+// pin: the End this login button calls revoke —
+// node runs no Alpine over the markup, so only its text shows the button.
 test("revoke ends that login and closes the notice", async (t) => {
   const [notice] = fixture("api-audit-logins-notices").notices;
   const other = { ...notice, login: "BBBBBBBBBBBBBBBBBBBBBB" };
@@ -125,6 +129,8 @@ test("revoke ends that login and closes the notice", async (t) => {
   assert.match(partMarkup(PART), /@click="revoke\(n\)"[^>]*>End this login</u);
 });
 
+// pin: the This was me button calls dismiss —
+// node runs no Alpine over the markup, so only its text shows the button.
 test("this was me closes the notice", async (t) => {
   const [notice] = fixture("api-audit-logins-notices").notices;
   const bare = { ...notice, device: null, facts: null };
@@ -147,6 +153,8 @@ test("this was me closes the notice", async (t) => {
   assert.match(partMarkup(PART), /@click="dismiss\(n\)"[^>]*>This was me</u);
 });
 
+// pin: a notice of this device hides This was me and shows a line in its place —
+// node runs no Alpine over the markup, so only its text shows the x-show.
 test("a notice of this device has no This was me action", () => {
   // The daemon refuses a dismiss from the device the notice names, so the
   // button shows only when `here` is false, and a line shows in its place.

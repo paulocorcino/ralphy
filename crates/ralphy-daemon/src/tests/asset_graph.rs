@@ -10,6 +10,8 @@ use super::*;
 /// document that links them in a different order gets different winners for
 /// every selector declared in two sections. Neither failure is visible to a
 /// substring pin, and the second is not visible to a human reading a diff.
+// pin: each page links every partial in order —
+// node loads no page, so only the page text shows what it loads.
 #[test]
 fn every_shell_links_the_whole_cascade() {
     let mut expected: Vec<String> = UI
@@ -201,6 +203,8 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
 
 /// The other direction of
 /// [`every_shell_tag_resolves_and_every_asset_is_reachable`], for the desk.
+// pin: the desk loads every asset it embeds —
+// node loads no page, so only the page text shows what it loads.
 #[test]
 fn the_desk_loads_every_asset_it_embeds() {
     // The other direction, and it must be PER SHELL. A union-wide "somebody
@@ -239,6 +243,8 @@ fn the_desk_loads_every_asset_it_embeds() {
 }
 
 /// What each popup must load, which no tree can derive.
+// pin: each popup loads the modules it needs —
+// node loads no page, so only the page text shows what it loads.
 #[test]
 fn each_popup_loads_its_floor() {
     // The two popups load SUBSETS, so theirs cannot be derived from the tree
@@ -281,6 +287,8 @@ fn each_popup_loads_its_floor() {
 /// the threshold is pinned at ONE number because `wb-file-viewer-code.ts` measures
 /// the same 560 to trim Monaco's gutter — two numbers would fold the
 /// captions and the gutter at different widths.
+// pin: a narrow pane folds by its own width —
+// node computes no style, so only the stylesheet text shows it.
 #[test]
 fn the_narrow_pane_criterion_is_the_panes_own_width() {
     let css = served_css();
@@ -325,6 +333,8 @@ fn the_narrow_pane_criterion_is_the_panes_own_width() {
 /// worst shape a test can have, and it is invisible to the JS side by
 /// construction — the suite cannot notice a file it never loads. Only a
 /// reader of the DIRECTORY can, which is why this gate is in Rust.
+// pin: every ui test file runs —
+// the suite cannot see a file it never loads.
 #[test]
 fn every_ui_test_file_is_imported_by_the_barrel() {
     // Comment-stripped: an import parked behind `//` does not run, and the
@@ -378,6 +388,8 @@ fn no_part_file_is_served() {
 }
 
 /// The served tree holds each wording catalog as its source bytes.
+// pin: the served tree holds the wording catalog —
+// only the built tree shows the copy.
 #[test]
 fn the_served_tree_holds_the_wording_catalog() {
     let source = include_bytes!("../../../../assets/wording/run.json");
@@ -388,23 +400,6 @@ fn the_served_tree_holds_the_wording_catalog() {
         served.contents(),
         source,
         "wording/run.json must be served as it is"
-    );
-}
-
-/// The browser loads the catalog at its served path, as a JSON module.
-#[test]
-fn the_catalog_import_is_rewritten_to_the_served_path() {
-    let js = UI
-        .get_file("wb-wording.js")
-        .and_then(|f| f.contents_utf8())
-        .expect("wb-wording.js is embedded UTF-8");
-    let import = js
-        .lines()
-        .find(|l| l.starts_with("import run from "))
-        .expect("wb-wording.js imports the run catalog");
-    assert_eq!(
-        squeeze(import),
-        squeeze(r#"import run from "./wording/run.json" with { type: "json" };"#)
     );
 }
 

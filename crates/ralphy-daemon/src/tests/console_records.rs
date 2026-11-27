@@ -9,6 +9,8 @@ use super::*;
 /// visible to a fold test: a card without a `z-index` is drawn UNDER every
 /// console, so a click on its body lands on a terminal's canvas and the
 /// keystrokes go to the shell — a note that cannot be typed into.
+// pin: a note card enters the window tier and wears the console chrome —
+// no test runs this wiring, so only the source text shows it.
 #[test]
 fn a_note_card_is_stacked_and_wears_the_console_chrome() {
     // Normalized: the pin below spans line ends, and a Windows checkout
@@ -204,6 +206,8 @@ const DESK_WRITERS: &[(&str, &str)] = &[
 /// its eleven callers were not about the rect. These pins keep the shape out:
 /// no whole-record writer, no whole-desk body, no client clock in a record, and
 /// one place that builds the body.
+// pin: a page writes the desk only as changes —
+// a rule over the source tree; no run of the code can see it.
 #[test]
 fn the_shell_writes_the_desk_only_as_changes() {
     let console = include_str!("../../assets/ui/wb-console.ts");
@@ -250,6 +254,8 @@ fn the_shell_writes_the_desk_only_as_changes() {
 /// one place, and a copy that misses `consoleName` drops the name — on a
 /// create (`recordOf`), on a restart or a worktree switch (`deskOf`, the carry
 /// of `relaunchIn`), or at birth (`buildChrome`, through the window inventory).
+// pin: every record copy carries the console name —
+// no test runs this wiring, so only the source text shows it.
 #[test]
 fn console_name_rides_every_record_copy() {
     // The whole console family, as one text: the record copies and the birth
@@ -286,6 +292,8 @@ fn console_name_rides_every_record_copy() {
 /// relaunch after a daemon restart — reaches `spawnWindow`, so that is where
 /// the console name joins the launch. Neither the Playwright suite nor the
 /// node table covers the wiring in CI, so a deletion fails HERE (#480).
+// pin: a new agent launch sends the console name —
+// no test runs this wiring, so only the source text shows it.
 #[test]
 fn spawn_window_sends_the_console_name_on_a_new_agent_launch() {
     let js = console_family();
@@ -329,6 +337,8 @@ fn spawn_window_sends_the_console_name_on_a_new_agent_launch() {
 /// The route's folds are driven by `ui-tests/wb-session-route.test.mjs`, and
 /// the session name's tooltip by `sessionPresentation` in
 /// `wb-console.test.mjs`; this test holds the call sites that use them.
+// pin: a session keeps its repo on every reconnect and close —
+// no test runs this wiring, so only the source text shows it.
 #[test]
 fn workbench_session_assets_preserve_composite_repo_identity() {
     // The whole console family: the terminal reconnects and reads the

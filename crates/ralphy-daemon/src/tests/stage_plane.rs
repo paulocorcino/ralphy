@@ -4,10 +4,9 @@ use super::*;
 
 /// A press is a DRAG only past a threshold (4px mouse, 10px finger): a tap
 /// on a titlebar, a resize band or a fence handle moves nothing and persists
-/// nothing. The threshold folds (`dragThreshold`, `dragBegins`) are driven by
-/// `ui-tests/wb-console-input.test.mjs`; the four gesture handlers are DOM wiring
-/// that no node test runs, so they are pinned here on the predicate they
-/// consult.
+/// nothing. The four gesture handlers are pinned on the predicate they consult.
+// pin: every drag arms past a threshold, and only an armed drag writes —
+// the node suite sees the window drag; no test drives a fence gesture or a card.
 #[test]
 fn shell_drags_only_past_a_threshold() {
     // The console, its fence list, its window chrome and gestures and its
@@ -91,9 +90,9 @@ fn shell_drags_only_past_a_threshold() {
 }
 
 /// A finger on a console's titlebar: two taps maximize, a hold on the name
-/// renames. `isDoubleTap` is driven by `ui-tests/wb-console-input.test.mjs`; the
-/// wiring is DOM that no node test runs, so it is pinned here, and the
-/// gestures themselves by `tests/browser/console/wb_console_touch.py`.
+/// renames. The browser check is `tests/browser/console/wb_console_touch.py`.
+// pin: two taps on a titlebar maximize, and a hold renames —
+// no test fires touch events on a titlebar.
 #[test]
 fn titlebar_touch_double_taps_and_holds() {
     // The console, its window chrome, its window gestures and its title, as one text: the
@@ -148,10 +147,9 @@ fn titlebar_touch_double_taps_and_holds() {
     );
 }
 
-/// The stage/viewport shell (#336). A clamp lives in CSS and markup, which
-/// the `node --test` suite never renders and Playwright — which does — does
-/// not run in CI. So this is the only CI-visible gate that the deletion
-/// stays deleted: a re-added clamp would pass every unit test in the tree.
+/// The stage/viewport shell (#336): a re-added clamp passes every unit test.
+// pin: the plane has no clamp, and the stage and its styles are there —
+// node renders no markup or CSS, and the gate runs no browser.
 #[test]
 fn shell_has_no_clamp_and_carries_the_stage() {
     // The whole console family; the terminal holds the fit observer.
@@ -189,10 +187,9 @@ fn shell_has_no_clamp_and_carries_the_stage() {
     }
 }
 
-/// The navigation layer over that plane (#337). The folds (`bringIntoView`,
-/// `panNudge`) are driven by `ui-tests/wb-console.test.mjs`; the gestures
-/// that use them are DOM wiring that no node test runs, so they are pinned
-/// here, each inside the function that must hold it.
+/// The navigation layer over that plane (#337), pinned inside each gesture.
+// pin: the plane pans by drag and wheel, and every gesture stops its auto-pan —
+// no test drives an auto-pan, and node renders no CSS.
 #[test]
 fn shell_navigates_the_plane() {
     // The console, its window chrome and gestures, its fences and its view, as
@@ -315,9 +312,9 @@ fn shell_navigates_the_plane() {
 
 /// The FRAME chrome over that plane (#338): the footer pills and the
 /// empty-stage hint belong to `.consoles-tab`, never to `#stage`, and the
-/// maximize pin is a DERIVED fact. Same bargain as the two above — the CI
-/// suites do not render this markup — so this is the only gate that notices
-/// the chrome sliding back onto the plane.
+/// maximize pin is a DERIVED fact.
+// pin: the footer and the maximize pin stay on the frame, not on the plane —
+// node tests see the scroll listener only; they render no markup or CSS.
 #[test]
 fn shell_pins_the_frame_chrome() {
     let html = INDEX_HTML;
@@ -436,9 +433,9 @@ fn shell_pins_the_frame_chrome() {
 /// ONE place allowed to name `localStorage`. ADR-0050 §3 dropped the browser
 /// desk store; ADR-0051 §8 narrows that to "no *desk* in browser storage",
 /// which is only honest while the view store stays a single module holding a
-/// single key. Same bargain as the pins above — and this one is a TREE-WIDE
-/// negative, which no per-module `node --test` file can state — so this is
-/// the gate that notices the desk creeping back into the browser.
+/// single key: a TREE-WIDE negative, which no per-module test can state.
+// pin: only the view module writes browser storage —
+// the node suite sees the listener; no test sweeps the tree for a second store.
 #[test]
 fn shell_stores_only_the_view_in_the_browser() {
     // The console family and the shell own the state being persisted, and

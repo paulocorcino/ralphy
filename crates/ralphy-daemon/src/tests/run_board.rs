@@ -9,6 +9,8 @@ use super::*;
 /// `fromSnapshot` dropped `model`/`effort`/`budget_min`, and the title bound
 /// the vendor. A vendor name does not say which of sol/terra/luna is burning
 /// quota, and nothing said whether a phase was two minutes or forty in.
+// pin: the run picker shows the model and a live phase clock —
+// no test renders the picker or runs the shell's one-second tick.
 #[test]
 fn the_run_picker_names_the_model_and_clocks_the_phase() {
     // The folds behind it (`fromSnapshot`, `modelEffort`, `fmtClock`,
@@ -85,6 +87,8 @@ fn the_run_picker_names_the_model_and_clocks_the_phase() {
 ///     carry was dead code drawing a platform-width bar in ralphy's colours;
 ///   * `scrollbar-color` inherits but `scrollbar-width` DOES NOT, so the rule
 ///     must be `*` and not `html`, or the width silently stays `auto`.
+// pin: every surface gets the thin design-system scrollbar —
+// node renders no markup or CSS, and the gate runs no browser.
 #[test]
 fn the_design_system_scrollbar_is_the_default_not_a_list() {
     let css = served_css();
@@ -135,6 +139,8 @@ fn the_design_system_scrollbar_is_the_default_not_a_list() {
 /// `guard_run_lock(&ws, "label set", …)`), so with a live run every toggle was
 /// refused, the optimistic chip snapped back, and the editor was the ONE write
 /// control in the shell with no gate.
+// pin: the label menu is in flow and its rows are disabled under a live run —
+// no test renders the drawer or clicks a label row under a run lock.
 #[test]
 fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
     let shell = INDEX_HTML;
@@ -190,6 +196,8 @@ fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
 /// in progress (ADR-0054, ADR-0032 §6) — asks through the shell's own dialog.
 /// `window.confirm` names the origin, ignores the theme and blocks the page,
 /// which is the wrong furniture for the panel's most consequential click.
+// pin: stopping a run asks first, through the workbench dialog —
+// no test drives stopRun, which needs the page socket and the modal store.
 #[test]
 fn stopping_a_run_confirms_through_the_design_system_dialog() {
     let code = squeeze(&shell_family());
@@ -215,6 +223,8 @@ fn stopping_a_run_confirms_through_the_design_system_dialog() {
 /// The board can see, read and throw away the plan that the NEXT RUN will
 /// execute. Same CI bargain as the pins around it; the structural half of
 /// the slice, since Playwright — which renders it — does not run in CI.
+// pin: the board shows the next plan on its own issue, and a discard asks first —
+// no test renders the board or drives the discard through the page socket.
 #[test]
 fn the_board_surfaces_the_plan_the_next_run_would_execute() {
     // The plan folds (`planSummary`, the pill, `isBundleReason`, and the
@@ -278,6 +288,8 @@ fn the_board_surfaces_the_plan_the_next_run_would_execute() {
 /// The plan blocks' chrome: the note explains the list from ABOVE it, and the
 /// section picker looks like the dropdown it is. Structural, not cosmetic —
 /// both defects are invisible to every other test in this file.
+// pin: the steps note sits above the list, and the picker caret is inert —
+// node renders no markup or CSS, and the gate runs no browser.
 #[test]
 fn the_plan_blocks_explain_themselves_before_the_space_they_describe() {
     let html = INDEX_HTML;
@@ -315,6 +327,8 @@ fn the_plan_blocks_explain_themselves_before_the_space_they_describe() {
 /// never renders markup, and Playwright does not run there — so these
 /// substrings are the only CI-visible gate over this markup, the same
 /// bargain #318/#319 struck for the write controls.
+// pin: the raw feed stays in its sized box and the verbs share the write lock —
+// no test renders the runs panel or reads its verb gate.
 #[test]
 fn the_runs_feed_is_contained_in_the_markup() {
     let html = INDEX_HTML;

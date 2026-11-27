@@ -46,6 +46,8 @@ test("wbMoveDialog lists only shell() names in uses, and its members left shell(
   }
 });
 
+// pin: the markup reads only names its component can see, and it opens by its event —
+// node runs no Alpine over the markup, so only its text shows the names.
 test("every name the markup of wbMoveDialog reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbMoveDialog");
   const markup = partMarkup(PART);

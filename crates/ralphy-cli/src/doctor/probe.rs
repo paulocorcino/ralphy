@@ -280,6 +280,8 @@ mod tests {
     use super::super::{evaluate, print_report, MachineFacts};
     use super::*;
 
+    // pin: doctor reads the OpenCode version through the one reader —
+    // agent_version spawns the real CLI, so no test can run it.
     #[test]
     fn doctor_reads_the_opencode_version_through_proc_util() {
         let body: String = include_str!("probe.rs").split_whitespace().collect();

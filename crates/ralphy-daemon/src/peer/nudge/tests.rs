@@ -124,6 +124,8 @@ fn empty_output_lists_nothing() {
 /// The question must be answerable without waking anything. `--list --running`
 /// is a management command, so running it here cannot start a distro — asserted
 /// by the argv this test pins, since a `-e` form would have created a session.
+// pin: reading a distro's liveness never starts it —
+// a started session is not visible to the read, so only its argv shows it.
 #[cfg(windows)]
 #[test]
 fn distro_liveness_answers_without_starting_anything() {

@@ -56,6 +56,8 @@ fn check_manifest(files: &[(String, Vec<u8>)], manifest: &serde_json::Value) -> 
 /// Each vendored file is the one its manifest entry names: a changed byte or
 /// a file nobody recorded fails here, so a library bump also updates the
 /// version and source the vulnerability scan reads (ADR-0072 D12).
+// pin: every vendored file is the one its manifest entry names —
+// it compares bytes to hashes; no behavior reads the manifest.
 #[test]
 fn vendored_files_match_the_manifest() {
     fn walk(dir: &Dir<'_>, out: &mut Vec<(String, Vec<u8>)>) {
@@ -111,6 +113,8 @@ fn vendored_files_match_the_manifest() {
 /// a `dist/module.esm.min.js` built from 3.13.10 (measured on 3.14.1 and
 /// 3.14.9), which throws `u is not a function` when an `x-show` element is
 /// hidden twice inside a parent that is being hidden (issue #579).
+// pin: the vendored Alpine is the version its manifest names —
+// the stale build runs fine until a nested x-show, which no test renders.
 #[test]
 fn vendored_alpine_is_the_manifest_version() {
     let manifest: serde_json::Value = serde_json::from_slice(

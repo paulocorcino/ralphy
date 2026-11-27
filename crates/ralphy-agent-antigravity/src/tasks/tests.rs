@@ -13,6 +13,8 @@ fn body_of(name: &str) -> &'static str {
     rest.get(..end).expect("a char boundary")
 }
 
+// pin: every one-shot runs in the held session behind the guard proof —
+// no test spawns the vendor CLI, so only the source shows it.
 #[test]
 fn every_one_shot_holds_its_prompt_behind_the_proof() {
     for name in [

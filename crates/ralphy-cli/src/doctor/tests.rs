@@ -4,6 +4,8 @@ use super::*;
 use ralphy_daemon::telegram_state::{FleetTelegram, OffReason, PeerName, PeerTelegram};
 use ralphy_proc_util::hook_form::HookCheck;
 
+// pin: doctor finds OpenCode with the shared locator —
+// agent_program reads the real machine and has no locator seam.
 #[test]
 fn doctor_finds_opencode_with_the_shared_locator() {
     let source = include_str!("probe.rs");

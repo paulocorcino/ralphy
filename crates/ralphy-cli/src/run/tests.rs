@@ -12,6 +12,8 @@ fn repo_relative_plan_path_is_forward_slashed_and_relative() {
     assert_eq!(repo_relative_plan_path(&root, &ws), ".ralphy/plan.md");
 }
 
+// pin: each phase effort comes from its own flag and reaches both builds —
+// the run spawns the real agents and has no seam for the build.
 #[test]
 fn run_resolves_both_efforts_and_passes_them_to_both_agent_builds() {
     // Production text with whitespace removed: the calls, not their layout.

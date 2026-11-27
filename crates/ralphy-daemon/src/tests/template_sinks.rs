@@ -20,6 +20,8 @@ fn template_html_sinks(src: &str) -> Vec<String> {
 /// The context menu and the console key bar build their icons as elements
 /// and their text with `textContent`: no `innerHTML` there takes a template
 /// string with a value in it, or a variable.
+// pin: no menu or key writes a value into innerHTML —
+// no test puts markup into a menu label; the rule reads the code.
 #[test]
 fn no_menu_or_key_sink_takes_a_template_string() {
     // The matcher sees both shapes, across a line break too.

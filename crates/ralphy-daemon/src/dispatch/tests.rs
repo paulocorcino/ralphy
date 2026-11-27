@@ -146,6 +146,8 @@ fn agent_flag_round_trips_through_from_query() {
 /// `GET /api/agents`, whose digits an exhaustive match owns (`roster.rs`).
 /// So the pin INVERTED — `app.ts` must hold NO vendor enumeration, and the
 /// guarantee that every adapter reaches the menu lives in `roster.rs`.
+// pin: the workbench takes its vendors from the roster, never a list of its own —
+// a list that matches the roster today behaves the same; only the source shows it.
 #[test]
 fn app_js_holds_no_vendor_list() {
     let js = include_str!("../../assets/ui/app.ts");

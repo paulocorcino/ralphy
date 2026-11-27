@@ -54,6 +54,8 @@ test("wbRuns lists only shell() names in uses, and its members left shell()", ()
   }
 });
 
+// pin: the markup reads only names its component can see —
+// node runs no Alpine over the markup, so only its text shows the names.
 test("every name the markup of wbRuns reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbRuns");
   const markup = partMarkup(PART);
@@ -73,6 +75,8 @@ test("every name the markup of wbRuns reads is its own or in its uses list", () 
   assert.ok(read > 40, `the markup was read: ${read} names`);
 });
 
+// pin: the page outside the component never reads its state —
+// node runs no Alpine over the page, so only its text shows what it reads.
 test("nothing outside the Runs panel element names its state", () => {
   // The page without the Runs part: the shell and the other components.
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
@@ -143,6 +147,8 @@ test("the Runs panel drops the trail and the verb refusal of the project that wa
 
 // ---- the run agent's state and the attention list ------------------------------
 
+// pin: the run card draws the agent dot with its state as the class —
+// node runs no Alpine over the markup, so only its text shows the class.
 test("a run card shows its agent state", () => {
   const { scope: own } = loadComponent("wbRuns");
   const run = WBRun.fromSnapshot({

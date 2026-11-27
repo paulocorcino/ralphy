@@ -322,6 +322,8 @@ fn rect_is_sane_rejects_a_negative_origin() {
 
 /// The ubiquitous language is a deliverable of the desk issues: CONTEXT.md
 /// defines each desk term. The definitions' wording is the glossary's own.
+// pin: CONTEXT.md defines the desk terms —
+// a glossary has no behavior; only its text shows it.
 #[test]
 fn context_md_defines_the_desk_terms() {
     let context = include_str!("../../../../CONTEXT.md");

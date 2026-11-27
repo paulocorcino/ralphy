@@ -23,6 +23,8 @@ fn css_block<'a>(css: &'a str, name: &str) -> &'a str {
 /// own marker pair, so a pin never widens over another issue's CSS. A block
 /// emptied by mistake would pass the negative check, so each must also have
 /// content.
+// pin: marked CSS blocks use colour tokens only —
+// node computes no style, so only the stylesheet text shows it.
 #[test]
 fn marked_css_blocks_add_no_colour_outside_the_token_set() {
     let css = served_css();
@@ -48,6 +50,8 @@ fn marked_css_blocks_add_no_colour_outside_the_token_set() {
 /// pins above prove the box exists; only these
 /// prove it is bounded, and `max-height` is a single line whose deletion
 /// restores the original defect with every other pin still green.
+// pin: the runs feed is bounded and wraps —
+// node computes no style, so only the stylesheet text shows it.
 #[test]
 fn the_runs_feed_is_bounded_and_wraps() {
     let css = served_css();
@@ -82,6 +86,8 @@ fn the_runs_feed_is_bounded_and_wraps() {
 /// `:hover` rule reveals them. The discard block also keeps its `@media`
 /// rule: the touch de-emphasis IS the criterion, and a block that lost it
 /// would pass the rest vacuously.
+// pin: the write and discard controls are not hover gated —
+// node computes no style, so only the stylesheet text shows it.
 #[test]
 fn the_write_and_discard_controls_are_not_hover_gated() {
     let css = served_css();
@@ -165,6 +171,8 @@ fn strip_css_comments(block: &str) -> String {
 /// Top-level only, and by design. A declaration inside `@media` is SUPPOSED
 /// to override the base one — that is the mechanism, not a collision — so
 /// anything nested is skipped rather than reported.
+// pin: no selector sets one property twice —
+// node computes no style, so only the stylesheet text shows it.
 #[test]
 fn no_selector_sets_one_property_twice() {
     let css = strip_css_comments(&served_css());

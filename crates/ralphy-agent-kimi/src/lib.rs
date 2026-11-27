@@ -32,8 +32,6 @@ use tracing::info;
 // jscpd:ignore-end
 
 mod auth;
-#[cfg(test)]
-mod cleanup;
 mod command;
 mod outcome;
 mod skills;
@@ -301,6 +299,8 @@ impl Agent for KimiAgent {
     }
 }
 
+#[cfg(test)]
+mod cleanup;
 #[cfg(test)]
 mod tests {
     use super::*;

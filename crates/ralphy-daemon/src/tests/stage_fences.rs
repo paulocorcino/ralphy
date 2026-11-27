@@ -6,6 +6,8 @@ use super::*;
 /// folds (`nextFenceSlot`, `fenceSpawnRect`, `nextFenceName`, the cap) are
 /// driven by `ui-tests/wb-console.test.mjs` and `wb-geometry.test.mjs`; the
 /// node suite renders no DOM or CSS, so this test holds that half.
+// pin: the fences are drawn, and the plane grows to hold them —
+// no test measures the stage extent over a fence past the last window.
 #[test]
 fn shell_draws_fences_below_the_windows() {
     // The console, its fence list, its fences and its title, as one text: the
@@ -42,6 +44,8 @@ fn shell_draws_fences_below_the_windows() {
     );
 }
 
+// pin: a fence name is edited in place, and leaving the field cancels —
+// no test edits a fence name, and node renders no CSS.
 #[test]
 fn a_fence_name_is_edited_in_place() {
     let js = &fences_js();
@@ -104,6 +108,8 @@ fn a_fence_name_is_edited_in_place() {
     );
 }
 
+// pin: a fence past the cap is refused and new names do not repeat —
+// the node suite sees the refusal; no test sees the name (measured: by count).
 #[test]
 fn a_fence_past_the_cap_is_refused() {
     let js = &fences_js();
@@ -133,6 +139,8 @@ fn a_fence_past_the_cap_is_refused() {
     );
 }
 
+// pin: the New fence row is disabled at the cap and the keys run F1 to F12 —
+// no test renders the fence menu or reads its Alpine snapshot.
 #[test]
 fn the_fence_menu_follows_the_cap() {
     let js = &fences_js();
@@ -198,6 +206,8 @@ fn the_fence_menu_follows_the_cap() {
 /// amendment, 2026-09-20): the four gesture handlers and the tiler consult
 /// the lock and refuse, the chrome carries the toggle, and the stylesheet
 /// drops the bands. Every pin is an expression, as above.
+// pin: a locked console or fence refuses every gesture and shows no bands —
+// no test tiles a locked fence (measured: guard deleted), and node renders no CSS.
 #[test]
 fn shell_locks_consoles_and_fences() {
     // The whole console family, as one text: the lock, the fence's lock, the
@@ -296,6 +306,8 @@ fn shell_locks_consoles_and_fences() {
 /// `fenceMoveDelta`) are driven by `ui-tests/wb-geometry.test.mjs`; the
 /// gestures and the CSS hit-test contract are pinned here, because the node
 /// suite runs no DOM and no CSS.
+// pin: the fence handles take a click and sit above the bands —
+// node renders no markup or CSS, and the gate runs no browser.
 #[test]
 fn shell_fences_are_a_group() {
     // The console, its fences and its desk records, as one text: the two
@@ -369,6 +381,8 @@ fn shell_fences_are_a_group() {
 /// tiling is a per-fence act over a pure fold. The fold (`tileIntoRect`) and
 /// `fenceRepos` are driven by the node suite; the retirement, the fence
 /// chrome and the CSS are pinned here, where a revert of either half fails.
+// pin: tiling is a fence act, and the window floor matches the CSS —
+// the node suite sees the tiling; no test compares the floor to the CSS.
 #[test]
 fn shell_arranges_into_the_fence() {
     // The console, its fence list and its fences, as one text: tiling lives

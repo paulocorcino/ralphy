@@ -194,6 +194,8 @@ result: 3 blocker(s)
     assert_eq!(format_report(&f, &evaluate_gate(&f)), want);
 }
 
+// pin: the OpenCode login probe spawns the located program —
+// the probe spawns the real CLI, so no test can run it.
 #[test]
 fn the_opencode_login_probe_uses_the_shared_locator() {
     let source = include_str!("../gate.rs");

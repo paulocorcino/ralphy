@@ -162,6 +162,8 @@ mod tests {
         assert!(!is_first_party("claude-opus-4-8"));
     }
 
+    // pin: no model id is hardcoded as a default —
+    // a literal id in the production path is an absence no behavior test sees.
     #[test]
     fn no_default_model_id_is_baked_in() {
         // The "optional value, no hardcoded default" criterion: no behavioural test

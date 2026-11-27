@@ -226,6 +226,8 @@ fn cursor_dir_path_ignores_the_scratch_config_dir() {
 /// [`interactive_records`]. Source-text pin over this very file, so it reds the
 /// moment a seventh `Agent::ALL` variant lands with a resolver nobody calls —
 /// the state Cursor was left in by #248 and that #250 closed.
+// pin: every launchable vendor's usage scan is chained in —
+// a vendor added later has no record test yet, so only the source shows it.
 #[test]
 fn every_launchable_vendor_has_a_store_path_resolver() {
     let src = include_str!("../usage.rs");
@@ -398,6 +400,8 @@ fn malformed_or_missing_model_map_degrades_to_raw_record() {
 /// "exactly one place the cost lives"), not left to coexist. Dead markup and
 /// dead handlers are how two surfaces quietly come back — and a stale
 /// `openUsage()` in the account dropdown would open nothing at all.
+// pin: the old Usage modal is gone from the served assets —
+// dead markup and CSS have no behavior; only the text shows them.
 #[test]
 fn the_usage_modal_is_gone_from_the_served_assets() {
     // The stylesheet is twelve partials under `assets/ui/styles/`

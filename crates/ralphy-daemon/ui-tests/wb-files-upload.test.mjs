@@ -41,6 +41,8 @@ function dialog({ names = [], limit = 25 } = {}) {
 
 const tick = () => new Promise((r) => { setImmediate(r); });
 
+// pin: the markup reads only names its component can see —
+// node runs no Alpine over the markup, so only its text shows the names.
 test("every name the markup of wbUploadDialog reads is its own", () => {
   const { scope: state, data } = loadComponent("wbUploadDialog");
   assert.deepEqual(data.uses, []);

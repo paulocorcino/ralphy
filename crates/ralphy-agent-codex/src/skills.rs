@@ -53,6 +53,8 @@ mod tests {
     /// ADR-0041 D9: the dance lives in `ralphy-adapter-support`, and this adapter
     /// must keep CALLING it rather than growing a second copy. Fragments are
     /// spliced with `concat!` so the assertion cannot match itself.
+    // pin: the skill link and gitignore code comes from the shared adapter crate —
+    // a second copy behaves the same, so no behavior test can tell them apart.
     #[test]
     fn the_dance_is_not_reimplemented_locally() {
         let src = include_str!("skills.rs");

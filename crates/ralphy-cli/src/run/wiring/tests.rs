@@ -23,6 +23,8 @@ fn effort_translation_preserves_each_resolved_phase() {
 /// falls back to its persisted `copilot.*_effort`; `OpenCode`'s dialect rides
 /// `with_variant`). Read from production text with whitespace removed, one
 /// arm at a time, whatever the order of the arms.
+// pin: each build_agent arm passes both efforts to its adapter —
+// the adapters do not show their effort, so only the text shows it.
 #[test]
 fn every_arm_passes_each_translated_effort_to_the_adapter() {
     let code: String = include_str!("../wiring.rs").split_whitespace().collect();
@@ -196,6 +198,8 @@ fn check_agents_present_uses_the_given_locator() {
 /// The run probes Cursor through the adapter's own locator, so detection and
 /// the spawn agree. `preflight_agents` has no locator seam, so this reads the
 /// call inside its body.
+// pin: the run probes Cursor with its adapter's locator —
+// preflight_agents reads the real machine and has no locator seam.
 #[test]
 fn preflight_agents_probes_cursor_with_its_adapter_locator() {
     let source = include_str!("../wiring.rs");
@@ -213,6 +217,8 @@ fn preflight_agents_probes_cursor_with_its_adapter_locator() {
         "preflight_agents must probe Cursor with `locate_cursor`: {body}"
     );
 }
+// pin: the run probes OpenCode with its shared locator —
+// preflight_agents reads the real machine and has no locator seam.
 #[test]
 fn preflight_agents_probes_opencode_with_its_locator() {
     let source = include_str!("../wiring.rs");

@@ -11,8 +11,10 @@ Modes (run from the repo root, Python 3 stdlib only):
                           is `unmarked pins: <n>`
 
 The kinds, in the order they are decided: ratchet (under crates/xtask/tests/ratchets/),
-browser (under tests/browser/), pin (a test that reads source text), integration (under
-crates/*/tests/), behavior (the rest). A file's kind is the kind of most of its tests.
+browser (under tests/browser/), ratchet (a test whose only reads are Cargo.toml manifests),
+pin (a test that reads source text, except an xtask test whose reads all sit in string
+literals: they are its scanner's input), integration (under crates/*/tests/), behavior (the
+rest). A file's kind is the kind of most of its tests.
 """
 from __future__ import annotations
 
@@ -30,17 +32,26 @@ MARKER = "// pin:"
 
 # The baseline runs, written by hand after each measure (the script cannot run them).
 MEASURED = """\
-Date: 2026-11-26. Machine: Windows 11 Pro (10.0.26300), the phase tree of
-`test/961-measure` at `deb106c5`, a warm `target/` (no compile in the runs),
-nothing else building. Wall time is the time of the whole command, by Python's
-`time.monotonic()` before and after it.
+Date: 2026-11-26. Machine: Windows 11 Pro (10.0.26300). Wall time is the time of
+the whole command, by Python's `time.monotonic()` before and after it. The before
+rows ran in the phase tree of `test/961-measure` at `deb106c5`, with a warm
+`target/` and nothing else building. The after rows ran in the phase tree of
+`test/961-pins`, with the same commands, after the pins were marked and the
+empty test files were deleted. The wall time of the Rust suite is about 45 s
+longer after than before, while the time nextest itself reports is lower in run 1
+and 0.6 % lower in run 2: the extra time is the start of `cargo` in that tree,
+not the tests.
 
-| Suite | Command | Tests | Wall time |
-| --- | --- | --- | --- |
-| Rust (nextest), run 1 | `cargo nextest run --locked --workspace --exclude xtask --no-fail-fast` | 3777 run, 14 skipped | 115.1 s (nextest: 112.0 s) |
-| Rust (nextest), run 2 | the same command | 3777 run, 14 skipped | 115.5 s (nextest: 112.3 s) |
-| xtask | `cargo nextest run --locked -p xtask` | 305 run | 4.0 s (nextest: 3.0 s) |
-| ui-tests | `node --test crates/ralphy-daemon/ui-tests` | 1755 | 91.4 s (node: 91.3 s) |
+| Phase | Suite | Command | Tests | Wall time |
+| --- | --- | --- | --- | --- |
+| before | Rust (nextest), run 1 | `cargo nextest run --locked --workspace --exclude xtask --no-fail-fast` | 3777 run, 14 skipped | 115.1 s (nextest: 112.0 s) |
+| before | Rust (nextest), run 2 | the same command | 3777 run, 14 skipped | 115.5 s (nextest: 112.3 s) |
+| before | xtask | `cargo nextest run --locked -p xtask` | 305 run | 4.0 s (nextest: 3.0 s) |
+| before | ui-tests | `node --test crates/ralphy-daemon/ui-tests` | 1755 | 91.4 s (node: 91.3 s) |
+| after | Rust (nextest), run 1 | the same command | 3773 run, 14 skipped | 160.4 s (nextest: 107.8 s) |
+| after | Rust (nextest), run 2 | the same command | 3773 run, 14 skipped | 164.3 s (nextest: 111.7 s) |
+| after | xtask | the same command | 305 run | 16.6 s (nextest: 3.1 s) |
+| after | ui-tests | the same command | 1755 | 91.4 s (node: 91.4 s) |
 """
 
 # ---------------------------------------------------------------- lexing
@@ -67,6 +78,10 @@ def strip_code(text: str, js: bool) -> str:
             j = n if end < 0 else end + 1 + len(hashes)
             out.append(_blank(text[i:j]))
             i = j
+        elif js and c == "/" and _regex_may_start(out):
+            j = _regex_end(text, i)
+            out.append(_blank(text[i:j]))
+            i = j
         elif c == '"' or (js and c in "'`"):
             j = _string_end(text, i, c)
             out.append(_blank(text[i:j]))
@@ -90,10 +105,32 @@ def _blank(s: str) -> str:
 
 
 def _string_end(text: str, i: int, quote: str) -> int:
+    """A `'` or `"` string ends at its quote or at the end of the line; a template may span lines."""
     j = i + 1
-    while j < len(text) and text[j] != quote:
+    while j < len(text) and text[j] != quote and (quote == "`" or text[j] != "\n"):
         j += 2 if text[j] == "\\" else 1
-    return min(j + 1, len(text))
+    return min(j + 1, len(text)) if j < len(text) and text[j] == quote else j
+
+
+def _regex_may_start(out: list) -> bool:
+    """A `/` starts a JS regex literal after an operator, an open bracket or a keyword."""
+    before = "".join(out[-40:]).rstrip()
+    if not before or before[-1] in "(,=:[!&|?{};+-*%<>~^":
+        return True
+    return re.search(r"\b(return|typeof|of|in)$", before) is not None
+
+
+def _regex_end(text: str, i: int) -> int:
+    j, in_class = i + 1, False
+    while j < len(text) and text[j] != "\n":
+        if text[j] == "\\":
+            j += 2
+            continue
+        if text[j] == "/" and not in_class:
+            return j + 1
+        in_class = (in_class or text[j] == "[") and text[j] != "]"
+        j += 1
+    return i + 1
 
 
 def matching(code: str, start: int, open_ch: str, close_ch: str) -> int:
@@ -120,6 +157,34 @@ RUST_UI_DIR = re.compile(r"\bUI\s*\.\s*get_(file|dir)\b")
 DATA_EXT = re.compile(r"\.(json|jsonl|err|log|txt|webmanifest|sql|bin|zip|gz|csv|snap)\"")
 RUST_FS_READ = re.compile(r"\b(read_to_string|fs::read)\s*\(")
 SOURCE_PATH = re.compile(r'"[^"\n]*\b(src|assets)\b[^"\n]*"')
+
+
+RUST_READS = (RUST_INCLUDE, RUST_UI_DIR, RUST_FS_READ)
+
+
+def reads_in_literals_only(body: str) -> bool:
+    """True when every read in the Rust test `body` sits inside a string literal (scanner input)."""
+    code = strip_code(body, False)
+    hits = [m.start() for r in RUST_READS for m in r.finditer(body)]
+    return bool(hits) and all(code[i] == " " for i in hits)
+
+
+def reads_manifest_only(body: str) -> bool:
+    """True when every read in the Rust test `body` reads a Cargo.toml manifest."""
+    hits = [m.end() for r in (RUST_INCLUDE, RUST_FS_READ) for m in r.finditer(body)]
+    args = [body[i: body.find(")", i) + 1] for i in hits]
+    return bool(args) and not RUST_UI_DIR.search(body) and all("Cargo.toml" in a for a in args)
+
+
+def own_read_kind(rel: str, body: str, js: bool, other: str) -> str:
+    """The kind of a test that reads source text itself, with no helper."""
+    if js:
+        return "pin"
+    # An xtask test that hands source text in a literal to its scanner runs the scanner.
+    if rel.startswith("crates/xtask/") and reads_in_literals_only(body):
+        return other
+    # A rule read from a crate manifest is a rule about the crate graph.
+    return "ratchet" if reads_manifest_only(body) else "pin"
 
 
 def includes_source(raw: str) -> bool:
@@ -265,8 +330,12 @@ def classify(rel: str, text: str, helpers: set[str] | None = None) -> TestFile:
     other = "integration" if re.match(r"crates/[^/]+/tests/", rel) else "behavior"
     for name, start, body in (js_tests if js else rust_tests)(text, code, region):
         line = text.count("\n", 0, start) + 1
-        pin = reads_source(body, js, functions) or bool(idents(body) & names)
-        kind = fixed or ("pin" if pin else other)
+        if idents(body) & names:
+            kind = fixed or "pin"
+        elif reads_source(body, js, functions):
+            kind = fixed or own_read_kind(rel, body, js, other)
+        else:
+            kind = fixed or other
         tf.tests.append(Test(name, line, kind, kind == "pin" and marked(lines, line)))
     return tf
 
@@ -427,6 +496,19 @@ SNIPPETS = [
      "behavior"),
     ("crates/a/ui-tests/x.test.mjs", 'const PAGE = readFileSync(join(UI, "a.html"), "utf8");\n'
      'test("p", () => {\n  assert.match(PAGE, /x/);\n});', "pin"),
+    ("crates/a/ui-tests/x.test.mjs", 'test("p", () => {\n  const m = /="([^"]*)"/;\n  partMarkup('
+     '"a.part.html");\n});\ntest("b", () => {\n  assert.equal(1, 1);\n});',
+     ["pin", "behavior"]),
+    ("crates/a/ui-tests/x.test.mjs", 'const R = /`/;\ntest("p", () => {\n  partMarkup("a.part.html"'
+     ');\n});', "pin"),
+    ("crates/xtask/src/x.rs", '#[cfg(test)]\nmod tests {\n#[test]\nfn s() {\n    scan(r#"inclu'
+     'de_str!("../assets/ui/a.ts")"#);\n}\n}', "behavior"),
+    ("crates/a/src/x.rs", '#[cfg(test)]\nmod tests {\n#[test]\nfn s() {\n    scan(r#"include_st'
+     'r!("../assets/ui/a.ts")"#);\n}\n}', "pin"),
+    ("crates/a/src/x.rs", '#[cfg(test)]\nmod tests {\n#[test]\nfn m() {\n    let t = include_st'
+     'r!("../Cargo.toml");\n}\n}', "ratchet"),
+    ("crates/a/src/x.rs", '#[cfg(test)]\nmod tests {\n#[test]\nfn m() {\n    include_str!("../C'
+     'argo.toml");\n    include_str!("lib.rs");\n}\n}', "pin"),
 ]
 MARKED = ("crates/a/src/x.rs", '#[cfg(test)]\nmod tests {\n// pin: the shell is wired — no node '
           'test loads it\n#[test]\nfn p() { include_str!("../assets/ui/a.ts"); }\n#[test]\nfn q() '
@@ -437,7 +519,7 @@ def selftest() -> int:
     bad = []
     for rel, text, want in SNIPPETS:
         got = [t.kind for t in classify(rel, text).tests]
-        if got != [want]:
+        if got != (want if isinstance(want, list) else [want]):
             bad.append(f"{rel}: want [{want}], got {got}\n{text}")
     marks = [t.marked for t in classify(*MARKED).tests]
     if marks != [True, False]:

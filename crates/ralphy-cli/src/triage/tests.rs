@@ -389,6 +389,8 @@ fn yes_publishes_a_consolidation_that_drew_on_collaborators() {
 
 /// Interactive triage asks the operator, who reads the preview: the hold runs
 /// only in the `--yes` branch of `run`.
+// pin: only `--yes` triage holds untrusted consolidations —
+// run reads GitHub and spawns the agent, so no test can run it.
 #[test]
 fn interactive_triage_does_not_hold() {
     let src = include_str!("../triage.rs");

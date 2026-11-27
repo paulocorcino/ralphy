@@ -219,6 +219,8 @@ fn seeding_tolerates_a_missing_operator_config() {
 /// discriminates deterministically on every host is the delegation ITSELF —
 /// rewrite this crate's `locate_cursor` as `locate_program("cursor")` and the
 /// source pin reds.
+// pin: this crate finds cursor-agent with the shared vendor search —
+// on a real install a PATH search finds it too, so no host can tell them apart.
 #[test]
 fn locate_cursor_delegates_to_the_shared_vendor_locator() {
     let code = crate::tests::code_of(include_str!("../command.rs"));
@@ -281,6 +283,8 @@ fn shell_is_never_touched_off_windows() {
 /// Windows for a `.cmd` shim — and on this vendor it fails everywhere, since it
 /// is on `PATH` on neither platform (D14). Fragments are assembled with
 /// `concat!` so this assertion cannot match itself.
+// pin: the program is named only through resolve_cursor_program —
+// no test spawns the vendor CLI, so only the source shows it.
 #[test]
 fn no_direct_command_new() {
     // Ban a STRING-LITERAL program name outright: `cursor-agent` and `agent`

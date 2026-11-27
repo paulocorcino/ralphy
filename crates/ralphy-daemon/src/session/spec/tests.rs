@@ -153,6 +153,8 @@ fn every_agent_parses_from_its_query_value_and_names_a_program() {
 /// at the source — rewriting the arm as `resolve_program` reds this on EVERY
 /// host, including one where the two happen to agree — and the behaviour is
 /// asserted against the locator's live answer.
+// pin: Cursor is launched through the vendor locator, not PATH —
+// on a host where both agree no launch differs, so only the source shows it.
 #[test]
 fn cursor_resolves_off_path_through_the_vendor_locator() {
     // Production text, whitespace removed, then `locate_program`'s own body.
@@ -197,6 +199,8 @@ fn cursor_resolves_off_path_through_the_vendor_locator() {
 
 /// `OpenCode`'s installer puts the binary in `~/.opencode/bin`, which is on no
 /// `PATH`, so the arm must go through the shared locator, as Cursor's does.
+// pin: OpenCode is launched through the shared locator, not PATH —
+// on a host where both agree no launch differs, so only the source shows it.
 #[test]
 fn opencode_resolves_through_the_shared_locator() {
     let code: String = include_str!("../spec.rs").split_whitespace().collect();
@@ -291,6 +295,8 @@ fn an_antigravity_console_gets_the_owned_root_flag() {
 /// The daemon reparses the adapter's settings file rather than importing the
 /// core (ADR-0032 §10), so the two schemas can drift silently. This is the pin:
 /// rename either name in the adapter and the daemon's gate reds here.
+// pin: the daemon reads the Cursor opt-in under the adapter's own key —
+// the daemon cannot import the adapter, so only the adapter's source shows it.
 #[test]
 fn the_optin_key_matches_the_adapters_own_schema() {
     let src = include_str!("../../../../ralphy-agent-cursor/src/settings.rs");
@@ -309,6 +315,8 @@ fn the_optin_key_matches_the_adapters_own_schema() {
 /// were it to become an `Option<bool>` the JSON shape would not change, but
 /// were it to become a string this gate would read `false` for every repo
 /// that opted in — so the declaration, not just the name, is pinned.
+// pin: the daemon reads the console-name opt-in under the adapter's own key —
+// the daemon cannot import the adapter, so only the adapter's source shows it.
 #[test]
 fn the_console_name_key_matches_the_adapters_own_schema() {
     let src = include_str!("../../../../ralphy-agent-claude/src/settings.rs");

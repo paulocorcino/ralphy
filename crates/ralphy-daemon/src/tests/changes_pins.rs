@@ -7,6 +7,8 @@ use super::*;
 /// asset tree. Monaco is vendored, `CodeMirror` is gone, and the four heavy
 /// language workers stay excluded (the exclusion rule is prefix-based
 /// because Monaco 0.56 ships content-hashed chunk names).
+// pin: the viewers build their editors through Monaco —
+// no test runs this wiring, so only the source text shows it.
 #[test]
 fn monaco_replaced_codemirror_in_the_embedded_ui() {
     let paths = embedded_ui_paths();
@@ -102,6 +104,8 @@ fn monaco_replaced_codemirror_in_the_embedded_ui() {
 /// #309's deliverable is JS/HTML no Rust gate compiles — this pin over the
 /// served assets is the same reason the #308 Monaco pin above and
 /// `usage.rs:544` exist, so `cargo test` reds after a deletion.
+// pin: the Changes view renders its rows and write controls —
+// node runs no Alpine over the markup, so only its text shows it.
 #[test]
 fn the_changes_section_renders_a_status_marked_list() {
     let html = INDEX_HTML;
@@ -207,6 +211,8 @@ fn the_changes_section_renders_a_status_marked_list() {
 /// controls get, plus the NEGATED pin that keeps a group-level "discard all"
 /// out: the issue asks for one file at a time, and a one-tap discard of every
 /// path is precisely the mis-tap PRD #297 refused to ship.
+// pin: only an unstaged, not conflicted row offers discard —
+// node runs no Alpine over the markup, so only its text shows it.
 #[test]
 fn the_discard_control_is_pinned_in_the_markup() {
     let html = INDEX_HTML;
@@ -266,6 +272,8 @@ fn the_discard_control_is_pinned_in_the_markup() {
 /// Pinned here because no node test renders this binding, and the failure is
 /// silent by construction: the binding is present, the class is spelled correctly, and
 /// the only symptom is an alarm that stays quiet.
+// pin: the uptime shows the stale flag the clock derives —
+// node runs no Alpine over the markup, so only its text shows it.
 #[test]
 fn presence_staleness_is_derived_on_a_clock_not_inside_the_binding() {
     let html = INDEX_HTML;
@@ -318,6 +326,8 @@ fn presence_staleness_is_derived_on_a_clock_not_inside_the_binding() {
 /// The fold itself (`refSlug`, `refLabel`) is driven by
 /// `ui-tests/wb-fleet.test.mjs`. This test holds what no node test renders:
 /// the script tags and the markup that must call it.
+// pin: a surface names the open project by its label —
+// node runs no Alpine over the markup, so only its text shows it.
 #[test]
 fn the_workbench_never_titles_a_repo_with_its_routing_head() {
     // The popups load `wb-file-viewer.ts`/`wb-console.ts`, which now call the

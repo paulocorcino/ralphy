@@ -276,6 +276,8 @@ test("a record with a rect and max is maximized after the window is on the stage
   assert.equal(calls.length, 1);
 });
 
+// pin: a raised console stays below every named layer —
+// the layers are CSS values, and node lays out no page.
 // The consoles climb to `Z_CEIL` (wb-stage-stack.ts) and then renormalize;
 // every named layer of `01-base.css` must stay above them, or a raised
 // console covers the frame chrome, a menu or a modal.

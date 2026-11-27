@@ -44,6 +44,8 @@ async fn root_serves_vendored_xterm() {
 /// back the bar that hides by itself, so every link of the path is pinned
 /// against the vendored file, each with the class it is set in, and each must
 /// be the only assignment of its field.
+// pin: the scrollbar setting reaches the private fields of the vendored xterm —
+// node loads no xterm, so only the vendored text shows the field names.
 #[test]
 fn the_console_scrollbar_path_matches_the_vendored_xterm() {
     let xterm = include_str!("../../assets/ui/vendor/xterm.js");
@@ -86,6 +88,8 @@ fn the_console_scrollbar_path_matches_the_vendored_xterm() {
 /// The recipe is read with `include_str!` from OUTSIDE `assets/ui/`: it must
 /// not be embedded (`include_dir!` would serve `node_modules/` to the
 /// browser), and this is also the assertion that it exists.
+// pin: the Crepe bundle is the one its recipe builds —
+// the header and the recipe are text, and no test runs the build.
 #[test]
 fn vendored_crepe_states_its_recipe() {
     let recipe = include_str!("../../vendor-build/crepe/package.json");
@@ -202,6 +206,8 @@ fn vendored_crepe_states_its_recipe() {
 }
 
 /// The editor is served, and both shells that can hold a card load it.
+// pin: both shells load the note editor, and the daemon serves it —
+// a shell with no Crepe tag breaks no other test (measured: link deleted).
 #[tokio::test]
 async fn root_serves_the_vendored_crepe() {
     let resp = get_local("/vendor/crepe/crepe.js").await;
@@ -231,6 +237,8 @@ async fn root_serves_the_vendored_crepe() {
 /// The docx-preview bundle names the pins of its recipe on its first line
 /// (ADR-0091, amendment of 2026-11-23), so a bundle built from other
 /// versions, or by something else, fails here.
+// pin: the docx-preview bundle is the one its recipe builds —
+// the header and the recipe are text, and no test runs the build.
 #[test]
 fn vendored_docx_preview_states_its_recipe() {
     let recipe = include_str!("../../vendor-build/docx-preview/package.json");

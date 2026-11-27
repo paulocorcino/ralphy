@@ -100,6 +100,8 @@ fn every_headless_argv_holds_its_prompt() {
 
 /// Every headless spawn holds its prompt behind the proof gate. A source
 /// pin over the production text, because the spawns need a vendor binary.
+// pin: every headless spawn holds its prompt behind the proof gate —
+// the spawns need the vendor binary, so only the source shows the gate.
 #[test]
 fn every_headless_spawn_holds_its_prompt() {
     for (name, src) in [

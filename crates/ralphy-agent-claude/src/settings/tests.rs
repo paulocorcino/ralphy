@@ -323,6 +323,8 @@ fn guard_command_of(path: &Path) -> Option<String> {
 /// Every settings file the Claude adapter writes carries the guard, and
 /// only the execute file turns the cost gate on. The task sessions share
 /// one writer: no task builds its own settings file.
+// pin: every task session takes its settings file from the one shared writer —
+// a task session needs the vendor binary, so only the source shows the writer.
 #[test]
 fn every_settings_file_carries_the_guard() {
     let dir = tempfile::tempdir().unwrap();

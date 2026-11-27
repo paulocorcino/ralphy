@@ -237,6 +237,8 @@ fn unset_exec_effort_falls_back_to_the_tier_default() {
     );
 }
 
+// pin: plan and execute take their effort from the resolved effort helpers —
+// both phases spawn codex, and no test here runs the vendor binary.
 #[test]
 fn plan_and_execute_use_the_resolved_effort_helpers() {
     // Pins the production call sites to the same helpers the argv tests drive —
@@ -323,6 +325,8 @@ fn budget_setters_reach_the_issue_deadline() {
 /// Every session that builds a `codex exec` command writes the forge rule file
 /// first (ADR-0072 D6): no test here runs a real session, so a call site that
 /// lost `install_forge_rules` would leave the suite green.
+// pin: every codex session installs the forge rules before it starts —
+// a session spawns codex, and no test here runs the vendor binary.
 #[test]
 fn every_session_installs_the_forge_rules() {
     for (name, src) in [

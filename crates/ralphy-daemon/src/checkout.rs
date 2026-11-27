@@ -442,6 +442,8 @@ mod tests {
     // every remove gate in the words the CLI answers, and `core.longpaths` —
     // and no vendor (CLAUDE.md: a list goes stale; the section says every
     // agent). Needles are short so none straddles the doc's wrap.
+    // pin: the operator's doc names every worktree command and no vendor —
+    // a doc has no behavior; only its text shows it.
     #[test]
     fn the_daemon_doc_documents_worktrees_without_naming_a_vendor() {
         let doc = include_str!("../../../docs/daemon.md");

@@ -10,6 +10,8 @@ use super::*;
 /// Every pin below is an EXPRESSION, not a bare noun: #342 measured that a
 /// function's own explanatory comment satisfies a noun pin, leaving it green
 /// over deleted code.
+// pin: the fence jump anchors the fence through the one geometry fold —
+// no test fails when a second copy of the arithmetic is written.
 #[test]
 fn shell_lists_the_fences() {
     // The console, its fence list, its window chrome and its view, as one text: the fence
@@ -90,6 +92,8 @@ fn shell_lists_the_fences() {
     }
 }
 
+// pin: a press or a wheel stops a fence jump in flight —
+// no test fires a wheel on the plane during a slide (measured: call deleted).
 #[test]
 fn a_fence_jump_slides_and_the_hand_outranks_it() {
     let body = |name: &str| function_body(&fence_list_js(), name);
@@ -127,6 +131,8 @@ fn a_fence_jump_slides_and_the_hand_outranks_it() {
     );
 }
 
+// pin: the fence focus is one state, cleared by a press outside the fence —
+// no test presses the floor outside a focused fence (measured: call deleted).
 #[test]
 fn the_fence_focus_is_one_state() {
     let body = |name: &str| function_body(&fence_list_js(), name);
@@ -164,6 +170,8 @@ fn the_fence_focus_is_one_state() {
     );
 }
 
+// pin: a console is born inside the focused fence, which one rule contains —
+// the node suite sees the birth; no test sees the shared containment rule.
 #[test]
 fn a_console_is_born_inside_the_focused_fence() {
     let body = |name: &str| function_body(&fence_list_js(), name);
@@ -220,6 +228,8 @@ fn a_console_is_born_inside_the_focused_fence() {
     );
 }
 
+// pin: the fence list is in the toolbar, and the focused fence has a ring —
+// node renders no markup or CSS, and the gate runs no browser.
 #[test]
 fn the_fence_list_is_in_the_toolbar_and_the_focus_is_visible() {
     let tab = include_str!("../../assets/ui/wb-consoles-tab-menus.ts");

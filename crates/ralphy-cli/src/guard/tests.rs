@@ -381,6 +381,8 @@ fn markdown_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
 
 /// No charter tells the agent to run a command the guard denies: an agent
 /// told to do it would only hit the guard and stall.
+// pin: no charter tells the agent to run a denied command —
+// the charters are Markdown, so only their text shows it.
 #[test]
 fn charters_never_tell_the_agent_to_run_a_denied_command() {
     // The scan finds an instruction and skips a prohibition.
