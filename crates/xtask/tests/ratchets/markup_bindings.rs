@@ -1,7 +1,8 @@
 //! Every name an Alpine attribute reads inside the `x-data` element of a
 //! component is one of the component's own members or a name of its `uses`
-//! list (ADR-0073 D4, #1056). The members are read from the `.ts` source
-//! through the `ui-copy` lexer: the keys of the object passed to
+//! list (ADR-0073 D4, #1056), and no name read outside every component
+//! element is a member that only one component has. The members are read
+//! from the `.ts` source through the `ui-copy` lexer: the keys of the object passed to
 //! `component(uses, { … })`, its methods and getters, and the `uses` strings.
 
 use super::*;
@@ -49,6 +50,7 @@ struct Members {
 #[derive(Default)]
 struct Report {
     findings: Vec<String>,
+    outside: Vec<String>,
     checked: usize,
 }
 
@@ -68,6 +70,17 @@ fn every_markup_binding_names_a_member_or_a_use() {
         "a markup binding reads a name that is neither the component's own nor in \
          its uses list: add the member, or list the shell() name in uses:\n{}",
         report.findings.join("\n")
+    );
+}
+
+#[test]
+fn no_binding_outside_a_component_reads_a_member_only_it_has() {
+    let report = check_the_workbench();
+    assert!(
+        report.outside.is_empty(),
+        "a markup binding outside a component reads a member only that component has: \
+         move the binding inside the component, or give the outer scope the member:\n{}",
+        report.outside.join("\n")
     );
 }
 
@@ -100,6 +113,13 @@ fn the_binding_check_catches_the_known_bad_fixture() {
         vec![
             "wb-bad.part.html:3: wbBad reads missing".to_owned(),
             "wb-bad.part.html:8: wbBad reads sideOpen".to_owned(),
+        ]
+    );
+    assert_eq!(
+        report.outside,
+        vec![
+            "wb-bad.part.html:11: a binding outside wbBad reads its count".to_owned(),
+            "wb-bad.part.html:12: a binding outside wbBad reads its open".to_owned(),
         ]
     );
 }
@@ -289,22 +309,19 @@ fn check_file(file: &str, html: &str, table: &BTreeMap<String, Members>, report:
         } else if c == '<' && cs.get(i + 1).is_some_and(char::is_ascii_alphabetic) {
             let (tag, attrs, self_closing, end) = read_tag(&cs, i + 1, &mut line);
             let frame = open(&stack, tag.clone(), &attrs, table);
-            let scope = frame.component.as_ref();
-            if let Some((name, members)) = scope.and_then(|n| table.get(n).map(|m| (n, m))) {
-                for (expr, at) in attrs
-                    .into_iter()
-                    .filter_map(|a| markup::expression(&a.name, a.value?).map(|e| (e, a.line)))
-                {
-                    for read in reads(&decode(&expr)) {
-                        report.checked += 1;
-                        let allowed = members.own.contains(&read)
-                            || members.uses.contains(&read)
-                            || frame.locals.contains(&read);
-                        if !allowed {
-                            report
-                                .findings
-                                .push(format!("{file}:{at}: {name} reads {read}"));
-                        }
+            for (expr, at) in attrs
+                .into_iter()
+                .filter_map(|a| markup::expression(&a.name, a.value?).map(|e| (e, a.line)))
+            {
+                for read in reads(&decode(&expr)) {
+                    report.checked += 1;
+                    if let Some(finding) = finding(&frame, &read, table) {
+                        let list = if frame.component.is_some() {
+                            &mut report.findings
+                        } else {
+                            &mut report.outside
+                        };
+                        list.push(format!("{file}:{at}: {finding}"));
                     }
                 }
             }
@@ -323,6 +340,25 @@ fn check_file(file: &str, html: &str, table: &BTreeMap<String, Members>, report:
             }
             i += 1;
         }
+    }
+}
+
+/// Why `read` may not be read where `frame` is: inside a component, a name
+/// that is not its own, a use, or a loop name; outside every checked
+/// component (`shell` too), a member that exactly one component owns.
+fn finding(frame: &Frame, read: &str, table: &BTreeMap<String, Members>) -> Option<String> {
+    if frame.locals.contains(read) {
+        return None;
+    }
+    if let Some(name) = &frame.component {
+        let members = table.get(name)?;
+        let allowed = members.own.contains(read) || members.uses.contains(read);
+        return (!allowed).then(|| format!("{name} reads {read}"));
+    }
+    let mut owners = table.iter().filter(|(_, m)| m.own.contains(read));
+    match (owners.next(), owners.next()) {
+        (Some((owner, _)), None) => Some(format!("a binding outside {owner} reads its {read}")),
+        _ => None,
     }
 }
 
