@@ -46,6 +46,8 @@ export type RepoRow = {
   remote: string | null;
   /** The absolute native root. */
   root: string | null;
+  /** The slugs this repo had before a re-key (a remote added to it). */
+  former_slugs?: string[];
 };
 
 /** A repo of `/api/fleet`: the local ones (`local`) and each peer's

@@ -96,6 +96,7 @@ import "./wb-notes-links.test.mjs";
 import "./wb-project.test.mjs";
 import "./wb-properties-dialog.test.mjs";
 import "./wb-properties-format.test.mjs";
+import "./wb-projects-rekey.test.mjs";
 import "./wb-projects-store.test.mjs";
 import "./wb-runs-panel.test.mjs";
 import "./wb-runs-store.test.mjs";
