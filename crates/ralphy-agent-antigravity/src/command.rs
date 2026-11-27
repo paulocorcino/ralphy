@@ -9,6 +9,10 @@ use std::process::{Command, Stdio};
 /// names the vendor.
 const NAME: &str = "agy";
 
+/// The variable that stops the background updater; only `true` turns it off,
+/// measured on agy 1.5.14 (ADR-0086 D11).
+const AUTO_UPDATE_OFF: (&str, &str) = ("AGY_CLI_DISABLE_AUTO_UPDATE", "true");
+
 /// What one run is pointed at: the owned root, and the model and effort words.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RunFlags<'a> {
@@ -29,8 +33,8 @@ pub(crate) fn root_flag(root: &Path) -> OsString {
     flag
 }
 
-/// `program` with no sign-in variable of this process: every `agy` child
-/// starts here.
+/// `program` with no sign-in variable of this process and no updater: every
+/// headless `agy` child starts here.
 pub(crate) fn agy_command(program: &Path) -> Command {
     scrubbed(program, std::env::vars_os().map(|(name, _)| name))
 }
@@ -40,6 +44,7 @@ fn scrubbed(program: &Path, parent: impl Iterator<Item = OsString>) -> Command {
     for name in parent.filter(|name| is_sign_in_variable(name)) {
         cmd.env_remove(name);
     }
+    cmd.env(AUTO_UPDATE_OFF.0, AUTO_UPDATE_OFF.1);
     cmd
 }
 
