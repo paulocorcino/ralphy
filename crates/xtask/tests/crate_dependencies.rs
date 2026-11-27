@@ -1,9 +1,10 @@
 //! The crate graph keeps the edges that the architecture decides: core names
 //! no vendor crate (ADR-0002), no adapter depends on another adapter, and
 //! `ralphy-pricing` and `ralphy-release` are leaf crates (ADR-0056 §4), and so
-//! is `ralphy-git-read` (ADR-0069 D1) and `ralphy-telegram` (ADR-0085 D14). The
-//! graph comes from `cargo metadata`, so every dependency kind counts: a
-//! dev-dependency on an adapter breaks the rule in core's tests too.
+//! is `ralphy-git-read` (ADR-0069 D1) and `ralphy-telegram` (ADR-0085 D14). So is
+//! `ralphy-time`, the one crate the pricing and release leaves may use. The graph
+//! comes from `cargo metadata`, so every dependency kind counts: a dev-dependency
+//! on an adapter breaks the rule in core's tests too.
 #![expect(
     clippy::tests_outside_test_module,
     reason = "an integration test crate is the test module"
@@ -58,6 +59,7 @@ fn each_forbidden_edge_is_reported() {
         node("ralphy-git-read", &["ralphy-proc-util"]),
         node("ralphy-telegram", &["ralphy-core"]),
         node("ralphy-wording", &["ralphy-core"]),
+        node("ralphy-time", &["ralphy-core"]),
     ];
     let core = "ralphy-core depends on no adapter and not on ralphy-adapter-support";
     let leaf = "ralphy-pricing and ralphy-release are leaf crates";
@@ -73,6 +75,7 @@ fn each_forbidden_edge_is_reported() {
             "ralphy-git-read -> ralphy-proc-util: ralphy-git-read is a leaf crate".to_owned(),
             "ralphy-telegram -> ralphy-core: ralphy-telegram is a leaf crate".to_owned(),
             "ralphy-wording -> ralphy-core: ralphy-wording is a leaf crate".to_owned(),
+            "ralphy-time -> ralphy-core: ralphy-time is a leaf crate".to_owned(),
         ]
     );
 }
@@ -136,6 +139,8 @@ fn forbidden_edges(graph: &[(String, Vec<String>)]) -> Vec<String> {
                 Some("ralphy-telegram is a leaf crate")
             } else if from == "ralphy-wording" {
                 Some("ralphy-wording is a leaf crate")
+            } else if from == "ralphy-time" {
+                Some("ralphy-time is a leaf crate")
             } else {
                 None
             };
