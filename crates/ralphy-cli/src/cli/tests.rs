@@ -166,6 +166,20 @@ fn queue_label_is_repeatable_and_preserves_order() {
     );
 }
 
+/// A plain `run` keeps the lock wait; only `--if-idle` turns it into a skip.
+#[test]
+fn if_idle_is_off_unless_named() {
+    for (argv, want) in [
+        (&["ralphy", "run"][..], false),
+        (&["ralphy", "run", "--if-idle"][..], true),
+    ] {
+        let Command::Run(args) = Cli::try_parse_from(argv).expect("run parses").command else {
+            panic!("{argv:?} is not a run");
+        };
+        assert_eq!(args.if_idle, want, "{argv:?}");
+    }
+}
+
 #[test]
 fn assignee_flags_conflict() {
     // The two are mutually exclusive — clap rejects both together.
