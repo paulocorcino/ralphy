@@ -12,8 +12,6 @@ fn catalog_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/wording")
 }
 
-// pin: not a pin: it parses the catalog data —
-// the classifier takes the path in an `expect` message for source text.
 #[test]
 fn every_catalog_file_parses_and_names_its_domain() {
     let entries = std::fs::read_dir(catalog_dir()).expect("assets/wording is readable");
