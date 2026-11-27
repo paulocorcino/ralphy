@@ -4,7 +4,8 @@
 
    It takes the tree's own acts (open, copy, move, create, delete), so
    `wb-files.ts` stays the one place that does each of them, and this module
-   only decides which rows a node gets.
+   only decides which rows a node gets. Delete covers the selected rows
+   (Ctrl+click) when the clicked row is one of them.
    --------------------------------------------------------------------------- */
 import { underProtectedDir } from "./wb-file-paths.ts";
 import { propertiesItem } from "./wb-files-properties.ts";
@@ -48,15 +49,31 @@ export function treeMenu(tree: MenuTree, node: WunderbaumNode | null): MenuItem[
     },
     uploadRow(tree, node),
     node && { sep: true as const },
-    node && {
-      label: "Delete",
-      icon: "bi-trash",
-      danger: true,
-      run: () => {
-        window.WB.emit("delete", tree.nodeDetail(node));
-      },
-    },
+    node && deleteRow(tree, node),
   ].filter(Boolean);
+}
+
+/** The rows a Delete on `node` removes: every selected row when `node` is one
+ * of them, else `node` alone. A selected folder covers its selected rows. */
+function deleteTargets(node: WunderbaumNode): WunderbaumNode[] {
+  const selected = node.tree?.getSelectedNodes(true) ?? [];
+  return selected.length > 1 && node.isSelected() ? selected : [node];
+}
+
+function deleteRow(tree: MenuTree, node: WunderbaumNode): MenuItem {
+  const targets = deleteTargets(node);
+  return {
+    label: targets.length > 1 ? `Delete ${targets.length} items` : "Delete",
+    icon: "bi-trash",
+    danger: true,
+    run: () => {
+      const entries = targets.map((n) => {
+        const { path, title, isFolder } = tree.nodeDetail(n);
+        return { path, title, isFolder };
+      });
+      window.WB.emit("delete", { project: tree.nodeDetail(node).project, entries });
+    },
+  };
 }
 
 /** "Upload…" on a folder or on the project root, never inside `.git` or

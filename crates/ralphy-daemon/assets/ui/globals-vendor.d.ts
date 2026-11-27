@@ -86,6 +86,8 @@ interface WunderbaumTree {
   element: HTMLElement;
   findFirst(match: (node: WunderbaumNode) => boolean): WunderbaumNode | undefined;
   getActiveNode(): WunderbaumNode | null;
+  /** With `stopOnParents`, a selected folder hides its selected descendants. */
+  getSelectedNodes(stopOnParents?: boolean): WunderbaumNode[];
   filterNodes(
     match: (node: WunderbaumNode) => boolean,
     options: { mode: "hide" | "dim"; autoExpand: boolean; matchBranch: boolean; noData: boolean },
@@ -114,6 +116,8 @@ interface WunderbaumNode {
   tree: WunderbaumTree | null;
   setExpanded(flag: boolean): Promise<void>;
   setActive(): void;
+  isSelected(): boolean;
+  setSelected(flag: boolean): void;
   visit(callback: (node: WunderbaumNode) => void): void;
   hasClass(name: string): boolean;
   removeChildren(): void;
@@ -140,13 +144,16 @@ interface WunderbaumEvent {
 interface WunderbaumRenderEvent extends WunderbaumEvent {
   nodeElem: HTMLElement;
 }
-/** `expand` and `beforeExpand`: the new expanded state. */
+/** `click`: the mouse event on a row. */
+interface WunderbaumClickEvent extends WunderbaumEvent {
+  event: MouseEvent;
+}
 /** A key pressed in the tree. `node` is the row that has the focus, if any. */
 interface WunderbaumKeyEvent extends Omit<WunderbaumEvent, "node"> {
   node: WunderbaumNode | null | undefined;
   event: KeyboardEvent;
 }
-
+/** `expand` and `beforeExpand`: the new expanded state. */
 interface WunderbaumExpandEvent extends WunderbaumEvent {
   flag: boolean;
 }
@@ -175,6 +182,7 @@ interface WunderbaumOptions {
   init(e: WunderbaumInitEvent): void;
   edit: { trigger: string[]; apply(e: WunderbaumEditEvent): boolean };
   expand(e: WunderbaumExpandEvent): void;
+  click(e: WunderbaumClickEvent): void;
   /** `false` stops the default action. */
   dblclick(e: WunderbaumEvent): boolean;
   /** `false` stops the tree's own handling of the key. */
