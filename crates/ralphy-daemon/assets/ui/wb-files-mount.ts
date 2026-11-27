@@ -11,6 +11,7 @@ import { WBFleet } from "./wb-fleet.ts";
 import { WBReadRetry } from "./wb-read-retry.ts";
 import { parentRel } from "./wb-file-paths.ts";
 import { propertiesKey } from "./wb-files-properties.ts";
+import { selectionClick, selectionKey } from "./wb-files-selection.ts";
 import { guardEmptySpace, treeDrop } from "./wb-files-upload.ts";
 import type { AlpineMagics } from "./wb-alpine.ts";
 import type { WBDaemonApi } from "./wb-daemon.ts";
@@ -169,12 +170,13 @@ export function mountTree(files: MountFiles) {
       else files._treeSub?.unwatch(rel);
       rememberExpansion(files);
     },
+    click: selectionClick,
     // Double-click / Enter on a leaf = "open this file".
     dblclick: (e: WunderbaumEvent) => {
       if (!files.isFolder(e.node)) files.openFile(e.node);
       return false;
     },
-    keydown: (e: WunderbaumKeyEvent) => propertiesKey(files, e),
+    keydown: (e: WunderbaumKeyEvent) => propertiesKey(files, e) ?? selectionKey(e),
     // Files dropped from the computer open the upload dialog.
     dnd: treeDrop(files),
   });
