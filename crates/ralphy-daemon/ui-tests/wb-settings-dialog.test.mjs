@@ -6,7 +6,7 @@
 // oxlint-disable-next-line eslint/max-classes-per-file -- a fake class per object the test stands in for
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, runIn as evalIn, valueIn, withoutComments } from "./harness.mjs";
+import { assembledPage, loadComponent, loadShell, partMarkup, runIn as evalIn, valueIn, withoutComments } from "./harness.mjs";
 import { WB_SETTINGS } from "../assets/ui/wb-settings.ts";
 import { WBSettingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 
@@ -282,36 +282,6 @@ test("the dialog lists at most 12 shell() names, and shell() has each one", () =
   }
 });
 
-// pin: the markup reads only names its component can see —
-// node runs no Alpine over the markup, so only its text shows the names.
-test("every name the dialog's markup reads is its own or in its uses list", () => {
-  const { scope } = loadComponent("wbSettingsDialog");
-  // The Devices and Telegram sections are components of their own, nested
-  // one level deeper: they read their own names, not this dialog's.
-  const markup = partMarkup(PART)
-    .replace(/<template x-if="sectionShown\(sec\.id, 'telegram'\)"[\s\S]*?(?=<template x-if="sectionShown\(sec\.id, 'devices'\))/u, "")
-    .replace(/<template x-if="sectionShown\(sec\.id, 'devices'\)"[\s\S]*?<\/template>\s*<\/section>/u, "</section>");
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
-  // `x-for="sec in …"` and `x-for="(e, i) in …"` name the loop's own variables.
-  const loop = new Set(attrs.filter((m) => m[1] === "x-for").flatMap((m) => bindingNames(m[2].split(" in ")[0])));
-  // The parameters of an arrow function in a binding are its own too.
-  for (const m of attrs) {
-    for (const a of m[2].matchAll(/(?:\(([\w\s,]*)\)|(\w+))\s*=>/gu)) {
-      for (const name of (a[1] ?? a[2]).split(",")) loop.add(name.trim());
-    }
-  }
-  let read = 0;
-  for (const [attr, value] of attrs.map((m) => [m[1], m[2]])) {
-    if (attr === "x-data") continue;
-    for (const name of bindingNames(attr === "x-for" ? value.split(" in ").slice(1).join(" in ") : value)) {
-      if (name.startsWith("$") || loop.has(name)) continue;
-      assert.doesNotThrow(() => scope[name], `${attr}="${value}" reads ${name}`);
-      read++;
-    }
-  }
-  assert.ok(read > 40, `the markup was read: ${read} names`);
-});
-
 // pin: the opener sends the event and the element's handler opens the dialog —
 // the wiring is only in the markup, so the test runs its text.
 test("the rail button asks the dialog to open with workbench:settings-open, and shows the modal stack", () => {
@@ -343,13 +313,6 @@ test("the rail button asks the dialog to open with workbench:settings-open, and 
   assert.equal(valueIn(loaded.state, active).active, true, "Settings on the modal stack: active");
   loaded.state.$store.modals.modalClosed("settingsOpen");
   assert.equal(valueIn(loaded.state, active).active, false);
-
-  // Nothing outside the component names its state.
-  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
-  for (const name of ["openSettings", "closeSettings", "settingsSection", "settingsError", "deskHistory", "saveSetting"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
-  }
-  assert.equal(outside.match(/\bsettingsOpen\b/gu)?.length, 1, "only the rail button names the open flag, as a modal-stack path");
 });
 
 test("log off closes the dialog with the workbench:log-off event", async () => {

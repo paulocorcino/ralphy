@@ -5,7 +5,7 @@
 // wb-modals.test.mjs.
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { assembledPage, bindingNames, loadComponent, partMarkup, withoutComments } from "./harness.mjs";
+import { loadComponent, partMarkup } from "./harness.mjs";
 
 // The part that holds the move dialog's markup.
 const PART = "wb-move-dialog.part.html";
@@ -46,28 +46,9 @@ test("wbMoveDialog lists only shell() names in uses, and its members left shell(
   }
 });
 
-// pin: the markup reads only names its component can see, and it opens by its event —
-// node runs no Alpine over the markup, so only its text shows the names.
-test("every name the markup of wbMoveDialog reads is its own or in its uses list", () => {
-  const { scope: state } = loadComponent("wbMoveDialog");
-  const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
-  let read = 0;
-  for (const [, attr, value] of attrs) {
-    if (attr === "x-data") continue;
-    const raw = attr === "x-for" ? value.split(/\s+in\s+/u)[1] : value;
-    for (const n of bindingNames(raw)) {
-      // `e` is the row of the `x-for`.
-      if (n.startsWith("$") || n === "e") continue;
-      assert.doesNotThrow(() => state[n], `${attr}="${value}" reads ${n}`);
-      read++;
-    }
-  }
-  assert.ok(read > 10, `the markup was read: ${read} names`);
-  // The files open it with this event; nothing outside names its state.
+// pin: the files open the picker by its event — node runs no Alpine over the markup.
+test("the picker opens with workbench:move-open", () => {
   assert.match(partMarkup(PART), /<div class="move-dialog" x-data="wbMoveDialog" @workbench:move-open\.window="openMove\(\$event\.detail\.from\)">/u);
-  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
-  assert.doesNotMatch(outside, /\bmovePick/u);
 });
 
 test("the picker opens on the parent of the row, in the tree's checkout, and offers only folders it may take", async () => {

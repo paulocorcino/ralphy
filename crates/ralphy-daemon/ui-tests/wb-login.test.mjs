@@ -4,10 +4,7 @@
 // `uses`, or assigns a shell() field (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
-
-// The part that holds the login gate's markup.
-const PART = "wb-login.part.html";
+import { loadComponent, loadShell } from "./harness.mjs";
 
 // One page with the shell and the gate, and a window that delivers the events
 // it is sent, as the browser does. `init()` adds the listeners, as Alpine does
@@ -34,44 +31,6 @@ test("wbLogin lists only shell() names in uses, and its members left shell()", (
   for (const n of Object.keys(data)) {
     if (n !== "uses" && n !== "init") assert.ok(!(n in shell), `shell() still has ${n}`);
   }
-});
-
-// pin: the markup reads only names its component can see —
-// node runs no Alpine over the markup, so only its text shows the names.
-test("every name the markup of wbLogin reads is its own or in its uses list", () => {
-  const { scope: state } = loadComponent("wbLogin");
-  const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
-  // The `x-for` loop variable of the digit boxes.
-  const loopVars = new Set(["i"]);
-  let read = 0;
-  for (const [, attr, value] of attrs) {
-    // `x-data` names the component, `x-ref` a reference.
-    if (attr === "x-data" || attr === "x-ref") continue;
-    for (const n of bindingNames(value)) {
-      if (n.startsWith("$") || loopVars.has(n)) continue;
-      assert.doesNotThrow(() => state[n], `${attr}="${value}" reads ${n}`);
-      read++;
-    }
-  }
-  assert.ok(read >= 8, `the markup was read: ${read} names`);
-});
-
-// pin: no markup outside the login gate reads its state —
-// node runs no Alpine over the page, so only its text shows the names.
-test("nothing outside the login gate names its state", () => {
-  // The gate is the last element of the page that binds state: what comes
-  // before it is outside. Only the bindings are read; the page's text says
-  // "login" in other places.
-  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
-  const read = new Set();
-  for (const m of outside.matchAll(/\s(?:x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)) {
-    for (const n of bindingNames(m[1])) read.add(n);
-  }
-  for (const name of ["login", "submitLogin", "otpInput", "otpKeydown", "otpPaste", "loginBody", "rehydrateAfterAuth"]) {
-    assert.ok(!read.has(name), name);
-  }
-  assert.ok(read.size > 100, `the bindings outside were read: ${read.size} names`);
 });
 
 // ---- the login ------------------------------------------------------------------

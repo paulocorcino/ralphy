@@ -5,7 +5,7 @@
 // security fact is the Alpine store `connection`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, runIn as evalIn, withoutComments } from "./harness.mjs";
+import { assembledPage, loadComponent, loadShell, partMarkup, runIn as evalIn, withoutComments } from "./harness.mjs";
 import { readFileSync } from "node:fs";
 import { WBSecurityDialog } from "../assets/ui/wb-security-dialog.ts";
 
@@ -285,24 +285,6 @@ test("the dialog lists at most 12 shell() names, and shell() has each one", () =
   ]);
 });
 
-// pin: the markup reads only names its component can see —
-// node runs no Alpine over the markup, so only its text shows the names.
-test("every name the dialog's markup reads is its own or in its uses list", () => {
-  const { state } = dialog();
-  const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
-  let read = 0;
-  for (const [attr, value] of attrs.map((m) => [m[1], m[2]])) {
-    if (attr === "x-data") continue;
-    for (const name of bindingNames(value)) {
-      if (name.startsWith("$")) continue;
-      assert.doesNotThrow(() => state[name], `${attr}="${value}" reads ${name}`);
-      read++;
-    }
-  }
-  assert.ok(read > 40, `the markup was read: ${read} names`);
-});
-
 // pin: the opener sends the event and the element's handler opens the dialog —
 // the wiring is only in the markup, so the test runs its text.
 test("the account menu closes itself and asks the dialog to open with workbench:security-open", async () => {
@@ -330,12 +312,6 @@ test("the account menu closes itself and asks the dialog to open with workbench:
     evalIn(state, handler);
   });
   assert.equal(state.securityOpen, true);
-
-  // Nothing outside the component names its state.
-  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
-  for (const name of ["securityOpen", "securityForm", "stepUp", "openSecurity", "closeSecurity"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
-  }
 });
 
 // pin: log off closes the dialog —

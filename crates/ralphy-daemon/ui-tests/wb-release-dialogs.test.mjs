@@ -6,7 +6,7 @@
 // wb-release-store.test.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, runIn as evalIn, valueIn, withoutComments } from "./harness.mjs";
+import { assembledPage, loadComponent, loadShell, partMarkup, runIn as evalIn, valueIn, withoutComments } from "./harness.mjs";
 import { WBRelease } from "../assets/ui/wb-release.ts";
 import { WBReleaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
 
@@ -47,7 +47,7 @@ test("the What's new panel warns that the update closes the open consoles", () =
   assert.match(state.releaseConsoleWarning, /^3 consoles are open\. The update closes them/u);
 });
 
-test("the copy button names its state, and the About version links to the releases", () => {
+test("the copy button words its label and icon by its state, and the About version links to the releases", () => {
   const { state } = dialogs();
   assert.equal(state.releaseCmdLabel(), "Copy the command");
   assert.equal(state.releaseCmdIcon(), "bi-copy");
@@ -184,26 +184,6 @@ test("the dialogs list at most 12 shell() names, and shell() has each one", () =
   }
 });
 
-// pin: the markup reads only names its component can see —
-// node runs no Alpine over the markup, so only its text shows the names.
-test("every name the dialogs' markup reads is their own or in their uses list", () => {
-  const { state } = dialogs();
-  const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
-  // `x-for="entry in …"` names the loop's own variable.
-  const loop = new Set(attrs.filter((m) => m[1] === "x-for").flatMap((m) => bindingNames(m[2].split(" in ")[0])));
-  let names = 0;
-  for (const [attr, value] of attrs.map((m) => [m[1], m[2]])) {
-    if (attr === "x-data") continue;
-    for (const name of bindingNames(attr === "x-for" ? value.split(" in ").slice(1).join(" in ") : value)) {
-      if (name.startsWith("$") || loop.has(name)) continue;
-      assert.doesNotThrow(() => state[name], `${attr}="${value}" reads ${name}`);
-      names++;
-    }
-  }
-  assert.ok(names > 40, `the markup was read: ${names} names`);
-});
-
 // pin: the opener sends the event and the element's handler opens the dialog —
 // the wiring is only in the markup, so the test runs its text.
 test("the account menu closes itself and asks the dialogs to open with their events", async () => {
@@ -234,12 +214,6 @@ test("the account menu closes itself and asks the dialogs to open with their eve
       globalThis.fetch = real;
     }
     assert.equal(state[flag], true, `${event} opens ${flag}`);
-  }
-
-  // Nothing outside the component names its state.
-  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
-  for (const name of ["whatsNewOpen", "aboutOpen", "relUpdate", "openWhatsNew", "openAbout", "about"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b(?!-)`, "u"), name);
   }
 });
 

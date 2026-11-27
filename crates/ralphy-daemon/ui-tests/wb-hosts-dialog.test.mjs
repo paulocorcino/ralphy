@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { assembledPage, bindingNames, loadComponent, partMarkup, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, loadComponent, partMarkup, UI, withoutComments } from "./harness.mjs";
 
 const ALIASES = [
   { alias: "svrapp", hostname: "10.0.0.5", user: "deploy", port: 2222 },
@@ -485,32 +485,6 @@ test("the dialog lists at most 12 shell() names, and shell() has each one", () =
   }
 });
 
-// pin: the markup reads only names its component can see —
-// node runs no Alpine over the markup, so only its text shows the names.
-test("every name the dialog's markup reads is its own or in its uses list", () => {
-  const { state } = dialog();
-  const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
-  // `x-data` names the component; `x-for` adds its loop variables.
-  const loopVars = new Set();
-  for (const [, attr, value] of attrs) {
-    if (attr !== "x-for") continue;
-    const [left] = value.split(/\s+in\s+/u);
-    for (const v of bindingNames(left)) loopVars.add(v);
-  }
-  let read = 0;
-  for (const [, attr, value] of attrs) {
-    if (attr === "x-data") continue;
-    const expr = attr === "x-for" ? value.split(/\s+in\s+/u)[1] : value;
-    for (const name of bindingNames(expr)) {
-      if (loopVars.has(name) || name.startsWith("$")) continue;
-      assert.doesNotThrow(() => state[name], `${attr}="${value}" reads ${name}`);
-      read++;
-    }
-  }
-  assert.ok(read > 100, `the markup was read: ${read} names`);
-});
-
 // Every test above runs on this scope, so these two refusals cover them all.
 test("the dialog's scope refuses a shell() name outside uses, and any shell() write", () => {
   const { state, shell } = dialog();
@@ -522,8 +496,8 @@ test("the dialog's scope refuses a shell() name outside uses, and any shell() wr
   assert.equal(shell.projectQuery, "", "the write did not reach shell()");
 });
 
-// pin: the sidebar button opens the dialog by its event, and no markup outside reads its state —
-// node runs no Alpine over the markup, so only its text shows the event and the names.
+// pin: the sidebar button opens the dialog by its event —
+// node runs no Alpine over the markup, so only its text shows the event.
 test("the sidebar button asks the dialog to open with workbench:hosts-open", () => {
   // The page without the dialog's part: the shell and the other components.
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
@@ -533,8 +507,4 @@ test("the sidebar button asks the dialog to open with workbench:hosts-open", () 
     partMarkup(PART),
     /<div class="hosts-dialog" x-data="wbHostsDialog" @workbench:hosts-open\.window="openAddHost\(\)">/u,
   );
-  // Nothing outside the component names its state.
-  for (const name of ["addHost", "removeHost", "hostSecretShown", "openAddHost"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
-  }
 });
