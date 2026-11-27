@@ -1,9 +1,20 @@
 //! Usage limits: the stop-on-limit stance, plan-limit resumes, the no-reset
 //! wait and the deadline during a wait.
 
+use std::path::Path;
+
 use super::*;
 
 mod plan;
+
+/// A config that stops on a usage limit in both phases.
+fn cfg_stop_on_limit(root: &Path, stamp: &str) -> QueueConfig {
+    QueueConfig {
+        stop_on_limit_plan: true,
+        stop_on_limit_exec: true,
+        ..test_cfg(root, stamp)
+    }
+}
 
 #[test]
 fn stop_on_limit_opt_out_stops_as_limit() {
@@ -17,20 +28,19 @@ fn stop_on_limit_opt_out_stops_as_limit() {
         ("limit without a reset", 11, None),
     ];
     for (case, n, reset_at) in rows {
-        let repo = init_repo(&format!("limit-{n}"));
-        let queue = vec![issue(n)];
+        let root = test_dir(&format!("q-limit-{n}"));
+        let queue = vec![test_issue(n)];
         let agent = ScriptedAgent::new(vec![Outcome::Limit(reset_at.map(reset_text))]);
         let tracker = RecordingTracker::default();
-        let clock = ScriptedClock::never();
+        let clock = RecordingClock::never();
 
-        let report = run_queue(
-            &cfg_stop_on_limit(&repo, &format!("stamp-limit-{n}")),
+        let (report, _) = run_on_fake_with(
+            &cfg_stop_on_limit(&root, &format!("stamp-limit-{n}")),
             &queue,
             &agent,
             &tracker,
             &clock,
-        )
-        .unwrap();
+        );
 
         match report.stop {
             Some(StopReason::Limit { number, reset }) => {
@@ -50,7 +60,7 @@ fn stop_on_limit_opt_out_stops_as_limit() {
             "{case}: stop-on-limit never calls wait_for_reset"
         );
 
-        remove_scratch(&repo);
+        remove_scratch(&root);
     }
 }
 
@@ -59,21 +69,20 @@ fn plan_limit_with_stop_on_limit_stops_and_reports() {
     // A usage limit during *planning* (before any plan is written) under
     // `--stop-on-limit` (always the case for Codex) stops the run and reports the
     // reset — it never waits and never executes.
-    let repo = init_repo("plan-limit-stop");
-    let queue = vec![issue(10)];
+    let root = test_dir("q-plan-limit-stop");
+    let queue = vec![test_issue(10)];
     let agent = ScriptedAgent::new(vec![Outcome::Done])
         .with_plan_scripts(vec![PlanScript::Limit(Some(reset_text("12:23 AM")))]);
     let tracker = RecordingTracker::default();
-    let clock = ScriptedClock::never();
+    let clock = RecordingClock::never();
 
-    let report = run_queue(
-        &cfg_stop_on_limit(&repo, "stamp-plan-limit"),
+    let (report, _) = run_on_fake_with(
+        &cfg_stop_on_limit(&root, "stamp-plan-limit"),
         &queue,
         &agent,
         &tracker,
         &clock,
-    )
-    .unwrap();
+    );
 
     match report.stop {
         Some(StopReason::Limit { number, reset }) => {
@@ -82,7 +91,7 @@ fn plan_limit_with_stop_on_limit_stops_and_reports() {
         }
         other => panic!("expected Limit stop, got {other:?}"),
     }
-    assert_eq!(*agent.plan_attempts.borrow(), 1, "planned once, no resume");
+    assert_eq!(agent.plan_attempts.get(), 1, "planned once, no resume");
     assert!(
         agent.executed.borrow().is_empty(),
         "a plan-time limit never reaches execute"
@@ -101,7 +110,7 @@ fn plan_limit_with_stop_on_limit_stops_and_reports() {
     );
     assert!(!worked[0].closed);
 
-    remove_scratch(&repo);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -111,24 +120,23 @@ fn limit_no_reset_synthesizes_a_wait_and_auto_resumes() {
     // returns (ADR-0030). Two consecutive no-commit synthetic limits also prove the
     // progress cap is skipped for this path (B2) — a real reset would abandon at two,
     // but an account-wide pause is the human's call, so the loop resumes until Done.
-    let repo = init_repo("limit-noreset-resume");
-    let queue = vec![issue(11)];
+    let root = test_dir("q-limit-noreset-resume");
+    let queue = vec![test_issue(11)];
     let agent = ScriptedAgent::scripted(vec![
         (Outcome::Limit(None), false),
         (Outcome::Limit(None), false),
         (Outcome::Done, true),
     ]);
     let tracker = RecordingTracker::default();
-    let clock = ScriptedClock::never();
+    let clock = RecordingClock::never();
 
-    let report = run_queue(
-        &cfg(&repo, "stamp-limit-none", false),
+    let (report, _) = run_on_fake_with(
+        &test_cfg(&root, "stamp-limit-none"),
         &queue,
         &agent,
         &tracker,
         &clock,
-    )
-    .unwrap();
+    );
 
     assert_eq!(
         *agent.executed.borrow(),
@@ -147,7 +155,7 @@ fn limit_no_reset_synthesizes_a_wait_and_auto_resumes() {
         "each wait carried a synthesised reset target, got {waited:?}"
     );
 
-    remove_scratch(&repo);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -155,35 +163,37 @@ fn limit_resume_reexecutes_same_issue_only() {
     // A scripted `Limit(Some(reset))` then `Done` must re-run execute() for the
     // SAME issue (executed [n, n]) without advancing the queue or re-planning,
     // and the issue closes green. The clock records the parsed reset it waited on.
-    let repo = init_repo("limit-resume");
-    let queue = vec![issue(20)];
+    let root = test_dir("q-limit-resume");
+    let queue = vec![test_issue(20)];
     let agent = ScriptedAgent::scripted(vec![
         (Outcome::Limit(Some(reset_text("15:00"))), true),
         (Outcome::Done, true),
     ]);
     let tracker = RecordingTracker::default();
-    let clock = ScriptedClock::never();
+    let clock = RecordingClock::never();
 
-    let report = run_queue(
-        &cfg(&repo, "stamp-resume", false),
+    let (report, _) = run_on_fake_with(
+        &test_cfg(&root, "stamp-resume"),
         &queue,
         &agent,
         &tracker,
         &clock,
-    )
-    .unwrap();
+    );
 
     // execute() ran twice for #20; plan() ran once (never re-planned).
     assert_eq!(*agent.executed.borrow(), vec![20, 20], "execute-only retry");
     assert_eq!(*agent.planned.borrow(), vec![20], "plan() never re-run");
     // The queue was not advanced and the issue closed green.
     assert!(report.stop.is_none(), "resume → green, no stop");
-    let closes: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
-    assert_eq!(closes, vec![20], "same issue closed green after resume");
+    assert_eq!(
+        closed(&tracker),
+        vec![20],
+        "same issue closed green after resume"
+    );
     // wait_for_reset was called once, with the parsed reset string.
     assert_eq!(*clock.waited_for.borrow(), vec!["15:00".to_owned()]);
 
-    remove_scratch(&repo);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -191,24 +201,23 @@ fn two_no_commit_limit_resumes_abandon_the_issue() {
     // Two consecutive limit-resumes that commit nothing abandon the issue with
     // StopReason::Limit; a commit between resumes resets the counter.
     {
-        let repo = init_repo("limit-cap");
-        let queue = vec![issue(30)];
+        let root = test_dir("q-limit-cap");
+        let queue = vec![test_issue(30)];
         // Both resumes make no commit (HEAD unchanged) → cap fires.
         let agent = ScriptedAgent::scripted(vec![
             (Outcome::Limit(Some(reset_text("09:00"))), false),
             (Outcome::Limit(Some(reset_text("09:00"))), false),
         ]);
         let tracker = RecordingTracker::default();
-        let clock = ScriptedClock::never();
+        let clock = RecordingClock::never();
 
-        let report = run_queue(
-            &cfg(&repo, "stamp-cap", false),
+        let (report, _) = run_on_fake_with(
+            &test_cfg(&root, "stamp-cap"),
             &queue,
             &agent,
             &tracker,
             &clock,
-        )
-        .unwrap();
+        );
 
         assert_eq!(
             *agent.executed.borrow(),
@@ -230,14 +239,14 @@ fn two_no_commit_limit_resumes_abandon_the_issue() {
         }
         assert!(tracker.closes.borrow().is_empty(), "abandoned, not closed");
 
-        remove_scratch(&repo);
+        remove_scratch(&root);
     }
 
     // A commit between the two no-commit resumes resets the counter, so the cap
     // does not fire at the second resume; the run continues to green.
     {
-        let repo = init_repo("limit-cap-reset");
-        let queue = vec![issue(31)];
+        let root = test_dir("q-limit-cap-reset");
+        let queue = vec![test_issue(31)];
         let agent = ScriptedAgent::scripted(vec![
             (Outcome::Limit(Some(reset_text("09:00"))), false), // streak 1
             (Outcome::Limit(Some(reset_text("09:00"))), true),  // commit → streak 0
@@ -245,16 +254,15 @@ fn two_no_commit_limit_resumes_abandon_the_issue() {
             (Outcome::Done, true),                              // green before cap
         ]);
         let tracker = RecordingTracker::default();
-        let clock = ScriptedClock::never();
+        let clock = RecordingClock::never();
 
-        let report = run_queue(
-            &cfg(&repo, "stamp-cap-reset", false),
+        let (report, _) = run_on_fake_with(
+            &test_cfg(&root, "stamp-cap-reset"),
             &queue,
             &agent,
             &tracker,
             &clock,
-        )
-        .unwrap();
+        );
 
         assert_eq!(
             *agent.executed.borrow(),
@@ -262,10 +270,9 @@ fn two_no_commit_limit_resumes_abandon_the_issue() {
             "commit between resumes lets the run continue"
         );
         assert!(report.stop.is_none(), "reached green, no abandon");
-        let closes: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
-        assert_eq!(closes, vec![31], "issue closed green");
+        assert_eq!(closed(&tracker), vec![31], "issue closed green");
 
-        remove_scratch(&repo);
+        remove_scratch(&root);
     }
 }
 
@@ -274,20 +281,19 @@ fn deadline_during_wait_short_circuits_with_deadline() {
     // A reset that lands beyond the run deadline (clock reports DeadlinePassed
     // from wait_for_reset) stops the run with StopReason::Deadline, without a
     // further execute.
-    let repo = init_repo("limit-deadline");
-    let queue = vec![issue(40)];
+    let root = test_dir("q-limit-deadline");
+    let queue = vec![test_issue(40)];
     let agent = ScriptedAgent::scripted(vec![(Outcome::Limit(Some(reset_text("15:00"))), true)]);
     let tracker = RecordingTracker::default();
-    let clock = ScriptedClock::deadline_on_wait();
+    let clock = RecordingClock::deadline_on_wait();
 
-    let report = run_queue(
-        &cfg(&repo, "stamp-deadline-wait", false),
+    let (report, _) = run_on_fake_with(
+        &test_cfg(&root, "stamp-deadline-wait"),
         &queue,
         &agent,
         &tracker,
         &clock,
-    )
-    .unwrap();
+    );
 
     assert_eq!(
         *agent.executed.borrow(),
@@ -301,28 +307,26 @@ fn deadline_during_wait_short_circuits_with_deadline() {
         report.stop
     );
 
-    remove_scratch(&repo);
+    remove_scratch(&root);
 }
 
 /// A run where the first execute is `Done` and the next one (the protocol
 /// bounce, or the verify repair) hits a usage limit with a reset. The run
 /// stops on that limit, the issue is recorded as non-green and stays open.
 fn assert_second_execute_limit_stops_the_run(
-    repo: &Path,
+    root: &Path,
     agent: &ScriptedAgent,
     stamp: &str,
     number: u64,
 ) {
     let tracker = RecordingTracker::default();
 
-    let report = run_queue(
-        &cfg_stop_on_limit(repo, stamp),
-        &[issue(number)],
+    let (report, _) = run_on_fake(
+        &cfg_stop_on_limit(root, stamp),
+        &[test_issue(number)],
         agent,
         &tracker,
-        &ScriptedClock::never(),
-    )
-    .expect("run_queue failed");
+    );
 
     assert_eq!(
         *agent.executed.borrow(),
@@ -340,19 +344,19 @@ fn assert_second_execute_limit_stops_the_run(
     }
     assert_eq!(report.worked.len(), 1);
     let worked = &report.worked[0];
-    assert_eq!(worked.status, ralphy_core::ResultStatus::NonGreen);
+    assert_eq!(worked.status, ResultStatus::NonGreen);
     assert!(!worked.closed, "a limit never closes the issue");
     assert!(
         tracker.closes.borrow().is_empty(),
         "an issue stopped on a limit stays open"
     );
 
-    remove_scratch(repo);
+    remove_scratch(root);
 }
 
 #[test]
 fn a_limit_during_the_protocol_bounce_stops_the_run() {
-    let repo = init_repo("limit-protocol");
+    let root = test_dir("q-limit-protocol");
     // A protocol-dirty plan makes the runner bounce the issue once; that
     // second execute hits the limit.
     let agent = ScriptedAgent::new(vec![
@@ -361,12 +365,12 @@ fn a_limit_during_the_protocol_bounce_stops_the_run() {
     ])
     .lint_dirty();
 
-    assert_second_execute_limit_stops_the_run(&repo, &agent, "stamp-limit-protocol", 50);
+    assert_second_execute_limit_stops_the_run(&root, &agent, "stamp-limit-protocol", 50);
 }
 
 #[test]
 fn a_limit_during_a_verify_repair_stops_the_run() {
-    let repo = init_repo("limit-verify-repair");
+    let root = test_dir("q-limit-verify-repair");
     // The gate fails after the first execute; the repair hits the limit.
     let extra = format!("## Verify\n\n{}\n", verify_fail_line());
     let agent = ScriptedAgent::new(vec![
@@ -375,5 +379,5 @@ fn a_limit_during_a_verify_repair_stops_the_run() {
     ])
     .with_plan_extra(extra);
 
-    assert_second_execute_limit_stops_the_run(&repo, &agent, "stamp-limit-verify", 51);
+    assert_second_execute_limit_stops_the_run(&root, &agent, "stamp-limit-verify", 51);
 }

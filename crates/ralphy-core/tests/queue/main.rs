@@ -13,24 +13,17 @@
     reason = "nextest runs each test in its own process, so a test may change its environment"
 )]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
 
-use ralphy_core::{
-    resolve_queue_view, run_queue, Issue, Outcome, QueueStatus, RunClock, StopReason, Usage,
-    Workspace,
-};
+use ralphy_core::{run_queue, Outcome, RunClock, StopReason};
 
 // One test binary (`queue`), one module per queue behaviour. The shared fixtures
 // live in `harness`; the modules reach them through `use super::*`.
-mod blockers;
 mod branches;
-mod close_artifacts;
 mod events;
 mod harness;
 mod lifecycle;
-mod limits;
 mod refused;
 mod selection;
 

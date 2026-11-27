@@ -1,6 +1,19 @@
 //! The `exec_usage` model fold on the green event (#225).
 
+use super::capture::{capture_run, pin};
 use super::*;
+
+const GREEN_KEYS: [&str; 9] = [
+    "cr",
+    "cw",
+    "invocations",
+    "message",
+    "model",
+    "number",
+    "out",
+    "tokens",
+    "up",
+];
 
 #[test]
 fn exec_usage_single_attempt_keeps_its_model_or_none() {
@@ -34,57 +47,36 @@ fn exec_usage_single_attempt_keeps_its_model_or_none() {
         ),
     ];
     for (i, (case, usage, model, up, out)) in rows.into_iter().enumerate() {
-        let repo = init_repo(&format!("exec-usage-single-{i}"));
-        let queue = vec![issue(7)];
+        let root = test_dir(&format!("q-exec-usage-single-{i}"));
+        let queue = vec![test_issue(7)];
         let agent = ScriptedAgent::new(vec![Outcome::Done]).with_exec_usages(vec![usage]);
         let tracker = RecordingTracker::default();
 
-        let (report, events) = capture_run(|| {
-            run_queue(
-                &cfg(&repo, &format!("stamp-exec-usage-single-{i}"), false),
+        let ((report, _), events) = capture_run(|| {
+            run_on_fake(
+                &test_cfg(&root, &format!("stamp-exec-usage-single-{i}")),
                 &queue,
                 &agent,
                 &tracker,
-                &ScriptedClock::never(),
             )
         });
-        assert!(report.unwrap().stop.is_none(), "{case}");
+        assert!(report.stop.is_none(), "{case}");
 
-        let green = pin(
-            &events,
-            "green — issue closed",
-            &[
-                "cr",
-                "cw",
-                "invocations",
-                "message",
-                "model",
-                "number",
-                "out",
-                "tokens",
-                "up",
-            ],
-        );
+        let green = pin(&events, "green — issue closed", &GREEN_KEYS);
         assert_eq!(green.get("model"), model, "{case}: model");
         assert_eq!(green.get("up"), up, "{case}: up");
         assert_eq!(green.get("out"), out, "{case}: out");
 
-        remove_scratch(&repo);
+        remove_scratch(&root);
     }
 }
 
 #[test]
 fn exec_usage_resume_loop_folds_heaviest_model() {
-    let repo = init_repo("exec-usage-resume");
-    let queue = vec![issue(7)];
+    let root = test_dir("q-exec-usage-resume");
+    let queue = vec![test_issue(7)];
     let agent = ScriptedAgent::scripted(vec![
-        (
-            Outcome::Limit(Some(ralphy_core::ResetAt {
-                text: "15:00".into(),
-                at: None,
-            })),
-            false,
-        ),
+        (Outcome::Limit(Some(reset_text("15:00"))), false),
         (Outcome::Done, true),
     ])
     .with_exec_usages(vec![
@@ -105,37 +97,22 @@ fn exec_usage_resume_loop_folds_heaviest_model() {
     ]);
     let tracker = RecordingTracker::default();
 
-    let (report, events) = capture_run(|| {
-        run_queue(
-            &cfg(&repo, "stamp-exec-usage-resume", false),
+    let ((report, _), events) = capture_run(|| {
+        run_on_fake(
+            &test_cfg(&root, "stamp-exec-usage-resume"),
             &queue,
             &agent,
             &tracker,
-            &ScriptedClock::never(),
         )
     });
-    assert!(report.unwrap().stop.is_none());
+    assert!(report.stop.is_none());
 
-    let green = pin(
-        &events,
-        "green — issue closed",
-        &[
-            "cr",
-            "cw",
-            "invocations",
-            "message",
-            "model",
-            "number",
-            "out",
-            "tokens",
-            "up",
-        ],
-    );
+    let green = pin(&events, "green — issue closed", &GREEN_KEYS);
     assert_eq!(green.get("model"), "claude-opus-4-8");
     assert_eq!(green.get("up"), "1100");
     assert_eq!(green.get("cr"), "2200");
     assert_eq!(green.get("cw"), "3300");
     assert_eq!(green.get("out"), "4400");
 
-    remove_scratch(&repo);
+    remove_scratch(&root);
 }

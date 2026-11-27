@@ -53,26 +53,32 @@ fn human_return_label_matches_first_configured_label() {
 // over a real repo.
 // ------------------------------------------------------------------
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::fs;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::time::Duration;
 
 use crate::ledger::LedgerRecord;
 use crate::{Execution, Plan, ResetAt};
 
-/// Constant answers for the reads, a recorder for the checkouts. The
-/// constant `head_sha` is fine here: the no-commit streak only matters on
-/// limit-resumes, which these tests do not script.
+/// Constant answers for the reads, a recorder for the checkouts. `head_sha`
+/// follows `head`, a counter a scripted agent may advance to stand for a commit.
 struct FakeRepo {
     checkouts: RefCell<Vec<String>>,
+    head: Rc<Cell<u32>>,
 }
 
 impl FakeRepo {
     fn new() -> Self {
+        Self::with_head(Rc::default())
+    }
+
+    fn with_head(head: Rc<Cell<u32>>) -> Self {
         Self {
             checkouts: RefCell::new(Vec::new()),
+            head,
         }
     }
 }
@@ -83,7 +89,7 @@ impl Repo for FakeRepo {
     }
 
     fn head_sha(&self) -> Result<String> {
-        Ok("abc123".into())
+        Ok(format!("abc{}", self.head.get()))
     }
 
     fn project_slug(&self) -> String {

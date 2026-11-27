@@ -5,11 +5,17 @@
 use super::*;
 use crate::ledger::record_line;
 
+mod blockers;
+mod capture;
+mod close_artifacts;
+mod exec_usage;
+mod limits;
 mod scripted;
+mod selection;
 mod session_ledger;
 mod verify;
 
-use scripted::{RecordingTracker, ScriptedAgent};
+use scripted::{PlanScript, RecordingClock, RecordingTracker, ScriptedAgent};
 
 /// Work `queue` on the fake repository and an in-memory ledger.
 fn run_on_fake(
@@ -18,18 +24,46 @@ fn run_on_fake(
     agent: &ScriptedAgent,
     tracker: &RecordingTracker,
 ) -> (QueueReport, FakeLedger) {
+    run_on_fake_with(cfg, queue, agent, tracker, &FakeClock)
+}
+
+/// [`run_on_fake`] with the clock of the test; the repository reads the commits
+/// the agent scripts.
+fn run_on_fake_with(
+    cfg: &QueueConfig,
+    queue: &[Issue],
+    agent: &ScriptedAgent,
+    tracker: &RecordingTracker,
+    clock: &dyn RunClock,
+) -> (QueueReport, FakeLedger) {
     let sink = FakeLedger::default();
     let report = run_queue_with(
         cfg,
         queue,
         agent,
         tracker,
-        &FakeClock,
-        &FakeRepo::new(),
+        clock,
+        &FakeRepo::with_head(Rc::clone(&agent.head)),
         &sink,
     )
     .expect("the queue run succeeds");
     (report, sink)
+}
+
+/// A limit's reset with the vendor's `text` and no instant.
+fn reset_text(text: &str) -> ResetAt {
+    ResetAt {
+        text: text.to_owned(),
+        at: None,
+    }
+}
+
+/// A test issue with `body`.
+fn issue_with_body(number: u64, body: &str) -> Issue {
+    Issue {
+        body: body.to_owned(),
+        ..test_issue(number)
+    }
 }
 
 /// The ledger lines `sink` received, as the file ledger writes them.

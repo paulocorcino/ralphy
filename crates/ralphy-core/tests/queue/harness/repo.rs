@@ -237,44 +237,6 @@ pub(crate) fn cfg(repo: &Path, stamp: &str, dry_run: bool) -> QueueConfig {
     }
 }
 
-pub(crate) fn cfg_only(repo: &Path, stamp: &str, only: u64) -> QueueConfig {
-    QueueConfig {
-        repo_root: repo.to_path_buf(),
-        base_branch: "main".into(),
-        dry_run: false,
-        stamp: stamp.into(),
-        branch_mode: BranchMode::New,
-        forced_issues: vec![only],
-        stop_on_limit_plan: false,
-        stop_on_limit_exec: false,
-        verify_fallback: None,
-        verify_timeout: Duration::from_secs(60),
-        require_verify_gate: false,
-        done_signal: "DONE_TOKEN".into(),
-        human_return_labels: default_human_return(),
-        environment: EnvironmentProbe::Fixed("test brief\n".into()),
-    }
-}
-
-pub(crate) fn cfg_forced(repo: &Path, stamp: &str, forced: Vec<u64>) -> QueueConfig {
-    QueueConfig {
-        repo_root: repo.to_path_buf(),
-        base_branch: "main".into(),
-        dry_run: false,
-        stamp: stamp.into(),
-        branch_mode: BranchMode::New,
-        forced_issues: forced,
-        stop_on_limit_plan: false,
-        stop_on_limit_exec: false,
-        verify_fallback: None,
-        verify_timeout: Duration::from_secs(60),
-        require_verify_gate: false,
-        done_signal: "DONE_TOKEN".into(),
-        human_return_labels: default_human_return(),
-        environment: EnvironmentProbe::Fixed("test brief\n".into()),
-    }
-}
-
 pub(crate) fn cfg_current(repo: &Path, stamp: &str) -> QueueConfig {
     QueueConfig {
         repo_root: repo.to_path_buf(),
@@ -285,50 +247,6 @@ pub(crate) fn cfg_current(repo: &Path, stamp: &str) -> QueueConfig {
         forced_issues: Vec::new(),
         stop_on_limit_plan: false,
         stop_on_limit_exec: false,
-        verify_fallback: None,
-        verify_timeout: Duration::from_secs(60),
-        require_verify_gate: false,
-        done_signal: "DONE_TOKEN".into(),
-        human_return_labels: default_human_return(),
-        environment: EnvironmentProbe::Fixed("test brief\n".into()),
-    }
-}
-
-/// A New-mode config with the auto-resume opt-out (`--stop-on-limit`) enabled for
-/// both phases (an explicit `--stop-on-limit` forces plan and execute alike).
-pub(crate) fn cfg_stop_on_limit(repo: &Path, stamp: &str) -> QueueConfig {
-    QueueConfig {
-        repo_root: repo.to_path_buf(),
-        base_branch: "main".into(),
-        dry_run: false,
-        stamp: stamp.into(),
-        branch_mode: BranchMode::New,
-        forced_issues: Vec::new(),
-        stop_on_limit_plan: true,
-        stop_on_limit_exec: true,
-        verify_fallback: None,
-        verify_timeout: Duration::from_secs(60),
-        require_verify_gate: false,
-        done_signal: "DONE_TOKEN".into(),
-        human_return_labels: default_human_return(),
-        environment: EnvironmentProbe::Fixed("test brief\n".into()),
-    }
-}
-
-/// A New-mode config with the per-phase asymmetry a split run produces: the
-/// planner auto-resumes through a plan-time limit (`stop_on_limit_plan = false`,
-/// e.g. a Claude planner) while the executor stops on an execute-time limit
-/// (`stop_on_limit_exec = true`, e.g. an `OpenCode` executor). See docs/adr/0009.
-pub(crate) fn cfg_split_limit(repo: &Path, stamp: &str) -> QueueConfig {
-    QueueConfig {
-        repo_root: repo.to_path_buf(),
-        base_branch: "main".into(),
-        dry_run: false,
-        stamp: stamp.into(),
-        branch_mode: BranchMode::New,
-        forced_issues: Vec::new(),
-        stop_on_limit_plan: false,
-        stop_on_limit_exec: true,
         verify_fallback: None,
         verify_timeout: Duration::from_secs(60),
         require_verify_gate: false,
