@@ -294,7 +294,8 @@ async fn dirty_while_writing(
                     };
                     if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
                         if cmd.verb == "tree.dirty" {
-                            return cmd.payload.get(field).and_then(|v| v.as_str()).map(String::from);
+                            let value = cmd.payload.get(field).and_then(|v| v.as_str());
+                            return value.map(String::from);
                         }
                     }
                 }
