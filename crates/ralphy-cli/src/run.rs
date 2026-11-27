@@ -30,6 +30,7 @@ use prepare::{
 };
 
 use derived::prune_old_run_folders;
+pub(crate) use prepare::{local_rfc3339_now, run_stamp};
 use queue_built::emit_queue_built;
 use report::{empty_queue_scope, render_final_panel};
 pub(crate) use wiring::strip_secret_tokens_from_env;
@@ -75,7 +76,7 @@ pub(crate) fn run_cmd(args: &RunArgs) -> Result<()> {
     crate::daemon::register_repo(&repo_root);
     let plan_agent = resolve_plan_agent(args.plan_agent, args.agent);
     preflight_agents(args.agent, plan_agent)?;
-    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let stamp = run_stamp();
     // Minted here: the run snapshot is keyed by it and published unconditionally (ADR-0047 §4).
     let runid = events::emitter::new_runid();
     let ws = Workspace::new(&repo_root);
@@ -126,7 +127,7 @@ pub(crate) fn run_cmd(args: &RunArgs) -> Result<()> {
                 None,
                 args.title.as_deref(),
             );
-            defer_to_live_run(&obs, info, &title, &ws, &runid);
+            defer_to_live_run(&obs, &info, &title, &ws, &runid);
             return Ok(());
         }
         lock @ (runlock::LockState::HeldAlive(_)

@@ -1,0 +1,13 @@
+[package]
+name = "ralphy-time"
+version = "0.1.0-rc.46"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The timestamp forms Ralphy writes and reads (ADR-0096)."
+
+[dependencies]
+jiff.workspace = true
+
+[lints]
+workspace = true

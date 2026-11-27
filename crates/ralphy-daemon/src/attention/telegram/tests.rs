@@ -13,7 +13,7 @@ fn at(secs: u64) -> SystemTime {
 }
 
 fn rfc3339(t: SystemTime) -> String {
-    chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    crate::agent_state::system_secs_z(t)
 }
 
 /// A request of `kind` with id `id`, opened at `since`.

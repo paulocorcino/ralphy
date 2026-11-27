@@ -56,9 +56,7 @@ impl SnapshotEngine {
     /// one written — an unchanged fold costs no write (ADR-0047 §8).
     fn publish(&mut self, force: bool) {
         let mut next = project(&self.ctx, &self.state, &self.plan);
-        carry_phase_since(self.last.as_ref(), &mut next, || {
-            chrono::Local::now().to_rfc3339()
-        });
+        carry_phase_since(self.last.as_ref(), &mut next, crate::run::local_rfc3339_now);
         if !force && self.last.as_ref() == Some(&next) {
             return;
         }

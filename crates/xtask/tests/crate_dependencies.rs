@@ -52,7 +52,7 @@ fn each_forbidden_edge_is_reported() {
             "ralphy-agent-codex",
             &["ralphy-agent-claude", "ralphy-core"],
         ),
-        node("ralphy-release", &["ralphy-proc-util"]),
+        node("ralphy-release", &["ralphy-proc-util", "ralphy-time"]),
         node("ralphy-pricing", &["ralphy-core"]),
         node("ralphy-cli", &["ralphy-agent-claude", "ralphy-core"]),
         node("ralphy-git-read", &["ralphy-proc-util"]),
@@ -121,22 +121,24 @@ fn forbidden_edges(graph: &[(String, Vec<String>)]) -> Vec<String> {
     let mut out = Vec::new();
     for (from, deps) in graph {
         for to in deps {
-            let rule =
-                if from == "ralphy-core" && (is_adapter(to) || to == "ralphy-adapter-support") {
-                    Some("ralphy-core depends on no adapter and not on ralphy-adapter-support")
-                } else if is_adapter(from) && is_adapter(to) {
-                    Some("no adapter depends on another adapter")
-                } else if from == "ralphy-pricing" || from == "ralphy-release" {
-                    Some("ralphy-pricing and ralphy-release are leaf crates")
-                } else if from == "ralphy-git-read" {
-                    Some("ralphy-git-read is a leaf crate")
-                } else if from == "ralphy-telegram" {
-                    Some("ralphy-telegram is a leaf crate")
-                } else if from == "ralphy-wording" {
-                    Some("ralphy-wording is a leaf crate")
-                } else {
-                    None
-                };
+            let rule = if from == "ralphy-core"
+                && (is_adapter(to) || to == "ralphy-adapter-support")
+            {
+                Some("ralphy-core depends on no adapter and not on ralphy-adapter-support")
+            } else if is_adapter(from) && is_adapter(to) {
+                Some("no adapter depends on another adapter")
+            } else if (from == "ralphy-pricing" || from == "ralphy-release") && to != "ralphy-time"
+            {
+                Some("ralphy-pricing and ralphy-release are leaf crates")
+            } else if from == "ralphy-git-read" {
+                Some("ralphy-git-read is a leaf crate")
+            } else if from == "ralphy-telegram" {
+                Some("ralphy-telegram is a leaf crate")
+            } else if from == "ralphy-wording" {
+                Some("ralphy-wording is a leaf crate")
+            } else {
+                None
+            };
             if let Some(rule) = rule {
                 out.push(format!("{from} -> {to}: {rule}"));
             }

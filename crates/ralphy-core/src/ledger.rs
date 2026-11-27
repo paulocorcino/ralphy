@@ -368,11 +368,16 @@ pub fn append_run_phase(
         session_id: None,
         outcome: "ok".into(),
         tokens: usage.clone(),
-        ts: chrono::Utc::now().to_rfc3339(),
+        ts: now_ts(),
     };
     if let Err(e) = append(&rec) {
         warn!(phase, error = %e, "writing run-level {} usage ledger line failed", phase);
     }
+}
+
+/// The `ts` of a ledger line written now: UTC, RFC 3339, `+00:00`.
+pub(crate) fn now_ts() -> String {
+    ralphy_time::rfc3339(jiff::Timestamp::now(), jiff::tz::Offset::UTC)
 }
 
 /// The project's cumulative token totals, summed over its whole ledger file. A

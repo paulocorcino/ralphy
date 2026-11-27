@@ -220,7 +220,7 @@ fn last_fetch_is_the_fetch_head_mtime() {
         .unwrap()
         .last_fetch
         .expect("a fetched repo reports when");
-    let parsed = chrono::DateTime::parse_from_rfc3339(&stamp)
+    let (parsed, _) = ralphy_time::parse_rfc3339(&stamp)
         .unwrap_or_else(|e| panic!("last_fetch must be RFC 3339: {stamp:?} ({e})"));
 
     // The discriminating half: a reader that answered `now()` whenever
@@ -237,7 +237,7 @@ fn last_fetch_is_the_fetch_head_mtime() {
     // …and must move when something does.
     git(&clone, &["fetch", "-q"]).unwrap();
     let again = status(&clone).unwrap().last_fetch.expect("still stamped");
-    let reparsed = chrono::DateTime::parse_from_rfc3339(&again).expect("RFC 3339");
+    let (reparsed, _) = ralphy_time::parse_rfc3339(&again).expect("RFC 3339");
     assert!(
         reparsed > parsed,
         "a second fetch must advance the stamp: {stamp} -> {again}"

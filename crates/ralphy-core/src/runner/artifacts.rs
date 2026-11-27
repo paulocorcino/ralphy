@@ -204,7 +204,7 @@ pub(crate) fn write_knowledge(ws: &Workspace, issue: &Issue, stamp: &str, note: 
          handoff at close. Leads, not truths — verify before relying on one.\n\n{}\n",
         issue.number,
         issue.title,
-        chrono::Local::now().format("%Y-%m-%d"),
+        jiff::ZonedDateTime::now().strftime("%Y-%m-%d"),
         stamp,
         note.trim_end(),
     );
@@ -225,7 +225,7 @@ pub(crate) fn record_citations(ws: &Workspace, issue: &Issue, stamp: &str, citat
     let entry = knowledge::CitationEntry {
         issue: issue.number,
         stamp: stamp.to_owned(),
-        date: chrono::Local::now().format("%Y-%m-%d").to_string(),
+        date: jiff::ZonedDateTime::now().strftime("%Y-%m-%d").to_string(),
         citations,
     };
     if let Err(e) = knowledge::append_citation(ws, &entry) {

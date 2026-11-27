@@ -9,7 +9,8 @@ description = "Stateless, sync scan of the on-disk vendor session stores into no
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
-chrono.workspace = true
+jiff.workspace = true
+ralphy-time.workspace = true
 rusqlite.workspace = true
 ralphy-git-read.workspace = true
 

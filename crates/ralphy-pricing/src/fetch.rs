@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
 
-use chrono::{SecondsFormat, Utc};
+use ralphy_time::Timestamp;
 use serde::Serialize;
 use tracing::warn;
 
@@ -64,7 +64,7 @@ pub fn refresh_if_stale(opts: &RefreshOpts<'_>) {
     match fetch_and_ingest(opts.url) {
         Ok(data) => {
             let envelope = CacheEnvelope {
-                timestamp: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+                timestamp: ralphy_time::secs_z(Timestamp::now()),
                 data,
             };
             match serde_json::to_vec_pretty(&envelope) {
@@ -109,14 +109,14 @@ fn cache_is_fresh(path: &Path, ttl: Duration) -> bool {
     let Some(ts) = v.get("timestamp").and_then(|t| t.as_str()) else {
         return false;
     };
-    let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts) else {
+    let Ok((stamped, _)) = ralphy_time::parse_rfc3339(ts) else {
         return false;
     };
-    let age = Utc::now().signed_duration_since(dt.with_timezone(&Utc));
-    if age < chrono::Duration::zero() {
+    let age = Timestamp::now().duration_since(stamped);
+    if age.is_negative() {
         return true;
     }
-    age.to_std().is_ok_and(|d| d < ttl)
+    Duration::try_from(age).is_ok_and(|d| d < ttl)
 }
 
 fn fetch_and_ingest(url: &str) -> Result<BTreeMap<String, ModelPrice>, String> {

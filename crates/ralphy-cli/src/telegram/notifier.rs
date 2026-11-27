@@ -20,8 +20,6 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 use tracing::warn;
 
-use chrono::Local;
-
 use super::client::{BotClient, Transport};
 use crate::delivery::{spawn_worker, DeliveryEngine, DeliveryLayer, WorkerHandle};
 pub(crate) use crate::delivery::{EventQueue, WorkerHandle as NotifierHandle};
@@ -359,7 +357,7 @@ impl<T: Transport> TelegramEngine<T> {
 
 /// The current wall-clock Unix-seconds anchor for the live card countdown.
 fn now_epoch() -> i64 {
-    Local::now().timestamp()
+    jiff::Timestamp::now().as_second()
 }
 
 /// Collapse a transport error into ONE short console-friendly clause. The raw

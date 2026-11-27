@@ -301,10 +301,10 @@ fn pins_usage_limit_vocabulary() {
     // `ScriptedClock` the runner tests inject — so drive it directly. A reset
     // instant more than the 5-minute wake buffer in the past makes the wait
     // resolve on its first loop turn, with no sleep.
-    let past_instant = chrono::Local::now() - chrono::Duration::minutes(30);
+    let past_instant = jiff::ZonedDateTime::now() - jiff::SignedDuration::from_mins(30);
     let past = ralphy_core::ResetAt {
-        text: past_instant.to_rfc3339(),
-        at: Some(past_instant.fixed_offset()),
+        text: ralphy_time::rfc3339(past_instant.timestamp(), past_instant.offset()),
+        at: Some(past_instant.timestamp()),
     };
     let (outcome, events) =
         capture_run(|| ralphy_core::WallClock { deadline: None }.wait_for_reset(&past));
@@ -340,10 +340,10 @@ fn a_limit_wait_event_carries_the_vendor_reset_text() {
     // more than the 5-minute wake buffer in the past, so the real clock
     // resumes on its first loop turn.
     let repo = init_repo("limit-wait-vendor-text");
-    let past = chrono::Local::now() - chrono::Duration::minutes(30);
+    let past = jiff::Timestamp::now() - jiff::SignedDuration::from_mins(30);
     let reset = ralphy_core::ResetAt {
         text: "3:05 PM".into(),
-        at: Some(past.fixed_offset()),
+        at: Some(past),
     };
     let agent = ScriptedAgent::scripted(vec![
         (Outcome::Limit(Some(reset)), false),
@@ -370,8 +370,8 @@ fn a_limit_wait_event_carries_the_vendor_reset_text() {
     assert_eq!(sleep.get("hint"), "3:05 PM");
     assert_eq!(
         sleep.get("target_epoch"),
-        (past + chrono::Duration::minutes(5))
-            .timestamp()
+        (past + jiff::SignedDuration::from_mins(5))
+            .as_second()
             .to_string()
     );
 

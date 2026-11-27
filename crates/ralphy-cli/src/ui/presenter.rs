@@ -15,7 +15,6 @@ use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use chrono::Local;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
@@ -204,7 +203,7 @@ impl Renderer {
     /// Apply one decoded run event: drive the live region + active-issue tracking,
     /// then emit the permanent line (if any).
     fn apply(&self, event: &RunEvent) {
-        let ts = Local::now();
+        let ts = jiff::Timestamp::now().to_zoned_datetime(jiff::tz::TimeZone::system());
         // Recover from poison rather than panic: this runs inside `on_event`, so a
         // panic here would corrupt the run on a tracing call.
         let mut s = self

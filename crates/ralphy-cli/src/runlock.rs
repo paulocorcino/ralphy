@@ -63,7 +63,7 @@ pub(crate) fn inspect(path: &Path, is_alive: impl Fn(u32) -> bool) -> LockState 
 pub(crate) fn acquire(path: &Path) -> Result<RunLockGuard> {
     let info = LockInfo {
         pid: std::process::id(),
-        started_at: chrono::Local::now().to_rfc3339(),
+        started_at: crate::run::local_rfc3339_now(),
     };
     let payload = serde_json::to_string(&info)?;
     fs::write(path, payload)
@@ -142,7 +142,23 @@ mod tests {
         let _guard = acquire(&path).unwrap();
         let info: LockInfo = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(info.pid, std::process::id());
-        assert!(chrono::DateTime::parse_from_rfc3339(&info.started_at).is_ok());
+        assert!(ralphy_time::parse_rfc3339(&info.started_at).is_ok());
+    }
+
+    #[test]
+    fn the_run_lock_keeps_the_local_rfc3339_form() {
+        let shape = regex::Regex::new(
+            r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3}|\.\d{6}|\.\d{9})?([+-]\d{2}:\d{2})$",
+        )
+        .expect("regex");
+        let path = tmp_lock("form");
+        let _guard = acquire(&path).unwrap();
+        let info: LockInfo = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(
+            shape.is_match(&info.started_at),
+            "started_at: {}",
+            info.started_at
+        );
     }
 
     #[test]

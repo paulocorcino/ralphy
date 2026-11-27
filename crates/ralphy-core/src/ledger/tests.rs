@@ -344,3 +344,14 @@ fn rename_project_is_a_noop_without_a_source_file() {
     );
     assert!(!rename_project_in(root, "same", "same").unwrap());
 }
+
+/// The bytes every ledger reader parses: RFC 3339 in UTC, `+00:00`.
+#[test]
+fn the_ledger_ts_keeps_the_utc_rfc3339_form() {
+    let form = regex::Regex::new(
+        r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3}|\.\d{6}|\.\d{9})?\+00:00$",
+    )
+    .expect("valid regex");
+    let ts = now_ts();
+    assert!(form.is_match(&ts), "ledger ts: {ts}");
+}

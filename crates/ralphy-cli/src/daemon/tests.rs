@@ -1,6 +1,28 @@
 use super::*;
 
 #[test]
+fn the_log_timer_writes_local_seconds() {
+    use tracing_subscriber::fmt::format::Writer;
+    use tracing_subscriber::fmt::time::FormatTime;
+    let local = || {
+        jiff::Timestamp::now()
+            .to_zoned_datetime(jiff::tz::TimeZone::system())
+            .strftime("%Y-%m-%d %H:%M:%S")
+            .to_string()
+    };
+    let before = local();
+    let mut text = String::new();
+    LocalTimer
+        .format_time(&mut Writer::new(&mut text))
+        .expect("the timer writes");
+    let after = local();
+    assert!(
+        text == before || text == after,
+        "timer: {text}, local: {before}"
+    );
+}
+
+#[test]
 fn remove_is_idempotent() {
     let reg_dir = tempfile::tempdir().unwrap();
     let registry_path = reg_dir.path().join("repos.toml");

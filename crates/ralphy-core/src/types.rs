@@ -141,7 +141,7 @@ pub enum Outcome {
 #[derive(Clone, PartialEq, Eq)]
 pub struct ResetAt {
     pub text: String,
-    pub at: Option<chrono::DateTime<chrono::FixedOffset>>,
+    pub at: Option<jiff::Timestamp>,
 }
 
 /// Debug shows only `text`, as a quoted string: the non-green event and the
@@ -393,7 +393,9 @@ mod tests {
 
     #[test]
     fn a_limit_outcome_renders_its_reset_text_as_before() {
-        let at = chrono::DateTime::parse_from_rfc3339("2026-06-09T15:00:00-03:00").ok();
+        let at = ralphy_time::parse_rfc3339("2026-06-09T15:00:00-03:00")
+            .ok()
+            .map(|(t, _)| t);
         let outcome = Outcome::Limit(Some(ResetAt {
             text: "15:00".into(),
             at,

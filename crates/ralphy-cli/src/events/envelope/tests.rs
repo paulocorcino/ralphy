@@ -14,6 +14,20 @@ fn ctx() -> EventCtx {
 }
 
 #[test]
+fn the_event_time_is_whole_seconds_z() {
+    let v = map(
+        &RunEvent::IssueStarted {
+            number: 7,
+            title: "hello".into(),
+        },
+        &RunState::new("t", 1),
+    );
+    let time = v["time"].as_str().expect("time is a string");
+    let shape = regex::Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$").expect("regex");
+    assert!(shape.is_match(time), "time: {time}");
+}
+
+#[test]
 fn git_block_is_merged_on_mapped_and_run_envelopes() {
     // The constant-per-run `data.git` block rides every envelope, merged like
     // `emitter` — on a subject-carrying mapped event and on a subject-less
