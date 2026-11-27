@@ -229,7 +229,8 @@ def main():
             rows = tab_menu(page, slug, "b.js")
             check(
                 "a code tab's menu offers the slot: Open to the side, Mirror editor, Close",
-                [r[0] for r in rows] == ["Open to the side", "Mirror editor", "Close"],
+                [r[0] for r in rows]
+                == ["Open to the side", "Mirror editor", "Close", "Close to the right"],
                 f"got={rows}",
             )
             click_menu(page, "Open to the side")

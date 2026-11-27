@@ -571,9 +571,13 @@ def main():
             deliberate = page.evaluate("() => window.__verbs.filter(v => v === 'board.list').length")
             # The rows the board holds are what the title is read FROM — seeded
             # directly, because a fixture repo seeded with plain `git init` is
-            # remoteless and its real fold has no tracker to answer it.
+            # remoteless and its real fold has no tracker to answer it. The row
+            # has the full shape `rowToIssue` (wb-board-read.ts) gives the store.
             page.evaluate(
-                f"(s) => {{ {BOARD_STORE}.boardIssues[s] = [{{ number: 251, title: 'the retry that cost $30' }}]; }}",
+                f"(s) => {{ {BOARD_STORE}.boardIssues[s] = [{{ number: 251,"
+                " title: 'the retry that cost $30', state: 'open', reason: null,"
+                " labels: [], assignees: [], blockedBy: [], created: '', updated: '',"
+                " body: '', comments: [] }]; }",
                 arg=slug,
             )
             page.evaluate(f"() => {SPEND}.setSpendPeriod('all')")

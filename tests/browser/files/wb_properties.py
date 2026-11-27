@@ -338,14 +338,15 @@ def main():
             check("e: Enter alone does not open the dialog", opened is False, str(opened))
 
             # -- f: Close, and a reply after the dialog was closed --------------
-            open_menu_on(page, "pack")
-            click_menu_row(page, "Properties")
-            wait_dialog(page)
+            # Held before the open: the open asks for the size at once.
             page.evaluate(
                 "() => { const o = WBDaemon.observe; window.__late = null;"
                 "  WBDaemon.observe = (verb, payload) => verb !== 'tree.size' ? o(verb, payload)"
                 "    : new Promise(res => { window.__late = () => res(o(verb, payload)); }); }"
             )
+            open_menu_on(page, "pack")
+            click_menu_row(page, "Properties")
+            wait_dialog(page)
             page.evaluate("() => { const b = [...document.querySelectorAll('.properties-modal .modal-foot .btn')].find(x => x.textContent.trim() === 'Close'); b.click(); }")
             page.wait_for_function(f"() => {PROPS}.props.open === false", timeout=5000)
             check("f: Close ends the dialog", True)

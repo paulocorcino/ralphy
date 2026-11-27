@@ -387,8 +387,9 @@ def main():
                 page.wait_for_function("(id) => !!__W(id).querySelector('.session-checkout')", arg=a_new,
                                        timeout=20000)
                 t_agent = page.evaluate("(id) => __title(id)", a_new)
-                tail = page.evaluate("(id) => __W(id).querySelector('.session-checkout').nextElementSibling?.className",
-                                     a_new)
+                # The done-mark bell is a `.session-checkout` too, after the checkout button.
+                tail = page.evaluate("(id) => [...__W(id).querySelectorAll('.session-checkout')].at(-1)"
+                                     ".nextElementSibling?.className", a_new)
                 check("1 an agent console reads `<name> (claude) · primary · <slug>`, the slug after the button",
                       t_agent == f"fincal #7 (claude) · primary · {SLUG}" and tail == "session-repo",
                       f"{t_agent!r} after-button={tail!r}")
