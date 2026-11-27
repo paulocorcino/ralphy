@@ -1,18 +1,7 @@
-// Loading `app.ts` — the one asset the per-module `load()` copies cannot reach.
-//
-// Every other test file in this directory carries its own small `load()`: read
-// one source, run it against two or three stubs, take the global it defines.
-// That shape works because those modules are leaves. `app.ts` is not — it is the
-// Alpine component the whole document hangs off, it reads its siblings, and
-// it wants enough of a DOM to answer `matchMedia` and `querySelector`. The
-// loader for it is thirty lines, and thirty lines copied into an eleventh file
-// is how the eleventh file drifts from the ten. So it lives here.
-//
-// This deliberately does NOT replace the ten existing `load()` copies. They are
-// each three lines, each states exactly which globals its module touches at load
-// — which is documentation the module's own test should carry — and rewriting
-// them to route through a shared stub factory would trade that for a shared
-// object nobody reads. See ADR-0022's "smallest change that fits the seam".
+// The shared test harness: the page loaders (`loadShell`, `loadComponent`) and
+// the small fakes the test files would otherwise each copy (`load`, `fixture`,
+// `swapFetch`, `fakeWindow`, `fakeClassList`, `withoutBroadcast`), so a fix to
+// a fake reaches every file that uses it (#1060).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { shell } from "../assets/ui/app.ts";
@@ -199,10 +188,7 @@ function stubWindow() {
 // keys, and a test that mutated a shared one would leak into whichever test ran
 // next — the failure that reads as "passes alone, fails in the suite".
 //
-// `BroadcastChannel` is hidden while the console is created, exactly as
-// wb-console.test.mjs does it: Node 22 ships a real one, `createConsole`
-// subscribes, and an open channel per load holds the event loop open so
-// `node --test` never exits.
+// The console is created `withoutBroadcast`.
 //
 // `opts.document` overrides stub members for the one test that must HEAR a
 // listener the module registers at load (the write seam) — the stub's own
@@ -236,13 +222,7 @@ export function loadShell(opts = {}) {
   // is not called: the stub document has no stage. The door reaches the store
   // `modals` through `window.Alpine`, as in the browser.
   const messages = createMessages(window, document);
-  const realBC = globalThis.BroadcastChannel;
-  delete globalThis.BroadcastChannel;
-  try {
-    window.WBConsole = createConsole(window, document, window.location, { messages });
-  } finally {
-    globalThis.BroadcastChannel = realBC;
-  }
+  window.WBConsole = withoutBroadcast(() => createConsole(window, document, window.location, { messages }));
   window.WBDaemon = createDaemon(window, document, window.location, { messages });
   window.WBViewer = createViewer(window, document, { messages });
   window.WBNotes = createNotes(window, document, { console: window.WBConsole, messages });
@@ -487,3 +467,85 @@ export function bindingNames(expr) {
 export const runIn = (scope, expr) => new Function("scope", `with (scope) { ${expr}; }`)(scope);
 // oxlint-disable-next-line eslint/no-new-func -- the test runs markup code, as Alpine does
 export const valueIn = (scope, expr) => new Function("scope", `with (scope) { return ${expr}; }`)(scope);
+
+// The page a module factory runs in when its test needs no real page: a stub
+// `window` and `document` that take listeners and drop them, and the daemon's
+// own origin as `location`. `window` and `document` add or replace members.
+// Returns what `create(window, document, location, deps)` returns.
+export function load(create, { window = {}, document = {}, deps = {} } = {}) {
+  const win = { addEventListener() {}, ...window };
+  const doc = { addEventListener() {}, ...document };
+  return create(win, doc, { protocol: "http:", host: "127.0.0.1:7431" }, deps);
+}
+
+// A reply the daemon's tests wrote to `ui-tests/fixtures/<name>.json`.
+export function fixture(name) {
+  return JSON.parse(readData(join(import.meta.dirname, "fixtures", `${name}.json`)));
+}
+
+// Kept apart from `fixture`: docs/testing/test_kinds.py reads an exported
+// helper that calls `readFileSync` as a reader of source text.
+function readData(path) {
+  return readFileSync(path, "utf8");
+}
+
+// Replace the global `fetch` with `fake` until test `t` ends. Returns the
+// calls, as `{ url, init }`, in the order they came.
+export function swapFetch(t, fake) {
+  const real = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = (url, init) => {
+    calls.push({ url, init });
+    return fake(url, init);
+  };
+  t.after(() => {
+    globalThis.fetch = real;
+  });
+  return calls;
+}
+
+// A window that delivers each event it is sent to its listeners, as the
+// browser does, and keeps every event in `events`. `extra` adds members.
+export function fakeWindow(extra = {}) {
+  const listeners = {};
+  const events = [];
+  return {
+    events,
+    addEventListener: (type, fn) => (listeners[type] ||= []).push(fn),
+    removeEventListener: (type, fn) => {
+      listeners[type] = (listeners[type] || []).filter((f) => f !== fn);
+    },
+    dispatchEvent: (e) => {
+      events.push(e);
+      for (const fn of listeners[e.type] || []) fn(e);
+      return true;
+    },
+    ...extra,
+  };
+}
+
+// An element's `classList` over a set of names, with the DOM's answers:
+// `toggle` returns whether the name is on afterwards.
+export function fakeClassList(...names) {
+  const set = new Set(names);
+  return {
+    contains: (c) => set.has(c),
+    add: (...cs) => cs.forEach((c) => set.add(c)),
+    remove: (...cs) => cs.forEach((c) => set.delete(c)),
+    toggle: (c, force = !set.has(c)) => (force ? set.add(c) : set.delete(c), force),
+    [Symbol.iterator]: () => set.values(),
+  };
+}
+
+// Run `fn` with no global `BroadcastChannel`. Node 22 ships a real one, the
+// console subscribes when it is created, and an open channel holds the event
+// loop open, so `node --test` never exits.
+export function withoutBroadcast(fn) {
+  const real = globalThis.BroadcastChannel;
+  delete globalThis.BroadcastChannel;
+  try {
+    return fn();
+  } finally {
+    globalThis.BroadcastChannel = real;
+  }
+}
