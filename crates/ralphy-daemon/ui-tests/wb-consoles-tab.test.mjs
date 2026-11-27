@@ -10,7 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
+import { fakeClassList, loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
 
 const HTML = readFileSync(join(UI, "index.html"), "utf8");
 
@@ -155,39 +155,41 @@ test("every shell path that paints the columns asks to write the maximize", () =
   const realAll = document.querySelectorAll;
   // The stage holds only "b": the first console left, and one is left.
   const lone = () => {
-    document.querySelectorAll = () => [{ _deskId: "b", classList: { contains: () => false } }];
+    document.querySelectorAll = () => [{ _deskId: "b", classList: fakeClassList() }];
     state.paintColumns();
   };
   try {
-    // Each path, and how many paints it makes: its own, then `paintColumns`.
+    // Each path, and the consoles each of its paints shows: its own, then
+    // `paintColumns` over a stage that holds none (one survivor for `lone`).
     const paths = {
-      restoreColumn: [2, () => state.restoreColumn("a")],
+      restoreColumn: [[["b", "c"], []], () => state.restoreColumn("a")],
       swapColumn: [
-        2,
+        [["a", "x", "c"], []],
         () => {
           state.columnFrom = "b";
           state.swapColumn("x");
         },
       ],
       columnsFromFence: [
-        2,
+        [["p", "q"], []],
         () =>
           state.columnsFromFence([
             { id: "p", rect: { left: 0, top: 0, width: 100, height: 100 } },
             { id: "q", rect: { left: 200, top: 0, width: 100, height: 100 } },
           ]),
       ],
-      leaveColumns: [1, () => state.leaveColumns(["a"])],
-      checkColumnDesk: [2, () => state.checkColumnDesk(["a"])],
-      paintColumns: [1, () => state.paintColumns()],
-      "paintColumns, a lone survivor": [1, lone],
+      leaveColumns: [[["b", "c"]], () => state.leaveColumns(["a"])],
+      checkColumnDesk: [[["b", "c"], []], () => state.checkColumnDesk(["a"])],
+      paintColumns: [[[]], () => state.paintColumns()],
+      "paintColumns, a lone survivor": [[["b"]], lone],
     };
-    for (const [name, [count, run]] of Object.entries(paths)) {
+    for (const [name, [want, run]] of Object.entries(paths)) {
       state.columns = grid();
       calls.length = 0;
+      paints.length = 0;
       document.querySelectorAll = realAll;
       run();
-      assert.equal(calls.length, count, `${name} paints the columns`);
+      assert.deepEqual(paints, want, `${name} paints the columns`);
       for (const opts of calls) assert.equal(opts?.persist, true, `${name}: ${JSON.stringify(opts)}`);
     }
     // The lone-survivor case above took its own branch: it paints the survivor
@@ -206,7 +208,7 @@ test("every shell path that paints the columns asks to write the maximize", () =
     assert.deepEqual([calls.length, state.columns], [0, grid()], "a relaunch gap paints nothing");
     const stage = (...wins) => {
       document.querySelectorAll = () =>
-        wins.map(([id, max]) => ({ _deskId: id, classList: { contains: (c) => max && c === "maximized" } }));
+        wins.map(([id, max]) => ({ _deskId: id, classList: fakeClassList(...(max ? ["maximized"] : [])) }));
     };
     // The same with two consoles left: the grid path.
     stage(["b"], ["c"]);
@@ -422,7 +424,7 @@ function paintShell() {
   state.columnCap = () => 3;
   const stage = (...wins) => {
     document.querySelectorAll = () =>
-      wins.map(([id, max]) => ({ _deskId: id, classList: { contains: (c) => max && c === "maximized" } }));
+      wins.map(([id, max]) => ({ _deskId: id, classList: fakeClassList(...(max ? ["maximized"] : [])) }));
   };
   const done = () => {
     globalThis.WBConsole = realConsole;

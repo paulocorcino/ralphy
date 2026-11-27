@@ -6,15 +6,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { assembledPage, UI } from "./harness.mjs";
+// The fold keeps no state, so one import serves every test.
 import * as WBHosts from "../assets/ui/wb-hosts.ts";
 
 // The markup of the Hosts dialog, comments kept.
 const dialogPart = () => readFileSync(join(UI, "wb-hosts-dialog.part.html"), "utf8");
-
-// The fold keeps no state, so one import serves every test.
-function load() {
-  return WBHosts;
-}
 
 const ALIASES = [
   { alias: "svrapp", hostname: "10.0.0.5", user: "deploy", port: 2222 },
@@ -24,7 +20,7 @@ const ALIASES = [
 const VPS_ID = "01TUNNELPEER0000000000000A";
 
 test("picking an alias fills user and port, and the alias is the destination", () => {
-  const H = load();
+  const H = WBHosts;
   let s = H.next(H.initial(), { type: "aliases", aliases: ALIASES });
   s = H.next(s, { type: "pick", alias: "svrapp" });
   assert.equal(s.user, "deploy");
@@ -36,7 +32,7 @@ test("picking an alias fills user and port, and the alias is the destination", (
 });
 
 test("a pick that finds no alias empties the alias, user and port, and keeps the address", () => {
-  const H = load();
+  const H = WBHosts;
   let s = H.next(H.initial(), { type: "aliases", aliases: ALIASES });
   s = H.next(s, { type: "pick", alias: "svrapp" });
   s = H.next(s, { type: "pick", alias: "nope" });
@@ -44,7 +40,7 @@ test("a pick that finds no alias empties the alias, user and port, and keeps the
 });
 
 test("a typed address becomes user@host, or ssh:// when the port is not 22", () => {
-  const H = load();
+  const H = WBHosts;
   const typed = (address, user, port) =>
     H.destination(Object.assign(H.initial(), { address, user, port }));
   assert.equal(typed("10.0.0.5", "me", "2222"), "ssh://me@10.0.0.5:2222");
@@ -55,7 +51,7 @@ test("a typed address becomes user@host, or ssh:// when the port is not 22", () 
 });
 
 test("feed carries a split line to the next chunk and drops non-events", () => {
-  const H = load();
+  const H = WBHosts;
   const line = JSON.stringify({ event: "check", id: "ralphy", status: "pass" });
   const first = H.feed("", "banner text\n" + line.slice(0, 10));
   assert.deepEqual(first.events, []);
@@ -66,7 +62,7 @@ test("feed carries a split line to the next chunk and drops non-events", () => {
 });
 
 test("an unknown key goes to the identity step; cancel goes back with no keys", () => {
-  const H = load();
+  const H = WBHosts;
   const keys = [{ type: "ssh-ed25519", fingerprint: "SHA256:abc" }];
   let s = H.next(H.initial(), { type: "key", key: { state: "unknown", keys } });
   assert.equal(s.step, "identity");
@@ -83,7 +79,7 @@ test("an unknown key goes to the identity step; cancel goes back with no keys", 
 const ev = (event) => ({ type: "event", event });
 
 test("check events upsert by id, fixed turns a fix into a pass, ready follows", () => {
-  const H = load();
+  const H = WBHosts;
   let s = H.next(H.initial(), ev({ event: "check", id: "ralphy", status: "copy", text: "old", command: "ralphy update" }));
   assert.equal(s.checks.length, 1);
   assert.equal(s.checks[0].command, "ralphy update");
@@ -101,7 +97,7 @@ test("check events upsert by id, fixed turns a fix into a pass, ready follows", 
 });
 
 test("a name check to copy blocks Connect and asks for a name", () => {
-  const H = load();
+  const H = WBHosts;
   const s = H.next(H.initial(), {
     type: "event",
     event: { event: "check", id: "name", status: "copy", command: "ralphy host add svrapp --name <name>" },
@@ -116,7 +112,7 @@ test("a name check to copy blocks Connect and asks for a name", () => {
 });
 
 test("an unreachable host opens the help panel; a refused key does not", () => {
-  const H = load();
+  const H = WBHosts;
   const failed = (kind) =>
     H.next(H.initial(), { type: "event", event: { event: "failed", kind, message: "m" } });
   assert.equal(failed("unreachable").help, true);
@@ -129,7 +125,7 @@ test("an unreachable host opens the help panel; a refused key does not", () => {
 });
 
 test("a refused key hands over the peer key line to copy", () => {
-  const H = load();
+  const H = WBHosts;
   const line = "ssh-ed25519 BODY ralphy-peer@anvil";
   const s = H.next(H.initial(), {
     type: "event",
@@ -140,7 +136,7 @@ test("a refused key hands over the peer key line to copy", () => {
 });
 
 test("an install event offers the install until the checks run again", () => {
-  const H = load();
+  const H = WBHosts;
   let s = H.next(H.initial(), { type: "event", event: { event: "check", id: "ralphy", status: "copy", command: "ralphy host install svrapp" } });
   assert.equal(H.needsInstall(s), false, "no offer, no button");
   s = H.next(s, {
@@ -161,7 +157,7 @@ test("an install event offers the install until the checks run again", () => {
 });
 
 test("check again empties the list and the failure", () => {
-  const H = load();
+  const H = WBHosts;
   let s = H.next(H.initial(), { type: "event", event: { event: "check", id: "ralphy", status: "pass" } });
   s = H.next(s, { type: "event", event: { event: "failed", kind: "unreachable", message: "x" } });
   s = H.next(s, { type: "check-again" });
@@ -171,7 +167,7 @@ test("check again empties the list and the failure", () => {
 });
 
 test("add exit 0 shows the last step; any other code keeps the checks with a failure", () => {
-  const H = load();
+  const H = WBHosts;
   const open = Object.assign(H.initial(), { open: true, step: "checks" });
   const added = H.next(H.next(open, { type: "event", event: { event: "added", name: "vps" } }), {
     type: "exit",
@@ -189,7 +185,7 @@ test("add exit 0 shows the last step; any other code keeps the checks with a fai
 });
 
 test("an exit with no code says the command stopped before it finished", () => {
-  const H = load();
+  const H = WBHosts;
   const open = Object.assign(H.initial(), { open: true, step: "checks", busy: true });
   for (const code of [null, undefined]) {
     const s = H.next(open, { type: "exit", verb: "host.check", code });
@@ -200,7 +196,7 @@ test("an exit with no code says the command stopped before it finished", () => {
 const hostEvent = (e) => ({ type: "event", event: e });
 
 test("the password is dropped once signed in, on a refusal and on close", () => {
-  const H = load();
+  const H = WBHosts;
   const typed = Object.assign(H.initial(), { open: true, step: "checks", password: "s3cret" });
   assert.equal(H.next(typed, hostEvent({ event: "connected", os: "Linux" })).password, "");
   const refused = H.next(typed, hostEvent({ event: "failed", kind: "password_refused", message: "the host h refused the password" }));
@@ -216,7 +212,7 @@ test("the password is dropped once signed in, on a refusal and on close", () => 
 });
 
 test("the help panel has a tab per system with the commands that work", () => {
-  const H = load();
+  const H = WBHosts;
   const tabs = H.helpTabs();
   assert.deepEqual(tabs.map((t) => t.id), ["windows", "macos", "linux"]);
   const commands = (id) => tabs.find((t) => t.id === id).steps.map((st) => st.command).filter(Boolean);
@@ -237,7 +233,7 @@ test("the help panel has a tab per system with the commands that work", () => {
 });
 
 test("Back returns to the fields with what was typed, and clears the checks", () => {
-  const H = load();
+  const H = WBHosts;
   let s = H.next(H.initial(), { type: "type", field: "address", value: "10.1.1.4" });
   s = H.next(s, { type: "type", field: "user", value: "ralphy2" });
   s = H.next(s, { type: "key", key: { state: "known" } });
@@ -250,7 +246,7 @@ test("Back returns to the fields with what was typed, and clears the checks", ()
 });
 
 test("the install runs by itself only when asked, offered, and not tried yet", () => {
-  const H = load();
+  const H = WBHosts;
   const offered = (s) =>
     [
       { event: "check", id: "ralphy", status: "copy", command: "ralphy host install vps" },
@@ -309,7 +305,7 @@ test("the Hosts dialog renders host text with x-text only", () => {
 });
 
 test("fields reads back the form that built a destination", () => {
-  const { destination, fields } = load();
+  const { destination, fields } = WBHosts;
   for (const form of [
     { address: "10.0.0.5", user: "deploy", port: "2222" },
     { address: "192.168.101.3", user: "user", port: "" },
@@ -321,7 +317,7 @@ test("fields reads back the form that built a destination", () => {
 });
 
 test("Edit fills the form from the host, and Save goes back to the list", () => {
-  const { initial, next } = load();
+  const { initial, next } = WBHosts;
   let s = Object.assign(initial(), { open: true, aliases: ALIASES });
   s = next(s, {
     type: "edit",
@@ -343,7 +339,7 @@ test("Edit fills the form from the host, and Save goes back to the list", () => 
 });
 
 test("a tab starts a new form", () => {
-  const { initial, next } = load();
+  const { initial, next } = WBHosts;
   let s = Object.assign(initial(), { open: true, aliases: ALIASES });
   s = next(s, { type: "edit", host: { daemon_id: VPS_ID, name: "vps", destination: "user@mac" } });
   s = next(s, { type: "tab", tab: "add" });
@@ -355,7 +351,7 @@ test("a tab starts a new form", () => {
 });
 
 test("typing in the Host field leaves the SSH config host", () => {
-  const H = load();
+  const H = WBHosts;
   let s = H.next(H.initial(), { type: "aliases", aliases: ALIASES });
   s = H.next(s, { type: "pick", alias: "svrapp" });
   s = H.next(s, { type: "host", value: "10.1.1.4" });
@@ -366,7 +362,7 @@ test("typing in the Host field leaves the SSH config host", () => {
 const checkEv = (event) => ({ type: "event", event: Object.assign({ event: "check" }, event) });
 
 test("the checks view shows the one blocking check first, and hides waiting checks", () => {
-  const H = load();
+  const H = WBHosts;
   let s = H.initial();
   for (const c of [
     { id: "ralphy", label: "Ralphy", status: "warn", text: "ralphy is not installed on the host. Build it there" },
@@ -400,7 +396,7 @@ test("the checks view shows the one blocking check first, and hides waiting chec
 });
 
 test("the main button is Install while Ralphy can be sent to the host", () => {
-  const H = load();
+  const H = WBHosts;
   let s = Object.assign(H.initial(), { step: "checks" });
   s = H.next(s, { type: "event", event: { event: "check", id: "ralphy", status: "copy", command: "ralphy host install mac" } });
   assert.equal(H.primary(s), "check");

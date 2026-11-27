@@ -110,43 +110,62 @@ test("wbFiles lists only shell() names in uses, and its members left shell()", (
 // ---- the workbench events ------------------------------------------------------
 
 test("each workbench event reaches the files, and a create re-lists before it reveals", async () => {
-  const { files, fire } = page();
-  const calls = [];
-  files.filesFollowProject = () => calls.push("project");
-  files.filesFollowFleet = () => calls.push("fleet");
-  files.filesFollowWake = (daemon) => calls.push(`wake ${daemon}`);
-  files.filesFollowCheckout = () => calls.push("checkout");
-  files.openFileSearch = () => calls.push("search");
-  files.performMove = (from, to) => calls.push(`move ${from} ${to}`);
-  files._treeSub = { replay: () => calls.push("replay") };
+  const { files, fire, shell } = page();
+  const trees = [];
+  files.destroyTree = () => trees.push("destroy");
+  files.mountTree = () => {
+    trees.push("mount");
+    files._treeCheckout = shell.$store.checkouts.checkoutOf(files.$store.projects.openSlug);
+  };
+  const writes = [];
+  const realDaemon = globalThis.WBDaemon;
+  globalThis.WBDaemon = {
+    ...realDaemon,
+    write: (verb, body) => (writes.push([verb, body]), Promise.resolve({})),
+    withCheckout: (body) => body,
+  };
+  let replays = 0;
+  files._treeSub = { replay: () => replays++ };
+  const relists = [];
   let settle;
   files.onTreeDirty = (rel) => {
-    calls.push(`dirty ${rel}`);
+    relists.push(`dirty ${rel}`);
     return new Promise((r) => { settle = r; });
   };
-  files.revealRel = (rel) => calls.push(`reveal ${rel}`);
-  fire("workbench:project-changed", { slug: "o/r", previous: null });
-  fire("workbench:fleet-read");
-  fire("workbench:peer-woken", { daemon: "01PEER" });
-  fire("workbench:checkout-changed");
-  fire("workbench:panels-reread");
-  fire("workbench:file-search-open");
-  fire("workbench:move-confirmed", { from: "a.txt", to: "dst/a.txt" });
-  fire("workbench:tree-dirty", { rel: "src", reveal: "src/new.txt" });
-  assert.equal(calls.at(-1), "dirty src", "the reveal waits for the level");
-  settle();
-  await new Promise((r) => { setImmediate(r); });
-  assert.deepEqual(calls, [
-    "project",
-    "fleet",
-    "wake 01PEER",
-    "checkout",
-    "replay",
-    "search",
-    "move a.txt dst/a.txt",
-    "dirty src",
-    "reveal src/new.txt",
-  ]);
+  files.revealRel = (rel) => relists.push(`reveal ${rel}`);
+  const peer = "01ARZ3NDEKTSV4RRFFQ69G5FAZ";
+  try {
+    files.$store.projects.setOpen(`${peer}/o/r`);
+    fire("workbench:project-changed", { slug: `${peer}/o/r`, previous: null });
+    assert.deepEqual(trees, ["destroy", "mount"], "the open project's tree is mounted");
+    files._filesPeerDown = `${peer}/o/r`;
+    files.openPeerDown = () => false;
+    fire("workbench:fleet-read");
+    assert.equal(files._filesPeerDown, null, "the fleet read says the peer is back");
+    fire("workbench:peer-woken", { daemon: peer });
+    assert.equal(trees.length, 4, "the woken peer's tree is mounted again");
+    shell.$store.checkouts.checkouts = { [`${peer}/o/r`]: "wt-a" };
+    fire("workbench:checkout-changed");
+    assert.equal(trees.length, 6, "the tree of the new checkout is mounted");
+    assert.equal(files._treeCheckout, "wt-a");
+    fire("workbench:panels-reread");
+    assert.equal(replays, 1, "the socket sends what the tree missed");
+    fire("workbench:file-search-open");
+    assert.equal(files.fileSearch.open, true);
+    fire("workbench:move-confirmed", { from: "a.txt", to: "dst/a.txt" });
+    await new Promise((r) => { setImmediate(r); });
+    assert.deepEqual(writes, [["file.rename", { repo: `${peer}/o/r`, path: "a.txt", to: "dst/a.txt" }]]);
+    settle?.();
+    await new Promise((r) => { setImmediate(r); });
+    relists.length = 0;
+    fire("workbench:tree-dirty", { rel: "src", reveal: "src/new.txt" });
+    assert.deepEqual(relists, ["dirty src"], "the reveal waits for the level");
+    settle();
+    await new Promise((r) => { setImmediate(r); });
+    assert.deepEqual(relists, ["dirty src", "reveal src/new.txt"]);
+  } finally {
+    globalThis.WBDaemon = realDaemon;
+  }
 });
 
 test("a tree is remounted when its checkout or its woken peer is the open project's, and only then", () => {
