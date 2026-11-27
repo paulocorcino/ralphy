@@ -267,7 +267,7 @@ fn remove_fragments(dir: &Path) -> Result<()> {
 }
 
 fn today() -> String {
-    chrono::Utc::now().format("%Y-%m-%d").to_string()
+    jiff::Timestamp::now().strftime("%Y-%m-%d").to_string()
 }
 
 /// `bump <version>` — move every workspace crate's version line in step.

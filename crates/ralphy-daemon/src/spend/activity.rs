@@ -7,7 +7,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 use super::format::{fmt_total, share_of};
@@ -103,14 +102,13 @@ fn window_days(window: Window, since: Option<&str>) -> Vec<String> {
     let (Some(days), Some(since)) = (window.days(), since) else {
         return Vec::new();
     };
-    let Ok(start) = NaiveDate::parse_from_str(since.split_at(since.len().min(10)).0, "%Y-%m-%d")
+    let Ok(start) = jiff::civil::Date::strptime("%Y-%m-%d", since.split_at(since.len().min(10)).0)
     else {
         return Vec::new();
     };
-    start
-        .iter_days()
+    std::iter::successors(Some(start), |date| date.tomorrow().ok())
         .take(usize::try_from(days).unwrap_or(usize::MAX))
-        .map(|date| date.format("%Y-%m-%d").to_string())
+        .map(|date| date.strftime("%Y-%m-%d").to_string())
         .collect()
 }
 

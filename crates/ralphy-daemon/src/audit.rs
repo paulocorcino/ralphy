@@ -160,7 +160,7 @@ pub(crate) struct Event {
 impl Event {
     pub(crate) fn new(event: EventKind, device: Option<DeviceId>, actor: Actor) -> Event {
         Event {
-            at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            at: ralphy_time::secs_z(jiff::Timestamp::now()),
             event,
             device: device.map(|d| d.to_string()),
             login: None,
@@ -371,7 +371,7 @@ struct Writer {
 impl Writer {
     /// Prune the log at `path` once a day.
     fn prune_if_due(&mut self, path: &Path) -> Result<()> {
-        let now = chrono::Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         if self.last_prune_day != Some(now / 86_400) {
             prune(path, now)?;
             self.last_prune_day = Some(now / 86_400);
@@ -481,9 +481,9 @@ fn line_time(line: &str) -> Option<i64> {
         at: String,
     }
     let at: At = serde_json::from_str(line).ok()?;
-    chrono::DateTime::parse_from_rfc3339(&at.at)
+    ralphy_time::parse_rfc3339(&at.at)
         .ok()
-        .map(|t| t.timestamp())
+        .map(|(t, _)| t.as_second())
 }
 
 pub(crate) mod facts;

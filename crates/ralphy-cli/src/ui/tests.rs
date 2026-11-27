@@ -4,7 +4,7 @@
 #[cfg(test)]
 fn render_plain_line(
     event: &RunEvent,
-    ts: &DateTime<Local>,
+    ts: &ZonedDateTime,
     duration: Option<Duration>,
 ) -> Option<String> {
     render_line(
@@ -23,19 +23,36 @@ fn render_plain_line(
 
 use super::*;
 use crate::runstate::{RunEvent, RunState, SkipKind};
-use chrono::TimeZone;
+use jiff::civil::{date, DateTime};
+use jiff::tz::TimeZone;
 use tracing::Level;
 
 mod active_line;
 mod meter;
 mod panel;
 
+fn local_at(local: DateTime) -> ZonedDateTime {
+    local
+        .to_zoned_datetime(TimeZone::system())
+        .expect("a local time that exists")
+}
+
+#[test]
+fn the_presenter_time_keeps_its_form() {
+    let event = RunEvent::IssueClosed {
+        number: 30,
+        tokens: 0,
+        invocations: 0,
+        usage: UsageLite::default(),
+    };
+    let ts = local_at(date(2026, 1, 2).at(3, 4, 5, 0));
+    let line = render_plain_line(&event, &ts, None).expect("a line");
+    assert!(line.starts_with("2026-01-02 03:04:05 "), "line: {line}");
+}
+
 #[test]
 fn render_plain_finished_carries_timestamp_glyph_and_no_ansi() {
-    let ts = Local
-        .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
-        .single()
-        .unwrap();
+    let ts = local_at(date(2026, 6, 10).at(14, 3, 21, 0));
     let event = RunEvent::IssueClosed {
         number: 30,
         tokens: 0,
@@ -59,10 +76,7 @@ fn render_plain_finished_carries_timestamp_glyph_and_no_ansi() {
 
 #[test]
 fn render_done_line_shows_model_effort_duration_and_compact_meter() {
-    let ts = Local
-        .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
-        .single()
-        .unwrap();
+    let ts = local_at(date(2026, 6, 10).at(14, 3, 21, 0));
     // The meter/model/effort/duration ride on `LineExtra` (the presenter computes
     // them in `drive`); the event itself only names the issue.
     let extra = LineExtra {
@@ -110,10 +124,7 @@ fn render_done_line_shows_model_effort_duration_and_compact_meter() {
 
 #[test]
 fn render_done_line_omits_meter_when_zero() {
-    let ts = Local
-        .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
-        .single()
-        .unwrap();
+    let ts = local_at(date(2026, 6, 10).at(14, 3, 21, 0));
     let event = RunEvent::IssueClosed {
         number: 9,
         tokens: 0,
@@ -128,10 +139,7 @@ fn render_done_line_omits_meter_when_zero() {
 
 #[test]
 fn render_plain_notice_shows_warn_and_error_glyphs() {
-    let ts = Local
-        .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
-        .single()
-        .unwrap();
+    let ts = local_at(date(2026, 6, 10).at(14, 3, 21, 0));
     let warn_line = render_plain_line(
         &RunEvent::Notice {
             level: Level::WARN,
@@ -162,10 +170,7 @@ fn render_plain_notice_shows_warn_and_error_glyphs() {
 
 #[test]
 fn render_plain_sleep_started_ended_deadline_return_some_and_executing_none() {
-    let ts = Local
-        .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
-        .single()
-        .unwrap();
+    let ts = local_at(date(2026, 6, 10).at(14, 3, 21, 0));
 
     let sleep_start = render_plain_line(
         &RunEvent::SleepStarted {
@@ -221,10 +226,7 @@ fn render_plain_sleep_started_ended_deadline_return_some_and_executing_none() {
 
 #[test]
 fn styled_sleep_started_is_live_region_only() {
-    let ts = Local
-        .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
-        .single()
-        .unwrap();
+    let ts = local_at(date(2026, 6, 10).at(14, 3, 21, 0));
     let event = RunEvent::SleepStarted {
         reset: "08:10".to_owned(),
         target_epoch: 1_000_000,
@@ -249,10 +251,7 @@ fn styled_sleep_started_is_live_region_only() {
 
 #[test]
 fn render_plain_knowledge_consolidation_carries_glyph_and_counts() {
-    let ts = Local
-        .with_ymd_and_hms(2026, 6, 14, 2, 16, 0)
-        .single()
-        .unwrap();
+    let ts = local_at(date(2026, 6, 14).at(2, 16, 0, 0));
     let started = render_plain_line(&RunEvent::KnowledgeConsolidating { notes: 4 }, &ts, None)
         .expect("KnowledgeConsolidating renders a line");
     assert!(started.contains('📚'), "knowledge glyph: {started}");
@@ -271,10 +270,7 @@ fn render_plain_knowledge_consolidation_carries_glyph_and_counts() {
 
 #[test]
 fn render_plain_needs_split_names_the_bundle_and_next_step() {
-    let ts = Local
-        .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
-        .single()
-        .unwrap();
+    let ts = local_at(date(2026, 6, 10).at(14, 3, 21, 0));
     let line = render_plain_line(&RunEvent::NeedsSplit { number: 3 }, &ts, None)
         .expect("NeedsSplit renders a line");
     assert!(line.contains("#3 bundle — needs split"), "{line}");
@@ -283,10 +279,7 @@ fn render_plain_needs_split_names_the_bundle_and_next_step() {
 
 #[test]
 fn render_plain_skipped_shows_skip_label() {
-    let ts = Local
-        .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
-        .single()
-        .unwrap();
+    let ts = local_at(date(2026, 6, 10).at(14, 3, 21, 0));
     // A dependency skip with no resolved blockers keeps the bare fallback.
     let blocked = render_plain_line(
         &RunEvent::Skipped {
@@ -353,10 +346,7 @@ fn render_plain_skipped_shows_skip_label() {
 
 #[test]
 fn render_plain_human_blocked_names_the_blocker() {
-    let ts = Local
-        .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
-        .single()
-        .unwrap();
+    let ts = local_at(date(2026, 6, 10).at(14, 3, 21, 0));
     let hitl = render_plain_line(
         &RunEvent::HumanBlocked {
             number: 16,
@@ -456,7 +446,7 @@ fn fmt_duration_formats_minutes_and_seconds() {
 #[test]
 fn finish_outcome_shows_its_catalog_wording() {
     use ralphy_wording::ValueSet;
-    let ts = Local.with_ymd_and_hms(2026, 6, 10, 14, 3, 21).unwrap();
+    let ts = local_at(date(2026, 6, 10).at(14, 3, 21, 0));
     for outcome in FinishOutcome::all() {
         let w = outcome.wording();
         let outcome = format!("{outcome:?}");

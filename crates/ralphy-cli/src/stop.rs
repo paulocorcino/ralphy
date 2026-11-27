@@ -142,7 +142,7 @@ fn choose_target(
 /// `runlock`'s `started_at` — this is a human-readable forensic field, never
 /// something the run compares against.
 fn now_rfc3339() -> String {
-    chrono::Local::now().to_rfc3339()
+    crate::run::local_rfc3339_now()
 }
 
 #[cfg(test)]

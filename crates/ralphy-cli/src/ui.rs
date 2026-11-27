@@ -29,7 +29,7 @@ use std::time::Duration;
 #[cfg(test)]
 use crate::pricing::PriceTable;
 #[cfg(test)]
-use chrono::{DateTime, Local};
+use jiff::ZonedDateTime;
 #[cfg(test)]
 use render::{fmt_clock, fmt_duration, fmt_tokens, fmt_usd_compact, Meter};
 #[cfg(test)]

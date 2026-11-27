@@ -16,8 +16,8 @@ pub(crate) struct ConsoleOpts {
 /// so debugging is unobstructed.
 ///
 /// Local timestamps everywhere fix the reported UTC-vs-local bug at the source:
-/// the `fmt` layers use `ChronoLocal`, and the presenter composes its own local
-/// timestamps via `chrono::Local`.
+/// the `fmt` layers use `LocalTimer`, and the presenter composes its own local
+/// timestamps.
 ///
 /// Always returns a `PresenterHandle` — `plain()` on the raw-stderr path (no colour,
 /// no bars, no-op `finalize`), or the animated presenter's handle otherwise. The
@@ -29,7 +29,6 @@ pub(crate) fn init_tracing(
     events: Option<delivery::DeliveryLayer>,
     snapshot: delivery::DeliveryLayer,
 ) -> ui::PresenterHandle {
-    use tracing_subscriber::fmt::time::ChronoLocal;
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
     // The run-border notices are FOLDED from `ralphy_core::emit` events now (#222),
@@ -50,13 +49,13 @@ pub(crate) fn init_tracing(
         || std::env::var_os("RUST_LOG").is_some()
         || std::env::var_os("RALPHY_LOG").is_some();
 
-    let timer = ChronoLocal::new("%Y-%m-%d %H:%M:%S".to_owned());
+    let timer = crate::daemon::LocalTimer;
 
     // `ralphy.log` always carries the full uncoloured, local-time log.
     let file_layer = log_file.map(|file| {
         fmt::layer()
             .with_ansi(false)
-            .with_timer(timer.clone())
+            .with_timer(timer)
             .with_writer(move || file.try_clone().expect("clone ralphy.log handle"))
     });
 

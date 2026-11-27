@@ -11,19 +11,44 @@ use super::wiring::ResolvedClaude;
 use crate::cli::RunArgs;
 use crate::{config, runlock, runstate, telegram};
 
+/// The local time as RFC 3339, with its own numeric offset.
+pub(crate) fn local_rfc3339_now() -> String {
+    let now = jiff::Timestamp::now();
+    ralphy_time::rfc3339(now, jiff::tz::TimeZone::system().to_offset(now))
+}
+
+/// The `YYYYMMDD-HHMMSS` local-time stamp that names a run folder.
+pub(crate) fn run_stamp() -> String {
+    jiff::Timestamp::now()
+        .to_zoned_datetime(jiff::tz::TimeZone::system())
+        .strftime("%Y%m%d-%H%M%S")
+        .to_string()
+}
+
+/// A lock's `started_at` as `YYYY-MM-DD HH:MM:SS` at its own offset; the raw text when unreadable.
+fn since_text(started_at: &str) -> String {
+    ralphy_time::parse_rfc3339(started_at).map_or_else(
+        |_| started_at.to_owned(),
+        |(at, offset)| {
+            offset
+                .to_datetime(at)
+                .strftime("%Y-%m-%d %H:%M:%S")
+                .to_string()
+        },
+    )
+}
+
 /// The `--if-idle` deferral (#222): a live run holds the lock, so this run
 /// emits `run skipped` and ends with exit 0. The deferral is a run border
 /// (ADR-0019 amendment): both `shutdown()`s run after the emit so the ring drains.
 pub(super) fn defer_to_live_run(
     obs: &Observability,
-    info: runlock::LockInfo,
+    info: &runlock::LockInfo,
     title: &str,
     ws: &Workspace,
     runid: &str,
 ) {
-    let since = chrono::DateTime::parse_from_rfc3339(&info.started_at)
-        .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
-        .unwrap_or(info.started_at);
+    let since = since_text(&info.started_at);
     let msg = format!("skipped: run in progress since {since}, pid {}", info.pid);
     let repo_root = ws.repo_root();
     // No branch was cut: report the branch the repo is on.
@@ -227,7 +252,38 @@ pub(super) fn snapshot_ctx(
         pid: std::process::id(),
         repo: obs.events_slug.clone(),
         branch: operating_branch.to_owned(),
-        started_at: chrono::Local::now().to_rfc3339(),
+        started_at: local_rfc3339_now(),
         plan_path: repo_relative_plan_path(ws.repo_root(), ws),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn since_text_keeps_the_offset_of_the_lock() {
+        assert_eq!(
+            since_text("2026-11-26T10:05:09.123-03:00"),
+            "2026-11-26 10:05:09"
+        );
+        assert_eq!(since_text("not a time"), "not a time");
+    }
+
+    #[test]
+    fn the_run_stamp_is_date_dash_time() {
+        let shape = regex::Regex::new(r"^\d{8}-\d{6}$").expect("regex");
+        let stamp = run_stamp();
+        assert!(shape.is_match(&stamp), "stamp: {stamp}");
+    }
+
+    #[test]
+    fn started_at_keeps_the_local_rfc3339_form() {
+        let shape = regex::Regex::new(
+            r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3}|\.\d{6}|\.\d{9})?([+-]\d{2}:\d{2})$",
+        )
+        .expect("regex");
+        let at = local_rfc3339_now();
+        assert!(shape.is_match(&at), "started_at: {at}");
     }
 }

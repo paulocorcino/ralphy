@@ -1,0 +1,6 @@
+# One line per written form, as the last release (0.1.0-rc.47, chrono) wrote it.
+# form<TAB>text<TAB>unix seconds<TAB>nanoseconds<TAB>offset seconds
+secs_z	2026-10-05T08:24:25Z	1791188665	0	0
+millis_z	2026-10-07T19:10:33.570Z	1791400233	570000000	0
+rfc3339_local	2026-10-28T17:26:01.043039700-03:00	1793219161	43039700	-10800
+rfc3339_utc	2026-06-26T21:27:56.223318400+00:00	1782509276	223318400	0

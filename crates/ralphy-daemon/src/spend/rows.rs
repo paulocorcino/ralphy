@@ -262,7 +262,7 @@ fn interactive_row<'a>(object: &'a Object, input: &SpendInput<'a>) -> Interactiv
 }
 
 /// The UTC civil date an RFC3339 timestamp falls on — its first 10 characters,
-/// because the ledger writes `chrono::Utc::now().to_rfc3339()` and the scan's
+/// because the ledger writes `ralphy_time::rfc3339` in UTC and the scan's
 /// timestamps share that shape. An absent or short value buckets nowhere.
 fn civil_date(ts: Option<&str>) -> &str {
     match ts {
@@ -414,5 +414,13 @@ mod tests {
         }
         .json()];
         assert_eq!(classify_interactive(&records).unmetered_sessions, 0);
+    }
+
+    #[test]
+    fn a_ledger_ts_with_nanoseconds_falls_in_its_utc_day() {
+        assert_eq!(
+            civil_date(Some("2026-11-26T23:59:59.999999999+00:00")),
+            "2026-11-26"
+        );
     }
 }

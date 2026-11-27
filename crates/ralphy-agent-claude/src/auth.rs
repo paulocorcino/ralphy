@@ -2,7 +2,8 @@
 //! `claude` stdout and session transcripts that the process exit code alone
 //! can't distinguish (auth failures vs usage limits vs a genuine stall).
 
-use chrono::{DateTime, Datelike, Local, NaiveTime, Weekday};
+use jiff::civil::{Time, Weekday};
+use jiff::ZonedDateTime;
 use ralphy_core::ResetAt;
 
 /// The actionable message surfaced when a run hits a Claude Code authentication
@@ -133,7 +134,7 @@ fn limit_line_text(v: &serde_json::Value) -> Option<String> {
 /// or `None` when the text names no reset.
 pub(crate) fn claude_reset(text: &str) -> Option<ResetAt> {
     let hint = parse_reset_hhmm(text)?;
-    let at = next_local_instant(&hint, Local::now()).map(|t| t.fixed_offset());
+    let at = next_local_instant(&hint, &ZonedDateTime::now()).map(|t| t.timestamp());
     Some(ResetAt { text: hint, at })
 }
 
@@ -143,20 +144,20 @@ pub(crate) fn claude_reset(text: &str) -> Option<ResetAt> {
 /// tomorrow. A weekday-qualified time is the next date on that weekday (today
 /// only when the time is still ahead, else next week). `None` when the hint is
 /// neither form. Pure over its inputs, so the rollover cases test without a clock.
-fn next_local_instant(hint: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
+fn next_local_instant(hint: &str, now: &ZonedDateTime) -> Option<ZonedDateTime> {
     let trimmed = hint.trim().trim_end_matches('.').trim();
     let (weekday, hhmm) = match trimmed.split_once(char::is_whitespace) {
         Some((wd, rest)) => (Some(parse_weekday(wd.trim())?), rest.trim()),
         None => (None, trimmed),
     };
     let (h, m) = hhmm.split_once(':')?;
-    let time = NaiveTime::from_hms_opt(h.parse().ok()?, m.parse().ok()?, 0)?;
-    let today = now.date_naive();
+    let time = Time::new(h.parse().ok()?, m.parse().ok()?, 0, 0).ok()?;
+    let today = now.date();
     let days = match weekday {
         None => i64::from(now.time() >= time),
         Some(wd) => {
-            let cur = i64::from(today.weekday().num_days_from_monday());
-            let tgt = i64::from(wd.num_days_from_monday());
+            let cur = i64::from(today.weekday().to_monday_zero_offset());
+            let tgt = i64::from(wd.to_monday_zero_offset());
             let days = (tgt - cur).rem_euclid(7);
             // Same weekday today: keep today only if the time is still ahead.
             if days == 0 && now.time() >= time {
@@ -166,23 +167,25 @@ fn next_local_instant(hint: &str, now: DateTime<Local>) -> Option<DateTime<Local
             }
         }
     };
-    (today + chrono::Duration::days(days))
-        .and_time(time)
-        .and_local_timezone(Local)
-        .single()
+    // An ambiguous or skipped local time names no instant, as before.
+    let date = today.checked_add(jiff::Span::new().days(days)).ok()?;
+    now.time_zone()
+        .to_ambiguous_zoned_datetime(date.to_datetime(time))
+        .unambiguous()
+        .ok()
 }
 
 /// Parse a three-letter weekday abbreviation (case-insensitive). `None` for
 /// anything else.
 fn parse_weekday(s: &str) -> Option<Weekday> {
     match s.to_lowercase().as_str() {
-        "mon" => Some(Weekday::Mon),
-        "tue" => Some(Weekday::Tue),
-        "wed" => Some(Weekday::Wed),
-        "thu" => Some(Weekday::Thu),
-        "fri" => Some(Weekday::Fri),
-        "sat" => Some(Weekday::Sat),
-        "sun" => Some(Weekday::Sun),
+        "mon" => Some(Weekday::Monday),
+        "tue" => Some(Weekday::Tuesday),
+        "wed" => Some(Weekday::Wednesday),
+        "thu" => Some(Weekday::Thursday),
+        "fri" => Some(Weekday::Friday),
+        "sat" => Some(Weekday::Saturday),
+        "sun" => Some(Weekday::Sunday),
         _ => None,
     }
 }
@@ -234,13 +237,13 @@ mod tests {
     #[test]
     fn every_weekday_abbreviation_is_read_in_any_case() {
         for (text, day) in [
-            ("mon", Weekday::Mon),
-            ("Tue", Weekday::Tue),
-            ("WED", Weekday::Wed),
-            ("thu", Weekday::Thu),
-            ("Fri", Weekday::Fri),
-            ("sat", Weekday::Sat),
-            ("SUN", Weekday::Sun),
+            ("mon", Weekday::Monday),
+            ("Tue", Weekday::Tuesday),
+            ("WED", Weekday::Wednesday),
+            ("thu", Weekday::Thursday),
+            ("Fri", Weekday::Friday),
+            ("sat", Weekday::Saturday),
+            ("SUN", Weekday::Sunday),
         ] {
             assert_eq!(parse_weekday(text), Some(day), "{text}");
         }
@@ -273,10 +276,27 @@ mod tests {
         assert!(reset.at.is_some(), "the reset names an instant");
     }
 
-    /// Build a fixed `DateTime<Local>` for the deterministic parse table.
-    fn local(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<Local> {
-        use chrono::TimeZone;
-        Local.with_ymd_and_hms(y, mo, d, h, mi, 0).single().unwrap()
+    /// A reset time in a DST gap or fold names no instant.
+    #[test]
+    fn a_reset_time_in_a_dst_gap_or_fold_names_no_instant() {
+        let zone = jiff::tz::TimeZone::get("America/New_York").expect("a bundled zone");
+        let at_midnight = |y, mo, d| {
+            jiff::civil::date(y, mo, d)
+                .at(0, 0, 0, 0)
+                .to_zoned_datetime(zone.clone())
+                .expect("a valid time")
+        };
+        assert_eq!(next_local_instant("02:30", &at_midnight(2026, 3, 8)), None);
+        assert_eq!(next_local_instant("01:30", &at_midnight(2026, 11, 1)), None);
+        assert!(next_local_instant("04:30", &at_midnight(2026, 3, 8)).is_some());
+    }
+
+    /// Build a fixed local date-time for the deterministic parse table.
+    fn local(y: i16, mo: i8, d: i8, h: i8, mi: i8) -> ZonedDateTime {
+        jiff::civil::date(y, mo, d)
+            .at(h, mi, 0, 0)
+            .to_zoned_datetime(jiff::tz::TimeZone::system())
+            .unwrap()
     }
 
     /// 2026-06-09 is a Tuesday.
@@ -322,7 +342,7 @@ mod tests {
             ("not a time", local(2026, 6, 9, 10, 0), None),
         ];
         for (hint, now, expected) in cases {
-            assert_eq!(next_local_instant(hint, now), expected, "hint {hint:?}");
+            assert_eq!(next_local_instant(hint, &now), expected, "hint {hint:?}");
         }
     }
 

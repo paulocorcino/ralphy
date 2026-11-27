@@ -127,7 +127,7 @@ async fn get_notices(
         let revoked = |login: &str| LoginId::parse(login).is_some_and(|id| auth.login_revoked(&id));
         logins::notices(
             &path,
-            chrono::Utc::now().timestamp(),
+            jiff::Timestamp::now().as_second(),
             device.map(|Extension(id)| id),
             revoked,
         )

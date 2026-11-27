@@ -352,7 +352,7 @@ pub(crate) async fn desk_new_route(
         Err(e) if !desk::is_parse_error(&e) => return unreadable(&e),
         Err(_) => {}
     }
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let today = jiff::ZonedDateTime::now().strftime("%Y-%m-%d").to_string();
     // A new `generation`: a page that read the unreadable desk reloads
     // instead of writing into the new one.
     let fresh = desk::DeskStore {
@@ -385,7 +385,7 @@ fn history_dir(desk_path: &Path) -> PathBuf {
 }
 
 fn now_ms() -> i64 {
-    chrono::Utc::now().timestamp_millis()
+    jiff::Timestamp::now().as_millisecond()
 }
 
 fn failed(status: StatusCode, error: &str) -> Response {

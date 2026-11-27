@@ -1,6 +1,6 @@
 [package]
 name = "ralphy-cli"
-version = "0.1.0-rc.46"
+version = "0.1.0-rc.47"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -20,7 +20,8 @@ path = "src/bin/ralphyw.rs"
 anyhow.workspace = true
 thiserror.workspace = true
 clap.workspace = true
-chrono.workspace = true
+jiff.workspace = true
+ralphy-time.workspace = true
 indicatif.workspace = true
 console.workspace = true
 regex.workspace = true

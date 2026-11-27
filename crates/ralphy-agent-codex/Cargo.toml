@@ -1,6 +1,6 @@
 [package]
 name = "ralphy-agent-codex"
-version = "0.1.0-rc.46"
+version = "0.1.0-rc.47"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -10,7 +10,8 @@ description = "Codex CLI adapter for Ralphy: drives `codex exec` behind the core
 anyhow.workspace = true
 tracing.workspace = true
 regex.workspace = true
-chrono.workspace = true
+jiff.workspace = true
+ralphy-time.workspace = true
 serde_json.workspace = true
 include_dir.workspace = true
 ralphy-core.workspace = true

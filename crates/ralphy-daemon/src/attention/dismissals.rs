@@ -65,7 +65,7 @@ impl Dismissals {
         }
         let line = Line {
             id: id.to_owned(),
-            ts: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            ts: ralphy_time::secs_z(jiff::Timestamp::now()),
         };
         let mut bytes = serde_json::to_vec(&line).context("encoding a dismissal")?;
         bytes.push(b'\n');

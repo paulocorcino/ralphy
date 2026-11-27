@@ -128,9 +128,10 @@ fn last_fetch_of(repo: &Path) -> Result<Option<String>> {
     let mtime = meta
         .modified()
         .with_context(|| format!("reading the mtime of {}", path.display()))?;
-    Ok(Some(
-        chrono::DateTime::<chrono::Local>::from(mtime).to_rfc3339(),
-    ))
+    let at = jiff::Timestamp::try_from(mtime)
+        .with_context(|| format!("reading the mtime of {}", path.display()))?;
+    let offset = jiff::tz::TimeZone::system().to_offset(at);
+    Ok(Some(ralphy_time::rfc3339(at, offset)))
 }
 
 /// The repo's git directory as an absolute path (a worktree's is not

@@ -10,12 +10,7 @@ all-features = true
 # `unsound`. An exception needs an entry here with the reason. An entry that
 # matches no crate in Cargo.lock fails the check too: delete it.
 unused-ignored-advisory = "deny"
-ignore = [
-    # chrono is unmaintained (advisory of 2026-11), with no known vulnerability
-    # and no safe upgrade. Ten crates and tracing-subscriber use it; leaving it
-    # for jiff or time is its own change.
-    { id = "RUSTSEC-2026-0543", reason = "unmaintained only; no vulnerability; replacing chrono is a separate change" },
-]
+ignore = []
 
 [licenses]
 # Every license here can be combined with the workspace's GPL-3.0-or-later.

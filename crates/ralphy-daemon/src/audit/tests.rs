@@ -1,10 +1,50 @@
 use super::*;
 
 fn line_at(ts: i64, tag: &str) -> String {
-    let at = chrono::DateTime::from_timestamp(ts, 0)
-        .unwrap()
-        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let at = ralphy_time::secs_z(jiff::Timestamp::from_second(ts).unwrap());
     format!("{{\"at\":\"{at}\",\"event\":\"action\",\"actor\":\"device\",\"path\":\"{tag}\"}}")
+}
+
+/// Whether `text` is `YYYY-MM-DDTHH:MM:SS` followed by `tail`, digits where the form has them.
+fn is_stamp(text: &str, tail: &str) -> bool {
+    let (head, rest) = text.split_at(text.len().min(19));
+    let shape = "dddd-dd-ddTdd:dd:dd";
+    head.len() == shape.len()
+        && head.chars().zip(shape.chars()).all(|(c, s)| match s {
+            'd' => c.is_ascii_digit(),
+            _ => c == s,
+        })
+        && rest == tail
+}
+
+#[test]
+fn the_audit_stamp_is_whole_seconds_z() {
+    let event = Event::new(EventKind::Command, None, Actor::Device);
+    assert!(is_stamp(&event.at, "Z"), "{}", event.at);
+}
+
+#[test]
+fn an_old_login_line_still_parses() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = log_path_in(dir.path());
+    let (zulu, offset, fraction) = (LoginId::mint(), LoginId::mint(), LoginId::mint());
+    let line = |at: &str, login: LoginId| {
+        format!(
+            concat!(
+                "{{\"at\":\"{at}\",\"event\":\"login_other_device\",\"device\":\"d\",",
+                "\"login\":\"{login}\",\"actor\":\"device\",\"did\":\"command\"}}\n"
+            ),
+            at = at,
+            login = login
+        )
+    };
+    let text = line("2033-05-18T03:00:00Z", zulu)
+        + &line("2033-05-18T03:00:00+00:00", offset)
+        + &line("2033-05-18T00:00:00.250-03:00", fraction);
+    std::fs::write(&path, text).unwrap();
+    let now = 1_999_999_000;
+    let listed = super::logins::notices(&path, now, None, |_| false).unwrap();
+    assert_eq!(listed.len(), 3, "each form of the last release is read");
 }
 
 #[test]
@@ -302,9 +342,7 @@ mod logins {
     /// A `login_other_device` line for `login` and `device`, `ts` seconds
     /// after the epoch.
     fn reported_at(ts: i64, login: LoginId, device: DeviceId) -> String {
-        let at = chrono::DateTime::from_timestamp(ts, 0)
-            .unwrap()
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let at = ralphy_time::secs_z(jiff::Timestamp::from_second(ts).unwrap());
         serde_json::json!({
             "at": at,
             "event": "login_other_device",

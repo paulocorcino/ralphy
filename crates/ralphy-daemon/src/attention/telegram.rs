@@ -150,8 +150,8 @@ fn short(detail: &str) -> String {
 /// How long `request` has been open at `now`; `None` when its `since` is not
 /// an RFC 3339 time.
 fn age(request: &AttentionRequest, now: SystemTime) -> Option<Duration> {
-    let since = chrono::DateTime::parse_from_rfc3339(&request.since).ok()?;
-    let since = SystemTime::from(since.with_timezone(&chrono::Utc));
+    let (since, _) = ralphy_time::parse_rfc3339(&request.since).ok()?;
+    let since = SystemTime::try_from(since).ok()?;
     Some(now.duration_since(since).unwrap_or(Duration::ZERO))
 }
 

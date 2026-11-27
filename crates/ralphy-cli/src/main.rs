@@ -377,7 +377,7 @@ fn consolidate_cmd(args: ConsolidateArgs) -> Result<()> {
         names.join(", ")
     );
 
-    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let stamp = run::run_stamp();
     let run_dir = ws.run_dir(&stamp);
 
     // An explicit `--model`/`--effort` wins; otherwise fall back to the vendor's

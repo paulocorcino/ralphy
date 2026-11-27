@@ -145,7 +145,7 @@ fn temp_cache_path(tag: &str) -> std::path::PathBuf {
         "ralphy-pricing-fetch-{}-{}-{}",
         tag,
         std::process::id(),
-        Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        Timestamp::now().as_nanosecond()
     ));
     std::fs::create_dir_all(&dir).expect("temp dir");
     dir.join("models-dev.json")
@@ -211,7 +211,7 @@ fn stale_cache_fetches_and_writes_normalized_data() {
 #[test]
 fn fresh_ttl_skips_fetch_force_refetches() {
     let cache = temp_cache_path("fresh");
-    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+    let now = ralphy_time::secs_z(Timestamp::now());
     write_cache(&cache, &now, 5.0);
 
     // Fresh TTL: live listener must see zero accepts.
@@ -242,7 +242,10 @@ fn stale_ttl_triggers_one_get() {
     let (port, accepts, handle) = serve_n(http_response(200, &body), 1);
     let url = format!("http://127.0.0.1:{port}/api.json");
     let cache = temp_cache_path("ttl-stale");
-    let old = (Utc::now() - chrono::Duration::hours(25)).to_rfc3339_opts(SecondsFormat::Secs, true);
+    let old = ralphy_time::secs_z(
+        Timestamp::from_second(Timestamp::now().as_second() - 25 * 3600)
+            .expect("25 hours ago is in range"),
+    );
     write_cache(&cache, &old, 5.0);
 
     refresh_if_stale(&opts(&url, &cache, false, false));
@@ -441,4 +444,27 @@ fn manifest_excludes_core_and_agent_crates() {
             );
         }
     }
+}
+
+#[test]
+fn the_pricing_stamp_is_whole_seconds_z() {
+    let (port, _accepts, handle) = serve_n(http_response(200, &fixture_body()), 1);
+    let url = format!("http://127.0.0.1:{port}/api.json");
+    let cache = temp_cache_path("stamp");
+    refresh_if_stale(&opts(&url, &cache, false, false));
+    handle.join().expect("server thread");
+
+    let written = std::fs::read_to_string(&cache).expect("cache written");
+    let v: serde_json::Value = serde_json::from_str(&written).expect("cache json");
+    let stamp = v["timestamp"].as_str().expect("timestamp");
+    let shape: Vec<char> = stamp
+        .chars()
+        .map(|c| if c.is_ascii_digit() { '9' } else { c })
+        .collect();
+    assert_eq!(
+        shape.iter().collect::<String>(),
+        "9999-99-99T99:99:99Z",
+        "got {stamp}"
+    );
+    remove_scratch(cache.parent().unwrap());
 }
