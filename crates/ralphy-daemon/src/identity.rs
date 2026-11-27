@@ -7,6 +7,7 @@
 //! request path. The store API is path-explicit so tests pass a temp path and
 //! never mutate the process-global env (the `RALPHY_*_DIR` env-race trap).
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -196,12 +197,15 @@ pub fn baptize(path: &Path, name: String, avatar: String) -> Result<Identity> {
 /// point it at a temp dir), else `<home>/.ralphy/daemon.toml` — the same global
 /// store root as `events.toml`, never a repo-local `.ralphy/`.
 pub fn daemon_toml_path() -> Result<PathBuf> {
-    if let Some(dir) = std::env::var_os("RALPHY_DAEMON_DIR") {
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"));
+    daemon_toml_path_for(std::env::var_os("RALPHY_DAEMON_DIR"), home)
+}
+
+fn daemon_toml_path_for(daemon_dir: Option<OsString>, home: Option<OsString>) -> Result<PathBuf> {
+    if let Some(dir) = daemon_dir {
         return Ok(PathBuf::from(dir).join("daemon.toml"));
     }
-    let home = std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .context("could not resolve a home directory for the daemon identity store")?;
+    let home = home.context("could not resolve a home directory for the daemon identity store")?;
     Ok(PathBuf::from(home).join(".ralphy").join("daemon.toml"))
 }
 
@@ -215,23 +219,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn name_error_keeps_its_text() {
-        assert_eq!(NameError::Empty.to_string(), "name must not be empty");
-        assert_eq!(
-            NameError::InvalidChars.to_string(),
-            "name may only contain lowercase letters, digits, and hyphens"
-        );
-        assert_eq!(
-            NameError::Reserved("list".to_owned()).to_string(),
-            "'list' is reserved (it collides with Ralphy's command vocabulary) — pick another name"
-        );
-    }
-
-    /// Serializes tests that mutate the process-global home / `RALPHY_DAEMON_DIR`
-    /// env vars so they never race on the resolved path.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    #[test]
     fn mint_once_id_is_stable() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("daemon.toml");
@@ -243,27 +230,20 @@ mod tests {
     }
 
     #[test]
-    fn reserved_names_refused() {
-        assert!(matches!(validate_name("run"), Err(NameError::Reserved(_))));
-        assert!(matches!(
-            validate_name("queue"),
-            Err(NameError::Reserved(_))
-        ));
-        assert!(matches!(
-            validate_name("forge"),
-            Err(NameError::Reserved(_))
-        ));
-        assert_eq!(validate_name("anvil").unwrap(), "anvil");
-    }
-
-    #[test]
-    fn validate_name_normalizes_and_rejects_bad_chars() {
-        assert_eq!(validate_name("  Anvil ").unwrap(), "anvil");
-        assert!(matches!(validate_name(""), Err(NameError::Empty)));
-        assert!(matches!(
-            validate_name("has space"),
-            Err(NameError::InvalidChars)
-        ));
+    fn validate_name_table() {
+        let rows: [(&str, std::result::Result<&str, NameError>); 7] = [
+            ("run", Err(NameError::Reserved("run".into()))),
+            ("queue", Err(NameError::Reserved("queue".into()))),
+            ("forge", Err(NameError::Reserved("forge".into()))),
+            ("anvil", Ok("anvil")),
+            ("  Anvil ", Ok("anvil")),
+            ("", Err(NameError::Empty)),
+            ("has space", Err(NameError::InvalidChars)),
+        ];
+        for (raw, want) in rows {
+            let want = want.map(str::to_owned);
+            assert_eq!(validate_name(raw), want, "{raw:?}");
+        }
     }
 
     #[test]
@@ -273,31 +253,42 @@ mod tests {
         assert_eq!(suggest_name("...."), "ralphy", "empty stem falls back");
     }
 
-    #[test]
-    fn default_name_joins_host_and_user() {
-        assert_eq!(
-            default_name("vps.example.com", Some("Ralphy1"), &[]),
-            Some("vps-ralphy1".to_owned())
-        );
-        assert_eq!(default_name("vps", None, &[]), Some("vps".to_owned()));
-        assert_eq!(default_name("vps", Some(""), &[]), Some("vps".to_owned()));
-    }
+    type Row<'a> = (
+        &'a str,
+        &'a str,
+        Option<&'a str>,
+        &'a [String],
+        Option<&'a str>,
+    );
 
     #[test]
-    fn default_name_counts_up_past_a_taken_or_reserved_name() {
+    fn default_name_table() {
         let taken = vec!["vps-ralphy1".to_owned(), "VPS-ralphy1-2".to_owned()];
-        assert_eq!(
-            default_name("vps", Some("ralphy1"), &taken),
-            Some("vps-ralphy1-3".to_owned())
-        );
-        // "run" is reserved, so "run" alone is refused and "run-2" is the first valid name.
-        assert_eq!(default_name("run", None, &[]), Some("run-2".to_owned()));
-    }
-
-    #[test]
-    fn default_name_is_none_without_a_host() {
-        assert_eq!(default_name("", Some("ralphy1"), &[]), None);
-        assert_eq!(default_name("...", Some("ralphy1"), &[]), None);
+        let rows: [Row<'_>; 7] = [
+            (
+                "joined",
+                "vps.example.com",
+                Some("Ralphy1"),
+                &[],
+                Some("vps-ralphy1"),
+            ),
+            ("no user", "vps", None, &[], Some("vps")),
+            ("empty user", "vps", Some(""), &[], Some("vps")),
+            (
+                "taken",
+                "vps",
+                Some("ralphy1"),
+                &taken,
+                Some("vps-ralphy1-3"),
+            ),
+            ("reserved", "run", None, &[], Some("run-2")),
+            ("empty host", "", Some("ralphy1"), &[], None),
+            ("dots host", "...", Some("ralphy1"), &[], None),
+        ];
+        for (name, host, user, taken, want) in rows {
+            let want = want.map(str::to_owned);
+            assert_eq!(default_name(host, user, taken), want, "{name}");
+        }
     }
 
     #[test]
@@ -353,38 +344,11 @@ mod tests {
 
     #[test]
     fn daemon_toml_path_under_global_store() {
-        let _g = ENV_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        let prev_daemon = std::env::var_os("RALPHY_DAEMON_DIR");
-        let prev_profile = std::env::var_os("USERPROFILE");
-        let prev_home = std::env::var_os("HOME");
-        std::env::remove_var("RALPHY_DAEMON_DIR");
-        std::env::set_var("USERPROFILE", dir.path());
-        std::env::set_var("HOME", dir.path());
-
-        let path = daemon_toml_path().unwrap();
-        assert!(
-            path.ends_with(Path::new(".ralphy").join("daemon.toml")),
-            "path must live at <home>/.ralphy/daemon.toml, got {}",
-            path.display()
-        );
-        assert!(
-            path.starts_with(dir.path()),
-            "path must be under the temp home"
-        );
-
-        // Restore the process-global env for other tests.
-        match prev_daemon {
-            Some(v) => std::env::set_var("RALPHY_DAEMON_DIR", v),
-            None => std::env::remove_var("RALPHY_DAEMON_DIR"),
-        }
-        match prev_profile {
-            Some(v) => std::env::set_var("USERPROFILE", v),
-            None => std::env::remove_var("USERPROFILE"),
-        }
-        match prev_home {
-            Some(v) => std::env::set_var("HOME", v),
-            None => std::env::remove_var("HOME"),
-        }
+        let path = daemon_toml_path_for(None, Some(dir.path().into())).unwrap();
+        assert_eq!(path, dir.path().join(".ralphy").join("daemon.toml"));
+        let over = daemon_toml_path_for(Some("d".into()), Some(dir.path().into())).unwrap();
+        assert_eq!(over, Path::new("d").join("daemon.toml"));
+        assert!(daemon_toml_path_for(None, None).is_err());
     }
 }

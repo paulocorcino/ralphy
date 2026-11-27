@@ -152,6 +152,22 @@ async fn create_folder() {
 }
 
 #[tokio::test]
+async fn create_makes_a_nested_folder() {
+    let (port, slug, root) = serve_repo().await;
+    let (replies, _) = round_trip(
+        port,
+        2,
+        "file.create",
+        serde_json::json!({ "repo": slug, "path": "x/y", "dir": true }),
+    )
+    .await;
+
+    assert_eq!(replies.len(), 1);
+    assert_eq!(replies[0]["status"], "ok");
+    assert!(root.join("x/y").is_dir(), "every level was created");
+}
+
+#[tokio::test]
 async fn rename_moves() {
     let (port, slug, root) = serve_repo().await;
     let (replies, spawned) = round_trip(

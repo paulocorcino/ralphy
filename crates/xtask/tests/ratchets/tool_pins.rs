@@ -33,46 +33,23 @@ fn assert_pinned(env_key: &str, tool: &str, version: &str) {
     );
 }
 
-/// The oxlint of the `ui-tests` job of `ci.yml`, fetched by version and
-/// checksum, and of the lint steps of the gate, run by `npx`.
-const OXLINT_VERSION: &str = "1.95.0";
+/// The CLI tools that CI downloads or runs by `npx`, and a step of the gate
+/// runs: (`ci.yml` env key, tool, version). A new oxfmt version formats some
+/// text in another way, and a new markdownlint can find new sites, so a raise
+/// of either is its own commit.
+const PINNED_TOOLS: &[(&str, &str, &str)] = &[
+    ("OXLINT_VERSION", "oxlint", "1.95.0"),
+    ("TSGOLINT_VERSION", "oxlint-tsgolint", "7.0.2008"),
+    ("OXFMT_VERSION", "oxfmt", "0.80.0"),
+    ("MARKDOWNLINT_VERSION", "markdownlint-cli2", "0.24.2"),
+    ("ASTGREP_VERSION", "@ast-grep/cli", "0.51.3"),
+];
 
 #[test]
-fn ci_installs_the_pinned_oxlint() {
-    assert_pinned("OXLINT_VERSION", "oxlint", OXLINT_VERSION);
-}
-
-/// The tsgolint of the type-aware run of the `ui-tests` job of `ci.yml`,
-/// fetched by version and checksum, and of the type-aware step of the gate.
-const TSGOLINT_VERSION: &str = "7.0.2008";
-
-#[test]
-fn ci_installs_the_pinned_tsgolint() {
-    assert_pinned("TSGOLINT_VERSION", "oxlint-tsgolint", TSGOLINT_VERSION);
-}
-
-/// The oxfmt of the format check of the `ui-tests` job of `ci.yml`, fetched
-/// by version and checksum, and of the format step of the gate. A new version
-/// formats some text in another way, so a raise is its own reformat commit.
-const OXFMT_VERSION: &str = "0.80.0";
-
-#[test]
-fn ci_installs_the_pinned_oxfmt() {
-    assert_pinned("OXFMT_VERSION", "oxfmt", OXFMT_VERSION);
-}
-
-/// The markdownlint-cli2 of the `checks` job of `ci.yml`, run by `npx`, and of
-/// the markdown step of the gate. A new version can find new sites, so a raise
-/// is its own commit.
-const MARKDOWNLINT_VERSION: &str = "0.24.2";
-
-#[test]
-fn ci_installs_the_pinned_markdownlint() {
-    assert_pinned(
-        "MARKDOWNLINT_VERSION",
-        "markdownlint-cli2",
-        MARKDOWNLINT_VERSION,
-    );
+fn ci_installs_the_pinned_tools() {
+    for (env_key, tool, version) in PINNED_TOOLS {
+        assert_pinned(env_key, tool, version);
+    }
 }
 
 /// The `channel` of `rust-toolchain.toml`.
@@ -110,15 +87,6 @@ fn ci_uses_the_pinned_rust_toolchain() {
         wrong.is_empty(),
         "a workflow must install Rust {pinned}: {wrong:?}"
     );
-}
-
-/// The ast-grep of the `checks` job of `ci.yml`, fetched by version and
-/// checksum, and of the ast-grep steps of the gate, run by `npx`.
-const ASTGREP_VERSION: &str = "0.51.3";
-
-#[test]
-fn ci_installs_the_pinned_ast_grep() {
-    assert_pinned("ASTGREP_VERSION", "@ast-grep/cli", ASTGREP_VERSION);
 }
 
 /// The pins of `docs/lint/pins.txt`: tool name to version, from its one

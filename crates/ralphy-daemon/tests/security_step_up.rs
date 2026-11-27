@@ -117,20 +117,17 @@ fn password_record(dir: &std::path::Path) -> Option<String> {
     std::fs::read_to_string(ralphy_daemon::password::password_path_in(dir)).ok()
 }
 
-/// Enrol `pw` directly as a `pbkdf2-sha1` record with a LOW iteration count.
-/// The record format carries its own count and `verify` honours it (ADR-0032
-/// amendment §D — that is what lets old hashes verify under their recorded
-/// parameters), so the route's three verifies cost microseconds instead of
-/// seconds. The route's own `hash_password` still runs at the real count.
-fn enrol_cheap_password(dir: &std::path::Path, pw: &str) {
-    let salt = [7u8; 16];
-    let mut dk = [0u8; 20];
-    pbkdf2::pbkdf2_hmac::<Sha1>(pw.as_bytes(), &salt, 1_000, &mut dk);
-    let record = format!(
-        "pbkdf2-sha1$1000${}${}",
-        data_encoding::BASE64.encode(&salt),
-        data_encoding::BASE64.encode(&dk)
-    );
+/// The stored record of "first" at 1000 iterations, computed once.
+const FIRST_RECORD: &str = "pbkdf2-sha1$1000$BwcHBwcHBwcHBwcHBwcHBw==$I/aXUH6oSEFKiAJO3Q4VB3Z2jYw=";
+/// The stored record of "second" at 1000 iterations, computed once.
+const SECOND_RECORD: &str =
+    "pbkdf2-sha1$1000$BwcHBwcHBwcHBwcHBwcHBw==$TxNT1Eg86MRGTsjzGU+KhHw1jj8=";
+
+/// Enrol a password by writing its low-count `pbkdf2-sha1` record. The record
+/// carries its own count and `verify` honours it (ADR-0032 amendment §D), so
+/// the route's verifies cost microseconds. The route's own `hash_password`
+/// still runs at the real count.
+fn enrol_cheap_password(dir: &std::path::Path, record: &str) {
     std::fs::write(ralphy_daemon::password::password_path_in(dir), record)
         .expect("write the password record");
 }
@@ -169,16 +166,17 @@ async fn nothing_armed_every_downgrade_is_free(state: &Arc<AuthState>, dir: &tem
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK, "first-time set is free");
+    let record = password_record(dir.path()).unwrap_or_default();
     assert!(
-        password_record(dir.path()).is_some(),
-        "a record was written"
+        record.starts_with("pbkdf2-sha1$1300000$"),
+        "the set route hashes at the production count: {record}"
     );
 }
 
 /// With a password enrolled, a change or a clear costs the current one.
 async fn a_password_change_costs_the_current_one(state: &Arc<AuthState>, dir: &tempfile::TempDir) {
     // ── password enrolled: changing or clearing costs the current one ─────
-    enrol_cheap_password(dir.path(), "first");
+    enrol_cheap_password(dir.path(), FIRST_RECORD);
     let enrolled = password_record(dir.path());
     let resp = app(state)
         .oneshot(post_form(
@@ -225,7 +223,7 @@ async fn a_password_change_costs_the_current_one(state: &Arc<AuthState>, dir: &t
     let changed = password_record(dir.path());
     assert!(changed.is_some() && changed != enrolled, "a new record");
     // Cheap again for the clear's verify — same password, low count.
-    enrol_cheap_password(dir.path(), "second");
+    enrol_cheap_password(dir.path(), SECOND_RECORD);
     // An EMPTY password with the current one is the explicit clear.
     let resp = app(state)
         .oneshot(post_form(

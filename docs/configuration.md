@@ -301,7 +301,7 @@ apply.
 | `antigravity.plan_effort` | Effort of the plan phase: a level such as `low`, `medium` or `high`. Sent only with a model id that has no effort suffix. |
 | `antigravity.exec_effort` | Effort of the execute phase. Same rules. |
 | `antigravity.run_without_guard_proof_i_understand_the_risk` | **Danger.** An Antigravity session must prove that its hooks run before it gets the task; without the proof it is refused. `true` lets such a session go on. Local only: `ralphy config set` on this machine; the daemon refuses to set it. |
-| `antigravity.console_agent_workflow_i_understand_the_risk` | **Danger.** In an Antigravity console of the workbench, the guard stops the agent from switching branches, pushing and writing pull requests, as it does in a run. `true` lets the agent of a console do these three things; every other guard rule stays. A run never allows them. Applies to consoles opened after the change. Local only: `ralphy config set` on this machine; the daemon refuses to set it. |
+| `antigravity.console_agent_workflow_i_understand_the_risk` | **Danger.** In an Antigravity console of the workbench, the guard stops the agent from switching branches, pushing and writing pull requests, as it does in a run. `true` lets the agent of a console do these three things; every other guard rule stays. A run never allows them. Applies to consoles opened after the change. Set it in the workbench Settings, per repo, or with `ralphy config set`. |
 
 ```powershell
 ralphy config set antigravity.exec_model gemini-3.8-flash

@@ -7,7 +7,9 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
-use ralphy_proc_util::opencode::{read_opencode_version, OpenCodeMajor, OpenCodeVersionError};
+use ralphy_proc_util::opencode::{
+    read_opencode_version, read_opencode_version_within, OpenCodeMajor, OpenCodeVersionError,
+};
 
 const CHILD: &str = env!("CARGO_BIN_EXE_version_test_child");
 
@@ -31,13 +33,13 @@ fn a_version_read_past_its_limit_is_unreadable() {
     let root = tempfile::tempdir().expect("temp dir");
     let child = copy_child(root.path(), &["hang"]);
     let started = Instant::now();
-    let got = read_opencode_version(&child);
+    let got = read_opencode_version_within(&child, Duration::from_secs(1));
     assert!(
         matches!(got, Err(OpenCodeVersionError::Unreadable { .. })),
         "{got:?}"
     );
     assert!(
-        started.elapsed() < Duration::from_secs(7),
+        started.elapsed() < Duration::from_secs(3),
         "{:?}",
         started.elapsed()
     );

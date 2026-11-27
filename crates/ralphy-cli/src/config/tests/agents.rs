@@ -32,7 +32,7 @@ fn copilot_config_round_trip() {
 }
 
 #[test]
-fn claude_effort_config_accepts_only_core_values() {
+fn claude_effort_config_round_trips_and_refuses_a_bad_value() {
     for (index, value) in ["low", "medium", "high", "xhigh", "max"]
         .into_iter()
         .enumerate()
@@ -46,59 +46,14 @@ fn claude_effort_config_accepts_only_core_values() {
         assert_eq!(claude.exec_effort.as_deref(), Some(value));
         remove_scratch(dir);
     }
-
-    for invalid in ["none", "minimal", "extreme"] {
-        for key in ["claude.plan_effort", "claude.exec_effort"] {
-            let (ws, dir) = tmp_ws(&format!("{key}-{invalid}"));
-            assert!(set(&ws, key, invalid).is_err());
-            let settings = Settings::load(&ws).unwrap();
-            let claude: ClaudeSettings = settings.agent_settings(ClaudeSettings::SECTION).unwrap();
-            assert_eq!(claude.plan_effort, None);
-            assert_eq!(claude.exec_effort, None);
-            remove_scratch(dir);
-        }
+    for key in ["claude.plan_effort", "claude.exec_effort"] {
+        let (ws, dir) = tmp_ws(&format!("{key}-refused"));
+        assert!(set(&ws, key, "none").is_err(), "{key}");
+        let settings = Settings::load(&ws).unwrap();
+        let claude: ClaudeSettings = settings.agent_settings(ClaudeSettings::SECTION).unwrap();
+        assert_eq!((claude.plan_effort, claude.exec_effort), (None, None));
+        remove_scratch(dir);
     }
-}
-
-/// ADR-0042 D6's escape hatch (#243): the one Cursor key. Same bool discipline
-/// as Copilot's hatch, guarding a bigger capability — `true` lets a run proceed
-/// in a repository whose contents the vendor will walk and sync to its servers.
-#[test]
-fn cursor_config_round_trip() {
-    const KEY: &str = "cursor.allow_codebase_indexing_i_understand_the_risk";
-    let (ws, dir) = tmp_ws("cursor-config-round-trip");
-
-    let s = Settings::load(&ws).unwrap();
-    let c: CursorSettings = s.agent_settings(CursorSettings::SECTION).unwrap();
-    assert!(
-        !c.allow_codebase_indexing_i_understand_the_risk,
-        "the hatch is off until the operator sets it"
-    );
-
-    set(&ws, KEY, "true").unwrap();
-    let s = Settings::load(&ws).unwrap();
-    let c: CursorSettings = s.agent_settings(CursorSettings::SECTION).unwrap();
-    assert!(
-        c.allow_codebase_indexing_i_understand_the_risk,
-        "the opt-in must persist and reload"
-    );
-    assert_eq!(config_json(&ws).unwrap()[KEY], serde_json::json!(true));
-
-    let err = set(&ws, KEY, "yes").expect_err("only 'true'/'false' are accepted");
-    assert!(err.to_string().contains("'true' or 'false'"), "{err}");
-    let s = Settings::load(&ws).unwrap();
-    let c: CursorSettings = s.agent_settings(CursorSettings::SECTION).unwrap();
-    assert!(
-        c.allow_codebase_indexing_i_understand_the_risk,
-        "the refused write must leave the stored value alone"
-    );
-
-    unset(&ws, KEY).unwrap();
-    let s = Settings::load(&ws).unwrap();
-    let c: CursorSettings = s.agent_settings(CursorSettings::SECTION).unwrap();
-    assert!(!c.allow_codebase_indexing_i_understand_the_risk);
-
-    remove_scratch(&dir);
 }
 
 /// A `gemini` section left in settings.json by an older version is ignored, with one
@@ -154,42 +109,6 @@ fn config_set_of_a_gemini_key_is_an_unknown_key() {
         let err = set(&ws, key, "gemini-3.5-flash").expect_err("set must refuse");
         assert!(err.to_string().contains("unknown config key"), "{err}");
     }
-    remove_scratch(&dir);
-}
-
-/// D7's escape hatch (#234): a bool key that only `'true'`/`'false'` set, so a
-/// hopeful `yes` cannot silently hand Copilot back its credentialled MCP server.
-#[test]
-fn copilot_allow_builtin_mcps_round_trip() {
-    const KEY: &str = "copilot.allow_builtin_mcp_servers_i_understand_the_risk";
-    let (ws, dir) = tmp_ws("copilot-allow-builtin-mcps");
-
-    let s = Settings::load(&ws).unwrap();
-    let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
-    assert!(
-        !c.allow_builtin_mcp_servers_i_understand_the_risk,
-        "the hatch is off until the operator sets it"
-    );
-
-    set(&ws, KEY, "true").unwrap();
-    let s = Settings::load(&ws).unwrap();
-    let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
-    assert!(c.allow_builtin_mcp_servers_i_understand_the_risk);
-    assert_eq!(config_json(&ws).unwrap()[KEY], serde_json::json!(true));
-
-    let err = set(&ws, KEY, "yes").expect_err("only 'true'/'false' are accepted");
-    assert!(err.to_string().contains("'true' or 'false'"), "{err}");
-    // The refused write left the stored value alone.
-    let s = Settings::load(&ws).unwrap();
-    let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
-    assert!(c.allow_builtin_mcp_servers_i_understand_the_risk);
-
-    unset(&ws, KEY).unwrap();
-    let s = Settings::load(&ws).unwrap();
-    let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
-    assert!(!c.allow_builtin_mcp_servers_i_understand_the_risk);
-    assert_eq!(config_json(&ws).unwrap()[KEY], serde_json::json!(false));
-
     remove_scratch(&dir);
 }
 
@@ -268,7 +187,7 @@ fn antigravity_model_keys_round_trip() {
 }
 
 #[test]
-fn antigravity_effort_keys_accept_only_the_core_lexicon() {
+fn antigravity_effort_keys_round_trip_and_refuse_a_bad_value() {
     for (index, value) in ["low", "medium", "high", "xhigh", "max"]
         .into_iter()
         .enumerate()
@@ -281,42 +200,13 @@ fn antigravity_effort_keys_accept_only_the_core_lexicon() {
         assert_eq!(a.exec_effort.as_deref(), Some(value));
         remove_scratch(dir);
     }
-
-    for invalid in ["none", "minimal", "extreme"] {
-        for key in ["antigravity.plan_effort", "antigravity.exec_effort"] {
-            let (ws, dir) = tmp_ws(&format!("{key}-{invalid}"));
-            assert!(set(&ws, key, invalid).is_err());
-            let a = agy_settings(&ws);
-            assert_eq!((a.plan_effort, a.exec_effort), (None, None));
-            remove_scratch(dir);
-        }
+    for key in ["antigravity.plan_effort", "antigravity.exec_effort"] {
+        let (ws, dir) = tmp_ws(&format!("{key}-refused"));
+        assert!(set(&ws, key, "none").is_err(), "{key}");
+        let a = agy_settings(&ws);
+        assert_eq!((a.plan_effort, a.exec_effort), (None, None));
+        remove_scratch(dir);
     }
-}
-
-#[test]
-fn antigravity_waiver_is_set_only_on_this_machine() {
-    const KEY: &str = "antigravity.run_without_guard_proof_i_understand_the_risk";
-    let (ws, dir) = tmp_ws("antigravity-waiver");
-    assert!(!agy_settings(&ws).run_without_guard_proof_i_understand_the_risk);
-
-    set(&ws, KEY, "true").unwrap();
-    let raw = fs::read_to_string(ws.settings_path()).unwrap();
-    let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    assert_eq!(
-        v["antigravity"]["run_without_guard_proof_i_understand_the_risk"],
-        serde_json::json!(true)
-    );
-    assert_eq!(config_json(&ws).unwrap()[KEY], serde_json::json!(true));
-
-    let err = set(&ws, KEY, "yes").expect_err("only 'true'/'false' are accepted");
-    assert!(err.to_string().contains("'true' or 'false'"), "{err}");
-    assert!(agy_settings(&ws).run_without_guard_proof_i_understand_the_risk);
-
-    unset(&ws, KEY).unwrap();
-    assert!(!agy_settings(&ws).run_without_guard_proof_i_understand_the_risk);
-    assert_eq!(config_json(&ws).unwrap()[KEY], serde_json::json!(false));
-
-    remove_scratch(&dir);
 }
 
 #[test]
@@ -358,4 +248,77 @@ fn an_antigravity_model_that_starts_with_a_dash_is_refused() {
     set(&ws, "antigravity.plan_model", "3-flash").unwrap();
     assert_eq!(agy_settings(&ws).plan_model.as_deref(), Some("3-flash"));
     remove_scratch(&dir);
+}
+
+type HatchRow = (&'static str, &'static str, fn(&Workspace) -> bool);
+
+/// Each risk hatch is a bool key that only `'true'`/`'false'` set, so a hopeful
+/// `yes` cannot switch off a protection by accident.
+#[test]
+fn every_risk_hatch_is_a_strict_bool_key() {
+    fn cursor(ws: &Workspace) -> bool {
+        let s = Settings::load(ws).unwrap();
+        let c: CursorSettings = s.agent_settings(CursorSettings::SECTION).unwrap();
+        c.allow_codebase_indexing_i_understand_the_risk
+    }
+    fn copilot(ws: &Workspace) -> bool {
+        let s = Settings::load(ws).unwrap();
+        let c: CopilotSettings = s.agent_settings(CopilotSettings::SECTION).unwrap();
+        c.allow_builtin_mcp_servers_i_understand_the_risk
+    }
+    fn antigravity(ws: &Workspace) -> bool {
+        agy_settings(ws).run_without_guard_proof_i_understand_the_risk
+    }
+    let rows: [HatchRow; 3] = [
+        (
+            "cursor",
+            "cursor.allow_codebase_indexing_i_understand_the_risk",
+            cursor,
+        ),
+        (
+            "copilot",
+            "copilot.allow_builtin_mcp_servers_i_understand_the_risk",
+            copilot,
+        ),
+        (
+            "antigravity",
+            "antigravity.run_without_guard_proof_i_understand_the_risk",
+            antigravity,
+        ),
+    ];
+    for (name, key, read) in rows {
+        let (ws, dir) = tmp_ws(&format!("risk-hatch-{name}"));
+        assert!(
+            !read(&ws),
+            "{name}: the hatch is off until the operator sets it"
+        );
+
+        set(&ws, key, "true").unwrap();
+        assert!(read(&ws), "{name}: the opt-in must persist and reload");
+        assert_eq!(
+            config_json(&ws).unwrap()[key],
+            serde_json::json!(true),
+            "{name}"
+        );
+
+        let err = set(&ws, key, "yes").expect_err("only 'true'/'false' are accepted");
+        assert!(
+            err.to_string().contains("'true' or 'false'"),
+            "{name}: {err}"
+        );
+        assert!(
+            read(&ws),
+            "{name}: the refused write must leave the value alone"
+        );
+
+        unset(&ws, key).unwrap();
+        assert!(!read(&ws), "{name}: unset turns the hatch off");
+        assert_eq!(
+            config_json(&ws).unwrap()[key],
+            serde_json::json!(false),
+            "{name}"
+        );
+
+        remove_scratch(&dir);
+    }
 }

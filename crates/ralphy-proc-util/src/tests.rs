@@ -135,12 +135,12 @@ fn home_scoped_path_override_replaces_the_home_base() {
 
 #[test]
 fn home_scoped_path_home_branch_joins_home_rel_and_tail() {
-    // The home branch: `home_dir()/home_rel/tail`. Deterministic against the
-    // same `home_dir()` the helper uses — no env mutation.
-    assert_eq!(
-        home_scoped_path(None, Path::new(".codex"), Path::new("config.toml")),
-        home_dir().map(|h| h.join(".codex").join("config.toml"))
-    );
+    // The home branch ends in the literal `home_rel/tail`, under the home.
+    let got = home_scoped_path(None, Path::new(".codex"), Path::new("config.toml"))
+        .expect("a home directory");
+    let rel = Path::new(".codex").join("config.toml");
+    assert!(got.ends_with(&rel), "{}", got.display());
+    assert_eq!(got.parent().and_then(Path::parent), home_dir().as_deref());
 }
 
 #[test]

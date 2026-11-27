@@ -1,9 +1,21 @@
 use super::*;
+use notify::EventKind;
 use std::fs;
 
-/// A generous window: the debounce settle plus slack for a slow CI host.
+const TEST_DEBOUNCE: Duration = Duration::from_millis(50);
+
+/// The quiet gap that ends a drain: the debounce plus a short slack.
 fn window() -> Duration {
-    DEBOUNCE_TIMEOUT + Duration::from_secs(2)
+    TEST_DEBOUNCE + Duration::from_millis(500)
+}
+
+/// The upper bound for an event that must arrive, with slack for a slow host.
+fn arrival_window() -> Duration {
+    TEST_DEBOUNCE + Duration::from_secs(2)
+}
+
+fn manager(max_watches: usize) -> WatcherManager {
+    WatcherManager::with_debounce(max_watches, TEST_DEBOUNCE)
 }
 
 async fn recv_in(rx: &mut DirtyRx, dur: Duration) -> Option<(String, String)> {
@@ -20,9 +32,24 @@ fn an_access_event_changes_no_listing() {
 }
 
 #[tokio::test]
-async fn storm_coalesces_to_few_nudges() {
+async fn the_debounce_is_the_one_the_manager_was_built_with() {
     let dir = tempfile::tempdir().unwrap();
-    let mgr = WatcherManager::new(MAX_WATCHES);
+    let mgr = WatcherManager::with_debounce(MAX_WATCHES, Duration::from_secs(5));
+    let mut rx = mgr.watch("owner/repo", dir.path(), "").unwrap();
+
+    fs::write(dir.path().join("f.txt"), b"x").unwrap();
+    assert!(
+        recv_in(&mut rx, window()).await.is_none(),
+        "a nudge came before the 5 s debounce"
+    );
+}
+
+#[tokio::test]
+async fn storm_coalesces_to_few_nudges() {
+    // The storm must fit in one quiet gap even on a loaded host: the production gap.
+    let storm_debounce = DEBOUNCE_TIMEOUT;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = WatcherManager::with_debounce(MAX_WATCHES, storm_debounce);
     let mut rx = mgr.watch("owner/repo", dir.path(), "").unwrap();
 
     for i in 0..20 {
@@ -31,7 +58,10 @@ async fn storm_coalesces_to_few_nudges() {
 
     // Drain until a quiet gap; a settled storm is one dir per batch, not 20.
     let mut count = 0;
-    while recv_in(&mut rx, window()).await.is_some() {
+    while recv_in(&mut rx, storm_debounce + Duration::from_millis(500))
+        .await
+        .is_some()
+    {
         count += 1;
     }
     assert!((1..=3).contains(&count), "coalesced count = {count}");
@@ -40,7 +70,7 @@ async fn storm_coalesces_to_few_nudges() {
 #[tokio::test]
 async fn unwatched_and_noise_children_emit_nothing() {
     let dir = tempfile::tempdir().unwrap();
-    let mgr = WatcherManager::new(MAX_WATCHES);
+    let mgr = manager(MAX_WATCHES);
     let mut rx = mgr.watch("owner/repo", dir.path(), "").unwrap();
 
     // The two dirs are created UNDER the watch and their (legitimate)
@@ -62,7 +92,7 @@ async fn unwatched_and_noise_children_emit_nothing() {
 
     fs::write(dir.path().join("visible.txt"), b"v").unwrap();
     assert_eq!(
-        recv_in(&mut rx, window()).await,
+        recv_in(&mut rx, arrival_window()).await,
         Some(("owner/repo".to_owned(), String::new())),
         "a real child create nudges the root"
     );
@@ -82,7 +112,7 @@ async fn listing_a_watched_dir_emits_nothing() {
     fs::create_dir(dir.path().join("platform/apisix")).unwrap();
     fs::create_dir(dir.path().join("docs")).unwrap();
 
-    let mgr = WatcherManager::new(MAX_WATCHES);
+    let mgr = manager(MAX_WATCHES);
     let mut rx = mgr.watch("owner/repo", dir.path(), "").unwrap();
     let _rx_platform = mgr.watch("owner/repo", dir.path(), "platform").unwrap();
     // Let the watch SETUP settle first: opening a directory handle for the
@@ -101,7 +131,7 @@ async fn listing_a_watched_dir_emits_nothing() {
 
     fs::write(dir.path().join("platform/new.yaml"), b"x").unwrap();
     assert_eq!(
-        recv_in(&mut rx, window()).await,
+        recv_in(&mut rx, arrival_window()).await,
         Some(("owner/repo".to_owned(), "platform".to_owned())),
         "a real write still nudges the dir it landed in"
     );
@@ -116,12 +146,12 @@ async fn gitignored_dir_nudges_like_any_other() {
     fs::write(dir.path().join(".gitignore"), b"ignored/\n").unwrap();
     fs::create_dir(dir.path().join("ignored")).unwrap();
 
-    let mgr = WatcherManager::new(MAX_WATCHES);
+    let mgr = manager(MAX_WATCHES);
     let mut rx = mgr.watch("owner/repo", dir.path(), "ignored").unwrap();
 
     fs::write(dir.path().join("ignored/y"), b"y").unwrap();
     assert_eq!(
-        recv_in(&mut rx, window()).await,
+        recv_in(&mut rx, arrival_window()).await,
         Some(("owner/repo".to_owned(), "ignored".to_owned())),
     );
 }
@@ -132,13 +162,13 @@ async fn runstate_nudges_despite_gitignore() {
     fs::write(dir.path().join(".gitignore"), b".ralphy/\n").unwrap();
     fs::create_dir_all(dir.path().join(RUNSTATE_REL)).unwrap();
 
-    let mgr = WatcherManager::new(MAX_WATCHES);
+    let mgr = manager(MAX_WATCHES);
     let mut rx = mgr.watch("owner/repo", dir.path(), RUNSTATE_REL).unwrap();
 
     fs::write(dir.path().join(RUNSTATE_REL).join("01ABC.json"), b"{}").unwrap();
 
     assert_eq!(
-        recv_in(&mut rx, window()).await,
+        recv_in(&mut rx, arrival_window()).await,
         Some(("owner/repo".to_owned(), RUNSTATE_REL.to_owned())),
         "the snapshot dir nudges even though `.ralphy/` is gitignored"
     );
@@ -176,7 +206,7 @@ async fn a_head_rel_nudges_on_head_alone() {
     fs::write(dir.path().join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
     fs::write(dir.path().join(".git/logs/HEAD"), b"").unwrap();
 
-    let mgr = WatcherManager::new(MAX_WATCHES);
+    let mgr = manager(MAX_WATCHES);
     let mut rx = mgr.watch("owner/repo", dir.path(), ".git").unwrap();
     let _logs = mgr.watch("owner/repo", dir.path(), ".git/logs").unwrap();
     while recv_in(&mut rx, window()).await.is_some() {}
@@ -185,7 +215,7 @@ async fn a_head_rel_nudges_on_head_alone() {
     fs::write(dir.path().join(".git/index.lock"), b"i").unwrap();
     fs::remove_file(dir.path().join(".git/index.lock")).unwrap();
     assert_eq!(
-        recv_in(&mut rx, window()).await,
+        recv_in(&mut rx, arrival_window()).await,
         None,
         "index writes are not a HEAD move"
     );
@@ -198,7 +228,7 @@ async fn a_head_rel_nudges_on_head_alone() {
     )
     .unwrap();
     assert_eq!(
-        recv_in(&mut rx, window()).await,
+        recv_in(&mut rx, arrival_window()).await,
         Some(("owner/repo".to_owned(), ".git".to_owned())),
     );
     while recv_in(&mut rx, window()).await.is_some() {}
@@ -210,7 +240,7 @@ async fn a_head_rel_nudges_on_head_alone() {
     std::io::Write::write_all(&mut log, b"a b c\n").unwrap();
     drop(log);
     assert_eq!(
-        recv_in(&mut rx, window()).await,
+        recv_in(&mut rx, arrival_window()).await,
         Some(("owner/repo".to_owned(), ".git/logs".to_owned())),
     );
 }
@@ -218,7 +248,7 @@ async fn a_head_rel_nudges_on_head_alone() {
 #[tokio::test]
 async fn refcount_shares_and_tears_down() {
     let dir = tempfile::tempdir().unwrap();
-    let mgr = WatcherManager::new(MAX_WATCHES);
+    let mgr = manager(MAX_WATCHES);
     let _rx1 = mgr.watch("owner/repo", dir.path(), "").unwrap();
     let _rx2 = mgr.watch("owner/repo", dir.path(), "").unwrap();
     assert_eq!(
@@ -241,7 +271,7 @@ async fn refcount_shares_and_tears_down() {
 #[tokio::test]
 async fn watch_rejects_parent_traversal() {
     let dir = tempfile::tempdir().unwrap();
-    let mgr = WatcherManager::new(MAX_WATCHES);
+    let mgr = manager(MAX_WATCHES);
     assert!(
         mgr.watch("owner/repo", dir.path(), "../escape").is_err(),
         "a `..` path must be refused, never watched out-of-root"
@@ -258,7 +288,7 @@ async fn over_cap_degrades_to_poll() {
     fs::create_dir(dir.path().join("a")).unwrap();
     fs::create_dir(dir.path().join("b")).unwrap();
 
-    let mgr = WatcherManager::new(1);
+    let mgr = manager(1);
     let _rx_a = mgr.watch("owner/repo", dir.path(), "a").unwrap();
     let mut rx_b = mgr.watch("owner/repo", dir.path(), "b").unwrap();
     assert_eq!(
@@ -279,7 +309,7 @@ async fn over_cap_degrades_to_poll() {
 #[tokio::test]
 async fn a_failed_first_watch_leaves_no_repo_watcher() {
     let dir = tempfile::tempdir().unwrap();
-    let mgr = WatcherManager::new(8);
+    let mgr = manager(8);
     assert!(mgr.watch("owner/repo", dir.path(), "no-such-dir").is_err());
     assert!(!mgr.repo_active("owner/repo"));
 }
@@ -289,7 +319,7 @@ async fn a_failed_first_watch_leaves_no_repo_watcher() {
 #[tokio::test]
 async fn a_poisoned_registry_still_watches() {
     let dir = tempfile::tempdir().unwrap();
-    let mgr = Arc::new(WatcherManager::new(MAX_WATCHES));
+    let mgr = Arc::new(manager(MAX_WATCHES));
     let holder = Arc::clone(&mgr);
     let panicked = std::thread::spawn(move || {
         let _held = holder.repos.lock();
@@ -311,7 +341,7 @@ async fn a_failed_degrade_leaves_no_refcount() {
     let dir = tempfile::tempdir().unwrap();
     fs::create_dir(dir.path().join("b")).unwrap();
 
-    let mgr = WatcherManager::new(1);
+    let mgr = manager(1);
     let _rx_root = mgr.watch("owner/repo", dir.path(), "").unwrap();
     mgr.fail_next_degrade
         .store(true, std::sync::atomic::Ordering::SeqCst);

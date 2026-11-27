@@ -1,5 +1,4 @@
-//! Characterization pins over the core-emitted event vocabulary (#219), and
-//! the `exec_usage` model fold (#225).
+//! Characterization pins over the core-emitted event vocabulary (#219).
 //!
 //! Each pin asserts the FULL `(level, message, field-key-set)` triple of a
 //! consumed message, plus the observed encoding of the interesting values (`%order`
@@ -10,8 +9,6 @@
 //! there (`runstate::capture`).
 
 use super::*;
-
-mod exec_usage;
 
 #[test]
 fn pins_green_run_vocabulary() {

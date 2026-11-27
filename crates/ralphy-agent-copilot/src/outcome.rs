@@ -249,33 +249,47 @@ mod tests {
 
     // ── the ADR-0023 ladder ─────────────────────────────────────────────────
 
+    /// Copilot reads the exit status, and its limit text, before the shared ladder.
+    /// The ladder itself is tested in `ralphy-adapter-support`.
     #[test]
-    fn classify_stuck_on_non_zero_exit() {
-        assert_eq!(
-            classify_copilot_outcome(false, false, true, "RALPHY_DONE_EXIT", ""),
-            Outcome::Stuck
-        );
-    }
-
-    #[test]
-    fn classify_limit_maps_to_limit_none() {
-        // No reset hint is recoverable, so `Limit(None)` — which is what keys the
-        // ADR-0030 synthetic cadence.
-        let log = "Error: API rate limit exceeded for this token.";
-        assert_eq!(
-            classify_copilot_outcome(false, false, false, "", log),
-            Outcome::Limit(None)
-        );
-    }
-
-    #[test]
-    fn classify_limit_ignored_on_clean_exit() {
-        // A clean exit proves the phrase was merely echoed by the agent's prose.
-        let log = "the issue asks us to handle a rate limit gracefully";
-        assert_eq!(
-            classify_copilot_outcome(true, false, true, "RALPHY_DONE_EXIT", log),
-            Outcome::Done
-        );
+    fn copilot_reads_the_exit_status_and_limit_text_before_the_ladder() {
+        let prose = "the issue asks us to handle a rate limit gracefully";
+        let rate_limit = "Error: API rate limit exceeded for this token.";
+        // (row, exited_cleanly, committed, final_text, log, expected)
+        let rows = [
+            (
+                "non-zero exit is stuck",
+                false,
+                true,
+                "RALPHY_DONE_EXIT",
+                "",
+                Outcome::Stuck,
+            ),
+            // No reset hint is recoverable, so `Limit(None)` keys the ADR-0030 cadence.
+            (
+                "limit text on a failed exit",
+                false,
+                false,
+                "",
+                rate_limit,
+                Outcome::Limit(None),
+            ),
+            (
+                "limit prose on a clean exit",
+                true,
+                true,
+                "RALPHY_DONE_EXIT",
+                prose,
+                Outcome::Done,
+            ),
+        ];
+        for (row, clean, committed, text, log, expected) in rows {
+            assert_eq!(
+                classify_copilot_outcome(clean, false, committed, text, log),
+                expected,
+                "{row}"
+            );
+        }
     }
 
     /// The production half of this file must never so much as name the envelope's

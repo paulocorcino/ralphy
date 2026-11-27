@@ -89,61 +89,52 @@ fn a_run_in_a_project_with_its_own_hooks_gets_no_trust_flag() {
     assert!(!args.iter().any(|a| a.starts_with("hooks.")), "{args:?}");
 }
 
+/// The whole `codex exec` argv for each effort word, and the whole env change:
+/// `OPENAI_API_KEY` is the one variable removed, so an inherited key cannot
+/// switch the run to API billing, and no other variable is touched.
 #[test]
 fn build_command_argv_and_env() {
-    let cmd = build_codex_command(
-        CODEX_MODEL_SOL,
-        "high",
-        Path::new("/repo"),
-        Path::new("/repo/.ralphy/codex-last.txt"),
-        StatusHooks {
-            exe: Path::new(HOOK_EXE),
-            file: Path::new(STATUS),
-        },
-    );
-    assert_eq!(cmd.get_program().to_string_lossy(), "codex");
-
-    let args: Vec<String> = cmd
-        .get_args()
-        .map(|a| a.to_string_lossy().into_owned())
-        .collect();
-    assert!(args.contains(&"exec".to_owned()), "argv: {args:?}");
-    assert!(args.contains(&"-C".to_owned()), "argv: {args:?}");
-    assert!(args.contains(&"-m".to_owned()), "argv: {args:?}");
-    assert!(args.contains(&"-o".to_owned()), "argv: {args:?}");
-    // The effort word reaches the child as given, for each word.
+    let out = "/repo/.ralphy/codex-last.txt";
     for effort in ["high", "low"] {
-        let args: Vec<String> = build_codex_command(
+        let cmd = build_codex_command(
             CODEX_MODEL_SOL,
             effort,
             Path::new("/repo"),
-            Path::new("/repo/out.txt"),
+            Path::new(out),
             StatusHooks {
                 exe: Path::new(HOOK_EXE),
                 file: Path::new(STATUS),
             },
-        )
-        .get_args()
-        .map(|a| a.to_string_lossy().into_owned())
-        .collect();
-        let want = format!("model_reasoning_effort=\"{effort}\"");
-        assert!(
-            args.contains(&want),
-            "{effort}: effort arg missing: {args:?}"
         );
-    }
-    // Sandbox posture and the trailing stdin marker. `codex exec` defaults to
-    // approval=never, so no explicit `-a` flag is passed (it is rejected by
-    // codex-cli ≥0.138).
-    assert!(args.contains(&"danger-full-access".to_owned()));
-    assert!(args.contains(&"-".to_owned()));
+        assert_eq!(cmd.get_program().to_string_lossy(), "codex");
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let mut want: Vec<String> = ["exec", "-C", "/repo", "-m", CODEX_MODEL_SOL, "-c"]
+            .map(str::to_owned)
+            .to_vec();
+        want.push(format!("model_reasoning_effort=\"{effort}\""));
+        want.extend(hook_form::codex_hook_args(
+            Path::new(HOOK_EXE),
+            &hook_form::CODEX_STATUS_EVENTS,
+        ));
+        want.extend(["-s", "danger-full-access", "-o", out, "-"].map(str::to_owned));
+        assert_eq!(args, want, "{effort}");
 
-    // OPENAI_API_KEY is removed on the child so an inherited key can't switch
-    // the run to API billing.
-    let removed = cmd
-        .get_envs()
-        .any(|(k, v)| k == "OPENAI_API_KEY" && v.is_none());
-    assert!(removed, "OPENAI_API_KEY should be removed on the child");
+        let envs: Vec<(String, Option<String>)> = cmd
+            .get_envs()
+            .map(|(k, v)| {
+                let v = v.map(|v| v.to_string_lossy().into_owned());
+                (k.to_string_lossy().into_owned(), v)
+            })
+            .collect();
+        let want_envs = [
+            ("OPENAI_API_KEY".to_owned(), None),
+            ("RALPHY_STATUS_FILE".to_owned(), Some(STATUS.to_owned())),
+        ];
+        assert_eq!(envs, want_envs, "{effort}: only the API key is removed");
+    }
 }
 
 #[test]

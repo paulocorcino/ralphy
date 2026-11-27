@@ -195,21 +195,20 @@ fn expands_a_leading_tilde_to_home() {
 }
 
 #[test]
-fn refuses_a_relative_path() {
-    assert_eq!(
-        list(Some("some/where/"), &none(), None),
-        Err(Refusal::Relative)
-    );
-}
-
-#[test]
-fn refuses_a_long_path_or_a_control_character() {
+fn refuses_what_is_not_an_absolute_local_path() {
     let long = format!("/{}", "a".repeat(MAX_PATH_BYTES));
-    assert_eq!(list(Some(&long), &none(), None), Err(Refusal::TooLong));
-    assert_eq!(
-        list(Some("/tmp/\u{7}/"), &none(), None),
-        Err(Refusal::ControlCharacter)
-    );
+    let rows = [
+        ("relative", "some/where/", Refusal::Relative),
+        ("too long", long.as_str(), Refusal::TooLong),
+        (
+            "control character",
+            "/tmp/\u{7}/",
+            Refusal::ControlCharacter,
+        ),
+    ];
+    for (name, text, want) in rows {
+        assert_eq!(list(Some(text), &none(), None), Err(want), "{name}");
+    }
 }
 
 #[test]

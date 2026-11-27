@@ -428,7 +428,7 @@ function writeSeam(reply) {
 
 test("a delete that the daemon answers 'not found' flashes the refusal and re-lists the parent", async () => {
   const { sent, written, flashed, act } = writeSeam({ status: "error", message: "not found" });
-  await act({ action: "delete", project: "o/r", path: "src/a/gone.txt", title: "gone.txt" });
+  await act({ action: "delete", project: "o/r", entries: [{ path: "src/a/gone.txt", title: "gone.txt" }] });
   assert.deepEqual(written.map((w) => [w.verb, w.payload.path]), [["file.delete", "src/a/gone.txt"]]);
   assert.equal(flashed.length, 1);
   assert.match(flashed[0], /Could not delete/u);
@@ -437,12 +437,12 @@ test("a delete that the daemon answers 'not found' flashes the refusal and re-li
 
 test("a delete that works says so and re-lists nothing; one that is refused for another reason re-lists nothing", async () => {
   let seam = writeSeam({ status: "ok" });
-  await seam.act({ action: "delete", project: "o/r", path: "src/a.txt", title: "a.txt" });
+  await seam.act({ action: "delete", project: "o/r", entries: [{ path: "src/a.txt", title: "a.txt" }] });
   assert.deepEqual(seam.flashed, ["a.txt deleted."]);
   assert.deepEqual(seam.sent("workbench:tree-dirty"), []);
 
   seam = writeSeam({ status: "error", message: "permission denied" });
-  await seam.act({ action: "delete", project: "o/r", path: "src/a.txt" });
+  await seam.act({ action: "delete", project: "o/r", entries: [{ path: "src/a.txt" }] });
   assert.match(seam.flashed[0], /Could not delete/u);
   assert.deepEqual(seam.sent("workbench:tree-dirty"), []);
 });
@@ -450,9 +450,26 @@ test("a delete that works says so and re-lists nothing; one that is refused for 
 test("a delete the operator declines writes nothing", async () => {
   const { answer, written, flashed, act } = writeSeam({ status: "ok" });
   answer.yes = false;
-  await act({ action: "delete", project: "o/r", path: "src/a.txt" });
+  await act({ action: "delete", project: "o/r", entries: [{ path: "src/a.txt" }] });
   assert.deepEqual(written, []);
   assert.deepEqual(flashed, []);
+});
+
+test("a delete of several entries asks once, deletes each, and flashes one line", async () => {
+  let asked = 0;
+  let seam = writeSeam({ status: "ok" });
+  seam.window.Alpine.store("modals").askConfirm = (opts) => (asked++, Promise.resolve(/3 items/u.test(opts.message)));
+  const entries = [{ path: "a.txt", title: "a.txt" }, { path: "src", title: "src", isFolder: true }, { path: "b.md", title: "b.md" }];
+  await seam.act({ action: "delete", project: "o/r", entries });
+  assert.equal(asked, 1);
+  assert.deepEqual(seam.written.map((w) => [w.verb, w.payload.path]), [["file.delete", "a.txt"], ["file.delete", "src"], ["file.delete", "b.md"]]);
+  assert.deepEqual(seam.flashed, ["3 items deleted."]);
+
+  seam = writeSeam({ status: "error", message: "permission denied" });
+  await seam.act({ action: "delete", project: "o/r", entries });
+  assert.equal(seam.written.length, 3, "a refusal does not stop the others");
+  assert.equal(seam.flashed.length, 1);
+  assert.match(seam.flashed[0], /^0 of 3 items deleted\. a\.txt: Could not delete/u);
 });
 
 test("a rename writes the full paths and flashes only a refusal", async () => {

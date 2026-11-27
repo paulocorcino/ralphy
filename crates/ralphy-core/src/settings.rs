@@ -294,37 +294,6 @@ mod tests {
     }
 
     #[test]
-    fn new_keys_round_trip() {
-        let (ws, dir) = tmp_ws("new-keys-round-trip");
-
-        // Seed a raw file carrying an unknown peer key so we can assert it
-        // survives a save that also writes the new typed keys.
-        let raw = r#"{"future_key":123}"#;
-        fs::create_dir_all(ws.ralphy_dir()).unwrap();
-        fs::write(ws.settings_path(), raw).unwrap();
-
-        let mut s = Settings::load(&ws).unwrap();
-        s.base_branch = Some("origin/dev".into());
-        s.branch_mode = Some("current".into());
-        s.remote_control = Some(true);
-        s.save(&ws).unwrap();
-
-        let reloaded = Settings::load(&ws).unwrap();
-        assert_eq!(reloaded.base_branch.as_deref(), Some("origin/dev"));
-        assert_eq!(reloaded.branch_mode.as_deref(), Some("current"));
-        assert_eq!(reloaded.remote_control, Some(true));
-
-        // The unknown peer key must survive the typed save.
-        let back = fs::read_to_string(ws.settings_path()).unwrap();
-        assert!(
-            back.contains("future_key"),
-            "flatten must preserve unknown keys; got:\n{back}"
-        );
-
-        remove_scratch(&dir);
-    }
-
-    #[test]
     fn typed_keys_default_unset_and_round_trip() {
         type Get = fn(&Settings) -> String;
         type Set = fn(&mut Settings);

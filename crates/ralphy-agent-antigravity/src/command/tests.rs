@@ -107,9 +107,14 @@ fn the_child_environment_drops_google_and_gemini_keys() {
             "{kept} was removed"
         );
     }
-    assert!(
-        cmd.get_envs().all(|(_, value)| value.is_none()),
-        "the child gets no variable set by Ralphy"
+    let set: Vec<_> = cmd
+        .get_envs()
+        .filter(|(_, value)| value.is_some())
+        .collect();
+    assert_eq!(
+        set.len(),
+        1,
+        "the updater switch is the one variable set by Ralphy: {set:?}"
     );
 }
 
@@ -127,4 +132,16 @@ fn the_user_message_is_one_ndjson_line() {
             "message": { "role": "user", "content": prompt },
         })
     );
+}
+
+#[test]
+fn every_headless_agy_child_runs_without_the_updater() {
+    let run = build_agy_command(Path::new(NAME), Path::new("/repo"), flags(None, None));
+    for cmd in [agy_command(Path::new(NAME)), run] {
+        let value = cmd
+            .get_envs()
+            .find(|(name, _)| *name == "AGY_CLI_DISABLE_AUTO_UPDATE")
+            .and_then(|(_, value)| value);
+        assert_eq!(value, Some(std::ffi::OsStr::new("true")));
+    }
 }

@@ -1,7 +1,8 @@
 import type { Shell } from "./app.ts";
 import { shell } from "./app.ts";
 import { WBFail } from "./wb-fail.ts";
-import { classify, fileTabId, newEntryTitle, parentRel } from "./wb-file-paths.ts";
+import { deleteEntries } from "./wb-delete.ts";
+import { classify, fileTabId, newEntryTitle } from "./wb-file-paths.ts";
 import { WBReleaseDialogs } from "./wb-release-dialogs.ts";
 import { WBSecurityDialog } from "./wb-security-dialog.ts";
 import { WBSettingsDialog } from "./wb-settings-dialog.ts";
@@ -341,40 +342,6 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
       sendWindow(window, "workbench:tree-dirty", { rel: d.path || "", reveal: path });
     }
 
-    // Irreversible (a folder removes recursively): confirm first.
-    async function actDelete(d: ActionOf<"delete">, { repo, aimed }: Aim) {
-      const name = d.title || (d.path.split("/").pop() ?? "") || d.path;
-      const message = d.isFolder
-        ? `Delete folder “${name}” and its contents? This cannot be undone.`
-        : `Delete “${name}”? This cannot be undone.`;
-      const ask = messages.askInShell({
-        title: "Delete",
-        message,
-        confirmLabel: "Delete",
-        danger: true,
-      });
-      const ok = ask ? await ask : window.confirm(message);
-      if (ok !== true) return;
-      const reply = await WBDaemon.write("file.delete", aimed({ repo, path: d.path })).catch(
-        () => null,
-      );
-      if (!reply) {
-        flash("Could not delete: the daemon did not answer.");
-        return;
-      }
-      if (!WBFail.isError(reply)) {
-        flash(`${name} deleted.`);
-        return;
-      }
-      const reason = WBFail.message(reply, "the daemon gave no reason");
-      flash(WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
-      // "not found" on a delete says the ROW is the lie: re-list the parent
-      // so the ghost ends up off the screen.
-      if (/not found/iu.test(reason)) {
-        sendWindow(window, "workbench:tree-dirty", { rel: parentRel(d.path) });
-      }
-    }
-
     async function runAction(d: WorkbenchAction) {
       if (!daemonBacked()) return;
       const aim = actionTarget(d);
@@ -395,7 +362,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
           break;
         }
         case "delete":
-          await actDelete(d, aim);
+          await deleteEntries(d, aim, messages);
           break;
         case "branch-create":
         case "branch-switch":

@@ -434,6 +434,24 @@ export const WB_SETTINGS: Section[] = [
     ],
   },
   {
+    id: "antigravity",
+    title: "Antigravity",
+    icon: "bi-robot",
+    scope: "project",
+    blurb: "Settings for the Antigravity adapter.",
+    items: [
+      {
+        key: "antigravity.console_agent_workflow_i_understand_the_risk",
+        label: "Let the agent push in consoles",
+        type: "toggle",
+        default: false,
+        help:
+          "The agent of an Antigravity console may switch branches, push and write pull " +
+          "requests. A run still cannot. Applies to consoles opened after the change.",
+      },
+    ],
+  },
+  {
     id: "opencode",
     title: "OpenCode",
     icon: "bi-terminal",

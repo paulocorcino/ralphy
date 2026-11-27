@@ -138,14 +138,27 @@ const TOOLS: &[Tool] = &[
     },
 ];
 
+/// Where a queue run gets the text of its environment brief.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnvironmentProbe {
+    /// Probe this host for its OS and tools.
+    Host,
+    /// Write this text as the brief, with no probe of the host.
+    Fixed(String),
+}
+
 /// Write `.ralphy/environment.md`, refreshing it on every run. Unlike the machine
 /// facts (static), the orchestrator-guard section carries this run's live PID, so a
 /// stale file from an earlier run would name a dead or recycled process — hence no
 /// write-once short-circuit. Best-effort: a detection or write failure just means
 /// the charter reads no brief, strictly no worse than today.
-pub fn ensure_brief(ws: &Workspace) {
+pub fn ensure_brief(ws: &Workspace, probe: &EnvironmentProbe) {
     let path = ws.ralphy_dir().join(ENVIRONMENT_FILE);
-    if let Err(e) = std::fs::write(&path, render(&detect(), &orchestrator_guard())) {
+    let text = match probe {
+        EnvironmentProbe::Host => render(&detect(), &orchestrator_guard()),
+        EnvironmentProbe::Fixed(text) => text.clone(),
+    };
+    if let Err(e) = std::fs::write(&path, text) {
         warn!(error = %e, "writing the environment brief failed");
     }
 }
@@ -377,7 +390,7 @@ mod tests {
         std::fs::create_dir_all(ws.ralphy_dir()).unwrap();
         let path = ws.ralphy_dir().join(ENVIRONMENT_FILE);
 
-        ensure_brief(&ws);
+        ensure_brief(&ws, &EnvironmentProbe::Host);
         let first = std::fs::read_to_string(&path).unwrap();
         assert!(first.contains("DO NOT KILL the orchestrator"));
         // This run's live PID is named so a by-PID kill can avoid it.
@@ -388,7 +401,7 @@ mod tests {
         // A stale copy MUST be overwritten — the PID it carries is run-specific, so
         // (unlike the old write-once brief) reuse would name the wrong process.
         std::fs::write(&path, "stale").unwrap();
-        ensure_brief(&ws);
+        ensure_brief(&ws, &EnvironmentProbe::Host);
         let second = std::fs::read_to_string(&path).unwrap();
         assert_ne!(second, "stale");
         assert!(second.contains("DO NOT KILL the orchestrator"));

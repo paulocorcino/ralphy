@@ -92,6 +92,11 @@ fn set_password_round_trips_set_then_clear() {
         security_state_at(dir.path()).password_set,
         "state reflects the set"
     );
+    let record = std::fs::read_to_string(password::password_path_in(dir.path())).unwrap();
+    assert!(
+        record.starts_with("pbkdf2-sha1$1300000$"),
+        "a new hash uses the production count: {record}"
+    );
     assert!(!set_password_at(dir.path(), None).unwrap(), "clear → false");
     assert!(
         !security_state_at(dir.path()).password_set,

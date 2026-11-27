@@ -124,30 +124,45 @@ fn parse_error(app: &str) -> String {
 }
 
 #[test]
-fn app_ts_with_no_function_shell_is_an_error() {
-    let err = parse_error("const s = shellData({ a: 1 });\n");
-    assert_eq!(err, "app.ts has no `function shell`");
+fn a_shell_that_cannot_be_read_is_an_error() {
+    let rows: [(&str, &str, &str); 4] = [
+        (
+            "no function shell",
+            "const s = shellData({ a: 1 });
+",
+            "app.ts has no `function shell`",
+        ),
+        (
+            "no shellData return",
+            "function shell() {
+  return { a: 1 };
 }
-
-#[test]
-fn a_shell_that_does_not_return_shell_data_is_an_error() {
-    let err = parse_error("function shell() {\n  return { a: 1 };\n}\n");
-    assert_eq!(err, "shell() does not return shellData({ … })");
+",
+            "shell() does not return shellData({ … })",
+        ),
+        (
+            "object literal not closed",
+            "function shell() {
+  return shellData({
+    a: 1,
+",
+            "the object literal of shell() is not closed",
+        ),
+        (
+            "member with no plain name",
+            "function shell() {
+  return shellData({
+    a: 1,
+    [k]: 2,
+  });
 }
-
-#[test]
-fn an_object_literal_that_is_not_closed_is_an_error() {
-    let err = parse_error("function shell() {\n  return shellData({\n    a: 1,\n");
-    assert_eq!(err, "the object literal of shell() is not closed");
-}
-
-#[test]
-fn a_member_with_no_plain_name_is_an_error() {
-    let app = "function shell() {\n  return shellData({\n    a: 1,\n    [k]: 2,\n  });\n}\n";
-    assert_eq!(
-        parse_error(app),
-        "app.ts:4: a member of shell() with no plain name"
-    );
+",
+            "app.ts:4: a member of shell() with no plain name",
+        ),
+    ];
+    for (name, app, want) in rows {
+        assert_eq!(parse_error(app), want, "{name}");
+    }
 }
 
 #[test]
@@ -320,36 +335,34 @@ fn names_read(expr: &str, known: &[&str]) -> Vec<String> {
 }
 
 #[test]
-fn an_arrow_with_one_bare_parameter_declares_it() {
-    assert_eq!(
-        names_read("list.map(x => x + openSlug)", &["x", "openSlug"]),
-        ["openSlug"]
-    );
-}
-
-#[test]
-fn let_const_and_var_declare_the_name_after_them() {
-    assert_eq!(
-        names_read(
-            "{ let tabs = 1; const x = 2; var y = 3; tabs + x + y + openSlug }",
-            &["tabs", "x", "y", "openSlug"]
+fn names_read_table() {
+    let rows: [(&str, &str, &[&str], &[&str]); 4] = [
+        (
+            "an arrow with one bare parameter declares it",
+            "list.map(x => x + openSlug)",
+            &["x", "openSlug"],
+            &["openSlug"],
         ),
-        ["openSlug"]
-    );
-}
-
-#[test]
-fn a_name_after_an_optional_chain_dot_is_a_property_not_a_read() {
-    assert_eq!(
-        names_read("tabs?.openSlug", &["tabs", "openSlug"]),
-        ["tabs"]
-    );
-}
-
-#[test]
-fn an_object_key_after_a_comma_is_not_a_read() {
-    assert_eq!(
-        names_read("call({ tabs: 1, openSlug: 2 })", &["tabs", "openSlug"]),
-        Vec::<String>::new()
-    );
+        (
+            "let, const and var declare the name after them",
+            "{ let tabs = 1; const x = 2; var y = 3; tabs + x + y + openSlug }",
+            &["tabs", "x", "y", "openSlug"],
+            &["openSlug"],
+        ),
+        (
+            "a name after an optional chain dot is a property",
+            "tabs?.openSlug",
+            &["tabs", "openSlug"],
+            &["tabs"],
+        ),
+        (
+            "an object key after a comma is not a read",
+            "call({ tabs: 1, openSlug: 2 })",
+            &["tabs", "openSlug"],
+            &[],
+        ),
+    ];
+    for (name, expr, known, want) in rows {
+        assert_eq!(names_read(expr, known), want, "{name}");
+    }
 }

@@ -95,10 +95,18 @@ fn version(major: OpenCodeMajor, text: &str) -> OpenCodeVersion {
 
 /// Run `program --version` (cached per binary and modified time) and parse it.
 pub fn read_opencode_version(program: &Path) -> Result<OpenCodeVersion, OpenCodeVersionError> {
+    read_opencode_version_within(program, VERSION_LIMIT)
+}
+
+/// [`read_opencode_version`] with the time the read may take given by `limit`.
+pub fn read_opencode_version_within(
+    program: &Path,
+    limit: Duration,
+) -> Result<OpenCodeVersion, OpenCodeVersionError> {
     let unreadable = || OpenCodeVersionError::Unreadable {
         program: program.as_os_str().to_owned(),
     };
-    let line = crate::hook_form::read_version(program, VERSION_LIMIT).ok_or_else(unreadable)?;
+    let line = crate::hook_form::read_version(program, limit).ok_or_else(unreadable)?;
     parse_opencode_version(&line).map_err(|e| match e {
         OpenCodeVersionError::Unreadable { .. } => unreadable(),
         unsupported @ OpenCodeVersionError::Unsupported { .. } => unsupported,

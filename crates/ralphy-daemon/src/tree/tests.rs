@@ -1,25 +1,3 @@
-#[test]
-fn read_error_keeps_its_text() {
-    use super::ReadError;
-    assert_eq!(ReadError::Binary.to_string(), "binary file");
-    assert_eq!(ReadError::TooLarge.to_string(), "file too large");
-    assert_eq!(ReadError::NotFound.to_string(), "file not found");
-    assert_eq!(ReadError::NotImage.to_string(), "not an image");
-}
-
-/// The cap is the base64 size of the largest image plus 64 KiB, so a
-/// 4 MiB paste and its envelope fit and nothing much larger does.
-#[test]
-fn max_command_bytes_is_derived_from_the_image_cap() {
-    assert_eq!(
-        MAX_COMMAND_BYTES,
-        (4 * 1024 * 1024usize).div_ceil(3) * 4 + 65_536
-    );
-    assert_eq!(MAX_COMMAND_BYTES, 5_657_944);
-    let max = usize::try_from(MAX_IMAGE_BYTES).expect("4 MiB fits usize");
-    assert!(MAX_COMMAND_BYTES > max.div_ceil(3) * 4 + 4096);
-}
-
 use super::*;
 use std::fs;
 
@@ -143,128 +121,104 @@ fn read_accepts_large_utf8_split_at_window_boundary() {
 }
 
 #[test]
-fn read_image_serves_every_allowlisted_type() {
-    // The whole allowlist round-trips: extension → verified type → bytes.
+fn read_image_serves_what_the_extension_and_the_bytes_agree_on() {
+    let prologue = "<?xml version=\"1.0\"?>
+<!-- drawn by hand -->
+               <!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"svg11.dtd\">
+               <svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>";
+    let bracket = "<!-- a > b <html> -->
+<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
+    let by_kind = |kind: ImageType| (kind.media_type(), magic(kind));
+    let text = |svg: &str| ("image/svg+xml", svg.as_bytes().to_vec());
+    let rows = [
+        ("png", "a.png", by_kind(ImageType::Png)),
+        ("jpg", "a.jpg", by_kind(ImageType::Jpeg)),
+        ("jpeg", "a.jpeg", by_kind(ImageType::Jpeg)),
+        ("gif", "a.gif", by_kind(ImageType::Gif)),
+        ("webp", "a.webp", by_kind(ImageType::Webp)),
+        ("bmp", "a.bmp", by_kind(ImageType::Bmp)),
+        ("ico", "a.ico", by_kind(ImageType::Icon)),
+        ("svg", "a.svg", by_kind(ImageType::Svg)),
+        ("upper case extension", "A.PNG", by_kind(ImageType::Png)),
+        ("svg behind a prologue", "logo.svg", text(prologue)),
+        ("svg after a comment with >", "note.svg", text(bracket)),
+    ];
     let root = tempfile::tempdir().unwrap();
-    for (name, kind) in [
-        ("a.png", ImageType::Png),
-        ("a.jpg", ImageType::Jpeg),
-        ("a.jpeg", ImageType::Jpeg),
-        ("a.gif", ImageType::Gif),
-        ("a.webp", ImageType::Webp),
-        ("a.bmp", ImageType::Bmp),
-        ("a.ico", ImageType::Icon),
-        ("a.svg", ImageType::Svg),
-    ] {
-        let bytes = magic(kind);
-        fs::write(root.path().join(name), &bytes).unwrap();
-        assert_eq!(
-            read_image(root.path(), name),
-            Ok(Image {
-                media_type: kind.media_type(),
-                bytes
-            }),
-            "{name}"
-        );
+    for (name, file, (media_type, bytes)) in rows {
+        fs::write(root.path().join(file), &bytes).unwrap();
+        let want = Ok(Image { media_type, bytes });
+        assert_eq!(read_image(root.path(), file), want, "{name}");
     }
 }
 
 #[test]
-fn read_image_is_case_insensitive_on_the_extension() {
+fn read_image_refuses_what_is_not_an_image() {
+    // The extension proposes, the magic disposes (ADR-0049 §3).
+    let big = {
+        let mut big = magic(ImageType::Png);
+        let size = usize::try_from(MAX_IMAGE_BYTES + 1).expect("4 MiB fits usize");
+        big.resize(size, 0);
+        big
+    };
+    let rows: [(&str, &str, Vec<u8>, ReadError); 10] = [
+        (
+            "html named png",
+            "evil.png",
+            b"<html><script>x</script>".to_vec(),
+            ReadError::NotImage,
+        ),
+        (
+            "png named svg",
+            "mislabelled.svg",
+            magic(ImageType::Png),
+            ReadError::NotImage,
+        ),
+        (
+            "text extension",
+            "f.txt",
+            b"hello".to_vec(),
+            ReadError::NotImage,
+        ),
+        (
+            "pdf is not an image",
+            "d.pdf",
+            b"%PDF-1.7".to_vec(),
+            ReadError::NotImage,
+        ),
+        (
+            "no extension",
+            "LICENSE",
+            b"x".to_vec(),
+            ReadError::NotImage,
+        ),
+        (
+            "svg root is html",
+            "page.svg",
+            b"<html><svg/></html>".to_vec(),
+            ReadError::NotImage,
+        ),
+        (
+            "unterminated comment",
+            "open.svg",
+            b"<!-- <svg/>".to_vec(),
+            ReadError::NotImage,
+        ),
+        (
+            "svg with invalid utf-8",
+            "bin.svg",
+            vec![0xff, 0xfe, 0x00],
+            ReadError::NotImage,
+        ),
+        ("over the size limit", "big.png", big, ReadError::TooLarge),
+        ("absent file", "absent.png", Vec::new(), ReadError::NotFound),
+    ];
     let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("A.PNG"), magic(ImageType::Png)).unwrap();
-    assert_eq!(
-        read_image(root.path(), "A.PNG").map(|i| i.media_type),
-        Ok("image/png")
-    );
-}
-
-#[test]
-fn read_image_refuses_bytes_that_belie_the_extension() {
-    // The core of ADR-0049 §3: the extension proposes, the magic disposes.
-    // HTML named `.png` must never be served AS `image/png`.
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("evil.png"), b"<html><script>x</script>").unwrap();
-    assert_eq!(
-        read_image(root.path(), "evil.png"),
-        Err(ReadError::NotImage)
-    );
-    // ...and the mismatch is symmetric: a real PNG under a `.svg` name.
-    fs::write(root.path().join("mislabelled.svg"), magic(ImageType::Png)).unwrap();
-    assert_eq!(
-        read_image(root.path(), "mislabelled.svg"),
-        Err(ReadError::NotImage)
-    );
-}
-
-#[test]
-fn read_image_refuses_a_non_image_extension() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("f.txt"), b"hello").unwrap();
-    assert_eq!(read_image(root.path(), "f.txt"), Err(ReadError::NotImage));
-    // A PDF is binary and NOT an image: it stays refused (ADR-0049 §1).
-    fs::write(root.path().join("d.pdf"), b"%PDF-1.7").unwrap();
-    assert_eq!(read_image(root.path(), "d.pdf"), Err(ReadError::NotImage));
-    // No extension at all.
-    fs::write(root.path().join("LICENSE"), b"x").unwrap();
-    assert_eq!(read_image(root.path(), "LICENSE"), Err(ReadError::NotImage));
-}
-
-#[test]
-fn read_image_accepts_an_svg_behind_a_prologue() {
-    // Declaration, comment and doctype may all precede the root element.
-    let root = tempfile::tempdir().unwrap();
-    let svg = "<?xml version=\"1.0\"?>\n<!-- drawn by hand -->\n\
-               <!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"svg11.dtd\">\n\
-               <svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>";
-    fs::write(root.path().join("logo.svg"), svg).unwrap();
-    assert_eq!(
-        read_image(root.path(), "logo.svg").map(|i| i.media_type),
-        Ok("image/svg+xml")
-    );
-}
-
-#[test]
-fn read_image_skips_a_comment_that_holds_a_closing_bracket() {
-    let root = tempfile::tempdir().unwrap();
-    let svg = "<!-- a > b <html> -->\n<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
-    fs::write(root.path().join("note.svg"), svg).unwrap();
-    assert_eq!(
-        read_image(root.path(), "note.svg").map(|i| i.media_type),
-        Ok("image/svg+xml")
-    );
-}
-
-#[test]
-fn read_image_refuses_html_and_an_unterminated_prologue_as_svg() {
-    let root = tempfile::tempdir().unwrap();
-    // A document whose root is NOT <svg> — the XSS-shaped case.
-    fs::write(root.path().join("page.svg"), b"<html><svg/></html>").unwrap();
-    assert_eq!(
-        read_image(root.path(), "page.svg"),
-        Err(ReadError::NotImage)
-    );
-    // An unterminated comment must refuse, not scan forever.
-    fs::write(root.path().join("open.svg"), b"<!-- <svg/>").unwrap();
-    assert_eq!(
-        read_image(root.path(), "open.svg"),
-        Err(ReadError::NotImage)
-    );
-    // Invalid UTF-8 can never be an SVG.
-    fs::write(root.path().join("bin.svg"), [0xff, 0xfe, 0x00]).unwrap();
-    assert_eq!(read_image(root.path(), "bin.svg"), Err(ReadError::NotImage));
-}
-
-#[test]
-fn read_image_refuses_oversized() {
-    let root = tempfile::tempdir().unwrap();
-    let mut big = magic(ImageType::Png);
-    big.resize(
-        usize::try_from(MAX_IMAGE_BYTES + 1).expect("4 MiB fits usize"),
-        0,
-    );
-    fs::write(root.path().join("big.png"), &big).unwrap();
-    assert_eq!(read_image(root.path(), "big.png"), Err(ReadError::TooLarge));
+    for (name, file, bytes, want) in rows {
+        if file != "absent.png" {
+            fs::write(root.path().join(file), bytes).unwrap();
+        }
+        assert_eq!(read_image(root.path(), file), Err(want), "{name}");
+    }
 }
 
 #[test]

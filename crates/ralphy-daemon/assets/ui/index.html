@@ -89,7 +89,7 @@
 
       <ul
         class="projects"
-        :class="{ 'has-open': $store.projects.openSlug }"
+        :class="{ 'has-open': $store.projects.hasOpen() }"
       >
         <template x-for="g in $store.projects.fleetGroups(filteredProjects())" :key="g.key">
           <div class="env-block">

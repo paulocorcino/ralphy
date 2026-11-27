@@ -160,8 +160,6 @@ impl crate::CopilotAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cleanup::remove_scratch;
-    use std::fs;
 
     const FIXTURE: &str = include_str!("../fixtures/skills-loaded-2026-07-20.jsonl");
 
@@ -172,135 +170,20 @@ mod tests {
             .collect()
     }
 
+    /// Copilot reads `.agents/skills`, and the embedded skills resolve there. The
+    /// link, store and ignore rules belong to `expose_skills` in the shared crate.
     #[test]
-    fn materialize_copilot_skills_extracts_required_skills() {
-        let base =
-            std::env::temp_dir().join(format!("ralphy-copilot-skills-{}", std::process::id()));
-        remove_scratch(&base);
-        fs::create_dir_all(&base).unwrap();
-        let ws = Workspace::new(&base);
+    fn copilot_finds_the_embedded_skills_in_agents_skills() {
+        let base = tempfile::tempdir().expect("a temp dir");
+        let ws = Workspace::new(base.path());
 
         let names = materialize_copilot_skills(&ws).expect("materialize");
 
-        // Real content in the canonical, ralphy-owned store...
-        assert!(
-            ws.ralphy_dir().join("skills/reviewer/SKILL.md").is_file(),
-            "reviewer/SKILL.md must land in the .ralphy/skills store"
-        );
-        // ...and resolving through Copilot's discovery path.
-        assert!(
-            ws.repo_root()
-                .join(".agents/skills/reviewer/SKILL.md")
-                .is_file(),
-            "reviewer/SKILL.md must resolve under .agents/skills"
-        );
-        assert!(
-            names.contains(&"staged-plan".to_owned()),
-            "the returned required set must name staged-plan: {names:?}"
-        );
-
-        remove_scratch(&base);
-    }
-
-    #[test]
-    fn materialize_copilot_skills_preserves_user_skills() {
-        // The defect this guards: `.agents/skills` is shared with the operator, so
-        // pointing `materialize_assets`'s clear-and-replace at it would wipe their
-        // skills and clobber their ignore. Reds if that ever changes.
-        let base =
-            std::env::temp_dir().join(format!("ralphy-copilot-userskill-{}", std::process::id()));
-        remove_scratch(&base);
-        fs::create_dir_all(&base).unwrap();
-        let ws = Workspace::new(&base);
-
-        let user_skill = ws.repo_root().join(".agents/skills/my-skill");
-        fs::create_dir_all(&user_skill).unwrap();
-        fs::write(user_skill.join("SKILL.md"), b"user skill").unwrap();
-        let user_gitignore = ws.repo_root().join(".agents/skills/.gitignore");
-        fs::write(&user_gitignore, b"my-secret\n").unwrap();
-
-        materialize_copilot_skills(&ws).expect("materialize");
-
-        assert!(ws
-            .repo_root()
-            .join(".agents/skills/reviewer/SKILL.md")
-            .is_file());
-        assert!(
-            user_skill.join("SKILL.md").is_file(),
-            "the operator's skill must be preserved"
-        );
-        let gi = fs::read_to_string(&user_gitignore).unwrap();
-        assert!(
-            gi.lines().any(|l| l.trim() == "my-secret"),
-            "gitignore: {gi:?}"
-        );
-        assert!(
-            gi.lines().any(|l| l.trim() == "/reviewer"),
-            "gitignore: {gi:?}"
-        );
-
-        remove_scratch(&base);
-    }
-
-    /// The machine oracle for "the tree is clean afterwards": materializing must
-    /// leave `git status --porcelain` empty, or the next run's clean-tree check
-    /// aborts.
-    #[test]
-    fn materialize_copilot_skills_leaves_a_clean_git_tree() {
-        let git = |args: &[&str], cwd: &Path| {
-            std::process::Command::new("git")
-                .args(args)
-                .current_dir(cwd)
-                .output()
-        };
-        if std::process::Command::new("git")
-            .arg("--version")
-            .output()
-            .is_err()
-        {
-            tracing::warn!("git not available; skipping the clean-tree oracle");
-            return;
+        let skills_dir = ws.repo_root().join(".agents").join("skills");
+        for file in ["reviewer/SKILL.md", "staged-plan/SKILL.md"] {
+            assert!(skills_dir.join(file).is_file(), "{file} must resolve");
         }
-
-        let base =
-            std::env::temp_dir().join(format!("ralphy-copilot-clean-{}", std::process::id()));
-        remove_scratch(&base);
-        fs::create_dir_all(&base).unwrap();
-
-        git(&["init"], &base).expect("git init");
-        git(
-            &[
-                "-c",
-                "user.email=t@t",
-                "-c",
-                "user.name=t",
-                "commit",
-                "--allow-empty",
-                "-m",
-                "base",
-            ],
-            &base,
-        )
-        .expect("git commit");
-
-        let ws = Workspace::new(&base);
-        materialize_copilot_skills(&ws).expect("materialize");
-
-        let out = git(&["status", "--porcelain"], &base).expect("git status");
-        // Without this the oracle passes VACUOUSLY: a failed `git status` also
-        // yields empty stdout, which would satisfy the assertion below.
-        assert!(
-            out.status.success(),
-            "git status failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        let porcelain = String::from_utf8(out.stdout).unwrap();
-        assert_eq!(
-            porcelain, "",
-            "materializing must leave a clean tree, got: {porcelain:?}"
-        );
-
-        remove_scratch(&base);
+        assert!(names.contains(&"staged-plan".to_owned()), "{names:?}");
     }
 
     /// The load-bearing invariant behind the whole D9 guard: `required` is built

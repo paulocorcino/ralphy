@@ -289,13 +289,8 @@ fn systemd_unit_quotes_a_spaced_distro_and_drops_an_unsafe_one() {
 fn render_enable_disable_systemd() {
     let enable = render_install(Platform::Systemd, &spec()).join(" ");
     let disable = render_uninstall(Platform::Systemd, &spec()).join(" ");
-    for joined in [&enable, &disable] {
-        assert!(joined.contains("systemctl"), "{joined:?}");
-        assert!(joined.contains("--user"), "{joined:?}");
-        assert!(joined.contains(UNIT_NAME), "{joined:?}");
-    }
-    assert!(enable.contains("enable"), "{enable:?}");
-    assert!(disable.contains("disable"), "{disable:?}");
+    assert_eq!(enable, "systemctl --user enable ralphy-daemon.service");
+    assert_eq!(disable, "systemctl --user disable ralphy-daemon.service");
 }
 
 #[test]

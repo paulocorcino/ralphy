@@ -26,6 +26,14 @@ fn green_close_runs_through_fakes_only() {
     assert!(report.stop.is_none());
     assert_eq!(report.commits, 1, "commit count read through the fake");
     assert_eq!(*tracker.closes.borrow(), vec![7]);
+    assert!(
+        tracker
+            .comments
+            .borrow()
+            .iter()
+            .any(|(n, b)| *n == 7 && b.contains("## Verify (Ralphy run ut-green)")),
+        "the verify artifact is posted on a passing gate"
+    );
 
     // One plan + one execute ledger line, folded into the run totals.
     let phases: Vec<String> = sink
@@ -262,6 +270,31 @@ fn protocol_bounce_repairs_then_closes() {
         bounce.model, "fake-model",
         "the protocol-bounce line carries the bounce's model, not `unknown`"
     );
+
+    remove_scratch(&root);
+}
+
+#[test]
+fn an_injected_probe_writes_its_brief() {
+    let root = test_dir("probe");
+    let mut cfg = test_cfg(&root, "ut-probe");
+    cfg.environment = crate::environment::EnvironmentProbe::Fixed("brief-under-test\n".into());
+    let agent = MiniAgent::new(vec![Outcome::Done])
+        .with_extra(format!("## Verify\n\n{}\n", verify_ok_line()));
+
+    run_queue_with(
+        &cfg,
+        &[test_issue(7)],
+        &agent,
+        &FakeTracker::default(),
+        &FakeClock,
+        &FakeRepo::new(),
+        &FakeLedger::default(),
+    )
+    .expect("run succeeds");
+
+    let brief = fs::read_to_string(root.join(".ralphy").join("environment.md")).expect("brief");
+    assert_eq!(brief, "brief-under-test\n");
 
     remove_scratch(&root);
 }

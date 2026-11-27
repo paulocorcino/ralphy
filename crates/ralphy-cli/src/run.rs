@@ -295,6 +295,7 @@ fn run_locked(args: &RunArgs, boot: Boot<'_>) -> Result<()> {
         require_verify_gate: settings.verify.require_verify_gate.unwrap_or(false),
         // Named once at the adapter layer; the core gets it as data (ADR-0002 amendment, #79).
         done_signal: ralphy_adapter_support::DONE_SENTINEL.to_owned(),
+        environment: ralphy_core::EnvironmentProbe::Host,
     };
     let work = Work {
         run_start: boot.run_start,

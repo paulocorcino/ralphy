@@ -48,50 +48,6 @@ fn fence(id: &str, name: &str, ts: i64) -> DeskFence {
     }
 }
 
-#[test]
-fn round_trip_preserves_records() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("desk.toml");
-    let mut a = record("w1", 1);
-    a.session_id = None;
-    let mut b = record("w2", 2);
-    b.repo = "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo".into();
-    b.daemon_id = Some("01ARZ3NDEKTSV4RRFFQ69G5FAW".into());
-    b.environment = Some("WSL: Ubuntu-22.04".into());
-    b.checkout = Some("wt-a".into());
-    b.max = true;
-    b.locked = true;
-    let store = DeskStore {
-        rev: 0,
-        generation: 0,
-        windows: vec![a, b],
-        fences: vec![],
-        notes: vec![],
-        checkouts: BTreeMap::new(),
-    };
-    save_to(&store, &path).unwrap();
-
-    let back = load_from(&path).expect("desk reads");
-    assert_eq!(back, store, "the desk round-trips through desk.toml");
-    assert_eq!(back.windows[0].session_id, None);
-    assert_eq!(
-        back.windows[1].repo,
-        "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo"
-    );
-    assert_eq!(
-        back.windows[1].environment.as_deref(),
-        Some("WSL: Ubuntu-22.04")
-    );
-    assert!(back.windows[1].max);
-    assert_eq!(back.windows[1].checkout.as_deref(), Some("wt-a"));
-    assert_eq!(
-        back.windows[0].checkout, None,
-        "the primary's record has none"
-    );
-    assert!(back.windows[1].locked, "the lock survives desk.toml");
-    assert!(!back.windows[0].locked);
-}
-
 /// A field that is off or empty is absent from the wire and from desk.toml, so
 /// the older record, fence and desk shapes are byte-identical and an older
 /// shell reading the desk sees exactly what it always saw: the lock amendment,
@@ -332,30 +288,6 @@ fn context_md_defines_the_desk_terms() {
     }
 }
 #[test]
-fn a_console_name_round_trips_through_the_wire_and_desk_toml() {
-    let mut named = record("w1", 1);
-    named.console_name = Some("fincal #1 ação 🚀".into());
-    let json = serde_json::to_string(&named).unwrap();
-    assert!(
-        json.contains(r#""consoleName":"fincal #1 ação 🚀""#),
-        "json={json}"
-    );
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("desk.toml");
-    let store = DeskStore {
-        windows: vec![named, record("w2", 2)],
-        ..Default::default()
-    };
-    save_to(&store, &path).unwrap();
-    let back = load_from(&path).expect("desk reads");
-    assert_eq!(back, store);
-    assert_eq!(
-        back.windows[0].console_name.as_deref(),
-        Some("fincal #1 ação 🚀")
-    );
-}
-
-#[test]
 fn prune_fences_keeps_the_12_newest_by_ts() {
     let fences: Vec<DeskFence> = (1..=13)
         .map(|n| fence(&format!("f{n}"), "region", n))
@@ -391,40 +323,6 @@ fn note(id: &str, path: &str, ts: i64) -> DeskNote {
     }
 }
 
-/// The card record is placement, and the placement survives the file: colour
-/// and text are the note's, so what round-trips here is a rect, a lock and the
-/// `(checkout, path)` identity.
-#[test]
-fn a_note_card_round_trips_its_placement() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("desk.toml");
-    let mut held = note("n2", "docs/plan.note", 2);
-    held.checkout = Some("wt-a".into());
-    held.locked = true;
-    let store = DeskStore {
-        rev: 0,
-        generation: 0,
-        windows: vec![record("w1", 1)],
-        fences: vec![fence("f1", "backend", 1)],
-        notes: vec![note("n1", ".ralphy/notes/standup.note", 1), held],
-        checkouts: BTreeMap::new(),
-    };
-    save_to(&store, &path).unwrap();
-    assert_eq!(load_from(&path).expect("desk reads"), store);
-
-    // The TOML keeps `[[notes]]` between the fences and the `[checkouts]`
-    // table — the ordering rule the store's doc comment states.
-    let text = std::fs::read_to_string(&path).unwrap();
-    let (fences_at, notes_at) = (
-        text.find("[[fences]]").expect("fences table"),
-        text.find("[[notes]]").expect("notes table"),
-    );
-    assert!(fences_at < notes_at, "{text}");
-    // `false`/`None` stay off the page, as they do for a window.
-    assert!(!text.contains("locked = false"), "{text}");
-    assert_eq!(text.matches("checkout = ").count(), 1, "{text}");
-}
-
 #[test]
 fn prune_notes_keeps_the_newest_cap_in_layout_order() {
     let max = i64::try_from(NOTE_MAX).expect("the note cap fits i64");
@@ -438,41 +336,129 @@ fn prune_notes_keeps_the_newest_cap_in_layout_order() {
     assert_eq!(kept.len(), NOTE_MAX);
 }
 
-/// The ordering invariant the third array-of-tables rests on, proved with the
-/// two collections that can collide: TOML emits values before tables, so a
-/// `notes` field declared AFTER `checkouts` would make `to_string_pretty` fail
-/// — and every desk save would fail at runtime, for any operator who has both
-/// a note and a selected worktree, with the rest of this file still green.
 #[test]
-fn a_desk_with_both_a_note_and_a_checkout_round_trips() {
+fn a_console_name_is_written_on_the_wire() {
+    let mut named = record("w1", 1);
+    named.console_name = Some("fincal #1 ação 🚀".into());
+    let json = serde_json::to_string(&named).unwrap();
+    assert!(
+        json.contains(r#""consoleName":"fincal #1 ação 🚀""#),
+        "json={json}"
+    );
+}
+
+/// A desk saved to desk.toml loads back equal. `order` names tables that must
+/// appear in that order in the file: TOML writes values before tables, so a
+/// `notes` field declared after `checkouts` would fail every save of a desk
+/// with both. `absent` and `counts` pin what stays off the page.
+struct RoundTrip {
+    name: &'static str,
+    store: DeskStore,
+    order: &'static [&'static str],
+    absent: &'static [&'static str],
+    counts: &'static [(&'static str, usize)],
+}
+
+fn round_trip_rows() -> Vec<RoundTrip> {
+    let mut no_session = record("w1", 1);
+    no_session.session_id = None;
+    let mut full = record("w2", 2);
+    full.repo = "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo".into();
+    full.daemon_id = Some("01ARZ3NDEKTSV4RRFFQ69G5FAW".into());
+    full.environment = Some("WSL: Ubuntu-22.04".into());
+    full.checkout = Some("wt-a".into());
+    full.max = true;
+    full.locked = true;
+    let mut named = record("w1", 1);
+    named.console_name = Some("fincal #1 ação 🚀".into());
+    let mut held_note = note("n2", "docs/plan.note", 2);
+    held_note.checkout = Some("wt-a".into());
+    held_note.locked = true;
+    let mut held_fence = fence("f2", "planning", 20);
+    held_fence.locked = true;
+    vec![
+        RoundTrip {
+            name: "records",
+            store: DeskStore {
+                windows: vec![no_session, full],
+                ..Default::default()
+            },
+            order: &[],
+            absent: &[],
+            counts: &[],
+        },
+        RoundTrip {
+            name: "console name",
+            store: DeskStore {
+                windows: vec![named, record("w2", 2)],
+                ..Default::default()
+            },
+            order: &[],
+            absent: &[],
+            counts: &[],
+        },
+        RoundTrip {
+            name: "note card placement",
+            store: DeskStore {
+                windows: vec![record("w1", 1)],
+                fences: vec![fence("f1", "backend", 1)],
+                notes: vec![note("n1", ".ralphy/notes/standup.note", 1), held_note],
+                ..Default::default()
+            },
+            order: &["[[fences]]", "[[notes]]"],
+            absent: &["locked = false"],
+            counts: &[("checkout = ", 1)],
+        },
+        RoundTrip {
+            name: "a note and a checkout together",
+            store: DeskStore {
+                windows: vec![record("w1", 1), record("w2", 2)],
+                fences: vec![fence("f1", "backend", 10), held_fence],
+                notes: vec![note("n1", ".ralphy/notes/a.note", 1)],
+                checkouts: BTreeMap::from([
+                    ("owner/repo".to_owned(), "wt-a".to_owned()),
+                    (
+                        "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo".to_owned(),
+                        "wt-b".to_owned(),
+                    ),
+                ]),
+                ..Default::default()
+            },
+            order: &["[[fences]]", "[[notes]]", "[checkouts]"],
+            absent: &[],
+            counts: &[],
+        },
+    ]
+}
+
+#[test]
+fn a_desk_round_trips_through_desk_toml() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("desk.toml");
-    let mut held = fence("f2", "planning", 20);
-    held.locked = true;
-    let store = DeskStore {
-        rev: 0,
-        generation: 0,
-        windows: vec![record("w1", 1), record("w2", 2)],
-        fences: vec![fence("f1", "backend", 10), held],
-        notes: vec![note("n1", ".ralphy/notes/a.note", 1)],
-        // ADR-0063 §4: a repo key with a daemon prefix, beside a bare one.
-        checkouts: BTreeMap::from([
-            ("owner/repo".to_owned(), "wt-a".to_owned()),
-            (
-                "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo".to_owned(),
-                "wt-b".to_owned(),
-            ),
-        ]),
-    };
-    save_to(&store, &path).expect("a desk with every collection must serialise");
-    // Windows, fences (a locked one included), notes and checkouts all round
-    // trip, and the `[checkouts]` table did not swallow a window.
-    assert_eq!(load_from(&path).expect("desk reads"), store);
-    let text = std::fs::read_to_string(&path).unwrap();
-    let at = |needle: &str| {
-        text.find(needle)
-            .unwrap_or_else(|| panic!("{needle} in {text}"))
-    };
-    assert!(at("[[fences]]") < at("[[notes]]"), "{text}");
-    assert!(at("[[notes]]") < at("[checkouts]"), "{text}");
+    for row in round_trip_rows() {
+        save_to(&row.store, &path).unwrap_or_else(|e| panic!("{}: {e:#}", row.name));
+        assert_eq!(
+            load_from(&path).expect("desk reads"),
+            row.store,
+            "{}",
+            row.name
+        );
+        let text = std::fs::read_to_string(&path).unwrap();
+        let at = |needle: &str| {
+            text.find(needle)
+                .unwrap_or_else(|| panic!("{}: {needle} in {text}", row.name))
+        };
+        let places: Vec<usize> = row.order.iter().map(|n| at(n)).collect();
+        assert!(
+            places.windows(2).all(|w| w[0] < w[1]),
+            "{}: {text}",
+            row.name
+        );
+        for needle in row.absent {
+            assert!(!text.contains(needle), "{}: {text}", row.name);
+        }
+        for (needle, n) in row.counts {
+            assert_eq!(text.matches(needle).count(), *n, "{}: {text}", row.name);
+        }
+    }
 }

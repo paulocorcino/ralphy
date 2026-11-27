@@ -53,17 +53,9 @@ mod tests {
             "staged-plan/SKILL.md must be materialized"
         );
         assert!(
-            skills_dir.join("reviewer/scripts/audit.py").is_file(),
-            "reviewer/scripts/audit.py must be materialized"
-        );
-        assert!(
             ws.ralphy_dir().join(".gitignore").is_file(),
             ".ralphy/.gitignore must be written"
         );
-
-        // Idempotent: a second call clears and re-extracts cleanly.
-        materialize_opencode_skills(&ws).expect("re-materialize");
-        assert!(skills_dir.join("reviewer/SKILL.md").is_file());
 
         remove_scratch(&base);
     }

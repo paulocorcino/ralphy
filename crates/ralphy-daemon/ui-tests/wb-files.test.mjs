@@ -215,6 +215,33 @@ test("the Move item asks the move dialog with the full rel path", () => {
   );
 });
 
+test("Delete on a selected row covers every selected row; on another row, that row alone", () => {
+  const { shell, files, window } = page();
+  let items = null;
+  shell.$store.tabs.renderMenu = (_x, _y, list) => (items = list);
+  files.$store.projects.setOpen("o/r");
+  const emitted = [];
+  window.WB = { emit: (action, detail) => emitted.push([action, detail]) };
+  const root = { title: "root", parent: null };
+  const node = (title, selected, folder = false) => ({
+    title, parent: root, data: { folder }, children: folder ? [] : null, isSelected: () => selected,
+  });
+  const a = node("a.txt", true);
+  const src = node("src", true, true);
+  const other = node("c.txt", false);
+  const tree = { getSelectedNodes: (stop) => (assert.equal(stop, true), [a, src]) };
+  for (const n of [a, src, other]) n.tree = tree;
+  const deleteOn = (n) => {
+    files.showMenu(0, 0, n);
+    const row = items.find((i) => i.label?.startsWith("Delete"));
+    row.run();
+    return [row.label, emitted.at(-1)[1].entries.map((e) => [e.path, e.isFolder])];
+  };
+  assert.deepEqual(deleteOn(a), ["Delete 2 items", [["a.txt", false], ["src", true]]]);
+  assert.deepEqual(deleteOn(other), ["Delete", [["c.txt", false]]]);
+  assert.equal(emitted.at(-1)[1].project, "o/r");
+});
+
 test("the files part mounts the tree of the open project, and only unmounts when none is open", () => {
   const { scope: state } = loadComponent("wbFiles", { magics: { $nextTick: (fn) => fn() } });
   const calls = [];
@@ -916,6 +943,35 @@ test("Alt+Enter on a row asks for its properties and keeps the tree from opening
     { path: "src/a.txt", isFolder: false },
     { path: "src", isFolder: true },
   ]);
+});
+
+// A selected row of a tree, as the selection rules read it.
+function selectedRow() {
+  const n = { selected: true };
+  n.setSelected = (flag) => (n.selected = flag);
+  return n;
+}
+
+test("a plain click on a row and Escape drop the selection; Ctrl+click and other keys keep it", () => {
+  const { state, window, document } = peerFilesShell("reachable");
+  const options = mountedTreeOptions(state, window, document);
+  let rows = [];
+  const tree = { getSelectedNodes: () => rows.filter((n) => n.selected) };
+  const fresh = () => (rows = [selectedRow(), selectedRow()]);
+  const kept = () => tree.getSelectedNodes().length;
+
+  fresh();
+  options.click({ tree, node: rows[0], event: { ctrlKey: true } });
+  assert.equal(kept(), 2, "Ctrl+click is the tree's own toggle");
+  options.click({ tree, node: rows[0], event: { ctrlKey: false } });
+  assert.equal(kept(), 0);
+
+  fresh();
+  assert.equal(options.keydown({ tree, node: rows[0], event: { key: "ArrowDown" } }), undefined);
+  assert.equal(kept(), 2);
+  assert.equal(options.keydown({ tree, node: rows[0], event: { key: "Escape" } }), false);
+  assert.equal(kept(), 0);
+  assert.equal(options.keydown({ tree, node: rows[0], event: { key: "Escape" } }), undefined, "nothing selected: the tree keeps Escape");
 });
 
 test("every other key, and Alt+Enter with no row, is left to the tree", () => {

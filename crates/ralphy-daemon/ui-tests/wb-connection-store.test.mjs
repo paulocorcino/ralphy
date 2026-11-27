@@ -63,28 +63,36 @@ function connectedPage(opts = {}) {
   return { ...loaded, store: state.$store.connection };
 }
 
-// Every URL the code under test fetched, answered with an empty 200. A bare
+// Every URL the code under test fetched, answered with a 200. A bare
 // `fetch` in app.ts resolves to `globalThis.fetch`, so a test that reads calls
-// `swapFetch(t, answerEmpty)` once, before its first spy.
+// `swapFetch(t, answerEmpty)` once, before its first spy. The answer is the
+// `reply` of the spy that runs, an empty list otherwise.
 const fetched = [];
+let reply = [];
 function answerEmpty(url) {
   fetched.push(String(url));
-  return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+  const rows = reply;
+  return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(rows) });
 }
 
-// The URLs fetched while `fn` runs. `until`, when given, names a URL the read
-// must reach: the spy waits for it (up to 2 s) instead of a fixed number of
-// event-loop turns, because a read scheduled with `setTimeout` can land after
-// any number of turns.
-async function withFetchSpy(fn, until = null) {
+// The URLs fetched while `fn` runs, every read answered with `rows`. `until`,
+// when given, names a URL the read must reach: the spy waits for it (up to
+// 2 s) instead of a fixed number of event-loop turns, because a read
+// scheduled with `setTimeout` can land after any number of turns.
+async function withFetchSpy(fn, until = null, rows = []) {
   const from = fetched.length;
   const seen = () => fetched.slice(from);
-  await fn();
-  // Let the reads chained behind the first await land.
-  for (let i = 0; i < 10; i++) await new Promise((r) => { setImmediate(r); });
-  const deadline = Date.now() + 2000;
-  if (until) {
-    while (!seen().includes(until) && Date.now() < deadline) await new Promise((r) => { setTimeout(r, 5); });
+  reply = rows;
+  try {
+    await fn();
+    // Let the reads chained behind the first await land.
+    for (let i = 0; i < 10; i++) await new Promise((r) => { setImmediate(r); });
+    const deadline = Date.now() + 2000;
+    if (until) {
+      while (!seen().includes(until) && Date.now() < deadline) await new Promise((r) => { setTimeout(r, 5); });
+    }
+  } finally {
+    reply = [];
   }
   return seen();
 }
@@ -332,8 +340,10 @@ test("the peer tick and a project-list push read no change set and no branch", a
     store.onPresencePush("peers.dirty", {});
   });
   assert.deepEqual(git, []);
-  // NEGATIVE CONTROL: the tab becoming visible does read them.
-  await withFetchSpy(() => store.onTabVisible());
+  // NEGATIVE CONTROL: the tab becoming visible does read them. The first read
+  // listed no project, which closed "o/r"; this one lists it.
+  state.$store.projects.setOpen("o/r");
+  await withFetchSpy(() => store.onTabVisible(), null, [{ slug: "o/r", reachable: true }]);
   assert.deepEqual(git, ["o/r"]);
 });
 

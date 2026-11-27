@@ -283,7 +283,8 @@ interface WorkbenchActions {
   /** `from`, `to`: the full rel paths before and after. */
   rename: WorkbenchNodeDetail & { from: string; to: string };
   open: WorkbenchNodeDetail & { ftype: string };
-  delete: WorkbenchNodeDetail;
+  /** The entries one confirmation covers: the selected rows, or the one row. */
+  delete: { project: string | null; entries: Omit<WorkbenchNodeDetail, "project">[] };
   "copy-path": WorkbenchNodeDetail;
   /** `path`: the directory the new entry goes in. */
   create: { project: string | null; path: string; kind: "file" | "folder" };

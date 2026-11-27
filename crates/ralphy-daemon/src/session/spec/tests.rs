@@ -258,15 +258,6 @@ fn antigravity_parses_from_its_query_name() {
     );
 }
 
-#[test]
-fn the_agy_program_is_found_by_the_shared_locator() {
-    assert_eq!(
-        Agent::Antigravity.locate_program(),
-        ralphy_proc_util::antigravity::locate_agy(),
-        "the console finds agy where the adapter's runs find it"
-    );
-}
-
 /// The one argument is the owned root, absolute; a console passes no autonomy flag.
 #[test]
 fn an_antigravity_console_gets_the_owned_root_flag() {

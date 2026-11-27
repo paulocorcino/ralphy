@@ -101,11 +101,13 @@ function keepTabInside(e: KeyboardEvent, scrimEl: Element) {
   }
 }
 
-// Why `name` cannot be a single directory entry, or "" when it can.
+// Why `name` cannot be a `/`-separated path below the folder, or "" when it can.
 function nameProblem(name: string) {
   if (!name) return "name is required";
-  if (/[\\/]/u.test(name)) return "name cannot contain / or \\";
-  return name === "." || name === ".." ? "name cannot be . or .." : "";
+  if (name.includes("\\")) return "use / to separate folders";
+  if (name.includes(":")) return "a name cannot contain :";
+  const bad = name.split("/").some((part) => part === "" || part === "." || part === "..");
+  return bad ? "a folder name cannot be empty, . or .." : "";
 }
 
 // `deps` is the shape every store takes; the store is where the door's flash
@@ -293,9 +295,9 @@ export function modalsStore(_deps: ModalsStoreDeps) {
       this.promptModal.value = value;
       this.promptModal.error = "";
     },
-    // A name that cannot be a single directory entry is refused HERE, dialog
-    // open. The daemon confines every path regardless (`confine_write`); this
-    // says *which* character was wrong.
+    // A path the daemon would refuse is refused HERE, dialog open. The daemon
+    // confines every level regardless (`fswrite::create`); this says what is
+    // wrong with the text.
     promptSubmit() {
       const name = this.promptModal.value.trim();
       const bad = nameProblem(name);

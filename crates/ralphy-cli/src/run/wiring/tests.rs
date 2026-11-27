@@ -195,13 +195,12 @@ fn check_agents_present_uses_the_given_locator() {
     assert!(err.contains("cursor"), "{err}");
 }
 
-/// The run probes Cursor through the adapter's own locator, so detection and
-/// the spawn agree. `preflight_agents` has no locator seam, so this reads the
-/// call inside its body.
-// pin: the run probes Cursor with its adapter's locator —
-// preflight_agents reads the real machine and has no locator seam.
+/// The run probes Cursor and `OpenCode` through their own locators, so detection
+/// and the spawn agree. `preflight_agents` has no locator seam, so this reads
+/// the call inside its body. Kept: no other test fails when the arm is swapped.
+// pin: preflight_agents reads the real machine and has no locator seam.
 #[test]
-fn preflight_agents_probes_cursor_with_its_adapter_locator() {
+fn preflight_agents_probes_cursor_and_opencode_with_their_locators() {
     let source = include_str!("../wiring.rs");
     let start = source
         .find("pub(crate) fn preflight_agents(")
@@ -212,33 +211,15 @@ fn preflight_agents_probes_cursor_with_its_adapter_locator() {
         .find("\n}")
         .expect("preflight_agents has a closing brace");
     let body: String = rest.split_at(end).0.split_whitespace().collect();
-    assert!(
-        body.contains("CliAgent::Cursor=>ralphy_agent_cursor::locate_cursor().is_some(),"),
-        "preflight_agents must probe Cursor with `locate_cursor`: {body}"
-    );
-}
-// pin: the run probes OpenCode with its shared locator —
-// preflight_agents reads the real machine and has no locator seam.
-#[test]
-fn preflight_agents_probes_opencode_with_its_locator() {
-    let source = include_str!("../wiring.rs");
-    let start = source
-        .find("pub(crate) fn preflight_agents(")
-        .expect("preflight_agents is defined");
-    let rest = source.split_at(start).1;
-    let end = rest
-        .find(
-            "
-}",
-        )
-        .expect("preflight_agents has a closing brace");
-    let body: String = rest.split_at(end).0.split_whitespace().collect();
-    assert!(
-        body.contains(
-            "CliAgent::OpenCode=>ralphy_proc_util::opencode::locate_opencode().is_some(),"
-        ),
-        "preflight_agents must probe OpenCode with `locate_opencode`: {body}"
-    );
+    for arm in [
+        "CliAgent::Cursor=>ralphy_agent_cursor::locate_cursor().is_some(),",
+        "CliAgent::OpenCode=>ralphy_proc_util::opencode::locate_opencode().is_some(),",
+    ] {
+        assert!(
+            body.contains(arm),
+            "preflight_agents must keep `{arm}`: {body}"
+        );
+    }
 }
 
 /// Each phase's model: its own flag wins over the persisted `copilot.*_model`,

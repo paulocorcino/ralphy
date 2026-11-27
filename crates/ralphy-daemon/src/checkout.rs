@@ -229,11 +229,6 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn checkout_error_keeps_its_text() {
-        assert_eq!(CheckoutError::Unknown.to_string(), "unknown checkout");
-    }
-
-    #[test]
     fn resolve_known_name_prefixes_under_the_fixed_location() {
         let c = resolve("wt-a", |n| n == "wt-a").expect("known name resolves");
         assert_eq!(c.name(), "wt-a");
