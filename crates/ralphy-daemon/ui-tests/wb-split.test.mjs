@@ -5,11 +5,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { WBSplit } from "../assets/ui/wb-split.ts";
 
-// The module keeps no state, so one import serves every test.
-function load() {
-  return WBSplit;
-}
-
 const A = "file:p:a.js";
 const B = "file:p:b.js";
 const MD = "file:p:README.md";
@@ -24,7 +19,7 @@ const WIDE = 1280;
 const base = (over) => ({ active: A, slot: null, tabs: TABS, lastLeft: null, width: WIDE, paneless: false, ...over });
 
 test("no slot, or a paneless tab, is the single pane the canvas always had", () => {
-  const { resolve } = load();
+  const { resolve } = WBSplit;
   assert.deepEqual(resolve(base()), { left: A, right: null, mirror: false, focus: "left" });
   assert.deepEqual(resolve(base({ active: "consoles", paneless: true, slot: { kind: "pin", id: B } })), {
     left: null,
@@ -35,7 +30,7 @@ test("no slot, or a paneless tab, is the single pane the canvas always had", () 
 });
 
 test("a pin puts the pinned tab on the right of whatever is active", () => {
-  const { resolve } = load();
+  const { resolve } = WBSplit;
   assert.deepEqual(resolve(base({ slot: { kind: "pin", id: B } })), {
     left: A,
     right: B,
@@ -51,7 +46,7 @@ test("a pin puts the pinned tab on the right of whatever is active", () => {
 });
 
 test("activating the pinned tab focuses the right pane; the left keeps the last tab read there", () => {
-  const { resolve } = load();
+  const { resolve } = WBSplit;
   assert.deepEqual(resolve(base({ active: B, slot: { kind: "pin", id: B }, lastLeft: MD })), {
     left: MD,
     right: B,
@@ -76,7 +71,7 @@ test("activating the pinned tab focuses the right pane; the left keeps the last 
 });
 
 test("a last left tab that is closed falls back to the nearest closable tab", () => {
-  const { resolve } = load();
+  const { resolve } = WBSplit;
   const pinned = { active: B, slot: { kind: "pin", id: B } };
   assert.deepEqual(resolve(base({ ...pinned, lastLeft: "file:p:closed.js" })), {
     left: A,
@@ -89,7 +84,7 @@ test("a last left tab that is closed falls back to the nearest closable tab", ()
 });
 
 test("a pin of a tab that is gone paints single; the state is the caller's to clear", () => {
-  const { resolve, afterClose } = load();
+  const { resolve, afterClose } = WBSplit;
   assert.equal(resolve(base({ slot: { kind: "pin", id: "file:p:gone" } })).right, null);
   assert.equal(afterClose({ kind: "pin", id: B }, B), null);
   assert.deepEqual(afterClose({ kind: "pin", id: B }, A), { kind: "pin", id: B });
@@ -98,7 +93,7 @@ test("a pin of a tab that is gone paints single; the state is the caller's to cl
 });
 
 test("a mirror doubles the active CODE tab and steps aside for anything else", () => {
-  const { resolve } = load();
+  const { resolve } = WBSplit;
   assert.deepEqual(resolve(base({ slot: { kind: "mirror" } })), {
     left: A,
     right: A,
@@ -115,7 +110,7 @@ test("a mirror doubles the active CODE tab and steps aside for anything else", (
 });
 
 test("below the width floor the split is unavailable, whatever the slot says", () => {
-  const { resolve, available, MIN_WIDTH } = load();
+  const { resolve, available, MIN_WIDTH } = WBSplit;
   assert.equal(available(MIN_WIDTH), true);
   assert.equal(available(MIN_WIDTH - 1), false);
   assert.equal(available(), false);
@@ -129,7 +124,7 @@ test("below the width floor the split is unavailable, whatever the slot says", (
 });
 
 test("the divider ratio is the pointer's share, held so neither pane drops under the pane floor", () => {
-  const { clampRatio, MIN_PANE, DEFAULT_RATIO } = load();
+  const { clampRatio, MIN_PANE, DEFAULT_RATIO } = WBSplit;
   assert.equal(clampRatio(500, 1000), 0.5);
   assert.equal(clampRatio(10, 1000), MIN_PANE / 1000);
   assert.equal(clampRatio(990, 1000), 1 - MIN_PANE / 1000);
@@ -139,7 +134,7 @@ test("the divider ratio is the pointer's share, held so neither pane drops under
 });
 
 test("a pin stores as the file the stored tabs spell, and comes back as that tab", () => {
-  const { toStored, fromStored } = load();
+  const { toStored, fromStored } = WBSplit;
   const stored = toStored({ kind: "pin", id: B }, 0.6, TABS);
   assert.deepEqual(stored, { kind: "pin", project: "p", path: "b.js", checkout: null, ratio: 0.6 });
   assert.deepEqual(fromStored(stored, TABS), { kind: "pin", id: B });
@@ -148,7 +143,7 @@ test("a pin stores as the file the stored tabs spell, and comes back as that tab
 });
 
 test("a pin of a diff, of a missing tab, or of nothing stores as null — and restores as null", () => {
-  const { toStored, fromStored } = load();
+  const { toStored, fromStored } = WBSplit;
   assert.equal(toStored({ kind: "pin", id: "diff:p:x" }, 0.5, TABS), null);
   assert.equal(toStored({ kind: "pin", id: "file:p:gone" }, 0.5, TABS), null);
   assert.equal(toStored(null, 0.5, TABS), null);

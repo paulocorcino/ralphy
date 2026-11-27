@@ -11,11 +11,7 @@ import assert from "node:assert/strict";
 import { WBSpend } from "../assets/ui/wb-spend.ts";
 
 // The fold keeps no state, so one import serves every test.
-function load() {
-  return WBSpend;
-}
-
-const WB = load();
+const WB = WBSpend;
 
 // One ledger row in the shape `/api/usage?project=` serves.
 function row(over = {}) {

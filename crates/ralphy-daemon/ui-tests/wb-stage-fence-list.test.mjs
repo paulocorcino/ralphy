@@ -6,11 +6,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createFenceList } from "../assets/ui/wb-stage-fence-list.ts";
 import { createPopupRegistry } from "../assets/ui/wb-desk-popups.ts";
+import { fakeClassList } from "./harness.mjs";
 
 // A fence element with the few DOM members the fence list uses. `parts`
 // holds its children by selector (`.fence-name`, `.fence-notice`, ...).
 function fakeFence(id, rect) {
-  const classes = new Set();
   const parts = {
     ".fence-name": { value: "" },
     ".fence-notice": { textContent: "" },
@@ -20,12 +20,7 @@ function fakeFence(id, rect) {
     rect,
     style: {},
     removed: false,
-    classList: {
-      contains: (c) => classes.has(c),
-      toggle: (c, on) => (on ? classes.add(c) : classes.delete(c)),
-      add: (c) => classes.add(c),
-      remove: (c) => classes.delete(c),
-    },
+    classList: fakeClassList(),
     querySelector: (sel) => parts[sel] || null,
     remove() {
       this.removed = true;
@@ -186,7 +181,7 @@ function fakeEl(rect, parts = {}, data = {}) {
   return {
     rect,
     dataset: data,
-    classList: {
+    classList: { // own: the tests read the class set as `classes`, which fakeClassList does not expose
       contains: (c) => classes.has(c),
       toggle: (c, on) => (on ? classes.add(c) : classes.delete(c)),
     },

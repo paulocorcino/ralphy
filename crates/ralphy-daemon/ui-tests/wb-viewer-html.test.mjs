@@ -9,6 +9,7 @@ import {
   mountFrame,
   remoteImagesAllowed,
 } from "../assets/ui/wb-viewer-html.ts";
+import { swapFetch } from "./harness.mjs";
 
 const XLINK = "http://www.w3.org/1999/xlink";
 
@@ -61,7 +62,7 @@ function stateReply(ok, remote) {
   return { ok, status: ok ? 200 : 401, json: () => Promise.resolve({ remote_images: remote }) };
 }
 
-test("the daemon's answer says if web images are allowed, and no answer is a no", async () => {
+test("the daemon's answer says if web images are allowed, and no answer is a no", async (t) => {
   // [what the request does, web images allowed]
   const rows = [
     [() => Promise.resolve(stateReply(true, true)), true],
@@ -69,19 +70,17 @@ test("the daemon's answer says if web images are allowed, and no answer is a no"
     [() => Promise.resolve(stateReply(false, true)), false],
     [() => Promise.reject(new TypeError("no network")), false],
   ];
-  const real = globalThis.fetch;
-  try {
-    for (const [answer, want] of rows) {
-      const asked = [];
-      globalThis.fetch = (url, init) => {
-        asked.push([init.method, url]);
-        return answer();
-      };
-      assert.equal(await remoteImagesAllowed(), want);
-      assert.deepEqual(asked, [["GET", "/api/security/state"]]);
-    }
-  } finally {
-    globalThis.fetch = real;
+  const asked = [];
+  let current = null;
+  swapFetch(t, (url, init) => {
+    asked.push([init.method, url]);
+    return current();
+  });
+  for (const [answer, want] of rows) {
+    asked.length = 0;
+    current = answer;
+    assert.equal(await remoteImagesAllowed(), want);
+    assert.deepEqual(asked, [["GET", "/api/security/state"]]);
   }
 });
 

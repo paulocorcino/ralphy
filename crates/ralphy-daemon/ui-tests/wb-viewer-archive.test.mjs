@@ -2,14 +2,9 @@
 // `file.entries` reply as a table: a header, then one row per entry.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { buildArchive, entryName } from "../assets/ui/wb-viewer-archive.ts";
 import { classify } from "../assets/ui/wb-file-paths.ts";
-
-function fixture(name) {
-  return JSON.parse(readFileSync(join(import.meta.dirname, "fixtures", name + ".json"), "utf8"));
-}
+import { fixture } from "./harness.mjs";
 
 function fakeEl(tag) {
   const found = new Map();

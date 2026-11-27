@@ -3,16 +3,8 @@
 // with no DOM, over the daemon's own replies (`fixtures/api-telegram-*.json`).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { botText, stateText } from "../assets/ui/wb-telegram-setup.ts";
-import { bindingNames, loadComponent, partMarkup } from "./harness.mjs";
-
-const HERE = import.meta.dirname;
-
-function fixture(name) {
-  return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));
-}
+import { bindingNames, fixture, loadComponent, partMarkup, swapFetch } from "./harness.mjs";
 
 const section = () => {
   const part = partMarkup("wb-settings-dialog.part.html");
@@ -21,41 +13,36 @@ const section = () => {
 
 // The setup with a daemon that answers each request with the next reply, and
 // keeps what it was sent.
-async function withDaemon(replies, run) {
+async function withDaemon(t, replies, run) {
   const sent = [];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = (url, init = {}) => {
+  swapFetch(t, (url, init = {}) => {
     // The harness's own shell reads the desk; only the Telegram routes count.
     if (!String(url).startsWith("/api/telegram")) return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
     sent.push({ url: String(url), method: init.method, body: init.body });
     const [status, body] = replies.shift();
     return Promise.resolve({ ok: status < 300, status, json: () => Promise.resolve(body) });
-  };
-  try {
-    const { scope } = loadComponent("wbTelegramSetup", {
-      magics: { $store: { modals: { askConfirm: () => Promise.resolve(true) } } },
-    });
-    await run(scope, sent);
-  } finally {
-    globalThis.fetch = realFetch;
-  }
+  });
+  const { scope } = loadComponent("wbTelegramSetup", {
+    magics: { $store: { modals: { askConfirm: () => Promise.resolve(true) } } },
+  });
+  await run(scope, sent);
 }
 
-test("a daemon with no bot asks for the token, and shows no chat or test", async () => {
+test("a daemon with no bot asks for the token, and shows no chat or test", async (t) => {
   const reply = fixture("api-telegram-bot");
   assert.equal(botText(reply), "No bot");
   assert.equal(stateText(reply), "No bot is set up. Paste the token that BotFather gave you, then save it.");
-  await withDaemon([[200, reply]], async (s) => {
+  await withDaemon(t, [[200, reply]], async (s) => {
     await s.load();
     assert.equal(s.loaded, true);
     assert.equal(s.hasBot(), false);
   });
 });
 
-test("the token is sent once, the field is emptied, and the page shows the bot's name", async () => {
+test("the token is sent once, the field is emptied, and the page shows the bot's name", async (t) => {
   const saved = { ...fixture("api-telegram-bot"), why: "no-chat", bot: "ralphy_bot" };
   const sends = { state: "sends", bot: "ralphy_bot", chat: 4242, answered: true };
-  await withDaemon([[200, fixture("api-telegram-bot")], [200, saved], [200, sends], [200, sends]], async (s, sent) => {
+  await withDaemon(t, [[200, fixture("api-telegram-bot")], [200, saved], [200, sends], [200, sends]], async (s, sent) => {
     await s.load();
     s.token = "  123:abc  ";
     await s.saveToken();
@@ -81,9 +68,9 @@ test("the token is sent once, the field is emptied, and the page shows the bot's
   });
 });
 
-test("a refusal says the daemon's reason, and keeps the state", async () => {
+test("a refusal says the daemon's reason, and keeps the state", async (t) => {
   const noChat = { ...fixture("api-telegram-bot"), why: "no-chat", bot: "ralphy_bot" };
-  await withDaemon(
+  await withDaemon(t,
     [[200, noChat], [409, fixture("api-telegram-chat--no-bot")], [409, fixture("api-telegram-test--no-chat")]],
     async (s) => {
       await s.load();
@@ -96,9 +83,9 @@ test("a refusal says the daemon's reason, and keeps the state", async () => {
   );
 });
 
-test("the removal asks first, then shows the daemon's state", async () => {
+test("the removal asks first, then shows the daemon's state", async (t) => {
   const sends = { state: "sends", bot: "ralphy_bot", chat: 4242, answered: true };
-  await withDaemon([[200, sends], [200, fixture("api-telegram-bot")]], async (s, sent) => {
+  await withDaemon(t, [[200, sends], [200, fixture("api-telegram-bot")]], async (s, sent) => {
     await s.load();
     await s.removeBot();
     assert.equal(sent[1].method, "DELETE");
@@ -110,8 +97,8 @@ test("the removal asks first, then shows the daemon's state", async () => {
 // pin: the bot token field is a password field —
 // its type is only in the markup, and node runs no Alpine over it.
 // A failed read is never "no bot" (ADR-0070 D3).
-test("the Telegram section says why it could not read the bot", async () => {
-  await withDaemon([[503, {}]], async (s) => {
+test("the Telegram section says why it could not read the bot", async (t) => {
+  await withDaemon(t, [[503, {}]], async (s) => {
     await s.load();
     assert.equal(s.loaded, false);
     assert.equal(s.hasBot(), false);

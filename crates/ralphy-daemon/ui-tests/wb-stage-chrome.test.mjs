@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { UI } from "./harness.mjs";
+import { UI, fakeClassList } from "./harness.mjs";
 import { createChrome } from "../assets/ui/wb-stage-chrome.ts";
 import { createGestures } from "../assets/ui/wb-stage-stack.ts";
 
@@ -30,12 +30,7 @@ function fakeElement(tag = "div") {
     offsetWidth: 400,
     offsetHeight: 300,
     listeners,
-    classList: {
-      contains: () => false,
-      toggle() {},
-      add() {},
-      remove() {},
-    },
+    classList: fakeClassList(),
     setAttribute() {},
     append(...kids) {
       this.children.push(...kids);

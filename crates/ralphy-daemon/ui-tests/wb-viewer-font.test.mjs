@@ -10,6 +10,7 @@ import {
   liveFontDeps,
 } from "../assets/ui/wb-viewer-font.ts";
 import { VIEWERS, viewerKindOf } from "../assets/ui/wb-viewers.ts";
+import { swapFetch } from "./harness.mjs";
 
 // An element that records its attributes, children and listeners, and finds
 // the children a selector names through stubs.
@@ -134,14 +135,13 @@ test("a refused font (FontFace.load rejects) shows the message and no sample", a
   assert.equal(body.children.length, 0);
 });
 
-test("a font larger than one answer is read again from the next byte", async () => {
+test("a font larger than one answer is read again from the next byte", async (t) => {
   const asked = [];
   const answers = [
     { status: 206, total: 5, part: [1, 2, 3] },
     { status: 206, total: 5, part: [4, 5] },
   ];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = (_url, init) => {
+  swapFetch(t, (_url, init) => {
     asked.push(init.headers.Range);
     const next = answers.shift();
     return Promise.resolve({
@@ -150,13 +150,9 @@ test("a font larger than one answer is read again from the next byte", async () 
       headers: { get: () => `bytes 0-4/${next.total}` },
       arrayBuffer: () => Promise.resolve(new Uint8Array(next.part).buffer),
     });
-  };
-  try {
-    const bytes = await liveFontDeps({ fonts: { add() {} } }).fetchBytes("/api/file/bytes");
-    assert.deepEqual([...bytes], [1, 2, 3, 4, 5]);
-  } finally {
-    globalThis.fetch = realFetch;
-  }
+  });
+  const bytes = await liveFontDeps({ fonts: { add() {} } }).fetchBytes("/api/file/bytes");
+  assert.deepEqual([...bytes], [1, 2, 3, 4, 5]);
   assert.deepEqual(asked, ["bytes=0-", "bytes=3-"]);
 });
 

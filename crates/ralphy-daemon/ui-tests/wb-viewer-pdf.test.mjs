@@ -169,7 +169,7 @@ function pane(load) {
 async function opened() {
   const pdfjs = fakePdfjs();
   const asked = [];
-  const load = (path) => {
+  const load = (path) => { // own: the vendor loader the pane is given, not the harness page loader
     asked.push(path);
     const module = path === PDF_CORE_PATH ? pdfjs.core : pdfjs.viewerLib;
     return Promise.resolve({ ok: true, module });
@@ -246,7 +246,7 @@ test("loading: the body shows a note until the document is drawn", async () => {
     release = resolve;
   });
   const pdfjs = fakePdfjs();
-  const load = async (path) => {
+  const load = async (path) => { // own: the vendor loader the pane is given, not the harness page loader
     await held;
     return { ok: true, module: path === PDF_CORE_PATH ? pdfjs.core : pdfjs.viewerLib };
   };

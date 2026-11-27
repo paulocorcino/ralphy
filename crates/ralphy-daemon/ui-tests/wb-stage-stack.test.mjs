@@ -6,19 +6,15 @@ import assert from "node:assert/strict";
 import { createStack, createGestures } from "../assets/ui/wb-stage-stack.ts";
 import { createConsole } from "../assets/ui/wb-console.ts";
 import { idLookups } from "./fake-document.mjs";
+import { fakeClassList, withoutBroadcast } from "./harness.mjs";
 
 // A surface on the plane: a console window or a note card. `style.zIndex`
 // keeps what was written, as the fold reads it back with `parseInt`.
 function surface(kind) {
-  const classes = new Set([kind]);
   return {
     kind,
     style: { zIndex: "" },
-    classList: {
-      add: (c) => classes.add(c),
-      remove: (c) => classes.delete(c),
-      contains: (c) => classes.has(c),
-    },
+    classList: fakeClassList(kind),
   };
 }
 
@@ -46,14 +42,9 @@ test("a card and a window share one stack: the one focused last is on top", () =
   const stack = createStack(document);
   // The console the entry module builds with the same stack. Node 22 ships a
   // real `BroadcastChannel`, and an open channel keeps `node --test` alive.
-  const realBC = globalThis.BroadcastChannel;
-  delete globalThis.BroadcastChannel;
-  let console_;
-  try {
-    console_ = createConsole({ addEventListener() {} }, document, { protocol: "http:", host: "127.0.0.1:7431" }, { stack });
-  } finally {
-    globalThis.BroadcastChannel = realBC;
-  }
+  const console_ = withoutBroadcast(() =>
+    createConsole({ addEventListener() {} }, document, { protocol: "http:", host: "127.0.0.1:7431" }, { stack }),
+  );
   // The card raises itself through the stack, as `wb-notes.ts` does.
   stack.focusWin(card);
   console_.focusWin(win);

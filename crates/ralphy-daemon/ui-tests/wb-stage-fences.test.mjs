@@ -7,23 +7,18 @@ import assert from "node:assert/strict";
 import { createFences } from "../assets/ui/wb-stage-fences.ts";
 import { createGestures } from "../assets/ui/wb-stage-stack.ts";
 import { createPopupRegistry } from "../assets/ui/wb-desk-popups.ts";
+import { fakeClassList } from "./harness.mjs";
 
 const RECT = { left: 100, top: 100, width: 600, height: 400 };
 
 // An element with the few DOM members the fences use.
 function fakeElement() {
-  const classes = new Set();
   return {
     className: "",
     dataset: {},
     style: {},
     children: [],
-    classList: {
-      contains: (c) => classes.has(c),
-      toggle: (c, on) => (on ? classes.add(c) : classes.delete(c)),
-      add: (c) => classes.add(c),
-      remove: (c) => classes.delete(c),
-    },
+    classList: fakeClassList(),
     listeners: {},
     setAttribute() {},
     append(...kids) {

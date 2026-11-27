@@ -4,7 +4,7 @@
 // callback at once unless a test makes it a sink.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assembledPage, loadShell, valueIn, withoutComments } from "./harness.mjs";
+import { assembledPage, fakeWindow, loadShell, valueIn, withoutComments } from "./harness.mjs";
 
 // The viewer pin (#406): a tab is pinned to the checkout it was opened in, the
 // pin is part of its identity, and an explicit `null` is the primary — not
@@ -353,13 +353,7 @@ test("closing the active tab activates its neighbour, the right one first", asyn
 
 // The store's `init()` hears a component ask for a tab (the Spend tab).
 test("a component's tab request adds the tab once and brings it to the front", () => {
-  const listeners = {};
-  const { state, window } = loadShell({
-    window: {
-      addEventListener: (type, fn) => (listeners[type] ||= []).push(fn),
-      dispatchEvent: (e) => ((listeners[e.type] || []).forEach((fn) => fn(e)), true),
-    },
-  });
+  const { state, window } = loadShell({ window: fakeWindow() });
   const tabs = state.$store.tabs;
   tabs.init();
   const tab = { id: "spend", kind: "spend", title: "Spend", icon: "bi bi-cash-stack", closable: true };
