@@ -127,6 +127,9 @@ edits; the `ui-copy` lint owns wording.
 
 ## Choosing the kind of test
 
+[TESTING-KINDS.md](./TESTING-KINDS.md) gives the kind of every test file,
+its count of pins, and the measured time of each suite.
+
 Use the first kind that can see the behavior:
 
 1. A Rust unit or integration test that calls the code or runs the binary.
@@ -149,6 +152,10 @@ A pin follows these rules:
 - **Not bound by item 7.** A pin reads form, so a rename or a move can make it
   red when the behavior is the same. Its failure message says what to update,
   for example "moved the call? move the slice to the new caller".
+- **The marker.** The line right above a pin test (above its attributes, in
+  Rust and in TypeScript) is `// pin: <behavior> — <why no behavior test sees
+  it>`. `python docs/testing/test_kinds.py --unmarked-pins <path>...` lists
+  the pins without it.
 - **A scanner proves it scans.** A lint or guard over many files has a known-bad
   fixture it must catch.
 
