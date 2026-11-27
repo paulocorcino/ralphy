@@ -282,8 +282,7 @@ fn config_argv_refuses_local_only_keys() {
     // of the verify gate's child, the two hatches re-arm what an ADR closed,
     // `events.token` is the sink's bearer (audit F12),
     // `queue.trust_all_comments` lets a stranger's comment reach the prompt,
-    // the guard proof waiver lets a session run with no proof of the guard,
-    // and the console workflow key lets a console agent push.
+    // and the guard proof waiver lets a session run with no proof of the guard.
     for key in [
         "verify.command",
         "copilot.allow_builtin_mcp_servers_i_understand_the_risk",
@@ -292,7 +291,6 @@ fn config_argv_refuses_local_only_keys() {
         "queue.trust_all_comments",
         "claude.run_without_guard_proof_i_understand_the_risk",
         "antigravity.run_without_guard_proof_i_understand_the_risk",
-        "antigravity.console_agent_workflow_i_understand_the_risk",
     ] {
         assert_eq!(
             config_argv(
@@ -321,6 +319,28 @@ fn config_argv_refuses_local_only_keys() {
         &serde_json::json!({ "key": "verify.require_verify_gate", "value": "true" })
     )
     .is_ok());
+}
+
+#[test]
+fn config_argv_lets_the_panel_set_the_console_workflow_key() {
+    let key = "antigravity.console_agent_workflow_i_understand_the_risk";
+    assert_eq!(
+        config_argv(
+            Verb::ConfigSet,
+            &serde_json::json!({ "key": key, "value": "true" })
+        ),
+        Ok(vec!["config", "set", "--", key, "true"]
+            .into_iter()
+            .map(String::from)
+            .collect())
+    );
+    assert_eq!(
+        config_argv(Verb::ConfigUnset, &serde_json::json!({ "key": key })),
+        Ok(vec!["config", "unset", "--", key]
+            .into_iter()
+            .map(String::from)
+            .collect())
+    );
 }
 
 #[test]
