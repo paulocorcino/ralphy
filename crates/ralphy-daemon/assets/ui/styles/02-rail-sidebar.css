@@ -228,6 +228,7 @@
   letter-spacing: 0.04em;
   font-size: var(--fs-xs);
   border-bottom: 1px solid var(--border);
+  gap: 0.35rem;
 }
 .side-search {
   margin: var(--space-6) var(--side-gutter);

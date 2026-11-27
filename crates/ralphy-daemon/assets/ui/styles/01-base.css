@@ -138,6 +138,8 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
 /* Every plain checkbox is drawn here, in the Security switch's colors: off is
    the switch's track, on is its lit track and knob. `accent-color` only tints

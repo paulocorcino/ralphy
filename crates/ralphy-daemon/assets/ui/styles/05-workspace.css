@@ -7,10 +7,6 @@
    order, changes which declaration wins. See ADR-0057 D5.
    --------------------------------------------------------------------- */
 /* --- canvas becomes a tabbed workspace ------------------------------------ */
-.canvas {
-  display: flex;
-  flex-direction: column;
-}
 .tabbar {
   display: flex;
   /* centre the tools; the tab strip stays full-height on its own (below) so the

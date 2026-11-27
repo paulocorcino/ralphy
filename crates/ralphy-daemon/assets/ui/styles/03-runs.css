@@ -489,6 +489,9 @@ body.runs-open .runs {
   gap: var(--space-4);
   padding: var(--space-5) var(--space-6);
   border-bottom: 1px solid var(--border);
+  /* The row wraps rather than shrinking its buttons: at 390px the three verbs
+     must all stay reachable, and a squeezed row would cut their labels. */
+  flex-wrap: wrap;
 }
 .run-verb {
   font: inherit;
@@ -523,12 +526,10 @@ body.runs-open .runs {
 .run-verb.danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--danger) 14%, transparent);
 }
+/* Dimming, never hiding — the same idiom as `.chg-act:disabled`: a verb that
+   vanishes under a run would read as a feature that does not exist. */
 .run-verb:disabled {
-  /* `opacity` is NOT declared here: the #331 stripe below re-declares this same
-     selector, and its 0.4 is what has been rendering. Two values for one
-     property across 4,400 lines is a coin toss decided by source order, and the
-     loser reads like an intention. The winner keeps the property; this block
-     keeps what only it declares. */
+  opacity: 0.4;
   cursor: default;
 }
 .run-verb .bi {

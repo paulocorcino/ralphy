@@ -94,8 +94,10 @@ fn the_design_system_scrollbar_is_the_default_not_a_list() {
     let css = served_css();
     let squeezed: String = css.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        squeezed
-            .contains("* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }"),
+        squeezed.contains(concat!(
+            "* { box-sizing: border-box; scrollbar-width: thin; ",
+            "scrollbar-color: var(--border) transparent; }"
+        )),
         "the default must be `*` — `scrollbar-width` does not inherit"
     );
     assert!(

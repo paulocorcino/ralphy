@@ -894,7 +894,6 @@
    anything this stylesheet derives. `quiet` is a fixes-only release and reads
    as a hint; `notable` is a feature; `urgent` is breaking or security and is
    the only one that survives a dismissal (app.js decides that, not this file). */
-.avatar-btn { position: relative; }
 .rel-dot {
   position: absolute;
   top: 2px;

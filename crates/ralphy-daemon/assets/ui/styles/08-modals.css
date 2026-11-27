@@ -50,6 +50,8 @@
   display: inline-flex;
   cursor: pointer;
   border-radius: 50%;
+  /* holds the release dot (12-spend.css) */
+  position: relative;
 }
 .avatar-btn:hover .avatar {
   box-shadow: 0 0 0 2px var(--border-focus);
