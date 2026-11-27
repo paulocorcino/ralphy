@@ -5,16 +5,10 @@
 // field (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
+import { assembledPage, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
 
 // The part that holds the Spend tab's markup.
 const PART = "wb-spend-panel.part.html";
-
-// A template literal's text is not code: only its `${…}` parts are read.
-const code = (value) =>
-  value.replaceAll(/`([^`]*)`/gu, (_, t) =>
-    Array.from(t.matchAll(/\$\{([^}]*)\}/gu), (m) => m[1]).join(", "),
-  );
 
 // One page with the shell and the Spend tab, and a window that delivers the
 // events it is sent, as the browser does. `init()` adds the listeners, as
@@ -46,36 +40,10 @@ test("wbSpend lists only shell() names in uses, and its members left shell()", (
   }
 });
 
-// pin: the markup reads only names its component can see —
-// node runs no Alpine over the markup, so only its text shows the names.
-test("every name the markup of wbSpend reads is its own or in its uses list", () => {
-  const { scope: state } = loadComponent("wbSpend");
-  const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
-  // The `x-for` loop variables of the two panes.
-  const loopVars = new Set(["p", "t", "d", "o", "m", "r", "c", "i", "peer", "cause", "col", "row"]);
-  let read = 0;
-  for (const [, attr, value] of attrs) {
-    // `x-data` names the component.
-    if (attr === "x-data") continue;
-    for (const n of bindingNames(code(value))) {
-      if (n.startsWith("$") || loopVars.has(n)) continue;
-      assert.doesNotThrow(() => state[n], `${attr}="${value}" reads ${n}`);
-      read++;
-    }
-  }
-  assert.ok(read > 60, `the markup was read: ${read} names`);
-});
-
-// pin: the page outside the component never reads its state —
-// node runs no Alpine over the page, so only its text shows what it reads.
-test("nothing outside the Spend element names its state", () => {
-  // The page without the Spend part: the shell and the other components.
+// pin: the rail button asks for the tab with an event, and the element hears it —
+// node runs no Alpine over the page, so only its text shows the wiring.
+test("the rail button asks the Spend tab to open with workbench:spend-open", () => {
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
-  for (const name of ["spendView", "spendModel", "ledgerModel", "ledgerView", "spendPane", "spendPeriod", "setSpendPane", "setSpendPeriod", "showUnpricedLedger", "loadLedger", "loadSpend", "refreshSpend"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
-  }
-  // The rail button asks for the tab with an event: the element hears it.
   assert.match(outside, /\$dispatch\('workbench:spend-open'\)/u);
   assert.match(partMarkup(PART), /@workbench:spend-open\.window="openSpend\(\)"/u);
 });

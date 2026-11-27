@@ -10,12 +10,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, UI, withoutComments } from "./harness.mjs";
+import { loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
 
 const HTML = readFileSync(join(UI, "index.html"), "utf8");
 
-// The part that holds the markup of each component.
-const PARTS = { wbConsoleMenus: "wb-consoles-tab-menus.part.html", wbColumns: "wb-consoles-tab-columns.part.html" };
 const ALT_SHIFT = { altKey: true, shiftKey: true };
 
 // One page with both components and a window and a document that deliver the
@@ -296,51 +294,7 @@ for (const name of ["wbConsoleMenus", "wbColumns"]) {
       if (n !== "uses" && n !== "init") assert.ok(!(n in shell), `shell() still has ${n}`);
     }
   });
-
-  // pin: the markup reads only names its component can see —
-  // node runs no Alpine over the markup, so only its text shows the names.
-  test(`every name the markup of ${name} reads is its own or in its uses list`, () => {
-    const { scope: state } = loadComponent(name);
-    const markup = partMarkup(PARTS[name]);
-    const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
-    // `x-data` names the component; `x-for` adds its loop variables.
-    const loopVars = new Set();
-    for (const [, attr, value] of attrs) {
-      if (attr !== "x-for") continue;
-      const [left] = value.split(/\s+in\s+/u);
-      for (const v of bindingNames(left)) loopVars.add(v);
-    }
-    let read = 0;
-    for (const [, attr, value] of attrs) {
-      // `x-ref` names an element, not a scope member.
-      if (attr === "x-data" || attr === "x-ref") continue;
-      const raw = attr === "x-for" ? value.split(/\s+in\s+/u)[1] : value;
-      // A template literal reads only the names in its `${…}` holes.
-      const expr = raw.startsWith("`") ? [...raw.matchAll(/\$\{([^}]*)\}/gu)].map((m) => m[1]).join(";") : raw;
-      for (const n of bindingNames(expr)) {
-        // `window` is the page's global, not a name of any scope.
-        if (loopVars.has(n) || n.startsWith("$") || n === "window") continue;
-        assert.doesNotThrow(() => state[n], `${attr}="${value}" reads ${n}`);
-        read++;
-      }
-    }
-    assert.ok(read > 10, `the markup was read: ${read} names`);
-  });
 }
-
-// pin: the page outside the components never reads their state —
-// node runs no Alpine over the page, so only its text shows what it reads.
-test("nothing outside the two components names their state", () => {
-  // The page without the two parts: one is left out by the helper, the other
-  // is cut out of the text it put in.
-  const columns = readFileSync(join(UI, PARTS.wbColumns), "utf8");
-  const html = assembledPage("index.html", { skip: PARTS.wbConsoleMenus });
-  assert.ok(html.includes(columns), "the page holds the columns part");
-  const outside = withoutComments(html.replace(columns, ""));
-  for (const name of ["agentMenu", "toggleAgentMenu", "consoleRunText", "fenceItems", "noteItems", "columnMenu", "columnView", "consoleCount", "stageW"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
-  }
-});
 
 // ONE dropdown at a time: a trigger in one component closes the menus of the
 // other. The shell's account menu hears the same event (app.test.mjs).

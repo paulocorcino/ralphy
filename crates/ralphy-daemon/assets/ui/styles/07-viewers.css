@@ -718,6 +718,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: var(--font-mono);
+  cursor: pointer;
 }
 .md-body .dbml-cols .dbml-col-type {
   padding-left: 0.8em;
@@ -787,9 +788,6 @@
   margin: var(--space-4) 0 var(--space-2);
 }
 /* A click on a column name marks it and the columns with the same name. */
-.md-body .dbml-cols .dbml-col-name {
-  cursor: pointer;
-}
 .md-body .dbml-cols tr.dbml-origin td {
   background: rgba(232, 217, 168, 0.28);
 }

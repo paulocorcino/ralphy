@@ -200,7 +200,7 @@ pub(super) const STEPS: &[Step] = &[
     // .stylelintrc.json lists the core rules of stylelint-config-recommended
     // 19.0.0, with no `extends`, so npx needs no second package. Rules off
     // (JSON has no comments). Debt: no-descending-specificity 64 sites,
-    // no-duplicate-selectors 4, declaration-property-value-keyword-no-deprecated
+    // declaration-property-value-keyword-no-deprecated
     // 2, property-no-deprecated 1. color-no-hex is on except in 01-base.css, which
     // holds the palette (ADR-0035): 2 sites carry a disable comment with a reason.
     step(

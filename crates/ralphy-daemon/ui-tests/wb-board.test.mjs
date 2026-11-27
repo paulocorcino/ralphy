@@ -6,16 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
-
-// The part that holds the board's markup.
-const PART = "wb-board.part.html";
-
-// A template literal's text is not code: only its `${…}` parts are read.
-const code = (value) =>
-  value.replaceAll(/`([^`]*)`/gu, (_, t) =>
-    Array.from(t.matchAll(/\$\{([^}]*)\}/gu), (m) => m[1]).join(", "),
-  );
+import { loadComponent, loadShell } from "./harness.mjs";
 
 // `init()` starts the backstop on the global timer; here it never ticks.
 // Returns the intervals it asked for.
@@ -70,37 +61,6 @@ test("wbBoard lists only shell() names in uses, and its members left shell()", (
   for (const n of data.uses) assert.ok(n in shell, n);
   for (const n of Object.keys(data)) {
     if (n !== "uses" && n !== "init") assert.ok(!(n in shell), `shell() still has ${n}`);
-  }
-});
-
-// pin: the markup reads only names its component can see —
-// node runs no Alpine over the markup, so only its text shows the names.
-test("every name the markup of wbBoard reads is its own or in its uses list", () => {
-  const { scope: state } = loadComponent("wbBoard");
-  const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
-  // The `x-for` loop variables of the board, the issue view and the label menu.
-  const loopVars = new Set(["col", "s", "iss", "l", "b", "c", "idx"]);
-  let read = 0;
-  for (const [, attr, value] of attrs) {
-    // `x-data` names the component.
-    if (attr === "x-data") continue;
-    for (const n of bindingNames(code(value))) {
-      if (n.startsWith("$") || loopVars.has(n)) continue;
-      assert.doesNotThrow(() => state[n], `${attr}="${value}" reads ${n}`);
-      read++;
-    }
-  }
-  assert.ok(read > 60, `the markup was read: ${read} names`);
-});
-
-// pin: the page outside the component never reads its state —
-// node runs no Alpine over the page, so only its text shows what it reads.
-test("nothing outside the board element names its state", () => {
-  // The page without the board's part: the shell and the other components.
-  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
-  for (const name of ["kanbanSel", "openIssue", "selectedIssue", "kanbanColumns", "planModal", "openPlanModal", "discardPlan", "toggleLabel", "labelMenuOpen", "labelsLocked", "issueRunning"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
   }
 });
 

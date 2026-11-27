@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
+import { loadComponent, loadShell, partMarkup } from "./harness.mjs";
 import { wbAttention } from "../assets/ui/wb-attention.ts";
 import { WBRun } from "../assets/ui/wb-runs.ts";
 
@@ -51,37 +51,6 @@ test("wbRuns lists only shell() names in uses, and its members left shell()", ()
   for (const n of data.uses) assert.ok(n in shell, n);
   for (const n of Object.keys(data)) {
     if (n !== "uses" && n !== "init") assert.ok(!(n in shell), `shell() still has ${n}`);
-  }
-});
-
-// pin: the markup reads only names its component can see —
-// node runs no Alpine over the markup, so only its text shows the names.
-test("every name the markup of wbRuns reads is its own or in its uses list", () => {
-  const { scope: state } = loadComponent("wbRuns");
-  const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
-  // The `x-for` loop variables of the panel and the modal.
-  const loopVars = new Set(["r", "iss", "s", "i", "h", "a"]);
-  let read = 0;
-  for (const [, attr, value] of attrs) {
-    // `x-data` names the component.
-    if (attr === "x-data") continue;
-    for (const n of bindingNames(value)) {
-      if (n.startsWith("$") || loopVars.has(n)) continue;
-      assert.doesNotThrow(() => state[n], `${attr}="${value}" reads ${n}`);
-      read++;
-    }
-  }
-  assert.ok(read > 40, `the markup was read: ${read} names`);
-});
-
-// pin: the page outside the component never reads its state —
-// node runs no Alpine over the page, so only its text shows what it reads.
-test("nothing outside the Runs panel element names its state", () => {
-  // The page without the Runs part: the shell and the other components.
-  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
-  for (const name of ["openRunFor", "focusIssue", "selectRun", "runCfg", "verbError", "rawFeed", "trailFocus", "planSection", "openRunModal", "runIsLive"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
   }
 });
 

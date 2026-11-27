@@ -12,11 +12,8 @@
    The two marked blocks below (#331 runs chrome, #364 move picker) belong to
    the Runs panel and the file tree, and they were appended at the tail of the
    Kanban section because appending is where a stripe lands when nobody stops
-   to place it. They are NOT moved up to their sections, and that is a decision
-   rather than an omission: this file is one cascade, `.run-verb:disabled` and
-   `.runs-actions` are re-declared here over blocks that sit 4,000 lines
-   earlier, and lifting these rules would change which declaration comes last.
-   The only instrument that can tell whether that mattered is a browser.
+   to place it. The `.run-verb:disabled` and `.runs-actions` rules that were
+   re-declared here are merged into their blocks in 03-runs.css.
 
    So the boundary is named instead. When this file becomes partials, each
    stripe is its own partial, linked in THIS position — source order preserved,
@@ -77,12 +74,6 @@
   background: var(--log-bg);
   color: var(--text-muted);
 }
-/* The verb row wraps rather than shrinking its buttons: at 390px the three verbs
-   must all stay reachable (they are the panel's only acts), and a squeezed row
-   would ellipsize their labels instead of taking the second line it has. */
-.runs-actions {
-  flex-wrap: wrap;
-}
 /* A CLI refusal, surfaced as panel state rather than a line of raw stdout. It
    is sticky by design — cleared by the next verb click or its own ✕, never by a
    timer, because a refusal that vanishes is the defect this replaces. */
@@ -113,12 +104,6 @@
   border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--danger);
-}
-/* Dimming, never hiding — the same idiom as `.chg-act:disabled`: a verb that
-   vanishes under a run would read as a feature that does not exist. */
-.run-verb:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 .run-verb:disabled:hover {
   background: var(--surface);

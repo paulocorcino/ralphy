@@ -12,6 +12,8 @@
   position: relative;
   background-color: var(--bg);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .btn {
   font: inherit;
@@ -137,11 +139,9 @@
    — deliberately: they were the loudest offenders. Monaco and xterm 6 are the
    exceptions; each paints its own slider and reads no scrollbar property at all
    (Monaco: end of section; xterm: `showScrollbarWhileNeeded`,
-   wb-console-terminal.ts). */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
+   wb-console-terminal.ts).
+
+   The rule itself is the `*` block of 01-base.css. */
 /* The tree/list surfaces that carry the shell's structure: a brighter thumb,
    because these are dragged rather than skimmed. Descendants inherit the colour,
    which is why Wunderbaum's own viewport inside `.wb-host` needs no selector of
@@ -227,9 +227,6 @@
 }
 .files-peer-down .session-detail {
   flex-basis: 100%;
-}
-.side-head {
-  gap: 0.35rem;
 }
 .side-head .count {
   background: var(--surface);
@@ -447,6 +444,9 @@
   padding: 0.15rem var(--space-7);
   font-size: var(--fs-2xs);
   color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
 }
 /* #318 write controls */
 /* The row action is a real button in the FLOW — there is deliberately no
@@ -473,11 +473,6 @@
   cursor: pointer;
   font-size: var(--fs-lg);
   line-height: 1;
-}
-.chg-group-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
 }
 .chg-act:hover {
   background: var(--surface-hi);

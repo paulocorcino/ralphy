@@ -7,7 +7,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { assembledPage, bindingNames, loadComponent, partMarkup, UI, withoutComments } from "./harness.mjs";
+import { loadComponent, partMarkup, UI } from "./harness.mjs";
 
 // The part that holds the properties dialog's markup.
 const PART = "wb-properties-dialog.part.html";
@@ -72,31 +72,12 @@ test("wbPropertiesDialog lists only shell() names in uses, and its members left 
   }
 });
 
-// pin: the markup reads only names its component can see —
-// node runs no Alpine over the markup, so only its text shows the names.
-test("every name the markup of wbPropertiesDialog reads is its own or in its uses list", () => {
-  const { scope: state } = loadComponent("wbPropertiesDialog");
-  const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
-  let read = 0;
-  for (const [, attr, value] of attrs) {
-    if (attr === "x-data") continue;
-    const raw = attr === "x-for" ? value.split(/\s+in\s+/u)[1] : value;
-    for (const n of bindingNames(raw)) {
-      // `r` is the row of the `x-for`.
-      if (n.startsWith("$") || n === "r") continue;
-      assert.doesNotThrow(() => state[n], `${attr}="${value}" reads ${n}`);
-      read++;
-    }
-  }
-  assert.ok(read > 8, `the markup was read: ${read} names`);
-  // The files open it with this event; nothing outside names its state.
+// pin: the files open the dialog by its event — node runs no Alpine over the markup.
+test("the dialog opens with workbench:properties-open", () => {
   assert.match(
     partMarkup(PART),
     /<div class="properties-dialog" x-data="wbPropertiesDialog" @workbench:properties-open\.window="openProperties\(\$event\.detail\)">/u,
   );
-  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
-  assert.doesNotMatch(outside, /\bprops\.open|\bpropsRows\b/u);
 });
 
 test("a file is asked once, in the checkout of the tree, and shows its facts", async () => {

@@ -1,0 +1,12 @@
+<div x-data="wbBad" x-show="open" @click.outside="toggle('menu')">
+  <span x-text="count"></span>
+  <p x-text="missing"></p>
+  <template x-for="(row, i) in rows" :key="i">
+    <button @click="save(row)" x-text="row.name" :class="{ on: open }"></button>
+  </template>
+  <input x-model="$store.tabs.active" @keydown.enter="rows.map((r) => r.name)">
+  <p x-show="sideOpen"></p>
+</div>
+<div x-data="shell" x-show="anything"></div>
+<div x-data="shell"><span x-text="count"></span></div>
+<p x-show="open"></p>
