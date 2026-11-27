@@ -121,12 +121,6 @@ impl ScriptedAgent {
         self
     }
 
-    /// Repair the plan when a bounce brief (`protocol-failure.md`) is present.
-    pub(crate) fn with_protocol_fix(mut self) -> Self {
-        self.fix_protocol = true;
-        self
-    }
-
     pub(crate) fn with_ledger(mut self, ledger: impl Into<String>) -> Self {
         self.ledger = Some(ledger.into());
         self
@@ -156,13 +150,6 @@ impl ScriptedAgent {
     /// Script an infeasible plan (zero open steps).
     pub(crate) fn infeasible(mut self) -> Self {
         self.steps = 0;
-        self
-    }
-
-    /// Script a resumed plan that an earlier run already executed: every step
-    /// checked, zero open steps.
-    pub(crate) fn already_executed(mut self) -> Self {
-        self.already_executed = true;
         self
     }
 

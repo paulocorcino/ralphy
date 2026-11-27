@@ -356,15 +356,3 @@ pub(crate) fn verify_fail_line() -> &'static str {
         "sh -c \"exit 3\""
     }
 }
-
-/// A `## Verify` line that fails until the agent's second execute lands, then
-/// passes — it keys off the marker file `ScriptedAgent` commits on its 1st repair
-/// (`issue-1-1.txt`, where the suffix is the prior execute count). This lets a
-/// repair attempt actually flip the gate green.
-pub(crate) fn verify_pass_after_repair_line() -> &'static str {
-    if cfg!(windows) {
-        "cmd /c \"if exist issue-1-1.txt (exit 0) else (exit 3)\""
-    } else {
-        "sh -c \"test -f issue-1-1.txt\""
-    }
-}

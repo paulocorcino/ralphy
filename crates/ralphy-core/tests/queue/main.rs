@@ -33,7 +33,5 @@ mod lifecycle;
 mod limits;
 mod refused;
 mod selection;
-mod session_ledger;
-mod verify;
 
 use harness::*;

@@ -2,6 +2,7 @@ use super::*;
 use crate::scratch::remove_scratch;
 use crate::Outcome;
 
+mod queue;
 mod queue_run;
 
 fn labeled(number: u64, labels: &[&str]) -> Issue {
