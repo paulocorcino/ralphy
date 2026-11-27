@@ -6,13 +6,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { WBRun } from "../assets/ui/wb-runs.ts";
 
-// The module keeps no state, so one import serves every test.
-function load() {
-  return WBRun;
-}
-
 test("fromSnapshot maps the plan block to steps and the issue it belongs to", () => {
-  const run = load().fromSnapshot({
+  const run = WBRun.fromSnapshot({
     runid: "01X",
     plan: { issue: 72, steps: [{ text: "a", status: "noticed" }, { text: "b", status: "checked" }] },
   });
@@ -24,16 +19,16 @@ test("fromSnapshot maps the plan block to steps and the issue it belongs to", ()
 });
 
 test("a document with no plan key yields no steps and no plan issue", () => {
-  const run = load().fromSnapshot({ runid: "01X" });
+  const run = WBRun.fromSnapshot({ runid: "01X" });
   assert.deepEqual(run.steps, []);
   assert.equal(run.planIssue, null);
 });
 
 test("a queue total of 0 stays 0, and an absent total is the issue count", () => {
   const issues = [{ number: 1, status: "pending" }, { number: 2, status: "pending" }];
-  assert.equal(load().fromSnapshot({ runid: "01X", queue: { total: 0 }, issues }).queueTotal, 0);
-  assert.equal(load().fromSnapshot({ runid: "01X", queue: { total: 5 }, issues }).queueTotal, 5);
-  assert.equal(load().fromSnapshot({ runid: "01X", issues }).queueTotal, 2);
+  assert.equal(WBRun.fromSnapshot({ runid: "01X", queue: { total: 0 }, issues }).queueTotal, 0);
+  assert.equal(WBRun.fromSnapshot({ runid: "01X", queue: { total: 5 }, issues }).queueTotal, 5);
+  assert.equal(WBRun.fromSnapshot({ runid: "01X", issues }).queueTotal, 2);
 });
 
 // --- what is running, and for how long --------------------------------------
@@ -52,7 +47,7 @@ const RUNNING = {
 };
 
 test("fromSnapshot carries the render facts the picker names", () => {
-  const run = load().fromSnapshot(RUNNING);
+  const run = WBRun.fromSnapshot(RUNNING);
   assert.equal(run.issues[0].model, "gpt-5.6-sol");
   assert.equal(run.issues[0].effort, "medium");
   assert.equal(run.issues[0].budgetMin, 45);
@@ -64,7 +59,7 @@ test("fromSnapshot carries the render facts the picker names", () => {
 });
 
 test("modelEffort mirrors the CLI's `model / effort` segment", () => {
-  const wb = load();
+  const wb = WBRun;
   assert.equal(wb.modelEffort("gpt-5.6-sol", "medium"), "gpt-5.6-sol / medium");
   assert.equal(wb.modelEffort("opus", null), "opus");
   assert.equal(wb.modelEffort("", "high"), "", "no model, no segment — the effort alone names nothing");
@@ -72,7 +67,7 @@ test("modelEffort mirrors the CLI's `model / effort` segment", () => {
 });
 
 test("runTitle names the model and falls back to the vendor, never inventing one", () => {
-  const wb = load();
+  const wb = WBRun;
   const run = wb.fromSnapshot(RUNNING);
   assert.equal(wb.runTitle(run), "gpt-5.6-sol / medium");
   assert.equal(wb.runIdentity(run), "codex · executing #350");
@@ -87,7 +82,7 @@ test("runTitle names the model and falls back to the vendor, never inventing one
 });
 
 test("fmtClock mirrors ui::render::fmt_clock", () => {
-  const wb = load();
+  const wb = WBRun;
   // The four values the Rust test pins (`fmt_clock_formats_mm_ss`).
   assert.equal(wb.fmtClock(5 * 1000), "0:05");
   assert.equal(wb.fmtClock((12 * 60 + 43) * 1000), "12:43");
@@ -96,7 +91,7 @@ test("fmtClock mirrors ui::render::fmt_clock", () => {
 });
 
 test("phaseClock counts from the document's anchor and shows the budget only when executing", () => {
-  const wb = load();
+  const wb = WBRun;
   const run = wb.fromSnapshot(RUNNING);
   const now = Date.parse(RUNNING.phase.since) + (12 * 60 + 43) * 1000;
   assert.equal(wb.phaseClock(run, now), "12:43 / 45:00");
@@ -117,7 +112,7 @@ test("phaseClock counts from the document's anchor and shows the budget only whe
 });
 
 test("phaseClock renders nothing without an anchor and never a negative clock", () => {
-  const wb = load();
+  const wb = WBRun;
   // A document from a build before the anchor existed, or a run already in
   // flight: say nothing rather than fabricate a 0:00 that looks like a fresh run.
   assert.equal(wb.phaseClock(wb.fromSnapshot({ ...RUNNING, phase: { active: 350, state: "executing" } }), 1), "");
@@ -139,7 +134,7 @@ const TRAILER = (n) => `<!-- ralphy-plan: issue=${n} -->`;
 // resume detector's last-line rule would make the prose vanish the moment
 // execution wrote its first note.
 test("planTrailerIssue reads the issue the plan says it is for", () => {
-  const wb = load();
+  const wb = WBRun;
   // [case, plan markdown, expected issue]
   const rows = [
     ["the trailer", `# Plan for #72\n\n## Steps\n- [ ] a\n\n${TRAILER(72)}\n`, 72],
@@ -166,7 +161,7 @@ test("planTrailerIssue reads the issue the plan says it is for", () => {
 });
 
 test("planBelongsTo answers the question the panel actually asks", () => {
-  const wb = load();
+  const wb = WBRun;
   const md = `# Plan for #72\n\n${TRAILER(72)}\n`;
   assert.equal(wb.planBelongsTo(md, 72), true);
   // …and refuses the previous issue's plan, which is the whole defect: the file
@@ -181,7 +176,7 @@ test("planBelongsTo answers the question the panel actually asks", () => {
 
 test("planBelongsTo compares by VALUE, so a string issue number still matches", () => {
   const md = `x\n${TRAILER(350)}\n`;
-  assert.equal(load().planBelongsTo(md, "350"), true);
+  assert.equal(WBRun.planBelongsTo(md, "350"), true);
 });
 
 // --- the plan's verdict, mirrored from the Rust that decides -----------------
@@ -213,7 +208,7 @@ The issue bundles six PRD tasks; split into W1-T01..T06.
 `;
 
 test("planSummary reads the trailer, the steps and the verdict together", () => {
-  const s = load().planSummary(FEASIBLE_PLAN);
+  const s = WBRun.planSummary(FEASIBLE_PLAN);
   assert.equal(s.issue, 350);
   assert.equal(s.steps, 2);
   assert.equal(s.openSteps, 1);
@@ -224,7 +219,7 @@ test("planSummary reads the trailer, the steps and the verdict together", () => 
 });
 
 test("a plan with no steps is infeasible, whatever its heading claims", () => {
-  const wb = load();
+  const wb = WBRun;
   // The runner's own test: a plan with no step at all IS the refusal, so the
   // board must not call it ready.
   const lying = "## Feasible: yes\nlooks fine\n\n## Steps\n\n<!-- ralphy-plan: issue=9 -->";
@@ -237,7 +232,7 @@ test("a plan with every step checked was executed, not refused", () => {
   // bundle, even when its prose says "Not a bundle".
   const done =
     "## Feasible: yes\nNot a bundle: one crate.\n\n## Steps\n- [x] all done\n\n<!-- ralphy-plan: issue=9 -->";
-  const s = load().planSummary(done);
+  const s = WBRun.planSummary(done);
   assert.equal(s.openSteps, 0);
   assert.equal(s.infeasible, false);
   assert.equal(s.needsSplit, false);
@@ -245,11 +240,11 @@ test("a plan with every step checked was executed, not refused", () => {
 
 test("a feasible heading is never a bundle, whatever its prose says", () => {
   const md = "## Feasible: yes\nNot a bundle: one crate.\n\n## Steps\n\n<!-- ralphy-plan: issue=9 -->";
-  assert.equal(load().planSummary(md).needsSplit, false);
+  assert.equal(WBRun.planSummary(md).needsSplit, false);
 });
 
 test("a bundle verdict is recognised as needing a split", () => {
-  const s = load().planSummary(BUNDLE_PLAN);
+  const s = WBRun.planSummary(BUNDLE_PLAN);
   assert.equal(s.issue, 7);
   assert.equal(s.openSteps, 0);
   assert.equal(s.infeasible, true);
@@ -258,7 +253,7 @@ test("a bundle verdict is recognised as needing a split", () => {
 });
 
 test("isBundleReason keys on the literal word, case-insensitively", () => {
-  const wb = load();
+  const wb = WBRun;
   assert.equal(wb.isBundleReason("This BUNDLES two tasks"), true);
   assert.equal(wb.isBundleReason("under-specified: no acceptance criteria"), false);
   assert.equal(wb.isBundleReason(""), false);
@@ -266,7 +261,7 @@ test("isBundleReason keys on the literal word, case-insensitively", () => {
 });
 
 test("a missing Feasible section yields no reason rather than a wrong one", () => {
-  const wb = load();
+  const wb = WBRun;
   const s = wb.planSummary("# Plan\n\n## Steps\n- [ ] a\n\n<!-- ralphy-plan: issue=4 -->");
   assert.equal(s.heading, "");
   assert.equal(s.reason, "");
@@ -277,7 +272,7 @@ test("a missing Feasible section yields no reason rather than a wrong one", () =
 // `\r` used to defeat the step regex entirely — every step vanished and the plan
 // read as infeasible, on a file the operator could see was full of steps.
 test("steps survive CRLF line endings", () => {
-  const wb = load();
+  const wb = WBRun;
   const crlf = FEASIBLE_PLAN.replaceAll('\n', "\r\n");
   assert.deepEqual(
     wb.parseSteps(crlf).map((s) => s.status),
@@ -294,13 +289,13 @@ test("steps survive CRLF line endings", () => {
 });
 
 test("a CRLF plan's sections come back with LF bodies", () => {
-  const wb = load();
+  const wb = WBRun;
   const crlf = "## Notes\nfirst\nsecond\n\n## Steps\n- [ ] a\n".replaceAll('\n', "\r\n");
   assert.equal(wb.section(crlf, "Notes"), "first\nsecond");
 });
 
 test("planSummary of nothing is a shape, not a crash", () => {
-  const wb = load();
+  const wb = WBRun;
   for (const md of ["", null, undefined]) {
     const s = wb.planSummary(md);
     assert.equal(s.issue, null, JSON.stringify(md));
@@ -312,7 +307,7 @@ test("planSummary of nothing is a shape, not a crash", () => {
 });
 
 test("the pill says what the operator must not have to open a modal to learn", () => {
-  const wb = load();
+  const wb = WBRun;
   const ready = wb.planSummary(FEASIBLE_PLAN);
   const bundle = wb.planSummary(BUNDLE_PLAN);
   assert.equal(wb.planPillLabel(ready), "plan ready");
@@ -326,7 +321,7 @@ test("the pill says what the operator must not have to open a modal to learn", (
 });
 
 test("an infeasible plan that is not a bundle says so in its own words", () => {
-  const wb = load();
+  const wb = WBRun;
   const s = wb.planSummary(
     "## Feasible: no\nUnder-specified: no acceptance criteria.\n\n## Steps\n\n<!-- ralphy-plan: issue=5 -->",
   );
@@ -335,21 +330,21 @@ test("an infeasible plan that is not a bundle says so in its own words", () => {
 });
 
 test("a noticed step is visually distinct from a checked one", () => {
-  const wb = load();
+  const wb = WBRun;
   assert.notEqual(wb.stepGlyph("noticed"), wb.stepGlyph("checked"));
   assert.equal(wb.stepClass("noticed"), "st-noticed");
   assert.equal(wb.stepClass("checked"), "st-checked");
 });
 
 test("an unknown status falls back to open rather than vanishing", () => {
-  const wb = load();
+  const wb = WBRun;
   assert.equal(wb.stepGlyph("tomorrows_status"), wb.stepGlyph("open"));
   assert.equal(wb.stepLabel("tomorrows_status"), wb.stepLabel("open"));
   assert.equal(wb.stepClass("tomorrows_status"), "st-open");
 });
 
 test("a status naming an Object.prototype member still falls back to open", () => {
-  const wb = load();
+  const wb = WBRun;
   for (const evil of ["toString", "constructor", "hasOwnProperty"]) {
     assert.equal(wb.stepGlyph(evil), wb.stepGlyph("open"), evil);
     assert.equal(wb.stepLabel(evil), wb.stepLabel("open"), evil);
@@ -358,7 +353,7 @@ test("a status naming an Object.prototype member still falls back to open", () =
 });
 
 test("parseSteps reads the three markers in order (the file:// demo seed)", () => {
-  const steps = load().parseSteps("## Steps\n- [ ] a\n- [x] b\n- [!] c\nprose\n- not a step\n");
+  const steps = WBRun.parseSteps("## Steps\n- [ ] a\n- [x] b\n- [!] c\nprose\n- not a step\n");
   assert.deepEqual(
     steps.map((s) => s.status),
     ["open", "checked", "noticed"],
@@ -372,7 +367,7 @@ test("parseSteps reads the three markers in order (the file:// demo seed)", () =
 // --- verb chrome (#331) -----------------------------------------------------
 
 test("verbLockTitle states each verb's OWN description when nothing holds the lock", () => {
-  const wb = load();
+  const wb = WBRun;
   // Per-verb equality, not just "non-empty": a helper returning "x" for all
   // three would satisfy a length check while saying nothing about the verb.
   for (const verb of ["run", "triage", "push"]) {
@@ -385,11 +380,11 @@ test("verbLockTitle states each verb's OWN description when nothing holds the lo
 
 test("verbLockTitle states the reason VERBATIM when the lock is held", () => {
   const reason = "A run is active in this project. These controls work again when it finishes.";
-  assert.ok(load().verbLockTitle("triage", reason).includes(reason));
+  assert.ok(WBRun.verbLockTitle("triage", reason).includes(reason));
 });
 
 test("verbLockTitle falls back for an unknown verb rather than reading undefined", () => {
-  const wb = load();
+  const wb = WBRun;
   assert.ok(wb.verbLockTitle("nope", "").includes("nope"));
   // A verb naming an Object.prototype member must not hand back a function —
   // the same guard the status tables carry above.
@@ -401,7 +396,7 @@ test("verbLockTitle falls back for an unknown verb rather than reading undefined
 });
 
 test("exitNote truncates a runaway last line instead of growing without bound", () => {
-  const wb = load();
+  const wb = WBRun;
   const note = wb.exitNote("run", 1, "z".repeat(5000));
   assert.ok(note.length < 300, `note length ${note.length}`);
   assert.ok(note.endsWith("…"), note.slice(-20));
@@ -410,18 +405,18 @@ test("exitNote truncates a runaway last line instead of growing without bound", 
 // The negative control: a note generator that never stays silent is not a gate
 // — it would raise a refusal banner on every successful run.
 test("exitNote is EMPTY for a clean exit, whatever the last line said", () => {
-  assert.equal(load().exitNote("run", 0, "anything"), "");
+  assert.equal(WBRun.exitNote("run", 0, "anything"), "");
 });
 
 test("exitNote names the verb and carries the CLI's last line on a refusal", () => {
   assert.equal(
-    load().exitNote("triage", 1, "working tree … is not clean"),
+    WBRun.exitNote("triage", 1, "working tree … is not clean"),
     "Could not triage (exit 1): working tree … is not clean",
   );
 });
 
 test("exitNote renders a missing code as unknown, never as `exit null`", () => {
-  const wb = load();
+  const wb = WBRun;
   for (const code of [null, undefined]) {
     assert.equal(wb.exitNote("push", code, ""), "Could not push (exit unknown)");
   }
@@ -434,10 +429,10 @@ const catalogStatuses = () =>
 
 test("catalog wording: each issue status takes its icon and text, an unknown name stays raw", () => {
   for (const [key, w] of Object.entries(catalogStatuses())) {
-    assert.equal(load().stateGlyph(key), w.icon, key);
-    assert.equal(load().stateLabel(key), w.text, key);
+    assert.equal(WBRun.stateGlyph(key), w.icon, key);
+    assert.equal(WBRun.stateLabel(key), w.text, key);
   }
-  assert.equal(load().stateLabel("sleep"), "usage limit — sleeping");
-  assert.equal(load().stateLabel("toString"), "toString");
-  assert.equal(load().stateGlyph("no_such_status"), "no_such_status");
+  assert.equal(WBRun.stateLabel("sleep"), "usage limit — sleeping");
+  assert.equal(WBRun.stateLabel("toString"), "toString");
+  assert.equal(WBRun.stateGlyph("no_such_status"), "no_such_status");
 });

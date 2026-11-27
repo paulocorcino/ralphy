@@ -5,14 +5,16 @@
 // security fact is the Alpine store `connection`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assembledPage, loadComponent, loadShell, partMarkup, runIn as evalIn, withoutComments } from "./harness.mjs";
-import { readFileSync } from "node:fs";
+import {
+  assembledPage,
+  fixture,
+  loadComponent,
+  loadShell,
+  partMarkup,
+  runIn as evalIn,
+  withoutComments,
+} from "./harness.mjs";
 import { WBSecurityDialog } from "../assets/ui/wb-security-dialog.ts";
-
-// The reply the daemon writes, shared with the daemon's own tests.
-function fixture(name) {
-  return JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), "utf8"));
-}
 
 // The part that holds the dialog's markup.
 const PART = "wb-security-dialog.part.html";
@@ -33,7 +35,7 @@ function dialog(opts = {}) {
 async function withFetch(routes, fn) {
   const real = globalThis.fetch;
   const asked = [];
-  globalThis.fetch = (url, init = {}) => {
+  globalThis.fetch = (url, init = {}) => { // own: restores inside the call; a test swaps routes more than once
     asked.push([url, init.body ?? null]);
     const reply = routes[url];
     if (!reply) throw new Error(`no route for ${url}`);
@@ -42,7 +44,7 @@ async function withFetch(routes, fn) {
   try {
     await fn(asked);
   } finally {
-    globalThis.fetch = real;
+    globalThis.fetch = real; // own: the restore of the swap above
   }
 }
 
@@ -254,17 +256,17 @@ test("each switch that loosens a policy posts to its own route and changes its o
     // No answer at all is said there too.
     const silent = dialog();
     const real = globalThis.fetch;
-    globalThis.fetch = () => Promise.reject(new TypeError("no network"));
+    globalThis.fetch = () => Promise.reject(new TypeError("no network")); // own: restored in this loop, after withFetch swapped it before
     try {
       await silent.state[method](box);
     } finally {
-      globalThis.fetch = real;
+      globalThis.fetch = real; // own: the restore of the swap above
     }
     assert.equal(silent.state.securityForm[`${fact}Error`], "The daemon did not answer. Try again.", method);
   }
 });
 
-test("the dialog lists at most 12 shell() names, and shell() has each one", () => {
+test("the dialog keeps its shell() names within the limit, and the members and the fact keep one owner", () => {
   const { data, shell } = dialog();
   assert.ok(data.uses.length <= 12, `${data.uses.length} names: ${data.uses.join(", ")}`);
   for (const name of data.uses) assert.ok(name in shell, name);
