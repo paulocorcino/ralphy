@@ -58,45 +58,53 @@ mod tests {
     }
 
     #[test]
-    fn trailer_as_last_line_is_finalized() {
-        let p = tmp("last");
-        fs::write(&p, "# plan\n<!-- ralphy-plan: issue=147 -->").unwrap();
-        assert!(plan_is_finalized_for(&p, 147));
-        remove_scratch_file(&p);
-    }
+    fn plan_finalized_table() {
+        let rows: [(&str, Option<&str>, bool); 5] = [
+            (
+                "trailer as last line",
+                Some(
+                    "# plan
+<!-- ralphy-plan: issue=147 -->",
+                ),
+                true,
+            ),
+            (
+                "trailing blank lines",
+                Some(
+                    "# plan
+<!-- ralphy-plan: issue=147 -->
 
-    #[test]
-    fn trailing_blank_lines_tolerated() {
-        let p = tmp("blank");
-        fs::write(&p, "# plan\n<!-- ralphy-plan: issue=147 -->\n\n").unwrap();
-        assert!(plan_is_finalized_for(&p, 147));
-        remove_scratch_file(&p);
-    }
-
-    #[test]
-    fn other_issue_trailer_not_finalized() {
-        let p = tmp("other");
-        fs::write(&p, "# plan\n<!-- ralphy-plan: issue=999 -->").unwrap();
-        assert!(!plan_is_finalized_for(&p, 147));
-        remove_scratch_file(&p);
-    }
-
-    #[test]
-    fn truncated_plan_not_finalized() {
-        let p = tmp("trunc");
-        fs::write(&p, "# plan\n## Steps\n- [ ] half-written").unwrap();
-        assert!(!plan_is_finalized_for(&p, 147));
-        remove_scratch_file(&p);
-    }
-
-    #[test]
-    fn missing_file_not_finalized() {
-        let p = tmp("missing-does-not-exist");
-        assert!(!plan_is_finalized_for(&p, 147));
-    }
-
-    #[test]
-    fn trailer_matches_literal_format() {
+",
+                ),
+                true,
+            ),
+            (
+                "other issue",
+                Some(
+                    "# plan
+<!-- ralphy-plan: issue=999 -->",
+                ),
+                false,
+            ),
+            (
+                "truncated plan",
+                Some(
+                    "# plan
+## Steps
+- [ ] half-written",
+                ),
+                false,
+            ),
+            ("missing file", None, false),
+        ];
+        for (name, content, want) in rows {
+            let p = tmp(&name.replace(' ', "-"));
+            if let Some(text) = content {
+                fs::write(&p, text).unwrap();
+            }
+            assert_eq!(plan_is_finalized_for(&p, 147), want, "{name}");
+            remove_scratch_file(&p);
+        }
         assert_eq!(plan_trailer(147), "<!-- ralphy-plan: issue=147 -->");
     }
 }

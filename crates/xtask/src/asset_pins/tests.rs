@@ -116,28 +116,32 @@ fn a_raw_string_pin_is_read_to_its_real_end() {
     );
 }
 
-/// A raw string with no `#` keeps its backslashes; a plain string decodes them.
+/// Single-input cases of the raw-string scanner and its plain fallback.
 #[test]
-fn a_raw_string_with_no_hashes_keeps_its_backslashes() {
-    assert_eq!(raw_literals(r#"r"a\nb""#), vec![r"a\nb".to_owned()]);
-}
-
-/// An `r` that does not open a raw string is read as the plain text it is.
-#[test]
-fn an_r_hash_with_no_quote_is_not_a_raw_string() {
-    assert_eq!(raw_literals("r#x \"#y\""), vec!["#y".to_owned()]);
-}
-
-/// A raw string that never closes falls back to the plain scanner, which ends
-/// the literal at the end of input.
-#[test]
-fn an_unterminated_raw_string_falls_back_to_a_plain_one() {
-    assert_eq!(raw_literals("r#\"abc"), vec!["abc".to_owned()]);
-}
-
-#[test]
-fn an_unterminated_plain_string_ends_at_the_end_of_input() {
-    assert_eq!(raw_literals("\"abc"), vec!["abc".to_owned()]);
+fn raw_literals_table() {
+    let rows: [(&str, &str, &str); 4] = [
+        (
+            "no hashes keeps backslashes",
+            r#"r"a
+b""#,
+            r"a
+b",
+        ),
+        ("an r hash with no quote is not raw", "r#x \"#y\"", "#y"),
+        (
+            "an unterminated raw string is a plain one",
+            "r#\"abc",
+            "abc",
+        ),
+        (
+            "an unterminated plain string ends at the input",
+            "\"abc",
+            "abc",
+        ),
+    ];
+    for (name, input, want) in rows {
+        assert_eq!(raw_literals(input), vec![want.to_owned()], "{name}");
+    }
 }
 
 /// The word count alone dropped real pins: a fragment of JS has spaces in it

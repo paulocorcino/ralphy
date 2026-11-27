@@ -442,40 +442,40 @@ mod tests {
     }
 
     #[test]
-    fn batch_refusal_names_the_argument_index() {
-        let reason = refusal(r"C:\npm\x.cmd", &["ok", "R&D"]).expect("refused");
-        assert!(reason.starts_with("argument 2 contains '&'"), "{reason}");
-    }
-
-    #[test]
-    fn batch_refusal_names_the_program_path() {
-        let reason = refusal(r"C:\R&D\x.cmd", &[]).expect("refused");
-        assert!(
-            reason.starts_with("the program path contains '&'"),
-            "{reason}"
-        );
-    }
-
-    #[test]
-    fn batch_refusal_accepts_a_quoted_program_with_bare_arguments() {
-        assert_eq!(refusal(r"C:\a b\x.cmd", &["R", "--name", "wb-x-1"]), None);
-    }
-
-    #[test]
-    fn batch_refusal_refuses_a_quoted_program_with_a_quoted_argument() {
-        let reason = refusal(r"C:\a b\x.cmd", &["R", "a b"]).expect("refused");
-        assert!(reason.contains("argument 2 is quoted"), "{reason}");
-    }
-
-    #[test]
-    fn batch_refusal_refuses_a_quoted_program_with_a_special_character() {
-        let reason = refusal(r"C:\Program Files (x86)\x.cmd", &[]).expect("refused");
-        assert!(reason.contains("'('"), "{reason}");
-    }
-
-    #[test]
-    fn batch_refusal_accepts_quoted_arguments_after_a_bare_program() {
-        assert_eq!(refusal(r"C:\npm\x.cmd", &["a b&c", r"C:\x y\"]), None);
+    fn batch_refusal_table() {
+        // (name, program, args, text the refusal contains; "" = accepted)
+        let rows: [(&str, &str, &[&str], &str); 6] = [
+            (
+                "arg index",
+                r"C:\npm\x.cmd",
+                &["ok", "R&D"],
+                "argument 2 contains '&'",
+            ),
+            (
+                "path",
+                r"C:\R&D\x.cmd",
+                &[],
+                "the program path contains '&'",
+            ),
+            ("bare args", r"C:\a b\x.cmd", &["R", "--name", "wb-x-1"], ""),
+            (
+                "quoted arg",
+                r"C:\a b\x.cmd",
+                &["R", "a b"],
+                "argument 2 is quoted",
+            ),
+            ("special", r"C:\Program Files (x86)\x.cmd", &[], "'('"),
+            ("bare program", r"C:\npm\x.cmd", &["a b&c", r"C:\x y\"], ""),
+        ];
+        for (name, program, args, want) in rows {
+            let got = refusal(program, args);
+            if want.is_empty() {
+                assert_eq!(got, None, "{name}");
+            } else {
+                let reason = got.unwrap_or_default();
+                assert!(reason.contains(want), "{name}: {reason}");
+            }
+        }
     }
 
     #[test]
