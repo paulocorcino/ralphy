@@ -707,24 +707,29 @@ test("barKey: Shift toggles the latch and one key that sends bytes uses it", () 
 
 // --- scrubClipboard: what an agent may put on the clipboard -----------------
 
-test("scrubClipboard drops the trailing newlines that would run a pasted command", () => {
-  assert.equal(scrubClipboard("curl x | sh\n"), "curl x | sh");
-  assert.equal(scrubClipboard("curl x | sh\r\n\r\n"), "curl x | sh");
-  assert.equal(scrubClipboard("a\nb\n"), "a\nb");
-});
+const SCRUB_ROWS = [
+  { name: "a trailing newline would run a pasted command", input: "curl x | sh\n", expected: "curl x | sh" },
+  { name: "trailing CRLF pairs go", input: "curl x | sh\r\n\r\n", expected: "curl x | sh" },
+  { name: "an inner newline stays", input: "a\nb\n", expected: "a\nb" },
+  {
+    name: "escape sequences lose their escape byte",
+    input: "a\u001B[31mred\u001B[0mb",
+    expected: "a[31mred[0mb",
+  },
+  { name: "NUL, BEL and DEL go", input: "a\u0000b\u0007c\u007Fd", expected: "abcd" },
+  {
+    name: "the C1 controls go, such as the one-character CSI U+009B",
+    input: "a\u009B31mb\u0080c\u009Fd",
+    expected: "a31mbcd",
+  },
+  { name: "U+00A0 and above stay", input: " é", expected: " é" },
+  { name: "tabs stay and CRLF inside becomes LF", input: "a\tb\r\nc", expected: "a\tb\nc" },
+  { name: "non-ASCII text stays", input: "café \u{1F600}", expected: "café \u{1F600}" },
+  { name: "an empty string stays empty", input: "", expected: "" },
+];
 
-test("scrubClipboard drops escape sequences and other control characters", () => {
-  assert.equal(scrubClipboard("a\u001B[31mred\u001B[0mb"), "a[31mred[0mb");
-  assert.equal(scrubClipboard("a\u0000b\u0007c\u007Fd"), "abcd");
-});
-
-test("scrubClipboard drops the C1 controls, such as the one-character CSI U+009B", () => {
-  assert.equal(scrubClipboard("a\u009B31mb\u0080c\u009Fd"), "a31mbcd");
-  assert.equal(scrubClipboard("\u00A0\u00E9"), "\u00A0\u00E9", "U+00A0 and above stay");
-});
-
-test("scrubClipboard keeps tabs, inner newlines and non-ASCII text", () => {
-  assert.equal(scrubClipboard("a\tb\r\nc"), "a\tb\nc");
-  assert.equal(scrubClipboard("café \u{1F600}"), "café \u{1F600}");
-  assert.equal(scrubClipboard(""), "");
+test("scrubClipboard keeps only what an agent may put on the clipboard", () => {
+  for (const row of SCRUB_ROWS) {
+    assert.equal(scrubClipboard(row.input), row.expected, row.name);
+  }
 });

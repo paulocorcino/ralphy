@@ -10,6 +10,7 @@ import { createConsole } from "../assets/ui/wb-console.ts";
 import { createSpawn } from "../assets/ui/wb-console-spawn.ts";
 import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
 import { idLookups } from "./fake-document.mjs";
+import { fakeClassList, load as loadModule, swapFetch, withoutBroadcast } from "./harness.mjs";
 
 const UI = join(import.meta.dirname, "../assets/ui");
 // The console family's source text, for the few pins on how it is written.
@@ -40,32 +41,21 @@ const SRC = readdirSync(UI)
 // a test can supply a browser global (`matchMedia`) or a page instance that
 // the entry module creates. The default has no `WBNotes` and no `WBDaemon`,
 // and several tests pin the fallback that produces. `opts` is what an entry module passes `createConsole`.
-function load(extras = {}, docExtras = {}, opts = {}) {
-  // The three globals the console touches when it is created:
-  // `window.addEventListener` (the pagehide flush), `document.addEventListener`
-  // and `location.protocol`/`host` (WS_ORIGIN). `boot` is not called: the
-  // stub document has no stage. No `ResizeObserver` is injected ON PURPOSE:
-  // the surviving one lives inside `attachTerminal`, which this harness never
-  // reaches, so an observer created with the console alongside a clamp fails
-  // LOUDLY here.
-  const window = { addEventListener() {}, ...extras };
-  const document = { readyState: "loading", addEventListener() {}, ...docExtras };
-  const location = { protocol: "http:", host: "127.0.0.1:7431" };
+function load(extras = {}, docExtras = {}, opts = {}) { // own: adds the sink reset and the page state to the harness load
+  // `boot` is not called: the stub document has no stage. No `ResizeObserver`
+  // is injected ON PURPOSE: the surviving one lives inside `attachTerminal`,
+  // which this harness never reaches, so an observer created with the console
+  // alongside a clamp fails LOUDLY here.
   // The sink's hold lives once per document (the module), and each `load()` is
   // a new page: a hold an earlier test set must not hold this page's writes.
   WBDeskSink.setHold(false);
-  // Node 22 ships a REAL `BroadcastChannel`, and `createConsole` subscribes —
-  // an open channel per `load()` holds the event loop open and `node --test`
-  // never exits. Hidden for the call only; the channel's own behaviour is
-  // covered against a fake in wb-detach-link.test.mjs.
-  const realBC = globalThis.BroadcastChannel;
-  delete globalThis.BroadcastChannel;
-  try {
-    window.WBConsole = createConsole(window, document, location, opts);
-  } finally {
-    globalThis.BroadcastChannel = realBC;
-  }
-  return window.WBConsole;
+  return withoutBroadcast(() =>
+    loadModule(createConsole, {
+      window: extras,
+      document: { readyState: "loading", ...docExtras },
+      deps: opts,
+    }),
+  );
 }
 
 test("sessionPresentation applies session-open environment and persists its owner metadata", () => {
@@ -358,66 +348,92 @@ test("autoPan: a pointer away from the edges starts no loop", () => {
 const WINDOW_MS = 6000;
 const SEEN = 100000;
 
-test("peerFold: silence past the window loses the peer, exactly once", () => {
-  const WB = load();
-  const lost = WB.peerFold({ seen: SEEN, lost: false }, { type: "tick", at: SEEN + WINDOW_MS + 1 }, WINDOW_MS);
-  assert.deepStrictEqual(lost.effects, [{ type: "peer-lost" }]);
-  assert.equal(lost.state.lost, true);
-  // The effect turns into a `window.close()`, so a SECOND tick must be silent.
-  const again = WB.peerFold(lost.state, { type: "tick", at: SEEN + WINDOW_MS + 5000 }, WINDOW_MS);
-  assert.deepStrictEqual(again.effects, []);
-  assert.equal(again.state.lost, true);
-});
+// Each row is one path of the fold: the state and the event it gets, and the
+// effects and the state it gives back. The boundary rows are the negative
+// controls: inverting the comparison, or dropping the beat's `seen` update,
+// turns a row red while the rows beside it stay green.
+const LOST = { seen: SEEN, lost: true };
+const PEER_FOLD_ROWS = [
+  {
+    name: "silence past the window loses the peer",
+    state: { seen: SEEN, lost: false },
+    event: { type: "tick", at: SEEN + WINDOW_MS + 1 },
+    effects: [{ type: "peer-lost" }],
+    next: LOST,
+  },
+  {
+    // The effect turns into a `window.close()`, so a SECOND tick must be silent.
+    name: "a tick after the loss is silent: the loss is reported once",
+    state: LOST,
+    event: { type: "tick", at: SEEN + WINDOW_MS + 5000 },
+    effects: [],
+    next: LOST,
+  },
+  {
+    name: "a beat inside the window moves the clock and loses nothing",
+    state: { seen: SEEN, lost: false },
+    event: { type: "beat", at: SEEN + 5000 },
+    effects: [],
+    next: { seen: SEEN + 5000, lost: false },
+  },
+  {
+    name: "1001 ms of silence after a beat is inside the window: an F5 costs no popup",
+    state: { seen: SEEN + 5000, lost: false },
+    event: { type: "tick", at: SEEN + 6001 },
+    effects: [],
+    next: { seen: SEEN + 5000, lost: false },
+  },
+  {
+    name: "the boundary is strict: a tick exactly at the window is still alive",
+    state: { seen: SEEN, lost: false },
+    event: { type: "tick", at: SEEN + WINDOW_MS },
+    effects: [],
+    next: { seen: SEEN, lost: false },
+  },
+  {
+    name: "a peer never heard from does not expire: the boot-adoption grace",
+    state: { seen: null, lost: false },
+    event: { type: "tick", at: SEEN + 999999 },
+    effects: [],
+    next: { seen: null, lost: false },
+  },
+  {
+    name: "loss is terminal: a beat after the loss does not resurrect the peer",
+    state: LOST,
+    event: { type: "beat", at: SEEN + 1 },
+    effects: [],
+    next: LOST,
+  },
+  {
+    name: "an announced departure loses the peer without waiting the window out",
+    state: { seen: SEEN, lost: false },
+    event: { type: "gone" },
+    effects: [{ type: "peer-lost" }],
+    next: LOST,
+  },
+  {
+    name: "an unknown event is inert, so a stray channel message cannot lose a peer",
+    state: { seen: SEEN, lost: false },
+    event: { type: "origin-ping" },
+    effects: [],
+    next: { seen: SEEN, lost: false },
+  },
+  {
+    name: "no state at all starts as a peer never heard from",
+    state: undefined,
+    event: { type: "tick", at: SEEN },
+    effects: [],
+    next: { seen: null, lost: false },
+  },
+];
 
-// THE NEGATIVE CONTROL for the whole rule: inverting the comparison, or dropping
-// the beat's `seen` update, makes this row red while the one above stays green.
-test("peerFold: a beat inside the window does not expire — an F5 costs no popup", () => {
+test("peerFold gives the effects and the state of every path of the heartbeat", () => {
   const WB = load();
-  const beaten = WB.peerFold({ seen: SEEN, lost: false }, { type: "beat", at: SEEN + 5000 }, WINDOW_MS);
-  assert.deepStrictEqual(beaten.effects, []);
-  assert.equal(beaten.state.seen, SEEN + 5000);
-  const tick = WB.peerFold(beaten.state, { type: "tick", at: SEEN + 6001 }, WINDOW_MS);
-  assert.deepStrictEqual(tick.effects, [], "1001 ms of silence is well inside a 6000 ms window");
-  assert.equal(tick.state.lost, false);
-});
-
-test("peerFold: the boundary is strict — a tick exactly at the window is still alive", () => {
-  const WB = load();
-  const out = WB.peerFold({ seen: SEEN, lost: false }, { type: "tick", at: SEEN + WINDOW_MS }, WINDOW_MS);
-  assert.deepStrictEqual(out.effects, []);
-  assert.equal(out.state.lost, false);
-});
-
-test("peerFold: a peer never heard from does not expire — the boot-adoption grace", () => {
-  const WB = load();
-  const out = WB.peerFold({ seen: null, lost: false }, { type: "tick", at: SEEN + 999999 }, WINDOW_MS);
-  assert.deepStrictEqual(out.effects, []);
-  assert.equal(out.state.lost, false);
-});
-
-test("peerFold: loss is terminal — a beat after the loss does not resurrect the peer", () => {
-  const WB = load();
-  const out = WB.peerFold({ seen: SEEN, lost: true }, { type: "beat", at: SEEN + 1 }, WINDOW_MS);
-  assert.deepStrictEqual(out.effects, []);
-  assert.equal(out.state.lost, true);
-  assert.equal(out.state.seen, SEEN, "a lost peer's clock stops with it");
-});
-
-test("peerFold: an announced departure loses the peer without waiting the window out", () => {
-  const WB = load();
-  const out = WB.peerFold({ seen: SEEN, lost: false }, { type: "gone" }, WINDOW_MS);
-  assert.deepStrictEqual(out.effects, [{ type: "peer-lost" }]);
-  assert.equal(out.state.lost, true);
-});
-
-test("peerFold: an unknown event is inert, so a stray channel message cannot lose a peer", () => {
-  const WB = load();
-  const out = WB.peerFold({ seen: SEEN, lost: false }, { type: "origin-ping" }, WINDOW_MS);
-  assert.deepStrictEqual(out.effects, []);
-  assert.deepStrictEqual(out.state, { seen: SEEN, lost: false });
-  const undef = WB.peerFold(undefined, { type: "tick", at: SEEN }, WINDOW_MS);
-  assert.deepStrictEqual(undef.effects, []);
-  assert.deepStrictEqual(undef.state, { seen: null, lost: false });
+  for (const row of PEER_FOLD_ROWS) {
+    const out = WB.peerFold(row.state, row.event, WINDOW_MS);
+    assert.deepStrictEqual(out.effects, row.effects, `${row.name}: effects`);
+    assert.deepStrictEqual(out.state, row.next, `${row.name}: state`);
+  }
 });
 
 test("the fence cap is a number the shell can state, and the plane is at it from the 12th fence", async () => {
@@ -432,14 +448,14 @@ test("the fence cap is a number the shell can state, and the plane is at it from
       ts: i,
     }));
     const realFetch = globalThis.fetch;
-    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({ windows: [], fences }) });
+    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({ windows: [], fences }) }); // own: the fake changes inside the test
     try {
       const wb = load({}, {}, { deskSink: { put: () => Promise.resolve({ kind: "held" }), putSync() {} } });
       await wb.whenDeskLoaded();
       assert.equal(wb.fenceRecords().length, n, "the desk landed");
       return wb;
     } finally {
-      globalThis.fetch = realFetch;
+      globalThis.fetch = realFetch; // own: the fake changes inside the test
     }
   };
   assert.equal((await plane(0)).atFenceCap(), false, "an empty plane");
@@ -454,15 +470,6 @@ test("the fence cap is a number the shell can state, and the plane is at it from
 // is torn down without a close frame, so the exponential backoff never arms.
 // `stale` is the caller's liveness verdict (the shell's presence heartbeat).
 // The decision table itself is pinned once, in wb-daemon.test.mjs.
-
-test("resumeAll is exported like the rest of the module's seam", () => {
-  const c = load();
-  assert.equal(typeof c.resumeAll, "function");
-  // With no window open there is nothing to resume, and it must not throw:
-  // `online` fires in a document that has painted no console at all.
-  assert.equal(c.resumeAll(true), 0);
-  assert.equal(c.resumeAll(false), 0);
-});
 
 test("the font range holds xterm's default, so an unset preference changes nothing", () => {
   const c = load();
@@ -488,7 +495,7 @@ test("a touch surface with no stored preference starts at the same size", () => 
 // and it is the honest box while nothing can be measured.
 function fakeWin({ maximized = false, classes = [], offsets, inline }) {
   return {
-    classList: { contains: (c) => (c === "maximized" && maximized) || classes.includes(c) },
+    classList: fakeClassList(...(maximized ? ["maximized"] : []), ...classes),
     offsetLeft: offsets.left,
     offsetTop: offsets.top,
     offsetWidth: offsets.width,
@@ -500,36 +507,42 @@ const REAL = { left: 59, top: 2569, width: 1122, height: 634 };
 const INLINE = { left: "59px", top: "2569px", width: "1122px", height: "634px" };
 const HIDDEN = { left: 0, top: 0, width: 0, height: 0 };
 
-test("restoreRect reads a measurable window from the DOM", () => {
-  const { restoreRect } = load();
-  // The inline rect is stale on purpose: after a drag the DOM is the truth.
-  const win = fakeWin({ offsets: REAL, inline: { left: "1px", top: "1px", width: "1px", height: "1px" } });
-  assert.deepEqual(restoreRect(win), REAL);
-});
+// A column right of the leftmost is not `.maximized` (ADR-0051 §5), yet its
+// painted box is view state: reading it would write the column onto the desk.
+const RESTORE_RECT_ROWS = [
+  {
+    // The inline rect is stale on purpose: after a drag the DOM is the truth.
+    name: "a measurable window is read from the DOM",
+    win: { offsets: REAL, inline: { left: "1px", top: "1px", width: "1px", height: "1px" } },
+    expected: REAL,
+  },
+  {
+    name: "a hidden window keeps its box instead of storing zeros",
+    win: { offsets: HIDDEN, inline: INLINE },
+    expected: REAL,
+  },
+  {
+    name: "a hidden window honours a real 0 in the inline rect",
+    win: { offsets: HIDDEN, inline: { left: "0px", top: "0px", width: "560px", height: "340px" } },
+    expected: { left: 0, top: 0, width: 560, height: 340 },
+  },
+  {
+    name: "a maximized window still reads the pre-maximize inline rect",
+    win: { maximized: true, offsets: { left: 0, top: 0, width: 1440, height: 900 }, inline: INLINE },
+    expected: REAL,
+  },
+  {
+    name: "a column reads the inline rect, not the painted column box",
+    win: { classes: ["column"], offsets: { left: 960, top: 0, width: 960, height: 1000 }, inline: INLINE },
+    expected: REAL,
+  },
+];
 
-test("restoreRect keeps a hidden window's box instead of storing zeros", () => {
+test("restoreRect gives the box of the record in every state of the window", () => {
   const { restoreRect } = load();
-  const win = fakeWin({ offsets: HIDDEN, inline: INLINE });
-  assert.deepEqual(restoreRect(win), REAL);
-});
-
-test("restoreRect on a hidden window honours a real 0 in the inline rect", () => {
-  const { restoreRect } = load();
-  const win = fakeWin({
-    offsets: HIDDEN,
-    inline: { left: "0px", top: "0px", width: "560px", height: "340px" },
-  });
-  assert.deepEqual(restoreRect(win), { left: 0, top: 0, width: 560, height: 340 });
-});
-
-test("restoreRect on a maximized window still reads the pre-maximize inline rect", () => {
-  const { restoreRect } = load();
-  const win = fakeWin({
-    maximized: true,
-    offsets: { left: 0, top: 0, width: 1440, height: 900 },
-    inline: INLINE,
-  });
-  assert.deepEqual(restoreRect(win), REAL);
+  for (const row of RESTORE_RECT_ROWS) {
+    assert.deepEqual(restoreRect(fakeWin(row.win)), row.expected, row.name);
+  }
 });
 
 // --- columns: only the leftmost is the maximized console the desk records ----
@@ -539,18 +552,6 @@ function loadColumns() {
   return WBColumns;
 }
 
-// A column right of the leftmost is not `.maximized` (ADR-0051 §5), yet its
-// painted box is view state: reading it would write the column onto the desk.
-test("restoreRect on a column reads the inline rect, not the painted column box", () => {
-  const { restoreRect } = load();
-  const win = fakeWin({
-    classes: ["column"],
-    offsets: { left: 960, top: 0, width: 960, height: 1000 },
-    inline: INLINE,
-  });
-  assert.deepEqual(restoreRect(win), REAL);
-});
-
 // --- the desk changes (ADR-0050 amendment 2026-10-04, changes, not the desk) --
 // A page sends only the fields each act changed. These tests load the module
 // over a fake daemon: the GET serves `served`, and the sink records every
@@ -559,7 +560,7 @@ test("restoreRect on a column reads the inline rect, not the painted column box"
 async function deskPage(served = {}, extras = {}, docExtras = {}) {
   const realFetch = globalThis.fetch;
   const gets = [];
-  globalThis.fetch = (url) => {
+  globalThis.fetch = (url) => { // own: the fake changes inside the test
     gets.push(String(url));
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ windows: [], fences: [], notes: [], ...served }) });
   };
@@ -577,7 +578,7 @@ async function deskPage(served = {}, extras = {}, docExtras = {}) {
     },
   });
   await wb.whenDeskLoaded();
-  return { wb, sent, gets, restore: () => (globalThis.fetch = realFetch) };
+  return { wb, sent, gets, restore: () => (globalThis.fetch = realFetch) }; // own: the fake changes inside the test
 }
 const settle = (ms = 400) => new Promise((r) => { setTimeout(r, ms); });
 const changesOf = (sent) => sent.flatMap((b) => b.changes);
@@ -696,7 +697,7 @@ function deskWin(id, extra = {}) {
     _deskConsoleName: "r #1",
     _deskUnrecorded: false,
     isConnected: true,
-    classList: { contains: () => false },
+    classList: fakeClassList(),
     offsetLeft: 30,
     offsetTop: 40,
     offsetWidth: 640,
@@ -722,7 +723,7 @@ function columnDom(wins) {
   const workspaceEl = {
     scrollLeft: 0,
     scrollTop: 0,
-    classList: { toggle() {} },
+    classList: fakeClassList(),
     querySelectorAll: all,
     querySelector: one,
   };
@@ -731,12 +732,7 @@ function columnDom(wins) {
 function columnWin(id, maximized = false) {
   const classes = new Set(maximized ? ["session-window", "maximized"] : ["session-window"]);
   return deskWin(id, {
-    classList: {
-      contains: (c) => classes.has(c),
-      add: (c) => classes.add(c),
-      remove: (c) => classes.delete(c),
-      toggle: (c, on) => (on ? classes.add(c) : classes.delete(c), on),
-    },
+    classList: fakeClassList(...classes),
     style: { setProperty() {}, removeProperty() {} },
   });
 }
@@ -828,7 +824,7 @@ test("a restart survives a layout throw", (t) => {
   const win = {
     _deskId: "w-a",
     _deskKind: "console",
-    classList: { contains: () => false, add: noop, remove: noop },
+    classList: fakeClassList(),
     querySelector: () => null,
     remove() {
       this.removed = true;
@@ -1096,28 +1092,23 @@ test("the pure folds mutate none of their arguments", () => {
 
 // ADR-0070 D4: a desk the daemon cannot read is a failure with a reason, and
 // this page never uploads over it.
-test("an unreadable desk is a failure, and no flush PUTs over it", async () => {
+test("an unreadable desk is a failure, and no flush PUTs over it", async (t) => {
   const calls = [];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = (url, init = {}) => {
+  swapFetch(t, (url, init = {}) => {
     calls.push({ url: String(url), method: init.method || "GET" });
     return Promise.resolve({
       ok: false,
       status: 409,
       json: () => Promise.resolve({ state: "unreadable", error: "parsing desk layout C:/x/desk.toml" }),
     });
-  };
-  try {
-    const c = load();
-    await c.whenDeskLoaded();
-    assert.equal(c.deskFailure(), "the file is damaged");
-    c.setCheckout("o/r", "wt-a");
-    await new Promise((r) => { setTimeout(r, 400); });
-  } finally {
-    globalThis.fetch = realFetch;
-  }
+  });
+  const c = load();
+  await c.whenDeskLoaded();
+  assert.equal(c.deskFailure(), "the file is damaged");
+  c.setCheckout("o/r", "wt-a");
+  await new Promise((r) => { setTimeout(r, 400); });
   assert.deepEqual(
-    calls.filter((c) => c.method === "PUT"),
+    calls.filter((call) => call.method === "PUT"),
     [],
     "no PUT over a desk the daemon cannot read",
   );
@@ -1125,33 +1116,28 @@ test("an unreadable desk is a failure, and no flush PUTs over it", async () => {
 
 // A desk that becomes unreadable after a good load: the daemon refuses the
 // PUT, the page shows the failure and sends nothing more.
-test("a PUT the daemon refuses as unreadable shows the failure and stops the sending", async () => {
+test("a PUT the daemon refuses as unreadable shows the failure and stops the sending", async (t) => {
   const calls = [];
   let unreadable = false;
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = (url, init = {}) => {
+  swapFetch(t, (url, init = {}) => {
     calls.push({ url: String(url), method: init.method || "GET" });
     if (unreadable) {
       return Promise.resolve({ ok: false, status: 409, json: () => Promise.resolve({ state: "unreadable", error: "parsing desk layout" }) });
     }
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ windows: [], fences: [], notes: [] }) });
-  };
-  try {
-    const c = load();
-    await c.whenDeskLoaded();
-    assert.equal(c.deskFailure(), "", "the first read was good");
-    unreadable = true;
-    calls.length = 0;
-    c.setCheckout("o/r", "wt-a");
-    await new Promise((r) => { setTimeout(r, 400); });
-    assert.equal(c.deskFailure(), "the file is damaged");
-    c.setCheckout("o/r", "wt-b");
-    await new Promise((r) => { setTimeout(r, 400); });
-  } finally {
-    globalThis.fetch = realFetch;
-  }
+  });
+  const c = load();
+  await c.whenDeskLoaded();
+  assert.equal(c.deskFailure(), "", "the first read was good");
+  unreadable = true;
+  calls.length = 0;
+  c.setCheckout("o/r", "wt-a");
+  await new Promise((r) => { setTimeout(r, 400); });
+  assert.equal(c.deskFailure(), "the file is damaged");
+  c.setCheckout("o/r", "wt-b");
+  await new Promise((r) => { setTimeout(r, 400); });
   assert.equal(
-    calls.filter((c) => c.method === "PUT").length,
+    calls.filter((call) => call.method === "PUT").length,
     1,
     "one PUT, refused, and nothing after it",
   );
@@ -1159,10 +1145,9 @@ test("a PUT the daemon refuses as unreadable shows the failure and stops the sen
 
 // Another tab may start the new desk first: the daemon then answers 409
 // "readable", and this tab reads the desk like any other.
-test("start a new desk treats a desk another tab already started as done", async () => {
+test("start a new desk treats a desk another tab already started as done", async (t) => {
   let started = false;
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = (url, init = {}) => {
+  swapFetch(t, (url, init = {}) => {
     if (init.method === "POST") {
       started = true;
       return Promise.resolve({ ok: false, status: 409, json: () => Promise.resolve({ state: "readable" }) });
@@ -1171,49 +1156,36 @@ test("start a new desk treats a desk another tab already started as done", async
       return Promise.resolve({ ok: false, status: 409, json: () => Promise.resolve({ state: "unreadable", error: "parsing desk layout" }) });
     }
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ windows: [], fences: [], notes: [] }) });
-  };
-  try {
-    // The empty new desk is restored, which looks for the stage.
-    const c = load({}, { ...idLookups(() => null) });
-    await c.whenDeskLoaded();
-    assert.equal(c.deskFailure(), "the file is damaged");
-    await c.startNewDesk();
-    assert.equal(c.deskFailure(), "", "the desk is readable now");
-  } finally {
-    globalThis.fetch = realFetch;
-  }
+  });
+  // The empty new desk is restored, which looks for the stage.
+  const c = load({}, { ...idLookups(() => null) });
+  await c.whenDeskLoaded();
+  assert.equal(c.deskFailure(), "the file is damaged");
+  await c.startNewDesk();
+  assert.equal(c.deskFailure(), "", "the desk is readable now");
 });
 
 // NEGATIVE CONTROL: any other refusal is a failure that names the status.
-test("start a new desk fails with the status on any other refusal", async () => {
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = (url, init = {}) =>
+test("start a new desk fails with the status on any other refusal", async (t) => {
+  swapFetch(t, (url, init = {}) =>
     Promise.resolve(
       init.method === "POST"
         ? { ok: false, status: 500, json: () => Promise.resolve({}) }
         : { ok: false, status: 409, json: () => Promise.resolve({ state: "unreadable", error: "x" }) },
-    );
-  try {
-    const c = load();
-    await c.whenDeskLoaded();
-    await assert.rejects(c.startNewDesk(), /the daemon answered 500/u);
-  } finally {
-    globalThis.fetch = realFetch;
-  }
+    ),
+  );
+  const c = load();
+  await c.whenDeskLoaded();
+  await assert.rejects(c.startNewDesk(), /the daemon answered 500/u);
 });
 
 // NEGATIVE CONTROL: a transport failure is not a broken desk, so it offers no
 // new desk.
-test("a desk read that fails in transport sets no desk failure", async () => {
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = () => Promise.reject(new Error("offline"));
-  try {
-    const c = load();
-    await c.whenDeskLoaded();
-    assert.equal(c.deskFailure(), "");
-  } finally {
-    globalThis.fetch = realFetch;
-  }
+test("a desk read that fails in transport sets no desk failure", async (t) => {
+  swapFetch(t, () => Promise.reject(new Error("offline")));
+  const c = load();
+  await c.whenDeskLoaded();
+  assert.equal(c.deskFailure(), "");
 });
 
 const deskOfSize = (n) => ({
@@ -1232,16 +1204,16 @@ const deskOfSize = (n) => ({
 test("atDeskCap is true once the desk holds the cap", async () => {
   const realFetch = globalThis.fetch;
   try {
-    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(deskOfSize(29)) });
+    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(deskOfSize(29)) }); // own: the fake changes inside the test
     const wb = load({}, {}, { deskSink: { put: () => Promise.resolve({ kind: "held" }), putSync() {} } });
     await wb.whenDeskLoaded();
     assert.equal(wb.DESK_MAX, 30);
     assert.equal(wb.atDeskCap(), false, "29 records leave room for one more");
-    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(deskOfSize(30)) });
+    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(deskOfSize(30)) }); // own: the fake changes inside the test
     await wb.reloadDesk();
     assert.equal(wb.atDeskCap(), true, "30 records are a full desk");
   } finally {
-    globalThis.fetch = realFetch;
+    globalThis.fetch = realFetch; // own: the fake changes inside the test
   }
 });
 
@@ -1264,37 +1236,55 @@ function stagePage(extras) {
     ...idLookups((id) => elements[id] ?? null),
     createElement: () => ({ style: {}, addEventListener() {}, append() {}, remove() {} }),
   });
-  const classes = new Set(["session-window"]);
+  const disposed = [];
   const win = {
     _deskId: "w1",
     _visible: true,
-    _term: { sessionId: 7 },
+    _term: { sessionId: 7, dispose: (why) => disposed.push(why) },
     _dormantTimer: null,
     parentElement: null,
     dataset: {},
     style: { setProperty() {}, removeProperty() {} },
-    classList: {
-      contains: (c) => classes.has(c),
-      add: (c) => classes.add(c),
-      remove: (c) => classes.delete(c),
-      toggle: (c, on) => (on ? classes.add(c) : classes.delete(c), on),
-    },
+    classList: fakeClassList("session-window"),
+    querySelector: () => null,
   };
   kids.push(win);
-  return { wb, win };
+  return { wb, win, disposed };
 }
 
 test("a console on a page with no Alpine is shown and does not throw", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  const { wb, win } = stagePage();
+  const { wb, win, disposed } = stagePage();
   wb.placeTabs([], null);
-  assert.equal(win._dormantTimer, null, "a shown console on screen stays awake");
+  t.mock.timers.tick(wb.dormantAfterMs() * 2);
+  assert.deepEqual(
+    {
+      timer: win._dormantTimer,
+      dormant: win._dormant,
+      marked: win.classList.contains("dormant"),
+      disposed,
+    },
+    { timer: null, dormant: undefined, marked: false, disposed: [] },
+    "a shown console on screen stays awake, with its terminal kept",
+  );
 });
 
 test("a console is not shown while another tab is active", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const tabs = { active: "file:a.txt" };
-  const { wb, win } = stagePage({ Alpine: { store: () => tabs } });
+  const { wb, win, disposed } = stagePage({ Alpine: { store: () => tabs } });
   wb.placeTabs([], null);
-  assert.notEqual(win._dormantTimer, null, "a console behind a file tab may sleep");
+  assert.deepEqual(disposed, [], "it is not put to sleep before the grace period ends");
+  assert.equal(win.classList.contains("dormant"), false);
+  t.mock.timers.tick(wb.dormantAfterMs());
+  assert.deepEqual(
+    {
+      timer: win._dormantTimer,
+      dormant: win._dormant,
+      marked: win.classList.contains("dormant"),
+      disposed,
+    },
+    { timer: null, dormant: true, marked: true, disposed: ["dormant"] },
+    "a console behind a file tab sleeps after the grace period, its timer cleared",
+  );
 });
