@@ -39,14 +39,16 @@ to Ralphy's tool directory, a download piped into a shell, disk commands,
 `gh release|repo|workflow|secret|auth` and `cargo publish`. A new rule is a
 safety rule unless this ADR is amended.
 
-**D2. The setting is local-only, per repo, and off by default.** The key is
+**D2. The setting is editable in the workbench, per repo, off by default.**
+The key is
 `antigravity.console_agent_workflow_i_understand_the_risk`, because only an
 Antigravity console runs the guard. A key in a vendor-neutral section waits
-for a second vendor. The key sends data off the machine (a push), so by
-ADR-0072 D1 it is in `LOCAL_ONLY_KEYS`
-(`crates/ralphy-daemon/src/dispatch/argv/config.rs`): only
-`ralphy config set` on this machine changes it. The daemon reads it when it
-spawns a console. A run never reads it.
+for a second vendor. The key sends data off the machine (a push), but it is
+not in `LOCAL_ONLY_KEYS` (`crates/ralphy-daemon/src/dispatch/argv/config.rs`),
+and this differs from ADR-0072 D1. The operator decided on 2026-11-26 that
+the setting belongs in the workbench Settings, where the operator already
+works. The name of the key says the risk, and the setting is off by default.
+The daemon reads it when it spawns a console. A run never reads it.
 
 **D3. Ralphy tells the guard the kind of session; the agent cannot.** When
 the setting is on, the daemon adds `RALPHY_GUARD_CONSOLE=1` to the
@@ -81,12 +83,13 @@ consoles.
   cannot push.
 - ADR-0086 D9 keeps one hooks file. The file does not change; the session
   kind comes from the environment, not from the hook command.
-- ADR-0072 D6 gains one setting that lowers the posture of a console. It is
-  local-only, by D1 of that ADR.
+- ADR-0072 D6 gains one setting that lowers the posture of a console. The
+  operator edits it in the workbench, so it is an exception to D1 of that
+  ADR.
 - The key lives in `.ralphy/settings.json`, which the agent can write, as it
   can write any file of the operator (ADR-0072 D6). An agent that turns the
   key on changes the next console the operator opens, not its own session.
-  This is the same exposure as every other local-only key in that file.
+  A remote workbench can also set the key, because it is not local-only.
 
 ## Considered options
 
@@ -96,16 +99,19 @@ consoles.
 - **A daemon record of console session ids, checked by the guard.** This is
   stronger than the environment, but the guard would read daemon state on
   every tool call. The environment is enough while D3's measure holds.
-- **A setting in the Security dialog.** One click would let the agent push.
-  ADR-0072 D1 asks for a deliberate gesture for a key that sends data off
-  the machine.
+- **A setting in the Security dialog.** One click would let the agent push,
+  and ADR-0072 D1 asks for a deliberate gesture for a key that sends data
+  off the machine, so this option was first rejected. The operator then chose
+  it (2026-11-26): the operator works in the workbench, and a read-only
+  setting there is not useful. The key name and the default off are the
+  deliberate gesture.
 
 ## Compliance
 
 - D1: checked by `crates/ralphy-cli/src/guard/rules.rs`
   (`the_workflow_rules_are_the_four_the_adr_names`).
-- D2: checked by `crates/ralphy-daemon/src/dispatch/argv/tests/git.rs`, which
-  refuses every `LOCAL_ONLY_KEYS` entry at the daemon.
+- D2: checked by `crates/ralphy-daemon/src/dispatch/argv/tests/git.rs`
+  (`config_argv_lets_the_panel_set_the_console_workflow_key`).
 - D3: not checked by code: needs a live vendor CLI; measured once and
   written here.
 - D4: checked by `crates/ralphy-cli/src/main.rs`

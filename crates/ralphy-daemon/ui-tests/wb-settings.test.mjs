@@ -57,3 +57,19 @@ test("the read-every-comment toggle is read-only and rendered disabled", () => {
   assert.ok(toggle, "the toggle template is gone");
   assert.match(toggle[0], /:disabled="it\.readonly === true"/u);
 });
+
+// The daemon lets a browser set the console workflow key, so the Antigravity
+// section offers it as a toggle the operator can change, off by default.
+test("the Antigravity section offers the console workflow toggle, editable and off", () => {
+  const section = WB_SETTINGS.find((s) => s.id === "antigravity");
+  assert.ok(section, "there is no Antigravity section");
+  assert.equal(section.title, "Antigravity");
+  assert.equal(section.scope, "project");
+  const item = section.items.find(
+    (it) => it.key === "antigravity.console_agent_workflow_i_understand_the_risk",
+  );
+  assert.ok(item, "the section does not offer the console workflow key");
+  assert.equal(item.type, "toggle");
+  assert.equal(item.default, false);
+  assert.notEqual(item.readonly, true);
+});
