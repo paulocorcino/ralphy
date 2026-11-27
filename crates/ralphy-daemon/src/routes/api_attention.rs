@@ -238,7 +238,7 @@ pub(crate) fn attention_routes(s: &RouterShared) -> Router {
             Arc::clone(&sessions),
             (Arc::clone(&runs), Arc::clone(&dismissed)),
             (s.pushes.clone(), telegram),
-            s.shutdown.clone(),
+            (s.shutdown.clone(), s.attention_every),
         ));
     }
     let read = {

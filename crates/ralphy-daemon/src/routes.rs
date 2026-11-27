@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use axum::Router;
 
@@ -123,6 +123,8 @@ pub(crate) struct RouterShared {
     pub(crate) telegram_claim: crate::telegram_state::SharedClaim,
     /// Gives each page socket the hold the stop of `serve` waits for.
     pub(crate) page_sockets: crate::mux::Sockets,
+    /// How often the attention tick reads the runs.
+    pub(crate) attention_every: Duration,
 }
 
 #[expect(
@@ -138,6 +140,23 @@ pub(crate) fn router_with_roster(
     start: Instant,
     shutdown: tokio::sync::watch::Receiver<bool>,
     dependencies: RouterDependencies,
+) -> Router {
+    router_ticking_every(
+        identity,
+        registry_path,
+        (usage_dir, stores),
+        (start, crate::attention::tick::EVERY),
+        (shutdown, dependencies),
+    )
+}
+
+/// [`router_with_roster`], whose attention tick runs every `attention_every`.
+pub(crate) fn router_ticking_every(
+    identity: Option<identity::Identity>,
+    registry_path: PathBuf,
+    (usage_dir, stores): (PathBuf, StorePaths),
+    (start, attention_every): (Instant, Duration),
+    (shutdown, dependencies): (tokio::sync::watch::Receiver<bool>, RouterDependencies),
 ) -> Router {
     let RouterDependencies {
         auth,
@@ -243,6 +262,7 @@ pub(crate) fn router_with_roster(
         presence: crate::presence_board::Shared::default(),
         telegram_claim: crate::telegram_state::SharedClaim::default(),
         page_sockets,
+        attention_every,
     };
     Router::new()
         .merge(read_routes(&shared))
