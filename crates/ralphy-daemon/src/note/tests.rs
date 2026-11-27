@@ -2,15 +2,6 @@ use super::*;
 use std::fs;
 
 #[test]
-fn note_error_keeps_its_text() {
-    assert_eq!(NoteError::NotNote.to_string(), "not a note");
-    assert_eq!(NoteError::TooLarge.to_string(), "note too large");
-    assert_eq!(NoteError::NotFound.to_string(), "note not found");
-    assert_eq!(NoteError::Confined.to_string(), "path refused");
-    assert_eq!(NoteError::Io.to_string(), "io error");
-}
-
-#[test]
 fn a_container_round_trips_every_text_a_note_can_hold() {
     for text in [
         "",

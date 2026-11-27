@@ -3,328 +3,316 @@
 use super::*;
 use serde_json::json;
 
-/// The peer relay forwards the checkout on the LAUNCH shape only; a reattach
-/// names a record the peer already owns, and a launch with no checkout sends
-/// no `checkout` key.
-#[test]
-fn peer_session_query_forwards_the_checkout_only_when_present() {
-    let launch = |checkout: Option<&str>| SessionQuery {
+fn base() -> SessionQuery {
+    SessionQuery {
         repo: Some("x".into()),
-        agent: Some("claude".into()),
-        checkout: checkout.map(str::to_owned),
         ..SessionQuery::default()
-    };
-    assert_eq!(
-        peer_session_open(&launch(Some("wt-a")), "owner/repo"),
-        json!({"repo": "owner/repo", "agent": "claude", "checkout": "wt-a"})
-    );
-    assert_eq!(
-        peer_session_open(&launch(None), "owner/repo"),
-        json!({"repo": "owner/repo", "agent": "claude"})
-    );
-    let reattach = SessionQuery {
-        id: Some(7),
-        ..launch(Some("wt-a"))
-    };
-    assert_eq!(
-        peer_session_open(&reattach, "owner/repo"),
-        json!({"id": 7, "repo": "owner/repo"})
-    );
+    }
 }
 
-/// A free console on a peer with no distro is launched there: the peer gets
-/// the console shape, the trimmed startup command, and the holder.
-#[test]
-fn peer_session_query_forwards_a_console_launch() {
-    let console = |command: Option<&str>| SessionQuery {
-        repo: Some("x".into()),
+type Row = (&'static str, SessionQuery, serde_json::Value);
+
+fn launch() -> SessionQuery {
+    SessionQuery {
+        agent: Some("claude".into()),
+        ..base()
+    }
+}
+
+fn reattach() -> SessionQuery {
+    SessionQuery {
+        id: Some(7),
+        ..base()
+    }
+}
+
+fn console() -> SessionQuery {
+    SessionQuery {
         console: Some(1),
-        command: command.map(str::to_owned),
-        holder: Some("tab-1".into()),
-        ..SessionQuery::default()
-    };
-    assert_eq!(
-        peer_session_open(&console(Some(" htop ")), "owner/repo"),
-        json!({"console": 1, "repo": "owner/repo", "command": "htop", "holder": "tab-1"})
-    );
-    assert_eq!(
-        peer_session_open(
-            &SessionQuery {
-                holder: None,
-                ..console(None)
+        ..base()
+    }
+}
+
+fn checkout_and_console_rows() -> Vec<Row> {
+    vec![
+        (
+            "launch with a checkout",
+            SessionQuery {
+                checkout: Some("wt-a".into()),
+                ..launch()
             },
-            "owner/repo"
+            json!({"repo": "owner/repo", "agent": "claude", "checkout": "wt-a"}),
         ),
-        json!({"console": 1, "repo": "owner/repo"})
-    );
-}
-
-/// The owning daemon keeps the writer slot, so the relay forwards the tab's
-/// holder on a launch and on a reattach — and drops a malformed one rather
-/// than passing it on to the peer.
-#[test]
-fn peer_session_query_forwards_a_well_formed_holder() {
-    let reattach = |holder: &str| SessionQuery {
-        repo: Some("x".into()),
-        id: Some(7),
-        holder: Some(holder.to_owned()),
-        ..SessionQuery::default()
-    };
-    assert_eq!(
-        peer_session_open(&reattach("tab-1_A"), "owner/repo"),
-        json!({"id": 7, "repo": "owner/repo", "holder": "tab-1_A"})
-    );
-    let launch = SessionQuery {
-        id: None,
-        agent: Some("claude".into()),
-        ..reattach("tab-1_A")
-    };
-    assert_eq!(
-        peer_session_open(&launch, "owner/repo"),
-        json!({"repo": "owner/repo", "agent": "claude", "holder": "tab-1_A"})
-    );
-    for bad in ["", "a&takeover=1", &"x".repeat(65)] {
-        assert_eq!(
-            peer_session_open(&reattach(bad), "owner/repo"),
+        (
+            "launch with no checkout",
+            launch(),
+            json!({"repo": "owner/repo", "agent": "claude"}),
+        ),
+        (
+            "reattach drops the checkout",
+            SessionQuery {
+                checkout: Some("wt-a".into()),
+                ..reattach()
+            },
             json!({"id": 7, "repo": "owner/repo"}),
-            "{bad:?} is not a holder"
-        );
-    }
-}
-
-/// The relay forwards the console name on a LAUNCH only: the owning daemon
-/// folds it. A reattach names a session that already has its name, and an
-/// empty name sends no `name` key.
-#[test]
-fn peer_session_query_forwards_the_console_name_on_a_launch_only() {
-    let launch = |name: Option<String>| SessionQuery {
-        repo: Some("x".into()),
-        agent: Some("claude".into()),
-        id: None,
-        takeover: None,
-        watch: None,
-        console: None,
-        checkout: None,
-        command: None,
-        holder: None,
-        name,
-        record: None,
-        gzip: None,
-        attempt: None,
-        since: None,
-        net: None,
-        net_rtt: None,
-        net_down: None,
-    };
-    assert_eq!(
-        peer_session_open(&launch(Some("fincal #1".into())), "owner/repo"),
-        json!({"repo": "owner/repo", "agent": "claude", "name": "fincal #1"})
-    );
-    for none in [None, Some(String::new())] {
-        assert_eq!(
-            peer_session_open(&launch(none), "owner/repo"),
-            json!({"repo": "owner/repo", "agent": "claude"})
-        );
-    }
-    let long = peer_session_open(&launch(Some("é".repeat(41))), "owner/repo");
-    assert_eq!(long["name"], "é".repeat(40));
-    let reattach = SessionQuery {
-        id: Some(7),
-        ..launch(Some("fincal #1".into()))
-    };
-    assert_eq!(
-        peer_session_open(&reattach, "owner/repo"),
-        json!({"id": 7, "repo": "owner/repo"})
-    );
-}
-
-/// The relay forwards the window record on a LAUNCH only, so the owning
-/// daemon keeps one session per record; a reattach names its session already,
-/// and a malformed record is dropped rather than passed on.
-#[test]
-fn peer_session_query_forwards_the_record_on_a_launch_only() {
-    let console = |record: &str| SessionQuery {
-        repo: Some("x".into()),
-        console: Some(1),
-        record: Some(record.to_owned()),
-        ..SessionQuery::default()
-    };
-    assert_eq!(
-        peer_session_open(&console("w-a_1"), "owner/repo"),
-        json!({"console": 1, "repo": "owner/repo", "record": "w-a_1"})
-    );
-    let agent = SessionQuery {
-        console: None,
-        agent: Some("claude".into()),
-        ..console("w-a_1")
-    };
-    assert_eq!(
-        peer_session_open(&agent, "owner/repo"),
-        json!({"repo": "owner/repo", "agent": "claude", "record": "w-a_1"})
-    );
-    let reattach = SessionQuery {
-        id: Some(7),
-        ..console("w-a_1")
-    };
-    assert_eq!(
-        peer_session_open(&reattach, "owner/repo"),
-        json!({"id": 7, "repo": "owner/repo"})
-    );
-    for bad in ["", "w&takeover=1", &"x".repeat(65)] {
-        assert_eq!(
-            peer_session_open(&console(bad), "owner/repo"),
+        ),
+        (
+            "console launch trims the command and keeps the holder",
+            SessionQuery {
+                command: Some(" htop ".into()),
+                holder: Some("tab-1".into()),
+                ..console()
+            },
+            json!({"console": 1, "repo": "owner/repo", "command": "htop", "holder": "tab-1"}),
+        ),
+        (
+            "console launch with no holder",
+            SessionQuery {
+                command: None,
+                ..console()
+            },
             json!({"console": 1, "repo": "owner/repo"}),
-            "{bad:?} is not a record"
-        );
+        ),
+    ]
+}
+
+fn holder_and_name_rows() -> Vec<Row> {
+    let long_name = "é".repeat(41);
+    let cut_name = "é".repeat(40);
+    vec![
+        (
+            "reattach holder",
+            SessionQuery {
+                holder: Some("tab-1_A".into()),
+                ..reattach()
+            },
+            json!({"id": 7, "repo": "owner/repo", "holder": "tab-1_A"}),
+        ),
+        (
+            "launch holder",
+            SessionQuery {
+                holder: Some("tab-1_A".into()),
+                ..launch()
+            },
+            json!({"repo": "owner/repo", "agent": "claude", "holder": "tab-1_A"}),
+        ),
+        (
+            "launch name",
+            SessionQuery {
+                name: Some("fincal #1".into()),
+                ..launch()
+            },
+            json!({"repo": "owner/repo", "agent": "claude", "name": "fincal #1"}),
+        ),
+        (
+            "launch with an empty name",
+            SessionQuery {
+                name: Some(String::new()),
+                ..launch()
+            },
+            json!({"repo": "owner/repo", "agent": "claude"}),
+        ),
+        (
+            "launch name is cut to 40 characters",
+            SessionQuery {
+                name: Some(long_name),
+                ..launch()
+            },
+            json!({"repo": "owner/repo", "agent": "claude", "name": cut_name}),
+        ),
+        (
+            "reattach drops the name",
+            SessionQuery {
+                name: Some("fincal #1".into()),
+                ..reattach()
+            },
+            json!({"id": 7, "repo": "owner/repo"}),
+        ),
+    ]
+}
+
+fn record_and_gzip_rows() -> Vec<Row> {
+    vec![
+        (
+            "console record",
+            SessionQuery {
+                record: Some("w-a_1".into()),
+                ..console()
+            },
+            json!({"console": 1, "repo": "owner/repo", "record": "w-a_1"}),
+        ),
+        (
+            "agent record",
+            SessionQuery {
+                record: Some("w-a_1".into()),
+                ..launch()
+            },
+            json!({"repo": "owner/repo", "agent": "claude", "record": "w-a_1"}),
+        ),
+        (
+            "reattach drops the record",
+            SessionQuery {
+                record: Some("w-a_1".into()),
+                ..reattach()
+            },
+            json!({"id": 7, "repo": "owner/repo"}),
+        ),
+        (
+            "launch gzip",
+            SessionQuery {
+                gzip: Some(1),
+                ..launch()
+            },
+            json!({"repo": "owner/repo", "agent": "claude", "gzip": 1}),
+        ),
+        (
+            "watch gzip",
+            SessionQuery {
+                watch: Some(1),
+                gzip: Some(1),
+                ..reattach()
+            },
+            json!({"id": 7, "repo": "owner/repo", "watch": 1, "gzip": 1}),
+        ),
+        (
+            "console gzip",
+            SessionQuery {
+                gzip: Some(1),
+                ..console()
+            },
+            json!({"console": 1, "repo": "owner/repo", "gzip": 1}),
+        ),
+        (
+            "watch without gzip",
+            SessionQuery {
+                watch: Some(1),
+                ..reattach()
+            },
+            json!({"id": 7, "repo": "owner/repo", "watch": 1}),
+        ),
+        (
+            "only gzip 1 asks",
+            SessionQuery {
+                watch: Some(1),
+                gzip: Some(0),
+                ..reattach()
+            },
+            json!({"id": 7, "repo": "owner/repo", "watch": 1}),
+        ),
+    ]
+}
+
+fn attempt_and_since_rows() -> Vec<Row> {
+    vec![
+        (
+            "reattach holder and attempt",
+            SessionQuery {
+                holder: Some("tab-A".into()),
+                attempt: Some(12),
+                ..reattach()
+            },
+            json!({"id": 7, "repo": "owner/repo", "holder": "tab-A", "attempt": 12}),
+        ),
+        (
+            "launch holder and attempt",
+            SessionQuery {
+                holder: Some("tab-A".into()),
+                attempt: Some(12),
+                ..launch()
+            },
+            json!({"repo": "owner/repo", "agent": "claude", "holder": "tab-A", "attempt": 12}),
+        ),
+        (
+            "console holder and attempt",
+            SessionQuery {
+                holder: Some("tab-A".into()),
+                attempt: Some(12),
+                ..console()
+            },
+            json!({"console": 1, "repo": "owner/repo", "holder": "tab-A", "attempt": 12}),
+        ),
+        (
+            "no holder, no attempt",
+            SessionQuery {
+                attempt: Some(12),
+                ..reattach()
+            },
+            json!({"id": 7, "repo": "owner/repo"}),
+        ),
+        (
+            "reattach since",
+            SessionQuery {
+                since: Some(4096),
+                ..reattach()
+            },
+            json!({"id": 7, "repo": "owner/repo", "since": 4096}),
+        ),
+        (
+            "watch since",
+            SessionQuery {
+                watch: Some(1),
+                since: Some(4096),
+                ..reattach()
+            },
+            json!({"id": 7, "repo": "owner/repo", "watch": 1, "since": 4096}),
+        ),
+        (
+            "a terminal that shows no byte yet resumes at 0",
+            SessionQuery {
+                since: Some(0),
+                ..reattach()
+            },
+            json!({"id": 7, "repo": "owner/repo", "since": 0}),
+        ),
+        (
+            "a launch sends no since",
+            SessionQuery {
+                since: Some(4096),
+                ..launch()
+            },
+            json!({"repo": "owner/repo", "agent": "claude"}),
+        ),
+    ]
+}
+
+/// What the relay sends the peer for each shape of open. The owning daemon
+/// keeps the writer slot, the session output and the console record, so the
+/// relay forwards the checkout, name and record on a launch only, the holder
+/// and attempt together, `since` on a reattach, and `gzip: 1` on every shape;
+/// a malformed holder or record is dropped, not passed on.
+#[test]
+fn peer_session_query_forwards_each_shape() {
+    let mut rows = [
+        checkout_and_console_rows(),
+        holder_and_name_rows(),
+        record_and_gzip_rows(),
+        attempt_and_since_rows(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    let bad_id = "x".repeat(65);
+    for bad in ["", "a&takeover=1", bad_id.as_str()] {
+        rows.push((
+            "malformed holder",
+            SessionQuery {
+                holder: Some(bad.into()),
+                ..reattach()
+            },
+            json!({"id": 7, "repo": "owner/repo"}),
+        ));
+        rows.push((
+            "malformed record",
+            SessionQuery {
+                record: Some(bad.into()),
+                ..console()
+            },
+            json!({"console": 1, "repo": "owner/repo"}),
+        ));
     }
-}
-
-/// The daemon that hosts the session compresses the replay, so the relay
-/// forwards `gzip: 1` on every shape, and nothing when the page did not ask.
-#[test]
-fn peer_session_query_forwards_gzip_on_every_shape() {
-    let launch = |gzip: Option<u32>| SessionQuery {
-        repo: Some("x".into()),
-        agent: Some("claude".into()),
-        id: None,
-        takeover: None,
-        watch: None,
-        console: None,
-        checkout: None,
-        command: None,
-        holder: None,
-        name: None,
-        record: None,
-        gzip,
-        attempt: None,
-        since: None,
-        net: None,
-        net_rtt: None,
-        net_down: None,
-    };
-    assert_eq!(
-        peer_session_open(&launch(Some(1)), "owner/repo"),
-        json!({"repo": "owner/repo", "agent": "claude", "gzip": 1})
-    );
-    let watch = |gzip| SessionQuery {
-        id: Some(7),
-        watch: Some(1),
-        ..launch(gzip)
-    };
-    assert_eq!(
-        peer_session_open(&watch(Some(1)), "owner/repo"),
-        json!({"id": 7, "repo": "owner/repo", "watch": 1, "gzip": 1})
-    );
-    let console = SessionQuery {
-        console: Some(1),
-        agent: None,
-        ..launch(Some(1))
-    };
-    assert_eq!(
-        peer_session_open(&console, "owner/repo"),
-        json!({"console": 1, "repo": "owner/repo", "gzip": 1})
-    );
-    assert_eq!(
-        peer_session_open(&watch(None), "owner/repo"),
-        json!({"id": 7, "repo": "owner/repo", "watch": 1})
-    );
-    assert_eq!(
-        peer_session_open(&watch(Some(0)), "owner/repo"),
-        json!({"id": 7, "repo": "owner/repo", "watch": 1}),
-        "only `1` asks"
-    );
-}
-
-/// The owning daemon orders the claims of one holder by their attempt, so the
-/// relay forwards it beside the holder on every shape that sends one, and
-/// never alone: an attempt without a holder orders nothing.
-#[test]
-fn peer_session_query_forwards_the_attempt_with_the_holder() {
-    let reattach = |holder: Option<&str>| SessionQuery {
-        repo: Some("x".into()),
-        id: Some(7),
-        holder: holder.map(str::to_owned),
-        attempt: Some(12),
-        ..SessionQuery::default()
-    };
-    assert_eq!(
-        peer_session_open(&reattach(Some("tab-A")), "owner/repo"),
-        json!({"id": 7, "repo": "owner/repo", "holder": "tab-A", "attempt": 12})
-    );
-    let launch = SessionQuery {
-        id: None,
-        agent: Some("claude".into()),
-        ..reattach(Some("tab-A"))
-    };
-    assert_eq!(
-        peer_session_open(&launch, "owner/repo"),
-        json!({"repo": "owner/repo", "agent": "claude", "holder": "tab-A", "attempt": 12})
-    );
-    let console = SessionQuery {
-        console: Some(1),
-        ..launch
-    };
-    assert_eq!(
-        peer_session_open(&console, "owner/repo"),
-        json!({"console": 1, "repo": "owner/repo", "holder": "tab-A", "attempt": 12})
-    );
-    assert_eq!(
-        peer_session_open(&reattach(None), "owner/repo"),
-        json!({"id": 7, "repo": "owner/repo"}),
-        "no holder, no attempt"
-    );
-}
-
-/// The owning daemon keeps the session's output, so the relay forwards the
-/// byte count of a reattach, on the reattach and the watch alike. A launch
-/// opens a new terminal and sends none.
-#[test]
-fn peer_session_query_forwards_since_on_a_reattach() {
-    let reattach = |watch: Option<u32>| SessionQuery {
-        repo: Some("x".into()),
-        agent: None,
-        id: Some(7),
-        takeover: None,
-        watch,
-        console: None,
-        checkout: None,
-        command: None,
-        holder: None,
-        name: None,
-        record: None,
-        gzip: None,
-        attempt: None,
-        since: Some(4096),
-        net: None,
-        net_rtt: None,
-        net_down: None,
-    };
-    assert_eq!(
-        peer_session_open(&reattach(None), "owner/repo"),
-        json!({"id": 7, "repo": "owner/repo", "since": 4096})
-    );
-    assert_eq!(
-        peer_session_open(&reattach(Some(1)), "owner/repo"),
-        json!({"id": 7, "repo": "owner/repo", "watch": 1, "since": 4096})
-    );
-    let at_zero = SessionQuery {
-        since: Some(0),
-        ..reattach(None)
-    };
-    assert_eq!(
-        peer_session_open(&at_zero, "owner/repo"),
-        json!({"id": 7, "repo": "owner/repo", "since": 0}),
-        "a terminal that shows no byte yet resumes at 0"
-    );
-    let launch = SessionQuery {
-        id: None,
-        agent: Some("claude".into()),
-        ..reattach(None)
-    };
-    assert_eq!(
-        peer_session_open(&launch, "owner/repo"),
-        json!({"repo": "owner/repo", "agent": "claude"})
-    );
+    for (name, query, want) in rows {
+        assert_eq!(peer_session_open(&query, "owner/repo"), want, "{name}");
+    }
 }
 
 /// The console name is cut to the desk's 40 characters on a char boundary,

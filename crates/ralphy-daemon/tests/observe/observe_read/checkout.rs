@@ -270,25 +270,37 @@ async fn send_watch(ws: &mut page::Channel, payload: serde_json::Value) {
         .expect("send the frame");
 }
 
-/// The `checkout` of the first `tree.dirty` push within `window`; `None` when
-/// no push came.
-async fn dirty_checkout(ws: &mut page::Channel, window: Duration) -> Option<String> {
-    dirty_field(ws, window, "checkout").await
-}
-/// The `field` of the first `tree.dirty` push within `window`.
-async fn dirty_field(ws: &mut page::Channel, window: Duration, field: &str) -> Option<String> {
+/// The `field` of the first `tree.dirty` push within `window`, while `file` is
+/// written again every 400 ms: a watch that is armed late still sees a change,
+/// and each write outlasts the 300 ms debounce of the watcher.
+async fn dirty_while_writing(
+    ws: &mut page::Channel,
+    file: &std::path::Path,
+    window: Duration,
+    field: &str,
+) -> Option<String> {
+    let mut tick = tokio::time::interval(Duration::from_millis(400));
+    let mut writes = 0u32;
     tokio::time::timeout(window, async {
-        while let Some(msg) = ws.next().await {
-            let Ok(Message::Binary(bytes)) = msg else {
-                continue;
-            };
-            if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
-                if cmd.verb == "tree.dirty" {
-                    return cmd.payload[field].as_str().map(String::from);
+        loop {
+            tokio::select! {
+                _ = tick.tick() => {
+                    writes += 1;
+                    std::fs::write(file, writes.to_string()).expect("write the file");
+                }
+                msg = ws.next() => {
+                    let Ok(Message::Binary(bytes)) = msg? else {
+                        continue;
+                    };
+                    if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
+                        if cmd.verb == "tree.dirty" {
+                            let value = cmd.payload.get(field).and_then(|v| v.as_str());
+                            return value.map(String::from);
+                        }
+                    }
                 }
             }
         }
-        None
     })
     .await
     .ok()
@@ -318,19 +330,17 @@ async fn a_symlinked_checkout_gets_no_watch() {
 
     let mut ws = page::tree(port).await;
     watch_checkout(&mut ws, &slug, "wt-out").await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    std::fs::write(outside.path().join("new.txt"), b"x").expect("write new.txt");
+    let behind = outside.path().join("new.txt");
     assert_eq!(
-        dirty_checkout(&mut ws, Duration::from_secs(3)).await,
+        dirty_while_writing(&mut ws, &behind, Duration::from_secs(3), "checkout").await,
         None,
         "a change behind the link must not be pushed"
     );
 
     watch_checkout(&mut ws, &slug, "wt-a").await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    std::fs::write(root.join(".ralphy/worktrees/wt-a/f.txt"), b"x").expect("write f.txt");
+    let inside = root.join(".ralphy/worktrees/wt-a/f.txt");
     assert_eq!(
-        dirty_checkout(&mut ws, Duration::from_secs(10)).await,
+        dirty_while_writing(&mut ws, &inside, Duration::from_secs(10), "checkout").await,
         Some("wt-a".to_owned()),
         "the normal worktree is still watched"
     );
@@ -355,19 +365,17 @@ async fn a_plain_watch_through_a_symlinked_folder_gets_no_watch() {
         serde_json::json!({ "repo": slug, "path": "linked" }),
     )
     .await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    std::fs::write(outside.path().join("new.txt"), b"x").expect("write new.txt");
+    let behind = outside.path().join("new.txt");
     assert_eq!(
-        dirty_field(&mut ws, Duration::from_secs(3), "path").await,
+        dirty_while_writing(&mut ws, &behind, Duration::from_secs(3), "path").await,
         None,
         "a change behind the link must not be pushed"
     );
 
     send_watch(&mut ws, serde_json::json!({ "repo": slug, "path": "" })).await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    std::fs::write(root.join("f.txt"), b"x").expect("write f.txt");
+    let inside = root.join("f.txt");
     assert_eq!(
-        dirty_field(&mut ws, Duration::from_secs(10), "path").await,
+        dirty_while_writing(&mut ws, &inside, Duration::from_secs(10), "path").await,
         Some(String::new()),
         "the root is still watched"
     );

@@ -239,23 +239,42 @@ async fn a_refused_verb_answers_the_same_over_http_and_the_socket() {
 }
 
 // The only test of this file that sets the exe override: no other test here
-// spawns, so the process-global variables race with nothing.
+// spawns, so the process-global variables race with nothing. The same verb
+// sent next over the socket is the control: once its child has finished, the
+// argv log holds one line, and a second line would be a child of the HTTP call.
 #[tokio::test]
 async fn a_streaming_verb_is_refused_over_http() {
     let dir = tempfile::tempdir().unwrap();
     let marker = dir.path().join("ran.marker");
+    let argv_log = dir.path().join("argv.log");
     std::env::set_var(
         "RALPHY_EXE_OVERRIDE",
         env!("CARGO_BIN_EXE_command_test_child"),
     );
     std::env::set_var("RALPHY_TEST_DONE_FILE", &marker);
+    std::env::set_var("RALPHY_TEST_ARGV_FILE", &argv_log);
     let port = serve(registered(dir.path())).await;
     let payload = serde_json::json!({ "repo": SLUG, "agent": "claude", "branchMode": "new" });
-    let (status, http) = over_http(port, "run", payload, &[]).await;
+    let (status, http) = over_http(port, "run", payload.clone(), &[]).await;
     assert_eq!(status, 200);
     assert_eq!(http["status"], "error", "{http}");
-    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let control = dir.path().join("socket.marker");
+    std::env::set_var("RALPHY_TEST_DONE_FILE", &control);
+    let socket = over_socket(port, "run", payload, &[]).await;
+    assert_eq!(socket["status"], "spawned", "{socket}");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !control.exists() {
+        assert!(Instant::now() < deadline, "the socket run never finished");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let runs = std::fs::read_to_string(&argv_log).expect("read the argv log");
     assert!(!marker.exists(), "a streaming verb spawned a process");
+    assert_eq!(
+        runs.lines().count(),
+        1,
+        "a streaming verb spawned a process"
+    );
 }
 
 #[tokio::test]

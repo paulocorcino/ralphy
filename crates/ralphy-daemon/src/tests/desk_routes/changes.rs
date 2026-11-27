@@ -117,136 +117,131 @@ async fn a_create_past_a_cap_is_refused_and_nothing_is_pruned() {
     assert_eq!(stored.notes[0].id, "n1");
 }
 
-/// The third collection travels the same route as the other two.
-#[tokio::test]
-async fn api_desk_round_trips_notes() {
-    let dir = tempfile::tempdir().unwrap();
-    let res = desk_put(
-        dir.path(),
-        serde_json::json!([create("note", &note_json("n1", ".ralphy/notes/a.note"))]),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-
-    let served = desk_get(dir.path()).await;
-    assert!(served.contains(r#""id":"n1""#), "{served}");
-    assert!(
-        served.contains(r#""path":".ralphy/notes/a.note""#),
-        "{served}"
-    );
-    // Placement only: the wire record carries no text and no colour.
-    assert!(!served.contains("markdown"), "{served}");
-    assert!(!served.contains("color"), "{served}");
+/// One PUT, then what the next GET serves; `then` is a second PUT that clears or
+/// refuses. The wire holds placement only, and an off or empty key is absent.
+struct Trip {
+    name: &'static str,
+    first: serde_json::Value,
+    put_has: Vec<&'static str>,
+    get_has: Vec<&'static str>,
+    get_absent: Vec<&'static str>,
+    get_counts: Vec<(&'static str, usize)>,
+    toml_counts: Vec<(&'static str, usize)>,
+    then: serde_json::Value,
+    then_absent: Vec<&'static str>,
+    then_leaves_toml: bool,
 }
 
-/// ADR-0063 §4: the selected checkout per repo ref, selected and cleared by
-/// its own changes, answered on the PUT and served on the next GET.
-#[tokio::test]
-async fn api_desk_round_trips_checkouts() {
-    let dir = tempfile::tempdir().unwrap();
-    let res = desk_put(
-        dir.path(),
-        serde_json::json!([{ "op": "checkout", "repo": "owner/repo", "name": "wt-a" }]),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let put_body = body_text(res).await;
-    assert!(
-        put_body.contains(r#""checkouts":{"owner/repo":"wt-a"}"#),
-        "the PUT answers the checkouts: {put_body}"
-    );
-    let get_body = desk_get(dir.path()).await;
-    assert!(
-        get_body.contains(r#""checkouts":{"owner/repo":"wt-a"}"#),
-        "the GET serves them: {get_body}"
-    );
-
-    // Clearing the selection drops the key from the wire body entirely —
-    // an empty map is not serialised, so the old exact shape holds.
-    let res = desk_put(
-        dir.path(),
-        serde_json::json!([{ "op": "checkout-clear", "repo": "owner/repo", "ifName": "wt-a" }]),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let get_body = desk_get(dir.path()).await;
-    assert!(!get_body.contains("checkouts"), "{get_body}");
-}
-
-/// #411: a record's own `checkout` round-trips and is gated by the same name
-/// check as the selection map.
-#[tokio::test]
-async fn api_desk_round_trips_and_gates_a_records_checkout() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut record = window_json("w1", &serde_json::Value::Null, false);
-    record["checkout"] = serde_json::json!("wt-a");
-    let res = desk_put(dir.path(), serde_json::json!([create("window", &record)])).await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let get_body = desk_get(dir.path()).await;
-    assert!(
-        get_body.contains(r#""checkout":"wt-a""#),
-        "the GET serves the record's checkout: {get_body}"
-    );
-    let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
-    let res = desk_put(
-        dir.path(),
-        serde_json::json!([set(
-            "window",
-            "w1",
-            &serde_json::json!({ "checkout": "../x" })
-        )]),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
-        before,
-        "a refused record checkout never reaches the store"
-    );
-}
-
-/// Lock amendment (ADR-0050/0051, 2026-09-20): a locked window and a locked
-/// fence round-trip through the route, and an unlock clears the key from the
-/// wire again.
-#[tokio::test]
-async fn api_desk_round_trips_a_lock_on_a_record_and_a_fence() {
-    let dir = tempfile::tempdir().unwrap();
-    let res = desk_put(
-        dir.path(),
-        serde_json::json!([
-            create(
+fn trips() -> Vec<Trip> {
+    let none = || serde_json::Value::Null;
+    let mut with_checkout = window_json("w1", &none(), false);
+    with_checkout["checkout"] = serde_json::json!("wt-a");
+    let locked = |v: bool| serde_json::json!({ "locked": v });
+    let base = || Trip {
+        name: "",
+        first: serde_json::json!([]),
+        put_has: vec![],
+        get_has: vec![],
+        get_absent: vec![],
+        get_counts: vec![],
+        toml_counts: vec![],
+        then: serde_json::json!([]),
+        then_absent: vec![],
+        then_leaves_toml: false,
+    };
+    vec![
+        Trip {
+            name: "notes",
+            first: serde_json::json!([create("note", &note_json("n1", ".ralphy/notes/a.note"))]),
+            get_has: vec![r#""id":"n1""#, r#""path":".ralphy/notes/a.note""#],
+            get_absent: vec!["markdown", "color"],
+            ..base()
+        },
+        Trip {
+            name: "checkouts",
+            first: serde_json::json!([
+                { "op": "checkout", "repo": "owner/repo", "name": "wt-a" }
+            ]),
+            put_has: vec![r#""checkouts":{"owner/repo":"wt-a"}"#],
+            get_has: vec![r#""checkouts":{"owner/repo":"wt-a"}"#],
+            then: serde_json::json!([
+                { "op": "checkout-clear", "repo": "owner/repo", "ifName": "wt-a" }
+            ]),
+            then_absent: vec!["checkouts"],
+            ..base()
+        },
+        Trip {
+            name: "a record's checkout, gated by the name check",
+            first: serde_json::json!([create("window", &with_checkout)]),
+            get_has: vec![r#""checkout":"wt-a""#],
+            then: serde_json::json!([set(
                 "window",
-                &window_json("w1", &serde_json::Value::Null, false)
-            ),
-            create("fence", &fence_json("f1", "backend")),
-            set("window", "w1", &serde_json::json!({ "locked": true })),
-            set("fence", "f1", &serde_json::json!({ "locked": true })),
-        ]),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let get_body = desk_get(dir.path()).await;
-    assert_eq!(
-        get_body.matches(r#""locked":true"#).count(),
-        2,
-        "the GET serves both locks: {get_body}"
-    );
-    let toml = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
-    assert_eq!(toml.matches("locked = true").count(), 2, "toml={toml}");
-    let res = desk_put(
-        dir.path(),
-        serde_json::json!([
-            set("window", "w1", &serde_json::json!({ "locked": false })),
-            set("fence", "f1", &serde_json::json!({ "locked": false })),
-        ]),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let get_body = desk_get(dir.path()).await;
-    assert!(
-        !get_body.contains("locked"),
-        "an unlocked desk carries no key: {get_body}"
-    );
+                "w1",
+                &serde_json::json!({ "checkout": "../x" })
+            )]),
+            then_leaves_toml: true,
+            ..base()
+        },
+        Trip {
+            name: "a lock on a record and a fence",
+            first: serde_json::json!([
+                create("window", &window_json("w1", &none(), false)),
+                create("fence", &fence_json("f1", "backend")),
+                set("window", "w1", &locked(true)),
+                set("fence", "f1", &locked(true)),
+            ]),
+            get_counts: vec![(r#""locked":true"#, 2)],
+            toml_counts: vec![("locked = true", 2)],
+            then: serde_json::json!([
+                set("window", "w1", &locked(false)),
+                set("fence", "f1", &locked(false)),
+            ]),
+            then_absent: vec!["locked"],
+            ..base()
+        },
+    ]
+}
+
+#[tokio::test]
+async fn api_desk_round_trips() {
+    for t in trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let res = desk_put(dir.path(), t.first).await;
+        assert_eq!(res.status(), StatusCode::OK, "{}", t.name);
+        let put_body = body_text(res).await;
+        for needle in &t.put_has {
+            assert!(put_body.contains(needle), "{}: {put_body}", t.name);
+        }
+        let get = desk_get(dir.path()).await;
+        for needle in &t.get_has {
+            assert!(get.contains(needle), "{}: {get}", t.name);
+        }
+        for needle in &t.get_absent {
+            assert!(!get.contains(needle), "{}: {get}", t.name);
+        }
+        for (needle, n) in &t.get_counts {
+            assert_eq!(get.matches(needle).count(), *n, "{}: {get}", t.name);
+        }
+        let toml_path = dir.path().join("desk.toml");
+        let toml = std::fs::read_to_string(&toml_path).unwrap();
+        for (needle, n) in &t.toml_counts {
+            assert_eq!(toml.matches(needle).count(), *n, "{}: {toml}", t.name);
+        }
+        let res = desk_put(dir.path(), t.then).await;
+        assert_eq!(res.status(), StatusCode::OK, "{}", t.name);
+        let get = desk_get(dir.path()).await;
+        for needle in &t.then_absent {
+            assert!(!get.contains(needle), "{}: {get}", t.name);
+        }
+        if t.then_leaves_toml {
+            let after = std::fs::read_to_string(&toml_path).unwrap();
+            assert_eq!(
+                after, toml,
+                "{}: a refused change never reaches the store",
+                t.name
+            );
+        }
+    }
 }
 
 /// A checkout value that is not one path component is refused before any

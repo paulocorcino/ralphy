@@ -190,49 +190,26 @@ fn a_remembered_cookie_slides_a_week_and_clamps_at_thirty_days() {
     );
 }
 
+/// Each row edits a signed cookie, or the key it is checked with, and must fail the MAC.
 #[test]
-fn tampered_mac_rejected() {
+fn a_tampered_cookie_or_key_is_rejected() {
     let c = sign("tok", 0, STD, 500, 1000);
-    let mut bad = c.clone();
-    bad.pop();
-    bad.push(if c.ends_with('a') { 'b' } else { 'a' });
-    assert!(
-        !verify("tok", 0, &bad, 900),
-        "a tampered MAC must not verify"
-    );
-}
-
-#[test]
-fn a_tampered_iat_is_rejected() {
-    // iat is in the MAC, so lengthening the absolute cap by editing it fails.
-    let c = sign("tok", 0, STD, 500, 1000);
-    let forged = c.replacen("4.0.500.", "4.0.999.", 1);
-    assert!(
-        !verify("tok", 0, &forged, 900),
-        "editing iat breaks the MAC"
-    );
-}
-
-#[test]
-fn a_retagged_kind_is_rejected() {
-    // The kind is in the MAC: a standard cookie cannot be promoted to a
-    // remembered one by flipping its tag.
-    let c = sign("tok", 0, STD, 500, 1000);
-    let forged = c.replacen(".s.", ".r.", 1);
-    assert_ne!(c, forged, "the tag was found and flipped");
-    assert!(
-        !verify("tok", 0, &forged, 900),
-        "editing the kind breaks the MAC"
-    );
-}
-
-#[test]
-fn wrong_token_rejected() {
-    let c = sign("tok", 0, STD, 500, 1000);
-    assert!(
-        !verify("other", 0, &c, 900),
-        "a different signing key must not verify"
-    );
+    let last = if c.ends_with('a') { 'b' } else { 'a' };
+    let mut mac = c.clone();
+    mac.pop();
+    mac.push(last);
+    let rows = [
+        ("tampered mac", "tok", mac),
+        ("tampered iat", "tok", c.replacen("4.0.500.", "4.0.999.", 1)),
+        ("retagged kind", "tok", c.replacen(".s.", ".r.", 1)),
+        ("wrong token", "other", c.clone()),
+    ];
+    for (name, token, cookie) in rows {
+        if name != "wrong token" {
+            assert_ne!(c, cookie, "{name}: the cookie was edited");
+        }
+        assert!(!verify(token, 0, &cookie, 900), "{name}");
+    }
 }
 
 #[test]

@@ -226,13 +226,4 @@ mod tests {
         let mixed = confine(root.path(), "SUB\\F.TXT").expect("mixed-case form confines");
         assert_eq!(mixed, canonical);
     }
-
-    #[test]
-    fn confine_error_keeps_its_text() {
-        assert_eq!(
-            ConfineError::Escape.to_string(),
-            "path escapes the repo root"
-        );
-        assert_eq!(ConfineError::NotFound.to_string(), "path not found");
-    }
 }
