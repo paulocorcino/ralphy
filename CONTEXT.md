@@ -409,6 +409,12 @@ _Avoid_: view, page, screen; "main tab" for the Consoles tab; Agents tab;
 panel or accordion for a sidebar view; dashboard, modal or overlay for a
 daemon view.
 
+**Tray**:
+The icon of `ralphy tray` in the system tray: it starts the **daemon**, shows
+whether it runs, opens the workbench in a window, and stops the daemon on
+Quit. (ADR-0097)
+_Avoid_: tray app, system tray agent.
+
 **Daemon view**:
 A canvas tab that shows a document the daemon serves, with no file behind it
 and nothing to save, such as the Spend tab. (ADR-0037)
