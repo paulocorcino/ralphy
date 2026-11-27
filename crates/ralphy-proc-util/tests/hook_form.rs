@@ -9,7 +9,7 @@ use std::process::Command;
 use std::time::{Duration, Instant, SystemTime};
 
 use ralphy_proc_util::hook_form::{
-    check, claude_hook, hook_for_version, read_version, HookCheck, HookForm,
+    check, claude_hook_within, hook_for_version, read_version, HookCheck, HookForm,
 };
 
 const CHILD: &str = env!("CARGO_BIN_EXE_version_test_child");
@@ -72,8 +72,19 @@ fn a_hung_version_read_gives_up() {
         "{:?}",
         started.elapsed()
     );
-    let hook = claude_hook(&child, Path::new("/tools/ralphy"), &["hook", "status"]);
+    let started = Instant::now();
+    let hook = claude_hook_within(
+        &child,
+        Path::new("/tools/ralphy"),
+        &["hook", "status"],
+        Duration::from_secs(1),
+    );
     assert_eq!(hook.form(), HookForm::Shell);
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "{:?}",
+        started.elapsed()
+    );
 }
 
 #[test]

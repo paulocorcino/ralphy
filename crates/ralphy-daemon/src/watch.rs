@@ -24,12 +24,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
+mod events;
 mod rel;
 pub use rel::{is_head_rel, norm_rel};
 
+use events::changes_no_listing;
+
 use anyhow::{Context, Result};
-use notify::event::ModifyKind;
-use notify::{EventKind, PollWatcher, RecursiveMode};
+use notify::{PollWatcher, RecursiveMode};
 use notify_debouncer_full::{
     new_debouncer, new_debouncer_opt, DebounceEventResult, DebouncedEvent, Debouncer,
     RecommendedCache,
@@ -49,8 +51,7 @@ pub const MAX_WATCHES: usize = 512;
 /// ordinary watch target.
 pub const RUNSTATE_REL: &str = ".ralphy/runstate";
 
-/// After this quiet gap the debouncer emits a settled batch — short so the suite
-/// stays fast, long enough to coalesce an event storm into few nudges.
+/// After this quiet gap the debouncer emits a settled batch, so a storm is few nudges.
 const DEBOUNCE_TIMEOUT: Duration = Duration::from_millis(300);
 
 /// Poll cadence once a repo degrades to [`notify::PollWatcher`].
@@ -69,6 +70,13 @@ pub type DirtyRx = broadcast::Receiver<(String, String)>;
 pub enum WatchMode {
     Native,
     Poll,
+}
+
+/// The kind of debouncer to build and its quiet gap.
+#[derive(Clone, Copy)]
+struct Backend {
+    mode: WatchMode,
+    debounce: Duration,
 }
 
 /// Either backend behind one repo's debouncer. `notify::PollWatcher` is a drop-in
@@ -106,14 +114,18 @@ struct RepoWatcher {
     watch_set: Arc<Mutex<BTreeSet<String>>>,
     tx: broadcast::Sender<(String, String)>,
     mode: WatchMode,
+    debounce: Duration,
 }
 
 impl RepoWatcher {
-    fn new(repo: &str, canon_root: PathBuf) -> Result<Self> {
+    fn new(repo: &str, canon_root: PathBuf, debounce: Duration) -> Result<Self> {
         let (tx, _rx0) = broadcast::channel(BROADCAST_CAP);
         let watch_set = Arc::new(Mutex::new(BTreeSet::new()));
         let debouncer = spawn_backend(
-            WatchMode::Native,
+            Backend {
+                mode: WatchMode::Native,
+                debounce,
+            },
             repo.to_owned(),
             canon_root.clone(),
             Arc::clone(&watch_set),
@@ -127,6 +139,7 @@ impl RepoWatcher {
             watch_set,
             tx,
             mode: WatchMode::Native,
+            debounce,
         })
     }
 
@@ -147,7 +160,10 @@ impl RepoWatcher {
             return Ok(());
         }
         let mut new_deb = spawn_backend(
-            WatchMode::Poll,
+            Backend {
+                mode: WatchMode::Poll,
+                debounce: self.debounce,
+            },
             self.repo.clone(),
             self.root.clone(),
             Arc::clone(&self.watch_set),
@@ -171,6 +187,7 @@ impl RepoWatcher {
 pub struct WatcherManager {
     repos: Mutex<BTreeMap<String, RepoWatcher>>,
     max_watches: usize,
+    debounce: Duration,
     // notify's `PollWatcher::watch` never returns an error (notify 8.2
     // `poll.rs`), so a test makes the next degrade fail by hand.
     #[cfg(test)]
@@ -187,9 +204,15 @@ impl std::fmt::Debug for WatcherManager {
 
 impl WatcherManager {
     pub fn new(max_watches: usize) -> Self {
+        Self::with_debounce(max_watches, DEBOUNCE_TIMEOUT)
+    }
+
+    /// A manager whose watchers settle after `debounce`; `new` passes the production gap.
+    pub(crate) fn with_debounce(max_watches: usize, debounce: Duration) -> Self {
         Self {
             repos: Mutex::new(BTreeMap::new()),
             max_watches: max_watches.max(1),
+            debounce,
             #[cfg(test)]
             fail_next_degrade: std::sync::atomic::AtomicBool::new(false),
         }
@@ -216,7 +239,10 @@ impl WatcherManager {
             .with_context(|| format!("canonicalizing watch root {}", root.display()))?;
         let mut repos = lock(&self.repos);
         if !repos.contains_key(repo) {
-            repos.insert(repo.to_owned(), RepoWatcher::new(repo, canon_root)?);
+            repos.insert(
+                repo.to_owned(),
+                RepoWatcher::new(repo, canon_root, self.debounce)?,
+            );
         }
         // Every failure below leaves the registry as it was: no raised count,
         // and no empty repo watcher.
@@ -341,12 +367,13 @@ fn release(repos: &mut BTreeMap<String, RepoWatcher>, repo: &str, rel: &str) {
 /// batches flow debouncer-thread → mpsc → pump → broadcast. Must be called within
 /// a tokio runtime (the pump is a `tokio::spawn`).
 fn spawn_backend(
-    mode: WatchMode,
+    backend: Backend,
     repo: String,
     root: PathBuf,
     watch_set: Arc<Mutex<BTreeSet<String>>>,
     tx: broadcast::Sender<(String, String)>,
 ) -> Result<AnyDebouncer> {
+    let Backend { mode, debounce } = backend;
     let (evt_tx, evt_rx) = mpsc::unbounded_channel::<Vec<DebouncedEvent>>();
     tokio::spawn(pump(repo, root, watch_set, evt_rx, tx));
     // The handler runs on the debouncer's own std thread; forward the batch and let
@@ -361,12 +388,11 @@ fn spawn_backend(
     };
     let deb = match mode {
         WatchMode::Native => AnyDebouncer::Native(
-            new_debouncer(DEBOUNCE_TIMEOUT, None, handler)
-                .context("building the native debouncer")?,
+            new_debouncer(debounce, None, handler).context("building the native debouncer")?,
         ),
         WatchMode::Poll => AnyDebouncer::Poll(
             new_debouncer_opt::<_, PollWatcher, RecommendedCache>(
-                DEBOUNCE_TIMEOUT,
+                debounce,
                 None,
                 handler,
                 RecommendedCache::new(),
@@ -418,32 +444,6 @@ fn touched_dirs(
         }
     }
     dirs
-}
-
-/// Whether an event can change no listing, so it nudges nothing.
-fn changes_no_listing(event: &notify::Event) -> bool {
-    // A READ is not a change. Linux inotify reports `IN_OPEN` /
-    // `IN_CLOSE_NOWRITE` on a watched dir, and `notify`'s inotify backend
-    // subscribes to them, so every `tree.list` (which opens the dir and
-    // each child dir) arrived here as an `Access` event and became a
-    // nudge — and the browser answers a nudge with another `tree.list`.
-    // On a Linux daemon that was a self-sustaining loop (~25 nudges/s on
-    // an idle repo). Windows never emits these, which is why it hid.
-    if matches!(event.kind, EventKind::Access(_)) {
-        return true;
-    }
-    // A directory's OWN modify — its mtime moved because a child was
-    // written, which Windows and FSEvents both bubble to the parent's
-    // watch — changes no listing: a listing is names and the dir
-    // flag, and the names under the watched dir are what they were.
-    // A rename (`Modify(Name)`) does change one and stays. Measured
-    // on the macOS runner (2026-09-17): `unwatched/y` nudged the root
-    // through `unwatched` itself.
-    matches!(
-        event.kind,
-        EventKind::Modify(ModifyKind::Any | ModifyKind::Data(_) | ModifyKind::Metadata(_))
-    ) && !event.paths.is_empty()
-        && event.paths.iter().all(|p| p.is_dir())
 }
 
 /// Map one event path to the watched rel dir it belongs to, or `None` to drop it.

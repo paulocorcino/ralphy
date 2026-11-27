@@ -200,16 +200,16 @@ pub(crate) async fn tick_once(
     telegram.tick(&requests).await;
 }
 
-/// Tick every [`EVERY`] until the daemon stops.
+/// Tick every `every` ([`EVERY`] in the daemon) until the daemon stops.
 pub(crate) async fn run(
     files: DeskFiles,
     sessions: Arc<SessionManager>,
     (runs, dismissed): (Runs, Dismissed),
     (pushes, mut telegram): (broadcast::Sender<Push>, Notifier),
-    mut shutdown: tokio::sync::watch::Receiver<bool>,
+    (mut shutdown, every): (tokio::sync::watch::Receiver<bool>, Duration),
 ) {
     let mut seen = Seen::default();
-    let mut every = tokio::time::interval(EVERY);
+    let mut every = tokio::time::interval(every);
     every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         tokio::select! {

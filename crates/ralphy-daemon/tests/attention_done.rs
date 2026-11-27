@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use ralphy_daemon::auth::AuthState;
 use ralphy_daemon::desk::{self, DeskRecord, DeskRect, DeskStore};
-use ralphy_daemon::{registry, router};
+use ralphy_daemon::{registry, router_with_attention_every};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const SLUG: &str = "owner/attention";
@@ -71,12 +71,16 @@ async fn dismiss(port: u16, id: &str) -> u16 {
     exchange(port, &request).await.0
 }
 
-/// The requests of the list once `ready` accepts them; panics after 10 s.
+/// The attention tick period of the test daemon.
+const TICK: Duration = Duration::from_millis(200);
+
+/// The requests of the list once `ready` accepts them; panics after ten
+/// ticks, so a tick that does not run on `TICK` fails the test.
 async fn requests_when(
     port: u16,
     ready: impl Fn(&[serde_json::Value]) -> bool,
 ) -> Vec<serde_json::Value> {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + TICK * 10;
     loop {
         let (status, reply) = get(port, "/api/attention").await;
         let list = reply["requests"].as_array().cloned().unwrap_or_default();
@@ -85,7 +89,7 @@ async fn requests_when(
         }
         assert!(
             Instant::now() < deadline,
-            "no such list within 10 s: {reply}"
+            "no such list within ten ticks: {reply}"
         );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -97,9 +101,9 @@ async fn requests_now(port: u16) -> Vec<serde_json::Value> {
     reply["requests"].as_array().cloned().unwrap_or_default()
 }
 
-/// A full tick of the attention list, and a little more.
+/// A full tick of the attention list, with slack for a slow machine.
 async fn after_a_tick() {
-    tokio::time::sleep(Duration::from_millis(3600)).await;
+    tokio::time::sleep(TICK * 3).await;
 }
 
 fn append(status: &Path, line: &str) {
@@ -154,14 +158,15 @@ async fn marked_console(dir: &Path) -> (u16, PathBuf, PathBuf, page::Channel) {
         .expect("bind a port");
     let port = listener.local_addr().expect("a bound address").port();
     let (tx, rx) = tokio::sync::watch::channel(false);
-    let app = router(
+    let app = router_with_attention_every(
         None,
         registry_path,
-        PathBuf::from("does-not-exist"),
-        ralphy_daemon::StorePaths::default(),
-        Instant::now(),
-        rx,
-        AuthState::localhost(),
+        (
+            PathBuf::from("does-not-exist"),
+            ralphy_daemon::StorePaths::default(),
+        ),
+        (Instant::now(), rx),
+        (AuthState::localhost(), TICK),
     );
     tokio::spawn(async move {
         // The shutdown sender lives as long as the server.

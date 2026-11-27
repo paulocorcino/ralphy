@@ -99,7 +99,7 @@ use routes::{
     PollCycle, SessionQuery, PEER_POLL_BACKOFF, PEER_POLL_DEADLINE, PEER_POLL_QUIET_PAUSE,
     PEER_POLL_WINDOW_MS,
 };
-use routes::{router_with_roster, RouterDependencies};
+use routes::{router_ticking_every, router_with_roster, RouterDependencies};
 use serve::serve;
 
 /// The daemon's default TCP port. "ralphy" on a phone keypad starts 7-2-5-7.
@@ -220,6 +220,31 @@ pub fn router(
         shutdown,
         auth,
         mux::Sockets::default(),
+    )
+}
+
+/// [`router`], whose attention tick reads the runs every `every`: a test
+/// passes a short period, the daemon ticks every 3 seconds. The arguments of
+/// [`router`] come in pairs, `(usage_dir, stores)`, `(start, shutdown)` and
+/// `(auth, every)`.
+pub fn router_with_attention_every(
+    identity: Option<identity::Identity>,
+    registry_path: PathBuf,
+    (usage_dir, stores): (PathBuf, StorePaths),
+    (start, shutdown): (Instant, tokio::sync::watch::Receiver<bool>),
+    (auth, every): (Arc<auth::AuthState>, std::time::Duration),
+) -> Router {
+    let dependencies = RouterDependencies {
+        auth,
+        roster_locator: Arc::new(session::Agent::locate_program),
+        page_sockets: mux::Sockets::default(),
+    };
+    router_ticking_every(
+        identity,
+        registry_path,
+        (usage_dir, stores),
+        (start, every),
+        (shutdown, dependencies),
     )
 }
 

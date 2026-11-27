@@ -212,7 +212,12 @@ fn session_login_requires_password_when_set() {
     let s = SessionAuth {
         token: "tok".into(),
         totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
-        password: Some(password::Hash::hash_password("pw")),
+        password: Some(
+            // "pw" at a low count: the production count is pinned in the store tests.
+            "pbkdf2-sha1$1000$BwcHBwcHBwcHBwcHBwcHBw==$eeWSq9opBKcgdarYRLPAX2upl6M="
+                .parse::<password::Hash>()
+                .expect("a valid record"),
+        ),
         epoch: test_epoch(),
         revoked: RevokedLogins::default(),
     };
