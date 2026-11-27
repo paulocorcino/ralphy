@@ -5,12 +5,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { WBConsoleName } from "../assets/ui/wb-console-name.ts";
 
-function load() {
-  return WBConsoleName;
-}
-
 test("prefixOf: the last slug segment, home for no repo", () => {
-  const N = load();
+  const N = WBConsoleName;
   assert.equal(N.prefixOf("owner/fincal"), "fincal");
   assert.equal(N.prefixOf("~"), "home");
   assert.equal(N.prefixOf(""), "home");
@@ -20,7 +16,7 @@ test("prefixOf: the last slug segment, home for no repo", () => {
 });
 
 test("defaultName: the lowest free number of the exact form", () => {
-  const N = load();
+  const N = WBConsoleName;
   assert.equal(N.defaultName("fincal", []), "fincal #1");
   assert.equal(N.defaultName("fincal", ["fincal #1", "fincal #3", "fincal #6"]), "fincal #2");
   assert.equal(N.defaultName("fincal", ["backend", "fincal #1"]), "fincal #2");
@@ -29,7 +25,7 @@ test("defaultName: the lowest free number of the exact form", () => {
 });
 
 test("renameValue: trim, cut to 40, default when empty, duplicates allowed", () => {
-  const N = load();
+  const N = WBConsoleName;
   assert.equal(N.renameValue("  x  ", "fincal", []), "x");
   assert.equal(N.renameValue("   ", "fincal", ["fincal #1"]), "fincal #2");
   assert.equal(N.renameValue("", "fincal", []), "fincal #1");
@@ -40,7 +36,7 @@ test("renameValue: trim, cut to 40, default when empty, duplicates allowed", () 
 });
 
 test("consoleLabel and labelParts: one builder, name then label", () => {
-  const N = load();
+  const N = WBConsoleName;
   assert.equal(N.consoleLabel("fincal #1", "claude"), "fincal #1 (claude)");
   assert.deepEqual(N.labelParts("home #1", "console"), { name: "home #1", tag: "(console)" });
   // A member a detached fence's popup sent with no agent.
@@ -48,7 +44,7 @@ test("consoleLabel and labelParts: one builder, name then label", () => {
 });
 
 test("tooltipLines: ref, environment, session name, empty ones left out", () => {
-  const N = load();
+  const N = WBConsoleName;
   const ref = "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/fincal";
   const env = "WSL: Ubuntu-22.04";
   const sess = "wb-fincal-1";
@@ -60,7 +56,7 @@ test("tooltipLines: ref, environment, session name, empty ones left out", () => 
 });
 
 test("nameDesk: desk order, named records kept, same result twice, no mutation", () => {
-  const N = load();
+  const N = WBConsoleName;
   const prefix = (r) => N.prefixOf(r === "~" ? "~" : r.split("/").pop());
   const desk = [
     { id: "a", repo: "owner/fincal" },
@@ -79,7 +75,7 @@ test("nameDesk: desk order, named records kept, same result twice, no mutation",
 });
 
 test("nameDesk: one count per prefix across repos, kinds and environments", () => {
-  const N = load();
+  const N = WBConsoleName;
   const prefix = (r) => N.prefixOf(r.split("/").pop());
   const out = N.nameDesk(
     [

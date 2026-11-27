@@ -6,15 +6,7 @@ import assert from "node:assert/strict";
 import { DECODE_DEADLINE_MS, frameQueue, readSocketEvent } from "../assets/ui/wb-console-frames.ts";
 import { TAG_COMMAND, TAG_TERMINAL } from "../assets/ui/wb-console-session.ts";
 import { forgetStalls } from "../assets/ui/wb-stall.ts";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
-const HERE = import.meta.dirname;
-
-// A reply a Rust test wrote to `fixtures/` (ADR-0070 Compliance, shared replies).
-function fixture(name) {
-  return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));
-}
+import { fixture, swapFetch } from "./harness.mjs";
 
 function terminalFrame(id, text) {
   return terminalBytes(id, new TextEncoder().encode(text));
@@ -271,13 +263,12 @@ test("a decode that ends after its deadline writes nothing", async () => {
   }
 });
 
-test("a replay decode past its deadline reports a stall", () => {
-  const prev = globalThis.fetch;
+test("a replay decode past its deadline reports a stall", (t) => {
   const kinds = [];
-  globalThis.fetch = (_url, init) => {
+  swapFetch(t, (_url, init) => {
     kinds.push(JSON.parse(init.body).kind);
     return Promise.resolve(new Response(null, { status: 204 }));
-  };
+  });
   forgetStalls();
   // oxlint-disable-next-line no-console -- the test checks the console output
   const warn = console.warn;
@@ -294,6 +285,5 @@ test("a replay decode past its deadline reports a stall", () => {
     mock.timers.reset();
     // oxlint-disable-next-line no-console -- the test checks the console output
     console.warn = warn;
-    globalThis.fetch = prev;
   }
 });

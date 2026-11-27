@@ -6,15 +6,11 @@ import { WBColumns } from "../assets/ui/wb-columns.ts";
 // The label builder the title uses; the column row must call the same one.
 import { WBConsoleName } from "../assets/ui/wb-console-name.ts";
 
-function load() {
-  return WBColumns;
-}
-
 // A grid of one row per column, from a flat list of ids.
 const cols = (...ids) => ids.map((id) => [id]);
 
 test("cap: no limit wider than a phone, one console at a phone width", () => {
-  const C = load();
+  const C = WBColumns;
   assert.equal(C.cap(561, 560), Infinity, "one pixel wider than a phone");
   assert.equal(C.cap(1366, 560), Infinity, "a notebook");
   assert.equal(C.cap(560, 560), 1, "exactly a phone");
@@ -28,7 +24,7 @@ test("cap: no limit wider than a phone, one console at a phone width", () => {
 });
 
 test("open right: a new column right of the caller's column, the others keep order", () => {
-  const C = load();
+  const C = WBColumns;
   const mid = cols("a", "b", "c");
   assert.deepEqual(C.open(mid, "b", "x", { cap: 4, dir: "right" }), { ok: true, columns: cols("a", "b", "x", "c") });
   assert.deepEqual(mid, cols("a", "b", "c"), "input untouched");
@@ -41,7 +37,7 @@ test("open right: a new column right of the caller's column, the others keep ord
 });
 
 test("open down: a new row directly below the caller, in its column", () => {
-  const C = load();
+  const C = WBColumns;
   const g = [["a", "b"], ["c"]];
   assert.deepEqual(C.open(g, "a", "x", { cap: 9, dir: "down" }).columns, [["a", "x", "b"], ["c"]]);
   assert.deepEqual(g, [["a", "b"], ["c"]], "input untouched");
@@ -50,7 +46,7 @@ test("open down: a new row directly below the caller, in its column", () => {
 });
 
 test("open: refusals carry a reason", () => {
-  const C = load();
+  const C = WBColumns;
   assert.deepEqual(C.open(cols("a", "b"), "a", "x", { cap: 2, dir: "right" }), {
     ok: false,
     reason: "No room for another console",
@@ -64,7 +60,7 @@ test("open: refusals carry a reason", () => {
 });
 
 test("restore: middle, first, last-but-one", () => {
-  const C = load();
+  const C = WBColumns;
   const mid = C.restore(cols("a", "b", "c"), "b");
   assert.deepEqual(mid.columns, cols("a", "c"));
   assert.equal(mid.unmax, null);
@@ -89,7 +85,7 @@ test("restore: middle, first, last-but-one", () => {
 });
 
 test("restore: a row leaves its column; an emptied column goes; the next in reading order is maximized", () => {
-  const C = load();
+  const C = WBColumns;
   const low = C.restore([["a", "b"], ["c"]], "b");
   assert.deepEqual(low.columns, cols("a", "c"));
   assert.equal(low.unmax, null);
@@ -105,7 +101,7 @@ test("restore: a row leaves its column; an emptied column goes; the next in read
 const one = (id, index, count) => ({ id, index, count, row: 0, rows: 1 });
 
 test("painted: only as many as the cap, the grid is kept", () => {
-  const C = load();
+  const C = WBColumns;
   assert.deepEqual(C.painted(cols("a", "b", "c"), 3), [one("a", 0, 3), one("b", 1, 3), one("c", 2, 3)]);
   const kept = cols("a", "b", "c");
   assert.deepEqual(C.painted(kept, 2), [one("a", 0, 2), one("b", 1, 2)]);
@@ -115,7 +111,7 @@ test("painted: only as many as the cap, the grid is kept", () => {
 });
 
 test("painted: rows carry their position in the column", () => {
-  const C = load();
+  const C = WBColumns;
   assert.deepEqual(C.painted([["a", "b"], ["c"]], Infinity), [
     { id: "a", index: 0, count: 2, row: 0, rows: 2 },
     { id: "b", index: 0, count: 2, row: 1, rows: 2 },
@@ -126,7 +122,7 @@ test("painted: rows carry their position in the column", () => {
 });
 
 test("keep: dead ids drop, and a column left empty goes", () => {
-  const C = load();
+  const C = WBColumns;
   assert.deepEqual(C.keep([["a", "b"], ["c"]], new Set(["a", "b"])), [["a", "b"]]);
   assert.deepEqual(C.keep([["a", "b"], ["c"]], new Set(["b", "c"])), cols("b", "c"));
 });
@@ -165,7 +161,7 @@ function roster() {
 }
 
 test("listFold: loose first, then fences in the Fence menu order, empty fences left out", () => {
-  const C = load();
+  const C = WBColumns;
   const groups = C.listFold(roster());
   assert.deepEqual(
     groups.map((g) => (g.fence ? g.fence.id : null)),
@@ -177,7 +173,7 @@ test("listFold: loose first, then fences in the Fence menu order, empty fences l
 
 // The maximized console opens the list: without its row it looked gone.
 test("listFold: the console that opened the list is a row that cannot be opened or swapped", () => {
-  const C = load();
+  const C = WBColumns;
   const self = C.listFold(roster()).flatMap((g) => g.rows).find((r) => r.id === "L1");
   assert.deepEqual(
     { enabled: self.enabled, reason: self.reason, swappable: self.swappable },
@@ -187,7 +183,7 @@ test("listFold: the console that opened the list is a row that cannot be opened 
 });
 
 test("listFold: rows carry agent, repo, state and the reason they are disabled", () => {
-  const C = load();
+  const C = WBColumns;
   const rows = new Map(C.listFold(roster()).flatMap((g) => g.rows).map((r) => [r.id, r]));
   const f2a = rows.get("F2a");
   assert.equal(f2a.enabled, false);
@@ -215,7 +211,7 @@ test("listFold: rows carry agent, repo, state and the reason they are disabled",
 });
 
 test("listFold: a detached fence the fence list does not name adds no group", () => {
-  const C = load();
+  const C = WBColumns;
   const r = roster();
   r.detached = { gone: [{ id: "Z", agent: "a", repo: null, kind: "agent" }] };
   const ids = C.listFold(r).flatMap((g) => g.rows.map((x) => x.id));
@@ -225,7 +221,7 @@ test("listFold: a detached fence the fence list does not name adds no group", ()
 // ADR-0066 §4: every row names its console, so no group head prints a repo,
 // even when every row of the group shares one.
 test("listFold: a group is its fence and its rows, with no shared repo", () => {
-  const C = load();
+  const C = WBColumns;
   for (const g of C.listFold(roster())) {
     assert.deepEqual(Object.keys(g).toSorted(), ["fence", "rows"]);
     assert.ok(!("shared" in g) && !("repo" in g));
@@ -233,7 +229,7 @@ test("listFold: a group is its fence and its rows, with no shared repo", () => {
 });
 
 test("rowLabel: the console label builder, as in the title", () => {
-  const C = load();
+  const C = WBColumns;
   const N = WBConsoleName;
   assert.equal(C.rowLabel({ name: "fincal #1", agent: "claude", repo: "o/r" }, N.consoleLabel), "fincal #1 (claude)");
   assert.equal(C.rowLabel({ name: "home #2", agent: "console", repo: null }, N.consoleLabel), "home #2 (console)");
@@ -244,7 +240,7 @@ const ids = (gs) => gs.flatMap((g) => g.rows.map((r) => r.id));
 const label = (ref) => (ref === "C:/r" ? "owner/ralphy · WSL: Ubuntu" : ref);
 
 test("filterGroups: console name, agent, repo text and fence name match; empty groups drop", () => {
-  const C = load();
+  const C = WBColumns;
   const groups = C.listFold(roster());
   assert.equal(C.filterGroups(groups, "", label), groups, "no query: the same list");
   assert.equal(C.filterGroups(groups, "   ", label), groups);
@@ -257,7 +253,7 @@ test("filterGroups: console name, agent, repo text and fence name match; empty g
 });
 
 test("swap: replace the row's console; the old one leaves the grid", () => {
-  const C = load();
+  const C = WBColumns;
   assert.deepEqual(C.swap(cols("a", "b", "c"), "b", "x"), {
     ok: true,
     columns: cols("a", "x", "c"),
@@ -275,7 +271,7 @@ test("swap: replace the row's console; the old one leaves the grid", () => {
 });
 
 test("swap: a console already in a row changes places", () => {
-  const C = load();
+  const C = WBColumns;
   assert.deepEqual(C.swap(cols("a", "b", "c"), "c", "b").columns, cols("a", "c", "b"));
   assert.equal(C.swap(cols("a", "b", "c"), "c", "b").unmax, null);
   // With the first console, either way: it stays in the grid, so the paint
@@ -291,18 +287,18 @@ test("swap: a console already in a row changes places", () => {
 });
 
 test("swap: a lone maximized console is swapped for another", () => {
-  const C = load();
+  const C = WBColumns;
   assert.deepEqual(C.swap([], "a", "x"), { ok: true, columns: cols("x"), ended: true, unmax: "a" });
 });
 
 test("swap: itself, or a caller not in the grid, changes nothing", () => {
-  const C = load();
+  const C = WBColumns;
   assert.equal(C.swap(cols("a", "b"), "b", "b").ok, false);
   assert.equal(C.swap(cols("a", "b"), "z", "x").ok, false);
 });
 
 test("listFold: at the cap a row cannot open a column but can be swapped in", () => {
-  const C = load();
+  const C = WBColumns;
   const r = roster();
   r.full = true;
   const rows = new Map(C.listFold(r).flatMap((g) => g.rows).map((x) => [x.id, x]));
@@ -317,7 +313,7 @@ test("listFold: at the cap a row cannot open a column but can be swapped in", ()
 });
 
 test("listFold: the row that cannot be swapped is the column that opened the list, not the leftmost", () => {
-  const C = load();
+  const C = WBColumns;
   const r = roster();
   r.from = "F2a";
   const rows = new Map(C.listFold(r).flatMap((g) => g.rows).map((x) => [x.id, x]));
@@ -326,7 +322,7 @@ test("listFold: the row that cannot be swapped is the column that opened the lis
 });
 
 test("toStored: a grid of two or more, as a copy; below two, nothing", () => {
-  const C = load();
+  const C = WBColumns;
   assert.equal(C.toStored([]), null);
   assert.equal(C.toStored(cols("a")), null);
   const grid = [["a", "b"]];
@@ -336,7 +332,7 @@ test("toStored: a grid of two or more, as a copy; below two, nothing", () => {
 });
 
 test("fromStored: dead ids drop, and the first id must be the desk's maximized console", () => {
-  const C = load();
+  const C = WBColumns;
   const aMax = [
     { id: "a", max: true },
     { id: "b", max: false },
@@ -361,7 +357,7 @@ test("fromStored: dead ids drop, and the first id must be the desk's maximized c
 });
 
 test("fromStored: a flat list stored before rows reads as one row per column", () => {
-  const C = load();
+  const C = WBColumns;
   const aMax = [
     { id: "a", max: true },
     { id: "b", max: false },
@@ -371,7 +367,7 @@ test("fromStored: a flat list stored before rows reads as one row per column", (
 });
 
 test("dirOf: right or down; anything else is right", () => {
-  const C = load();
+  const C = WBColumns;
   assert.equal(C.dirOf("down"), "down");
   assert.equal(C.dirOf("right"), "right");
   assert.equal(C.dirOf(null), "right");
@@ -379,7 +375,7 @@ test("dirOf: right or down; anything else is right", () => {
 });
 
 test("painted: a falling cap hides the extra consoles, a rising cap brings them back", () => {
-  const C = load();
+  const C = WBColumns;
   const grid = cols("a", "b", "c");
   const low = C.painted(grid, 2);
   assert.deepEqual(
@@ -397,14 +393,14 @@ test("painted: a falling cap hides the extra consoles, a rising cap brings them 
 });
 
 test("focusAfter: the focus stays on a painted console, else the last painted", () => {
-  const C = load();
+  const C = WBColumns;
   assert.equal(C.focusAfter(["a", "b"], "c"), "b");
   assert.equal(C.focusAfter(["a", "b"], "a"), "a");
   assert.equal(C.focusAfter([], "a"), null);
 });
 
 test("focusMove x: walks the painted columns and wraps at both ends", () => {
-  const C = load();
+  const C = WBColumns;
   const p = C.painted(cols("a", "b", "c"), Infinity);
   assert.equal(C.focusMove(p, "c", "x", 1), "a");
   assert.equal(C.focusMove(p, "a", "x", -1), "c");
@@ -416,7 +412,7 @@ test("focusMove x: walks the painted columns and wraps at both ends", () => {
 });
 
 test("focusMove x: the same row in the next column, or its last row", () => {
-  const C = load();
+  const C = WBColumns;
   const p = C.painted([["a", "b", "c"], ["d", "e"], ["f"]], Infinity);
   assert.equal(C.focusMove(p, "b", "x", 1), "e", "same position");
   assert.equal(C.focusMove(p, "c", "x", 1), "e", "a shorter column: its last row");
@@ -425,7 +421,7 @@ test("focusMove x: the same row in the next column, or its last row", () => {
 });
 
 test("focusMove y: walks the rows of one column and wraps", () => {
-  const C = load();
+  const C = WBColumns;
   const p = C.painted([["a", "b", "c"], ["d"]], Infinity);
   assert.equal(C.focusMove(p, "a", "y", 1), "b");
   assert.equal(C.focusMove(p, "c", "y", 1), "a");
@@ -434,7 +430,7 @@ test("focusMove y: walks the rows of one column and wraps", () => {
 });
 
 test("external: an end, a remote maximize and a remote move leave the grid alone", () => {
-  const C = load();
+  const C = WBColumns;
   for (const event of [
     { type: "ended", id: "b" },
     { type: "maximized", id: "b" },
@@ -447,7 +443,7 @@ test("external: an end, a remote maximize and a remote move leave the grid alone
 });
 
 test("external: a console closed elsewhere leaves the grid and is never unmaximized", () => {
-  const C = load();
+  const C = WBColumns;
   const mid = C.external(cols("a", "b", "c"), { type: "closed", ids: ["b"] });
   assert.deepEqual(mid.columns, cols("a", "c"));
   assert.equal(mid.changed, true);
@@ -463,7 +459,7 @@ test("external: a console closed elsewhere leaves the grid and is never unmaximi
 });
 
 test("external: a detach removes the fence's consoles; the old first console is unmaximized", () => {
-  const C = load();
+  const C = WBColumns;
   const r = C.external(cols("a", "b", "c"), { type: "detached", ids: ["a", "z"] });
   assert.deepEqual(r.columns, cols("b", "c"));
   assert.equal(r.changed, true);
@@ -479,7 +475,7 @@ test("external: a detach removes the fence's consoles; the old first console is 
 const win = (id, left, top, width = 400) => ({ id, rect: { left, top, width, height: 300 } });
 
 test("fromRects: stacked windows are rows, windows side by side are columns", () => {
-  const C = load();
+  const C = WBColumns;
   // A above B; C to the right; D overlaps C by a quarter of its width.
   const items = [win("a", 0, 0), win("b", 20, 320), win("c", 420, 0), win("d", 720, 320)];
   assert.deepEqual(C.fromRects(items), [["a", "b"], ["c"], ["d"]]);
@@ -492,7 +488,7 @@ test("fromRects: stacked windows are rows, windows side by side are columns", ()
 });
 
 test("fromRects: a staircase is compared with each column's first window only", () => {
-  const C = load();
+  const C = WBColumns;
   // Each step moves 150 px right: 250 of 400 overlap the step before, but the
   // third step overlaps the first by only 100.
   const stairs = [win("a", 0, 0), win("b", 150, 100), win("c", 300, 200), win("d", 450, 300)];
@@ -504,7 +500,7 @@ test("fromRects: a staircase is compared with each column's first window only", 
 });
 
 test("fromRects: no window, one window", () => {
-  const C = load();
+  const C = WBColumns;
   assert.deepEqual(C.fromRects([]), []);
   assert.deepEqual(C.fromRects(), []);
   assert.deepEqual(C.fromRects([win("a", 10, 10)]), [["a"]]);
@@ -514,7 +510,7 @@ test("fromRects: no window, one window", () => {
 // does not trust that: a window named by two fences is listed once, under the
 // fence `membership` names first.
 test("listFold: a window in two fences is listed once, under the first fence", () => {
-  const C = load();
+  const C = WBColumns;
   const groups = C.listFold({
     rows: [{ id: "W", agent: "claude", kind: "agent" }],
     fences: [
@@ -530,7 +526,7 @@ test("listFold: a window in two fences is listed once, under the first fence", (
 });
 
 test("listFold: missing lists fold to nothing, and a missing name, repo or state reads null", () => {
-  const C = load();
+  const C = WBColumns;
   assert.deepEqual(C.listFold({ rows: null, fences: null, membership: null, detached: null, columns: null }), []);
   const groups = C.listFold({
     rows: [{ id: "A", agent: "claude", kind: "agent" }],

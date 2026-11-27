@@ -3,6 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createDormancy } from "../assets/ui/wb-console-dormancy.ts";
+import { fakeClassList } from "./harness.mjs";
 
 // A page that records every listener added to it, as `<target>:<type>`.
 function page() {
@@ -77,13 +78,12 @@ test("hiding the Consoles tab puts its consoles to sleep, and showing it wakes t
   const p = page();
   const disposed = [];
   const attached = [];
-  const classes = new Set();
   const body = { replaceWith() {} };
   const win = {
     _visible: true,
     _termWiring: {},
     _term: { sessionId: 7, watching: false, dispose: (why) => disposed.push(why) },
-    classList: { contains: (c) => classes.has(c), add: (c) => classes.add(c), remove: (c) => classes.delete(c) },
+    classList: fakeClassList(),
     querySelector: () => body,
   };
   let shown = true;
