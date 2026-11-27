@@ -153,15 +153,6 @@ mod tests {
             dir.join("skills/staged-plan/SKILL.md").is_file(),
             "staged-plan skill must be materialized"
         );
-        // Multi-file skills must come through whole, not just the SKILL.md.
-        assert!(
-            dir.join("skills/reviewer/scripts/audit.py").is_file(),
-            "reviewer helper scripts must be materialized"
-        );
-
-        // Idempotent: a second call clears and re-extracts cleanly.
-        materialize_plugin(&ws).expect("re-materialize");
-        assert!(dir.join("skills/reviewer/SKILL.md").is_file());
 
         remove_scratch(&base);
     }

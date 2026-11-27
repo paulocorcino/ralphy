@@ -41,14 +41,6 @@ pub(crate) fn materialize_codex_skills(ws: &Workspace) -> Result<std::path::Path
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-
-    /// A scratch directory may not exist, and a failed cleanup must not fail a test.
-    fn remove_scratch(path: &std::path::Path) {
-        if let Err(e) = fs::remove_dir_all(path) {
-            tracing::debug!("could not remove scratch dir {}: {e}", path.display());
-        }
-    }
 
     /// ADR-0041 D9: the dance lives in `ralphy-adapter-support`, and this adapter
     /// must keep CALLING it rather than growing a second copy. Fragments are
@@ -68,116 +60,24 @@ mod tests {
         );
     }
 
+    /// The codex part of skill exposure: the discovery folder is `.agents/skills`
+    /// and the embedded skills resolve there. The link, store and ignore rules
+    /// belong to `expose_skills` in the shared crate.
     #[test]
-    fn materialize_codex_skills_extracts_required_skills() {
-        let base = std::env::temp_dir().join(format!("ralphy-codex-skills-{}", std::process::id()));
-        remove_scratch(&base);
-        fs::create_dir_all(&base).unwrap();
-        let ws = Workspace::new(&base);
+    fn codex_finds_the_embedded_skills_in_agents_skills() {
+        let base = tempfile::tempdir().expect("a temp dir");
+        let ws = Workspace::new(base.path());
 
         let skills_dir = materialize_codex_skills(&ws).expect("materialize");
+
         assert_eq!(skills_dir, ws.repo_root().join(".agents").join("skills"));
-
-        // The real skill content lives in the canonical `.ralphy/skills` store.
-        let store = ws.ralphy_dir().join("skills");
-        assert!(
-            store.join("reviewer/SKILL.md").is_file(),
-            "reviewer/SKILL.md must land in the .ralphy/skills store"
-        );
-        assert!(
-            ws.ralphy_dir().join(".gitignore").is_file(),
-            ".ralphy/.gitignore must be written"
-        );
-
-        // Codex's discovery path resolves each skill (through the symlink, or the
-        // Windows copy fallback) to the same content.
-        assert!(
-            skills_dir.join("reviewer/SKILL.md").is_file(),
-            "reviewer/SKILL.md must resolve under .agents/skills"
-        );
-        assert!(
-            skills_dir.join("staged-plan/SKILL.md").is_file(),
-            "staged-plan/SKILL.md must resolve under .agents/skills"
-        );
-        assert!(
-            skills_dir.join("reviewer/scripts/audit.py").is_file(),
-            "reviewer/scripts/audit.py must resolve under .agents/skills"
-        );
-
-        // The merged ignore lists our skills without a `*` that would swallow the
-        // user's sibling skills in `.agents/skills`.
-        let gi = fs::read_to_string(skills_dir.join(".gitignore")).expect("read .gitignore");
-        assert!(
-            gi.lines().any(|l| l.trim() == "/reviewer"),
-            "gitignore: {gi:?}"
-        );
-        assert!(
-            gi.lines().any(|l| l.trim() == "/staged-plan"),
-            "gitignore: {gi:?}"
-        );
-        // The ignore self-ignores, so `.gitignore` is not the lone untracked file
-        // that would surface `.agents/` in `git status` and dirty the tree.
-        assert!(
-            gi.lines().any(|l| l.trim() == "/.gitignore"),
-            "gitignore must self-ignore: {gi:?}"
-        );
-
-        // Idempotent: a second call re-links cleanly and adds no duplicate entries.
-        materialize_codex_skills(&ws).expect("re-materialize");
-        assert!(skills_dir.join("reviewer/SKILL.md").is_file());
-        let gi2 = fs::read_to_string(skills_dir.join(".gitignore")).expect("read .gitignore");
-        assert_eq!(
-            gi2.lines().filter(|l| l.trim() == "/reviewer").count(),
-            1,
-            "re-materialize must not duplicate ignore entries: {gi2:?}"
-        );
-
-        remove_scratch(&base);
-    }
-
-    #[test]
-    fn materialize_codex_skills_preserves_user_skills() {
-        // The defect this guards: materializing ralphy's skills must NOT wipe a
-        // skill the user already keeps in the shared `.agents/skills` location, nor
-        // overwrite their `.agents/.gitignore`. Only ralphy's own subdirs are touched.
-        let base =
-            std::env::temp_dir().join(format!("ralphy-codex-userskill-{}", std::process::id()));
-        remove_scratch(&base);
-        fs::create_dir_all(&base).unwrap();
-        let ws = Workspace::new(&base);
-
-        // A pre-existing user skill and a user-maintained .agents/skills/.gitignore.
-        let user_skill = ws.repo_root().join(".agents/skills/my-skill");
-        fs::create_dir_all(&user_skill).unwrap();
-        fs::write(user_skill.join("SKILL.md"), b"user skill").unwrap();
-        let user_gitignore = ws.repo_root().join(".agents/skills/.gitignore");
-        fs::write(&user_gitignore, b"my-secret\n").unwrap();
-
-        materialize_codex_skills(&ws).expect("materialize");
-
-        // ralphy's skills landed...
-        assert!(ws
-            .repo_root()
-            .join(".agents/skills/reviewer/SKILL.md")
-            .is_file());
-        // ...and the user's skill survived untouched.
-        assert!(
-            user_skill.join("SKILL.md").is_file(),
-            "user skill must be preserved"
-        );
-        // The user's gitignore line is preserved and ours are merged in, not
-        // overwritten.
-        let gi = fs::read_to_string(&user_gitignore).unwrap();
-        assert!(
-            gi.lines().any(|l| l.trim() == "my-secret"),
-            "gitignore: {gi:?}"
-        );
-        assert!(
-            gi.lines().any(|l| l.trim() == "/reviewer"),
-            "gitignore: {gi:?}"
-        );
-
-        remove_scratch(&base);
+        for file in [
+            "reviewer/SKILL.md",
+            "staged-plan/SKILL.md",
+            "reviewer/scripts/audit.py",
+        ] {
+            assert!(skills_dir.join(file).is_file(), "{file} must resolve");
+        }
     }
 
     #[test]

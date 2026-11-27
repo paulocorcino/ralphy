@@ -177,41 +177,41 @@ mod tests {
 
     // ── classify_opencode_outcome ───────────────────────────────────────────
 
+    /// Opencode's own reading of the exit status and the `error` event; the ladder
+    /// is tested once in the shared crate.
     #[test]
-    fn classify_stuck_on_non_zero_exit() {
-        // A non-zero exit is Stuck even when the output carries a DONE sentinel.
-        let text = "RALPHY_DONE_EXIT\n";
-        assert_eq!(
-            classify_opencode_outcome(
-                false,
-                false,
-                true,
-                Reported {
-                    text,
-                    saw_error: false,
-                    limit: None
-                }
-            ),
-            Outcome::Stuck
-        );
-    }
-
-    #[test]
-    fn classify_stuck_on_error_event() {
-        // A JSON `error` event downgrades an otherwise-clean DONE claim to Stuck.
-        let text = "RALPHY_DONE_EXIT\n";
-        assert_eq!(
-            classify_opencode_outcome(
-                true,
-                false,
-                true,
-                Reported {
-                    text,
-                    saw_error: true,
-                    limit: None
-                }
-            ),
-            Outcome::Stuck
-        );
+    fn opencode_reads_the_exit_status_and_error_event_before_the_ladder() {
+        struct Row {
+            name: &'static str,
+            exited_cleanly: bool,
+            saw_error: bool,
+        }
+        // Each call carries a DONE sentinel and a commit, so only the signal under test blocks it.
+        let rows = [
+            Row {
+                name: "a non-zero exit is stuck",
+                exited_cleanly: false,
+                saw_error: false,
+            },
+            Row {
+                name: "an error event is stuck",
+                exited_cleanly: true,
+                saw_error: true,
+            },
+        ];
+        for row in rows {
+            let reported = Reported {
+                text: "RALPHY_DONE_EXIT
+",
+                saw_error: row.saw_error,
+                limit: None,
+            };
+            assert_eq!(
+                classify_opencode_outcome(row.exited_cleanly, false, true, reported),
+                Outcome::Stuck,
+                "{}",
+                row.name
+            );
+        }
     }
 }

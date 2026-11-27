@@ -154,4 +154,17 @@ mod tests {
             .with_run_deadline(Some(rd));
         assert!(clamped.deadline(UNBOUNDED) <= rd);
     }
+
+    #[test]
+    fn budget_builder_sets_each_field_and_the_run_deadline_wins() {
+        let rd = Instant::now() + Duration::from_secs(1);
+        let budget = IssueBudget::new(30)
+            .with_max_minutes_per_issue(120)
+            .with_run_deadline(Some(rd))
+            .with_idle_minutes(7);
+        assert_eq!(budget.max_minutes_per_issue, 120);
+        assert_eq!(budget.idle_minutes, 7);
+        assert_eq!(budget.deadline(UNBOUNDED), rd);
+        assert_eq!(IssueBudget::new(30).max_minutes_per_issue, 30);
+    }
 }
