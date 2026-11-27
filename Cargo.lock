@@ -2111,7 +2111,6 @@ name = "ralphy-agent-antigravity"
 version = "0.1.0-rc.47"
 dependencies = [
  "anyhow",
- "include_dir",
  "ralphy-adapter-support",
  "ralphy-core",
  "ralphy-pricing",
@@ -2147,7 +2146,6 @@ name = "ralphy-agent-codex"
 version = "0.1.0-rc.47"
 dependencies = [
  "anyhow",
- "include_dir",
  "jiff",
  "ralphy-adapter-support",
  "ralphy-core",
@@ -2166,11 +2164,9 @@ name = "ralphy-agent-copilot"
 version = "0.1.0-rc.47"
 dependencies = [
  "anyhow",
- "include_dir",
  "ralphy-adapter-support",
  "ralphy-core",
  "ralphy-usage-scan",
- "rusqlite",
  "serde",
  "serde_json",
  "tempfile",
@@ -2183,7 +2179,6 @@ name = "ralphy-agent-cursor"
 version = "0.1.0-rc.47"
 dependencies = [
  "anyhow",
- "include_dir",
  "ralphy-adapter-support",
  "ralphy-core",
  "ralphy-proc-util",
@@ -2199,7 +2194,6 @@ name = "ralphy-agent-kimi"
 version = "0.1.0-rc.47"
 dependencies = [
  "anyhow",
- "include_dir",
  "ralphy-adapter-support",
  "ralphy-core",
  "serde_json",
@@ -2212,7 +2206,6 @@ name = "ralphy-agent-opencode"
 version = "0.1.0-rc.47"
 dependencies = [
  "anyhow",
- "include_dir",
  "ralphy-adapter-support",
  "ralphy-core",
  "ralphy-proc-util",
