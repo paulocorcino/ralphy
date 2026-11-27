@@ -203,3 +203,48 @@ fn last_release_fixtures_parse() {
         assert_eq!(rewritten, written, "the {form} form keeps its bytes");
     }
 }
+
+#[test]
+fn an_offset_minus_sign_reads_as_hyphen() {
+    for (name, text, want) in [
+        ("minus sign", "2026-11-26T10:00:00\u{2212}03:00", -3 * 3600),
+        ("hyphen", "2026-11-26T10:00:00-03:00", -3 * 3600),
+    ] {
+        let offset = parse_rfc3339(text).map(|(_, o)| o.seconds());
+        assert_eq!(offset, Ok(want), "{name}");
+    }
+}
+
+/// chrono 0.4.45 `format/formatting.rs` rounds the offset seconds to the
+/// nearest minute, `(abs + 30) / 60`, after it takes the sign.
+#[test]
+fn an_offset_with_seconds_rounds_to_the_minute() {
+    for (name, offset, want) in [
+        ("9 min 30 s", 570, "1970-01-01T00:09:30+00:10"),
+        ("-9 min 30 s", -570, "1969-12-31T23:50:30-00:10"),
+        ("9 min 29 s", 569, "1970-01-01T00:09:29+00:09"),
+        ("-10 s", -10, "1969-12-31T23:59:50-00:00"),
+    ] {
+        let (t, at) = instant((0, 0, offset));
+        assert_eq!(rfc3339(t, at), want, "{name}");
+    }
+}
+
+#[test]
+fn millis_z_before_1970() {
+    for (name, parts, want) in [
+        (
+            "half a second before",
+            (-1, 500_000_000, 0),
+            "1969-12-31T23:59:59.500Z",
+        ),
+        (
+            "one millisecond before",
+            (-1, 999_000_000, 0),
+            "1969-12-31T23:59:59.999Z",
+        ),
+    ] {
+        let (t, _) = instant(parts);
+        assert_eq!(millis_z(t), want, "{name}");
+    }
+}

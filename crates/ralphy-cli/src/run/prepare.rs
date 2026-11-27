@@ -13,29 +13,22 @@ use crate::{config, runlock, runstate, telegram};
 
 /// The local time as RFC 3339, with its own numeric offset.
 pub(crate) fn local_rfc3339_now() -> String {
-    let now = jiff::Timestamp::now();
-    ralphy_time::rfc3339(now, jiff::tz::TimeZone::system().to_offset(now))
+    local_rfc3339_at(jiff::Timestamp::now(), &jiff::tz::TimeZone::system())
+}
+
+fn local_rfc3339_at(now: jiff::Timestamp, tz: &jiff::tz::TimeZone) -> String {
+    ralphy_time::rfc3339(now, tz.to_offset(now))
 }
 
 /// The `YYYYMMDD-HHMMSS` local-time stamp that names a run folder.
 pub(crate) fn run_stamp() -> String {
-    jiff::Timestamp::now()
-        .to_zoned_datetime(jiff::tz::TimeZone::system())
-        .strftime("%Y%m%d-%H%M%S")
-        .to_string()
+    run_stamp_at(jiff::Timestamp::now(), jiff::tz::TimeZone::system())
 }
 
-/// A lock's `started_at` as `YYYY-MM-DD HH:MM:SS` at its own offset; the raw text when unreadable.
-fn since_text(started_at: &str) -> String {
-    ralphy_time::parse_rfc3339(started_at).map_or_else(
-        |_| started_at.to_owned(),
-        |(at, offset)| {
-            offset
-                .to_datetime(at)
-                .strftime("%Y-%m-%d %H:%M:%S")
-                .to_string()
-        },
-    )
+fn run_stamp_at(now: jiff::Timestamp, tz: jiff::tz::TimeZone) -> String {
+    now.to_zoned_datetime(tz)
+        .strftime("%Y%m%d-%H%M%S")
+        .to_string()
 }
 
 /// The `--if-idle` deferral (#222): a live run holds the lock, so this run
@@ -48,7 +41,7 @@ pub(super) fn defer_to_live_run(
     ws: &Workspace,
     runid: &str,
 ) {
-    let since = since_text(&info.started_at);
+    let since = runlock::since_text(&info.started_at);
     let msg = format!("skipped: run in progress since {since}, pid {}", info.pid);
     let repo_root = ws.repo_root();
     // No branch was cut: report the branch the repo is on.
@@ -261,29 +254,24 @@ pub(super) fn snapshot_ctx(
 mod tests {
     use super::*;
 
-    #[test]
-    fn since_text_keeps_the_offset_of_the_lock() {
-        assert_eq!(
-            since_text("2026-11-26T10:05:09.123-03:00"),
-            "2026-11-26 10:05:09"
-        );
-        assert_eq!(since_text("not a time"), "not a time");
-    }
-
-    #[test]
-    fn the_run_stamp_is_date_dash_time() {
-        let shape = regex::Regex::new(r"^\d{8}-\d{6}$").expect("regex");
-        let stamp = run_stamp();
-        assert!(shape.is_match(&stamp), "stamp: {stamp}");
-    }
-
-    #[test]
-    fn started_at_keeps_the_local_rfc3339_form() {
-        let shape = regex::Regex::new(
-            r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3}|\.\d{6}|\.\d{9})?([+-]\d{2}:\d{2})$",
+    /// 2026-11-26T13:05:09.123Z and the zone three hours behind UTC.
+    fn fixed() -> (jiff::Timestamp, jiff::tz::TimeZone) {
+        let at = jiff::Timestamp::new(1_795_698_309, 123_000_000).expect("a valid instant");
+        (
+            at,
+            jiff::tz::TimeZone::fixed(jiff::tz::Offset::constant(-3)),
         )
-        .expect("regex");
-        let at = local_rfc3339_now();
-        assert!(shape.is_match(&at), "started_at: {at}");
+    }
+
+    #[test]
+    fn run_stamp_at_a_fixed_zone() {
+        let (at, tz) = fixed();
+        assert_eq!(run_stamp_at(at, tz), "20261126-100509");
+    }
+
+    #[test]
+    fn local_rfc3339_at_a_fixed_zone() {
+        let (at, tz) = fixed();
+        assert_eq!(local_rfc3339_at(at, &tz), "2026-11-26T10:05:09.123-03:00");
     }
 }

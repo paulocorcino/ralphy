@@ -476,12 +476,13 @@ pub(crate) fn prune(path: &Path, now: i64) -> Result<()> {
 }
 
 fn line_time(line: &str) -> Option<i64> {
-    #[derive(serde::Deserialize)]
-    struct At {
-        at: String,
-    }
-    let at: At = serde_json::from_str(line).ok()?;
-    ralphy_time::parse_rfc3339(&at.at)
+    let entry: serde_json::Value = serde_json::from_str(line).ok()?;
+    at_secs(entry.get("at")?.as_str()?)
+}
+
+/// An audit `at` stamp as Unix seconds.
+pub(crate) fn at_secs(at: &str) -> Option<i64> {
+    ralphy_time::parse_rfc3339(at)
         .ok()
         .map(|(t, _)| t.as_second())
 }

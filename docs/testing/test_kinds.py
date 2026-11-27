@@ -194,7 +194,16 @@ def includes_source(raw: str) -> bool:
             return True
     return False
 JS_READ = re.compile(r"\breadFileSync\s*\(")
-JS_HELPERS = ("partMarkup", "assembledPage")
+HARNESS = ROOT / "crates" / "ralphy-daemon" / "ui-tests" / "harness.mjs"
+
+
+def js_source_helpers(harness: str) -> set[str]:
+    """The exported functions of the node harness that read a file."""
+    defs = js_defs(harness, strip_code(harness, True))
+    return {n for n, b in defs.items() if b.startswith("export") and JS_READ.search(b)}
+
+
+JS_HELPERS: set[str] = set()
 JS_FN_TEXT = re.compile(r"\bString\(\s*([A-Za-z_$][\w$]*)\s*\)|\b([A-Za-z_$][\w$]*)\.toString\(\)")
 
 
@@ -210,7 +219,14 @@ def reads_source(raw: str, js: bool, functions: set[str]) -> bool:
         return any((m.group(1) or m.group(2)) in functions for m in JS_FN_TEXT.finditer(raw))
     if includes_source(raw) or RUST_UI_DIR.search(raw):
         return True
-    return bool(RUST_FS_READ.search(raw)) and bool(SOURCE_PATH.search(raw))
+    return bool(RUST_FS_READ.search(raw)) and any(names_source(raw, m) for m in SOURCE_PATH.finditer(raw))
+
+
+def names_source(raw: str, m: re.Match) -> bool:
+    """True when the literal `m` is a source path: a message has a space, and a name on a
+    temp-dir line is a file the test writes."""
+    line = raw[raw.rfind("\n", 0, m.start()) + 1: raw.find("\n", m.end())]
+    return " " not in m.group(0) and not re.search(r"\btemp_?dir\b|tempfile", line)
 
 
 # ---------------------------------------------------------------- tests in a file
@@ -245,10 +261,12 @@ JS_DEF = re.compile(
 
 
 def test_region(text: str, rel: str) -> int:
-    """Where the tests of a `src` file start: the `#[cfg(test)]` line followed by `mod`."""
+    """Where the tests of a `src` file start: `#[cfg(test)]` on an inline `mod name {`."""
     if "/tests/" in rel or rel.endswith("/tests.rs") or "/src/" not in rel:
         return 0
-    m = re.search(r"#\[cfg\(test\)\]\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?mod\s", text)
+    m = re.search(
+        r"#\[cfg\(test\)\]\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{", text
+    )
     return m.start() if m else len(text)
 
 
@@ -509,14 +527,35 @@ SNIPPETS = [
      'r!("../Cargo.toml");\n}\n}', "ratchet"),
     ("crates/a/src/x.rs", '#[cfg(test)]\nmod tests {\n#[test]\nfn m() {\n    include_str!("../C'
      'argo.toml");\n    include_str!("lib.rs");\n}\n}', "pin"),
+    ("crates/a/src/x.rs", '#[cfg(test)]\nmod cleanup;\nfn prod() { include_str!("a.ts"); }\n'
+     '#[cfg(test)]\nmod tests {\n#[test]\nfn b() { prod(); }\n}', "behavior"),
+    ("crates/a/tests/x.rs", '#[test]\nfn c() {\n    let json = std::fs::read_to_string(&path)'
+     '.expect("a catalog file is readable");\n    assert!(n > 0, "assets/wording holds no file");'
+     '\n}', "integration"),
+    ("crates/a/src/x.rs", '#[cfg(test)]\nmod tests {\n#[test]\nfn w() {\n    let tmp = std::env'
+     '::temp_dir().join("ralphy-assets-1");\n    let t = fs::read_to_string(tmp.join(".gitignore"))'
+     ';\n}\n}', "behavior"),
+    ("crates/a/ui-tests/x.test.mjs", 'test("p", () => {\n  assert.match(componentText("wb-a"),'
+     ' /x/);\n});', "pin"),
 ]
 MARKED = ("crates/a/src/x.rs", '#[cfg(test)]\nmod tests {\n// pin: the shell is wired — no node '
           'test loads it\n#[test]\nfn p() { include_str!("../assets/ui/a.ts"); }\n#[test]\nfn q() '
           '{ include_str!("../assets/ui/b.ts"); }\n}')
 
 
+SELFTEST_HARNESS = (
+    'export function partMarkup(p) {\n  return readFileSync(p, "utf8");\n}\n'
+    'export function componentText(n) {\n  return readFileSync(n, "utf8");\n}\n'
+    "export function loadShell() {\n  return 1;\n}\n"
+)
+
+
 def selftest() -> int:
+    global JS_HELPERS
+    JS_HELPERS = js_source_helpers(SELFTEST_HARNESS)
     bad = []
+    if JS_HELPERS != {"partMarkup", "componentText"}:
+        bad.append(f"harness helpers: got {sorted(JS_HELPERS)}")
     for rel, text, want in SNIPPETS:
         got = [t.kind for t in classify(rel, text).tests]
         if got != (want if isinstance(want, list) else [want]):
@@ -543,6 +582,9 @@ def main(argv: list[str]) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     mode, rest = (argv[0], argv[1:]) if argv else ("--help", [])
+    global JS_HELPERS
+    if mode != "--selftest" and HARNESS.is_file():
+        JS_HELPERS = js_source_helpers(HARNESS.read_text(encoding="utf-8"))
     if mode == "--write":
         DOC.write_text(render(classify_all()), encoding="utf-8", newline="\n")
         return 0
