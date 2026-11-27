@@ -106,18 +106,6 @@ fn the_requested_model_is_attributed_and_auto_is_named() {
     assert_eq!(requested_model_usage(None).input, 0);
 }
 
-#[test]
-fn accepts_images_is_false() {
-    // Read through a binding: a bare `assert!(!CONST)` is constant-folded and
-    // clippy rejects it, but the invariant is still worth pinning here — the
-    // CLI's onboarding gate asserts the same const from the other side.
-    let accepts: bool = ACCEPTS_IMAGES;
-    assert!(
-        !accepts,
-        "ADR-0042 D15: no attachment channel exists in the headless surface"
-    );
-}
-
 /// ADR-0042 D3: this vendor opens with ~8.1 s of silence and shows inter-record
 /// gaps up to ~7.4 s, so a watchdog in seconds would reap healthy runs. Unlike
 /// `max_minutes_per_issue`, `IssueBudget::new` leaves `idle_minutes` at `0` —

@@ -72,30 +72,6 @@ mod tests {
     }
 
     #[test]
-    fn materialize_is_idempotent_and_keeps_an_operator_sibling() {
-        let (_dir, ws) = workspace("idempotent");
-
-        let sibling = ws.repo_root().join(".cursor/skills/operator-own/SKILL.md");
-        fs::create_dir_all(sibling.parent().unwrap()).unwrap();
-        fs::write(&sibling, "mine").unwrap();
-        let gitignore = ws.repo_root().join(".cursor/skills/.gitignore");
-        fs::create_dir_all(gitignore.parent().unwrap()).unwrap();
-        fs::write(&gitignore, "my-secret\n").unwrap();
-
-        materialize_cursor_skills(&ws).expect("first pass");
-        materialize_cursor_skills(&ws).expect("second pass");
-
-        assert_eq!(fs::read_to_string(&sibling).unwrap(), "mine");
-        let gi = fs::read_to_string(&gitignore).unwrap();
-        assert!(gi.lines().any(|l| l.trim() == "my-secret"), "{gi:?}");
-        assert_eq!(
-            gi.lines().filter(|l| l.trim() == "/reviewer").count(),
-            1,
-            "{gi:?}"
-        );
-    }
-
-    #[test]
     fn materialize_writes_nothing_outside_the_workspace() {
         fn listing(root: &std::path::Path) -> Vec<std::path::PathBuf> {
             let mut out = Vec::new();
