@@ -176,7 +176,7 @@ session go on when Ralphy cannot prove that its hooks run, so the guard may not 
 Only `ralphy config set` on this machine can turn it on. \
 antigravity.console_agent_workflow_i_understand_the_risk=true lets the agent in an \
 Antigravity console of the workbench switch branches, push and write pull requests. \
-A run never allows it. Only `ralphy config set` on this machine can turn it on.)";
+A run never allows it. It is set per repo in the workbench Settings or here.)";
 
 /// Human-readable list of every supported `config` key, derived from
 /// [`SUPPORTED_KEYS`] so it never drifts from the validated set. Reused in the
