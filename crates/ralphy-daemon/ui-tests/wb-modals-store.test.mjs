@@ -136,11 +136,11 @@ test("askPrompt settles with the trimmed name the prompt submits", async () => {
   const answer = state.askPrompt({ title: "New file in src" });
   assert.equal(state.promptModal.open, true);
   assert.equal(state.promptModal.title, "New file in src");
-  // A name that cannot be one directory entry keeps the dialog open.
-  state.promptModal.value = "a/b";
+  // A path the daemon would refuse keeps the dialog open.
+  state.promptModal.value = "a\\b";
   state.promptSubmit();
   assert.equal(state.promptModal.open, true);
-  assert.equal(state.promptModal.error, "name cannot contain / or \\");
+  assert.equal(state.promptModal.error, "use / to separate folders");
   state.promptModal.value = "  notes.md ";
   state.promptSubmit();
   assert.equal(state.promptModal.open, false);
@@ -153,12 +153,39 @@ test("askPrompt settles with the trimmed name the prompt submits", async () => {
 test("typing in the prompt keeps the text and clears the refusal under it", () => {
   const store = storeOnly();
   store.askPrompt({ title: "New file in src" });
-  store.promptTyped("a/b");
+  store.promptTyped("a\\b");
   store.promptSubmit();
-  assert.equal(store.promptModal.error, "name cannot contain / or \\");
+  assert.equal(store.promptModal.error, "use / to separate folders");
   store.promptTyped("a");
   assert.equal(store.promptModal.value, "a");
   assert.equal(store.promptModal.error, "", "the refusal goes once the operator types");
+});
+
+test("the prompt settles with a nested path", async () => {
+  const store = storeOnly();
+  const answer = store.askPrompt({ title: "New folder in docs" });
+  store.promptTyped("  .agents/skills ");
+  store.promptSubmit();
+  assert.equal(store.promptModal.open, false);
+  assert.equal(await answer, ".agents/skills");
+});
+
+test("the prompt refuses a malformed path", () => {
+  const empty = "a folder name cannot be empty, . or ..";
+  for (const [name, value, message] of [
+    ["an empty folder", "a//b", empty],
+    ["a parent step", "a/../b", empty],
+    ["a dot folder", "./a", empty],
+    ["a backslash", "a\\b", "use / to separate folders"],
+    ["a trailing slash", "a/", empty],
+  ]) {
+    const store = storeOnly();
+    store.askPrompt({ title: "New folder in docs" });
+    store.promptTyped(value);
+    store.promptSubmit();
+    assert.equal(store.promptModal.open, true, name);
+    assert.equal(store.promptModal.error, message, name);
+  }
 });
 
 test("Enter confirms an open dialog unless a button has focus", async () => {
