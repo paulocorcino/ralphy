@@ -3,10 +3,10 @@ use super::*;
 /// A limit's reset carries the parsed hint and names an instant. The instant
 /// is read from the clock apart from the code under test, so only its
 /// presence is asserted, never its value.
-fn assert_reset(reset: Option<ResetAt>, text: &str) {
-    let reset = reset.expect("the limit text names a reset");
-    assert_eq!(reset.text, text);
-    assert!(reset.at.is_some(), "the reset names an instant");
+fn assert_reset(reset: Option<ResetAt>, text: &str, case: &str) {
+    let reset = reset.unwrap_or_else(|| panic!("{case}: the limit text names a reset"));
+    assert_eq!(reset.text, text, "{case}");
+    assert!(reset.at.is_some(), "{case}: the reset names an instant");
 }
 
 #[test]
@@ -57,88 +57,113 @@ fn a_clean_exec_with_auth_text_is_not_an_auth_error() {
     assert!(is_exec_auth_failure(ended(false), text));
 }
 
-#[test]
-fn classify_done_from_flag() {
-    assert_eq!(classify_outcome(Some("DONE\n"), false, None), Outcome::Done);
+/// A transcript that only talks about limits: tool output and assistant prose, no api
+/// error. The regression guard: a repo about rate limiting must not read as a real limit.
+const MENTIONS_LIMITS: &str = concat!(
+    r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","#,
+    r#""content":"fn is_limit_text(text) { /* rate limit, usage limit, session limit */ "#,
+    r#"}\nassert_eq!(parse_reset_hhmm(\"resets 3:00pm\"), Some(\"15:00\"));"}]}}"#,
+    "\n",
+    r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","#,
+    r#""text":"I'll wire the usage limit handling so a session limit auto-resumes after "#,
+    r#"reset."}]}}"#,
+);
+
+/// A table row's expected value: an exact one, or a limit that names its reset text.
+enum Want<T> {
+    Is(T),
+    LimitAt(&'static str),
+}
+
+struct OutcomeRow<'a> {
+    name: &'static str,
+    flag: Option<&'static str>,
+    timed_out: bool,
+    transcript: Option<&'a str>,
+    want: Want<Outcome>,
 }
 
 #[test]
-fn classify_blocked_from_flag() {
-    assert_eq!(
-        classify_outcome(Some("BLOCKED missing key"), false, None),
-        Outcome::Blocked("missing key".into())
-    );
-}
-
-#[test]
-fn classify_limit_beats_timeout() {
-    // A timed-out session whose transcript shows a real rate-limit error line
-    // classifies as Limit (oracle parity, ralphy.ps1:395-397) so the run
-    // resumes after reset.
-    let t = limit_jsonl("You've hit your usage limit");
-    assert_eq!(classify_outcome(None, true, Some(&t)), Outcome::Limit(None));
-}
-
-#[test]
-fn classify_timeout_when_no_limit_in_transcript() {
-    assert_eq!(
-        classify_outcome(None, true, Some("just a normal log")),
-        Outcome::Timeout
-    );
-}
-
-#[test]
-fn classify_limit_from_transcript() {
-    let t = limit_jsonl("You've reached your usage limit; resets 3:00pm");
-    let got = classify_outcome(None, false, Some(&t));
-    let Outcome::Limit(reset) = got else {
-        panic!("expected a limit, got {got:?}");
-    };
-    assert_reset(reset, "15:00");
-}
-
-#[test]
-fn classify_limit_from_subagent_session_limit_transcript() {
-    // The exact line Claude Code records when the session cap is hit while the
-    // interactive PTY remains alive (captured from a real 429).
-    let t = limit_jsonl("You've hit your session limit · resets 8:10am (America/Bahia)");
-    let got = classify_outcome(None, false, Some(&t));
-    let Outcome::Limit(reset) = got else {
-        panic!("expected a limit, got {got:?}");
-    };
-    assert_reset(reset, "08:10");
-}
-
-#[test]
-fn classify_does_not_trip_on_source_that_mentions_limits() {
-    // THE REGRESSION GUARD: running ralphy on a repo about rate limiting (its
-    // own included) fills the transcript with tool results and assistant text
-    // that say "usage limit" / "session limit" / "resets 3:00pm" — none of
-    // which is a real limit. A structural detector must ignore all of it.
-    let transcript = concat!(
-        r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","#,
-        r#""content":"fn is_limit_text(text) { /* rate limit, usage limit, session limit */ "#,
-        r#"}\nassert_eq!(parse_reset_hhmm(\"resets 3:00pm\"), Some(\"15:00\"));"}]}}"#,
-        "\n",
-        r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","#,
-        r#""text":"I'll wire the usage limit handling so a session limit auto-resumes after "#,
-        r#"reset."}]}}"#,
-    );
-    assert_eq!(transcript_limit(transcript), None);
-    // ...and a timed-out session over that transcript is a Timeout, not a Limit.
-    assert_eq!(
-        classify_outcome(None, true, Some(transcript)),
-        Outcome::Timeout
-    );
-}
-
-#[test]
-fn classify_stuck_when_quiet_exit() {
-    assert_eq!(
-        classify_outcome(None, false, Some("just a normal log")),
-        Outcome::Stuck
-    );
-    assert_eq!(classify_outcome(None, false, None), Outcome::Stuck);
+fn claude_reads_the_flag_and_the_transcript_before_the_ladder() {
+    let usage_limit = limit_jsonl("You've hit your usage limit");
+    let usage_limit_reset = limit_jsonl("You've reached your usage limit; resets 3:00pm");
+    // The exact line Claude Code records when the session cap is hit while the PTY is alive.
+    let session_limit =
+        limit_jsonl("You've hit your session limit \u{b7} resets 8:10am (America/Bahia)");
+    let rows = [
+        OutcomeRow {
+            name: "the DONE flag is done",
+            flag: Some("DONE\n"),
+            timed_out: false,
+            transcript: None,
+            want: Want::Is(Outcome::Done),
+        },
+        OutcomeRow {
+            name: "the BLOCKED flag carries its reason",
+            flag: Some("BLOCKED missing key"),
+            timed_out: false,
+            transcript: None,
+            want: Want::Is(Outcome::Blocked("missing key".into())),
+        },
+        OutcomeRow {
+            name: "a limit in the transcript beats a timeout",
+            flag: None,
+            timed_out: true,
+            transcript: Some(&usage_limit),
+            want: Want::Is(Outcome::Limit(None)),
+        },
+        OutcomeRow {
+            name: "a timeout without a limit in the transcript",
+            flag: None,
+            timed_out: true,
+            transcript: Some("just a normal log"),
+            want: Want::Is(Outcome::Timeout),
+        },
+        OutcomeRow {
+            name: "a usage limit names its reset",
+            flag: None,
+            timed_out: false,
+            transcript: Some(&usage_limit_reset),
+            want: Want::LimitAt("15:00"),
+        },
+        OutcomeRow {
+            name: "a session limit names its reset",
+            flag: None,
+            timed_out: false,
+            transcript: Some(&session_limit),
+            want: Want::LimitAt("08:10"),
+        },
+        OutcomeRow {
+            name: "source text that mentions limits is a timeout, not a limit",
+            flag: None,
+            timed_out: true,
+            transcript: Some(MENTIONS_LIMITS),
+            want: Want::Is(Outcome::Timeout),
+        },
+        OutcomeRow {
+            name: "a quiet exit over a normal log is stuck",
+            flag: None,
+            timed_out: false,
+            transcript: Some("just a normal log"),
+            want: Want::Is(Outcome::Stuck),
+        },
+        OutcomeRow {
+            name: "a quiet exit with no transcript is stuck",
+            flag: None,
+            timed_out: false,
+            transcript: None,
+            want: Want::Is(Outcome::Stuck),
+        },
+    ];
+    for row in rows {
+        let got = classify_outcome(row.flag, row.timed_out, row.transcript);
+        match (got, row.want) {
+            (Outcome::Limit(reset), Want::LimitAt(text)) => assert_reset(reset, text, row.name),
+            (got, Want::Is(want)) => assert_eq!(got, want, "{}", row.name),
+            (got, Want::LimitAt(_)) => panic!("{}: expected a limit, got {got:?}", row.name),
+        }
+    }
+    assert_eq!(transcript_limit(MENTIONS_LIMITS), None);
 }
 
 // ── is_headless_api_degraded ────────────────────────────────────────────
@@ -164,76 +189,87 @@ fn headless_degraded_matcher_ignores_healthy_output() {
 
 // ── classify_exec_call ──────────────────────────────────────────────────
 
-#[test]
-fn classify_exec_not_exited_with_limit_text_is_limit() {
-    let out = "You've reached your usage limit; resets 3:00pm";
-    let got = classify_exec_call(out, false, 5);
-    let Some(HeadlessReason::Limit(reset)) = got else {
-        panic!("expected a limit, got {got:?}");
-    };
-    assert_reset(reset, "15:00");
+struct ExecRow {
+    name: &'static str,
+    out: &'static str,
+    exited: bool,
+    open_steps: usize,
+    want: Want<Option<HeadlessReason>>,
 }
 
 #[test]
-fn classify_exec_not_exited_without_limit_is_timeout() {
-    assert_eq!(
-        classify_exec_call("partial output", false, 5),
-        Some(HeadlessReason::Timeout)
-    );
-}
-
-#[test]
-fn classify_exec_blocked_sentinel() {
-    let out = "some work\nRALPHY_BLOCKED_EXIT missing key\nmore text";
-    assert_eq!(
-        classify_exec_call(out, true, 5),
-        Some(HeadlessReason::Blocked("missing key".into()))
-    );
-}
-
-#[test]
-fn classify_exec_done_via_done_sentinel() {
-    let out = "all done\nRALPHY_DONE_EXIT\n";
-    assert_eq!(classify_exec_call(out, true, 3), Some(HeadlessReason::Done));
-}
-
-#[test]
-fn classify_exec_done_via_zero_open_steps() {
-    assert_eq!(
-        classify_exec_call("no sentinel", true, 0),
-        Some(HeadlessReason::Done)
-    );
-}
-
-#[test]
-fn classify_exec_limit_on_natural_exit() {
-    let out = "You've reached your usage limit; resets 3:00pm";
-    let got = classify_exec_call(out, true, 2);
-    let Some(HeadlessReason::Limit(reset)) = got else {
-        panic!("expected a limit, got {got:?}");
-    };
-    assert_reset(reset, "15:00");
-}
-
-#[test]
-fn classify_exec_limit_beats_done_sentinel() {
-    // The oracle checks Test-LimitText first (ralphy.ps1:283): a usage limit
-    // wins even when the same exited call emitted RALPHY_DONE_EXIT, so the
-    // run resumes after reset instead of closing the issue.
-    let out = "RALPHY_DONE_EXIT\nYou've reached your usage limit; resets 3:00pm";
-    let got = classify_exec_call(out, true, 0);
-    let Some(HeadlessReason::Limit(reset)) = got else {
-        panic!("expected a limit, got {got:?}");
-    };
-    assert_reset(reset, "15:00");
-}
-
-#[test]
-fn classify_exec_continue_when_no_terminal_condition() {
-    assert_eq!(
-        classify_exec_call("partial progress, no sentinel", true, 3),
-        None
-    );
+fn claude_reads_the_call_output_before_the_ladder() {
+    const LIMIT_TEXT: &str = "You've reached your usage limit; resets 3:00pm";
+    let rows = [
+        ExecRow {
+            name: "not exited with limit text is a limit",
+            out: LIMIT_TEXT,
+            exited: false,
+            open_steps: 5,
+            want: Want::LimitAt("15:00"),
+        },
+        ExecRow {
+            name: "not exited without a limit is a timeout",
+            out: "partial output",
+            exited: false,
+            open_steps: 5,
+            want: Want::Is(Some(HeadlessReason::Timeout)),
+        },
+        ExecRow {
+            name: "the blocked sentinel carries its reason",
+            out: "some work\nRALPHY_BLOCKED_EXIT missing key\nmore text",
+            exited: true,
+            open_steps: 5,
+            want: Want::Is(Some(HeadlessReason::Blocked("missing key".into()))),
+        },
+        ExecRow {
+            name: "the done sentinel is done",
+            out: "all done\nRALPHY_DONE_EXIT\n",
+            exited: true,
+            open_steps: 3,
+            want: Want::Is(Some(HeadlessReason::Done)),
+        },
+        ExecRow {
+            name: "zero open steps is done",
+            out: "no sentinel",
+            exited: true,
+            open_steps: 0,
+            want: Want::Is(Some(HeadlessReason::Done)),
+        },
+        ExecRow {
+            name: "limit text on a natural exit is a limit",
+            out: LIMIT_TEXT,
+            exited: true,
+            open_steps: 2,
+            want: Want::LimitAt("15:00"),
+        },
+        // The oracle checks the limit text first: a limit wins even when the same
+        // exited call emitted the done sentinel, so the run resumes after the reset.
+        ExecRow {
+            name: "a limit beats the done sentinel",
+            out: "RALPHY_DONE_EXIT\nYou've reached your usage limit; resets 3:00pm",
+            exited: true,
+            open_steps: 0,
+            want: Want::LimitAt("15:00"),
+        },
+        ExecRow {
+            name: "no terminal condition continues the loop",
+            out: "partial progress, no sentinel",
+            exited: true,
+            open_steps: 3,
+            want: Want::Is(None),
+        },
+    ];
+    for row in rows {
+        let got = classify_exec_call(row.out, row.exited, row.open_steps);
+        match (got, row.want) {
+            (Some(HeadlessReason::Limit(reset)), Want::LimitAt(text)) => {
+                assert_reset(reset, text, row.name);
+            }
+            (got, Want::Is(want)) => assert_eq!(got, want, "{}", row.name),
+            (got, Want::LimitAt(_)) => panic!("{}: expected a limit, got {got:?}", row.name),
+        }
+    }
 }
 
 // ── headless_reason_to_outcome ──────────────────────────────────────────

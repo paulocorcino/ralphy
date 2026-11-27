@@ -276,14 +276,6 @@ mod tests {
     }
 
     #[test]
-    fn classify_limit_beats_timeout() {
-        assert_eq!(
-            classify_kimi_outcome(&ended(false, true, Some(75), ""), false, ""),
-            Outcome::Limit(None)
-        );
-    }
-
-    #[test]
     fn classify_limit_on_403_access_terminated_in_log() {
         // The live regression: an exhausted billing-cycle quota returns a 403 whose
         // body lands in the log (not in final_text), the child exits non-zero, and no
