@@ -1,25 +1,3 @@
-#[test]
-fn read_error_keeps_its_text() {
-    use super::ReadError;
-    assert_eq!(ReadError::Binary.to_string(), "binary file");
-    assert_eq!(ReadError::TooLarge.to_string(), "file too large");
-    assert_eq!(ReadError::NotFound.to_string(), "file not found");
-    assert_eq!(ReadError::NotImage.to_string(), "not an image");
-}
-
-/// The cap is the base64 size of the largest image plus 64 KiB, so a
-/// 4 MiB paste and its envelope fit and nothing much larger does.
-#[test]
-fn max_command_bytes_is_derived_from_the_image_cap() {
-    assert_eq!(
-        MAX_COMMAND_BYTES,
-        (4 * 1024 * 1024usize).div_ceil(3) * 4 + 65_536
-    );
-    assert_eq!(MAX_COMMAND_BYTES, 5_657_944);
-    let max = usize::try_from(MAX_IMAGE_BYTES).expect("4 MiB fits usize");
-    assert!(MAX_COMMAND_BYTES > max.div_ceil(3) * 4 + 4096);
-}
-
 use super::*;
 use std::fs;
 

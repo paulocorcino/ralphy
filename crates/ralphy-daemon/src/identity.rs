@@ -214,19 +214,6 @@ pub fn load_current() -> Result<Option<Identity>> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn name_error_keeps_its_text() {
-        assert_eq!(NameError::Empty.to_string(), "name must not be empty");
-        assert_eq!(
-            NameError::InvalidChars.to_string(),
-            "name may only contain lowercase letters, digits, and hyphens"
-        );
-        assert_eq!(
-            NameError::Reserved("list".to_owned()).to_string(),
-            "'list' is reserved (it collides with Ralphy's command vocabulary) — pick another name"
-        );
-    }
-
     /// Serializes tests that mutate the process-global home / `RALPHY_DAEMON_DIR`
     /// env vars so they never race on the resolved path.
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

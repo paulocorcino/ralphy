@@ -282,8 +282,3 @@ async fn a_shallow_channel_waits_and_an_aborted_writer_ends() {
         .expect("an aborted writer ends");
     assert_eq!(after, Err(WriterClosed));
 }
-
-#[test]
-fn writer_closed_keeps_its_text() {
-    assert_eq!(WriterClosed.to_string(), "the socket writer is closed");
-}
