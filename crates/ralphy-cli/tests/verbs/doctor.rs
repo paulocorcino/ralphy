@@ -11,6 +11,8 @@ fn doctor(args: &[&str]) -> (Option<i32>, String, String) {
         .env("PATH", empty.path())
         .env("HOME", empty.path())
         .env("USERPROFILE", empty.path())
+        // The `agy` locator looks in `%LOCALAPPDATA%\agy\bin` before `PATH`.
+        .env("LOCALAPPDATA", empty.path())
         // A scratch store: it has no `telegram.toml`, so doctor reads no bot,
         // and no daemon of the developer answers.
         .env("RALPHY_DAEMON_DIR", empty.path())
@@ -28,6 +30,7 @@ fn a_missing_tool_exits_1_under_one_report() {
     let (code, stdout, stderr) = doctor(&[]);
     assert_eq!(code, Some(1), "stdout: {stdout}\nstderr: {stderr}");
     assert!(stdout.contains("[miss] git:"), "{stdout}");
+    assert!(stdout.contains("agent CLI: none found"), "{stdout}");
     assert!(stdout.contains("required tool(s) missing"), "{stdout}");
     assert!(!stderr.contains("Error:"), "a second error line: {stderr}");
 }
