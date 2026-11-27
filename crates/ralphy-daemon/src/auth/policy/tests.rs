@@ -269,54 +269,42 @@ fn compute_policy_requires_the_token_on_loopback_when_marked() {
     );
 }
 
-#[test]
-fn require_token_flag_round_trips() {
-    let dir = tempfile::tempdir().unwrap();
-    assert!(
-        !require_token_enabled_in(dir.path()).unwrap(),
-        "unset by default"
-    );
-    set_require_token_in(dir.path(), true).unwrap();
-    assert!(require_token_enabled_in(dir.path()).unwrap(), "set → on");
-    assert!(
-        !require_login_enabled_in(dir.path()),
-        "require-token and require-login are separate files"
-    );
-    set_require_token_in(dir.path(), false).unwrap();
-    assert!(
-        !require_token_enabled_in(dir.path()).unwrap(),
-        "cleared → off"
-    );
-    // Idempotent clear.
-    set_require_token_in(dir.path(), false).unwrap();
-}
+type Get = fn(&Path) -> bool;
+type Set = fn(&Path, bool);
 
 #[test]
-fn require_login_flag_round_trips() {
-    let dir = tempfile::tempdir().unwrap();
-    assert!(!require_login_enabled_in(dir.path()), "unset by default");
-    set_require_login_in(dir.path(), true).unwrap();
-    assert!(require_login_enabled_in(dir.path()), "set → on");
-    set_require_login_in(dir.path(), false).unwrap();
-    assert!(!require_login_enabled_in(dir.path()), "cleared → off");
-    // Idempotent clear.
-    set_require_login_in(dir.path(), false).unwrap();
-}
-
-#[test]
-fn remote_images_flag_round_trips() {
-    let dir = tempfile::tempdir().unwrap();
-    assert!(!remote_images_enabled_in(dir.path()), "unset by default");
-    set_remote_images_in(dir.path(), true).unwrap();
-    assert!(remote_images_enabled_in(dir.path()), "set → on");
-    assert!(
-        !require_login_enabled_in(dir.path()),
-        "the two flags are separate files"
-    );
-    set_remote_images_in(dir.path(), false).unwrap();
-    assert!(!remote_images_enabled_in(dir.path()), "cleared → off");
-    // Idempotent clear.
-    set_remote_images_in(dir.path(), false).unwrap();
+fn each_flag_round_trips_and_is_its_own_file() {
+    let rows: [(&str, Get, Set, Get); 3] = [
+        (
+            "require-token",
+            |d| require_token_enabled_in(d).unwrap(),
+            |d, on| set_require_token_in(d, on).unwrap(),
+            require_login_enabled_in,
+        ),
+        (
+            "require-login",
+            require_login_enabled_in,
+            |d, on| set_require_login_in(d, on).unwrap(),
+            remote_images_enabled_in,
+        ),
+        (
+            "remote-images",
+            remote_images_enabled_in,
+            |d, on| set_remote_images_in(d, on).unwrap(),
+            require_login_enabled_in,
+        ),
+    ];
+    for (name, get, set, other) in rows {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!get(dir.path()), "{name}: unset by default");
+        set(dir.path(), true);
+        assert!(get(dir.path()), "{name}: set -> on");
+        assert!(!other(dir.path()), "{name}: the flags are separate files");
+        set(dir.path(), false);
+        assert!(!get(dir.path()), "{name}: cleared -> off");
+        set(dir.path(), false);
+        assert!(!get(dir.path()), "{name}: an idempotent clear");
+    }
 }
 
 #[test]

@@ -7,73 +7,141 @@ fn utf16(text: &str, le: bool, bom: bool) -> Vec<u8> {
     encode(text, if le { UTF_16LE } else { UTF_16BE }, bom).unwrap()
 }
 
-#[test]
-fn a_utf8_bom_is_stripped_and_reported() {
-    let d = decode(b"\xEF\xBB\xBFol\xC3\xA1".to_vec(), None, FB).unwrap();
-    assert_eq!((d.text.as_str(), d.encoding, d.bom), ("olá", UTF_8, true));
-}
+type Want = Option<(&'static str, &'static Encoding, bool)>;
+type Case = (
+    &'static str,
+    Vec<u8>,
+    Option<&'static Encoding>,
+    &'static Encoding,
+    Want,
+);
 
-#[test]
-fn utf16_with_a_bom_decodes_either_order() {
-    for le in [true, false] {
-        let d = decode(utf16("§ x", le, true), None, FB).unwrap();
-        assert_eq!(d.text, "§ x");
-        assert_eq!(d.encoding, if le { UTF_16LE } else { UTF_16BE });
-        assert!(d.bom);
-    }
-}
-
-#[test]
-fn bare_utf16_is_read_by_its_nul_shape_not_refused_as_binary() {
-    let d = decode(utf16("Out-File wrote this", true, false), None, FB).unwrap();
-    assert_eq!(
-        (d.text.as_str(), d.encoding, d.bom),
-        ("Out-File wrote this", UTF_16LE, false)
-    );
-    let d = decode(utf16("big endian", false, false), None, FB).unwrap();
-    assert_eq!(d.encoding, UTF_16BE);
-}
-
-#[test]
-fn plain_utf8_is_utf8_without_a_bom() {
-    let d = decode("caf\u{e9} — §".as_bytes().to_vec(), None, FB).unwrap();
-    assert_eq!(
-        (d.text.as_str(), d.encoding, d.bom),
-        ("café — §", UTF_8, false)
-    );
-}
-
-#[test]
-fn invalid_utf8_without_a_nul_is_the_fallback_page() {
-    // `§` (A7), `×` (D7) and `—` (97) as windows-1252 writes them.
-    let d = decode(b"\xA76 240\xD7180 \x97 ok".to_vec(), None, FB).unwrap();
-    assert_eq!(
-        (d.text.as_str(), d.encoding, d.bom),
-        ("§6 240×180 — ok", WINDOWS_1252, false)
-    );
-}
-
-#[test]
-fn a_hint_skips_detection_and_still_strips_its_own_bom() {
+fn text_cases() -> Vec<Case> {
     let sjis = b"\x93\xFA\x96\x7B"; // 日本
-    let d = decode(sjis.to_vec(), Some(SHIFT_JIS), FB).unwrap();
-    assert_eq!((d.text.as_str(), d.encoding), ("日本", SHIFT_JIS));
-    let d = decode(b"\xEF\xBB\xBFx".to_vec(), Some(UTF_8), FB).unwrap();
-    assert_eq!((d.text.as_str(), d.bom), ("x", true));
-    // A hint for another encoding leaves a foreign BOM in the text's bytes.
-    let d = decode(b"\xEF\xBB\xBFx".to_vec(), Some(WINDOWS_1252), FB).unwrap();
-    assert!(!d.bom);
-    assert_eq!(d.text.chars().count(), 4);
+    vec![
+        (
+            "utf-8 bom",
+            b"\xEF\xBB\xBFol\xC3\xA1".to_vec(),
+            None,
+            FB,
+            Some(("olá", UTF_8, true)),
+        ),
+        (
+            "utf-16le bom",
+            utf16("§ x", true, true),
+            None,
+            FB,
+            Some(("§ x", UTF_16LE, true)),
+        ),
+        (
+            "utf-16be bom",
+            utf16("§ x", false, true),
+            None,
+            FB,
+            Some(("§ x", UTF_16BE, true)),
+        ),
+        (
+            "bare utf-16le",
+            utf16("Out-File wrote this", true, false),
+            None,
+            FB,
+            Some(("Out-File wrote this", UTF_16LE, false)),
+        ),
+        (
+            "bare utf-16be",
+            utf16("big endian", false, false),
+            None,
+            FB,
+            Some(("big endian", UTF_16BE, false)),
+        ),
+        (
+            "plain utf-8",
+            "caf\u{e9} — §".as_bytes().to_vec(),
+            None,
+            FB,
+            Some(("café — §", UTF_8, false)),
+        ),
+        (
+            "invalid utf-8 is the fallback page",
+            b"\xA76 240\xD7180 \x97 ok".to_vec(),
+            None,
+            FB,
+            Some(("§6 240×180 — ok", WINDOWS_1252, false)),
+        ),
+        (
+            "hint skips detection",
+            sjis.to_vec(),
+            Some(SHIFT_JIS),
+            FB,
+            Some(("日本", SHIFT_JIS, false)),
+        ),
+        (
+            "hint strips its own bom",
+            b"\xEF\xBB\xBFx".to_vec(),
+            Some(UTF_8),
+            FB,
+            Some(("x", UTF_8, true)),
+        ),
+        (
+            "hint for another encoding keeps a foreign bom",
+            b"\xEF\xBB\xBFx".to_vec(),
+            Some(WINDOWS_1252),
+            FB,
+            Some(("\u{ef}\u{bb}\u{bf}x", WINDOWS_1252, false)),
+        ),
+    ]
+}
+
+fn binary_cases() -> Vec<Case> {
+    vec![
+        ("a nul run is binary", vec![0, 1, 2], None, FB, None),
+        (
+            "png header is binary",
+            b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec(),
+            None,
+            FB,
+            None,
+        ),
+        (
+            "nul inside text is binary",
+            b"task\0task".to_vec(),
+            None,
+            FB,
+            None,
+        ),
+        ("a zero and a control byte", vec![0, 1], None, FB, None),
+        (
+            "zeros pair with control bytes",
+            vec![0, 1, 0, 2, 0, 3],
+            None,
+            FB,
+            None,
+        ),
+        (
+            "multibyte fallback that fails is binary",
+            b"abc\x93".to_vec(),
+            None,
+            SHIFT_JIS,
+            None,
+        ),
+        (
+            "single-byte fallback always decodes",
+            b"abc\x93".to_vec(),
+            None,
+            FB,
+            Some(("abc\u{201c}", WINDOWS_1252, false)),
+        ),
+    ]
 }
 
 #[test]
-fn a_nul_that_is_not_utf16_shaped_is_binary() {
-    assert!(decode(vec![0, 1, 2], None, FB).is_none());
-    assert!(decode(b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec(), None, FB).is_none());
-    assert!(decode(b"task\0task".to_vec(), None, FB).is_none());
-    // Zeros that alternate but pair with control bytes are not UTF-16 text.
-    assert!(decode(vec![0, 1], None, FB).is_none());
-    assert!(decode(vec![0, 1, 0, 2, 0, 3], None, FB).is_none());
+fn decode_table() {
+    let rows = text_cases().into_iter().chain(binary_cases());
+    for (name, bytes, hint, fallback, want) in rows {
+        let got = decode(bytes, hint, fallback).map(|d| (d.text, d.encoding, d.bom));
+        let want = want.map(|(text, enc, bom)| (text.to_owned(), enc, bom));
+        assert_eq!(got, want, "{name}");
+    }
 }
 
 #[test]
@@ -83,14 +151,6 @@ fn a_file_of_only_high_bytes_and_no_nul_is_fallback_text_by_design() {
     // its IHDR length (`00 00 00 0D`) inside the first 16 bytes and is binary.
     assert!(decode(b"\x89PNG\r\n\x1a\n".to_vec(), None, FB).is_some());
     assert!(decode(b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec(), None, FB).is_none());
-}
-
-#[test]
-fn a_multibyte_fallback_that_fails_is_binary_not_replacement_chars() {
-    // A lone Shift_JIS lead byte at the end is an error for that decoder.
-    assert!(decode(b"abc\x93".to_vec(), None, SHIFT_JIS).is_none());
-    // The same bytes under the single-byte default always decode.
-    assert!(decode(b"abc\x93".to_vec(), None, FB).is_some());
 }
 
 #[test]
