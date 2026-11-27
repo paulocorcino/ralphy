@@ -7,11 +7,6 @@ import { WBFail } from "../assets/ui/wb-fail.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-// The module keeps no state, so one import serves every test.
-function load() {
-  return WBFail;
-}
-
 test("message() reads the reply's own words, then the fallback", () => {
   // [case, reply, fallback, expected]
   const rows = [
@@ -20,7 +15,7 @@ test("message() reads the reply's own words, then the fallback", () => {
     ["neither", {}, "fallback", "fallback"],
   ];
   for (const [name, reply, fallback, want] of rows) {
-    assert.equal(load().message(reply, fallback), want, name);
+    assert.equal(WBFail.message(reply, fallback), want, name);
   }
 });
 
@@ -34,14 +29,14 @@ test("isError() is true for an error or a missing reply, never for a spawn frame
     ["a null reply", null, true],
   ];
   for (const [name, reply, want] of rows) {
-    assert.equal(load().isError(reply), want, name);
+    assert.equal(WBFail.isError(reply), want, name);
   }
 });
 
 const STAGE = "Could not stage: the daemon gave no reason.";
 
 test("failed() turns CLI output into Could not <act>: <cause>.", () => {
-  const f = load().failed;
+  const f = WBFail.failed;
   assert.equal(
     f({ status: "error", message: "Error: cannot commit: nothing is staged — stage a file first" },
       "Could not commit: the daemon gave no reason."),
@@ -69,13 +64,13 @@ test("failed() folds the Caused by lines and drops a backtrace and earlier outpu
     "   0: anyhow::error",
   ].join("\n");
   assert.equal(
-    load().failed({ status: "error", message: out }, "Could not create the worktree: the daemon gave no reason."),
+    WBFail.failed({ status: "error", message: out }, "Could not create the worktree: the daemon gave no reason."),
     "Could not create the worktree: invalid base 'nope': invalid ref 'nope'.",
   );
 });
 
 test("failed() maps a code to its cause and keeps a sentence as it is", () => {
-  const f = load().failed;
+  const f = WBFail.failed;
   assert.equal(f({ status: "error", reason: "exists" }, "Could not rename: the daemon gave no reason."),
     "Could not rename: a file with that name already exists.");
   assert.equal(f({ status: "error", message: "The peer did not answer." }, STAGE), "The peer did not answer.");
@@ -86,7 +81,7 @@ test("failed() maps a code to its cause and keeps a sentence as it is", () => {
 });
 
 test("cause() gives the cause alone as a sentence", () => {
-  const c = load().cause;
+  const c = WBFail.cause;
   assert.equal(
     c({ status: "error", message: "Error: worktree 'wt' has uncommitted changes: commit or discard them first" }, "x"),
     "Worktree 'wt' has uncommitted changes: commit or discard them first.",
@@ -96,7 +91,7 @@ test("cause() gives the cause alone as a sentence", () => {
 });
 
 test("message() stays raw, so a compare site still sees the code", () => {
-  const w = load();
+  const w = WBFail;
   assert.equal(w.message({ status: "error", message: "unknown repo" }, ""), "unknown repo");
   assert.equal(w.sentence("warning: settings.json not read"), "Warning: settings.json not read.");
 });
@@ -119,7 +114,7 @@ function hasTerm(text, term, wholeWord, caseSensitive) {
 }
 
 test("every CAUSE value fits after `Could not <act>: ` and follows the rules file", () => {
-  const causes = Object.entries(load().CAUSE);
+  const causes = Object.entries(WBFail.CAUSE);
   assert.ok(causes.length > 0);
   for (const [code, cause] of causes) {
     assert.match(cause, /^[a-z]/u, `${code}: a cause starts lowercase`);
@@ -137,7 +132,7 @@ test("every CAUSE value fits after `Could not <act>: ` and follows the rules fil
 });
 
 test("the formatter's edge branches keep CLI text out of the pass-through", () => {
-  const w = load();
+  const w = WBFail;
   // Capitalized and period-ended, but an `Error: ` line: cleaned, not passed.
   assert.equal(
     w.failed({ status: "error", message: "Error: Branch 'x' is gone." }, "Could not switch branch: the daemon gave no reason."),
@@ -161,7 +156,7 @@ test("the formatter's edge branches keep CLI text out of the pass-through", () =
 });
 
 test("readFold keeps the last good value, marked not current, after a failure", () => {
-  const F = load();
+  const F = WBFail;
   const good = F.readFold(null, { ok: true, value: [{ slug: "a/b" }], at: 100 });
   assert.equal(good.current, true);
   const failed = F.readFold(good, { ok: false, reason: "the daemon did not answer", at: 200 });
@@ -172,7 +167,7 @@ test("readFold keeps the last good value, marked not current, after a failure", 
 });
 
 test("readFold before any good read has no value", () => {
-  const F = load();
+  const F = WBFail;
   const first = F.readFold(undefined, { ok: false, reason: "HTTP 500", at: 1 });
   assert.equal(first.value, null);
   assert.equal(first.current, false);
@@ -181,7 +176,7 @@ test("readFold before any good read has no value", () => {
 const fmt = () => "14:02";
 
 test("notCurrent names the time of the good read and the reason", () => {
-  const F = load();
+  const F = WBFail;
   const good = F.readFold(null, { ok: true, value: 1, at: 5 });
   assert.equal(F.notCurrent(good, fmt), "");
   const stale = F.readFold(good, { ok: false, reason: "the daemon did not answer", at: 6 });
@@ -191,7 +186,7 @@ test("notCurrent names the time of the good read and the reason", () => {
 });
 
 test("why gives the cause of a code, to follow `Could not <act>: `", () => {
-  const F = load();
+  const F = WBFail;
   assert.equal(F.why({ status: "error", message: "unknown repo" }, "x"), "the project is not in the list");
   assert.equal(F.why({ status: "error", reason: "transport" }, "x"), "the daemon did not answer");
   assert.equal(F.why({ status: "error", message: "git exited 128" }, "x"), "git exited 128");
@@ -199,7 +194,7 @@ test("why gives the cause of a code, to follow `Could not <act>: `", () => {
 });
 
 test("notCurrent shows the words for a code it was given", () => {
-  const F = load();
+  const F = WBFail;
   const read = { current: false, goodAt: 0, error: "unknown checkout" };
   assert.equal(F.notCurrent(read, () => ""), "Could not read: the worktree does not exist");
 });
@@ -211,19 +206,19 @@ const failure = (cause, remedy) => ({
 });
 
 test("unknown failure code still shows its cause and remedy", () => {
-  const F = load();
+  const F = WBFail;
   const reply = failure("the thing broke", "Try again.");
   assert.equal(F.failed(reply, "Could not do it: x."), "Could not do it: the thing broke. Try again.");
   assert.equal(F.why(reply, "x"), "the thing broke");
 });
 
 test("a failure with no remedy shows `Could not <act>: <cause>.`", () => {
-  const F = load();
+  const F = WBFail;
   assert.equal(F.failed(failure("the thing broke"), "Could not do it: x."), "Could not do it: the thing broke.");
 });
 
 test("transport is not a key of CAUSE and reads `the daemon did not answer`", () => {
-  const F = load();
+  const F = WBFail;
   assert.ok(!Object.hasOwn(F.CAUSE, "transport"));
   assert.equal(F.transport, "transport");
   assert.equal(F.failed({ reason: F.transport }, "Could not open: x."), "Could not open: the daemon did not answer.");

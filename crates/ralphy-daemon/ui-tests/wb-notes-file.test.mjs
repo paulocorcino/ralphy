@@ -4,6 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createNoteFile } from "../assets/ui/wb-notes-file.ts";
+import { fakeClassList } from "./harness.mjs";
 
 // A card whose rename field holds `value`, opened as a pointing or a rename.
 function card(id, value, pointing) {
@@ -12,7 +13,7 @@ function card(id, value, pointing) {
   return {
     dataset: { noteId: id },
     _notePointing: pointing,
-    classList: { remove() {} },
+    classList: fakeClassList(),
     querySelector: (sel) => {
       if (sel === ".note-rename") return field;
       return sel === ".note-path" ? path : null;
