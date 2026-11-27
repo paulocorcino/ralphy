@@ -286,8 +286,13 @@ pub(crate) fn ensure_dir(root: &Path, rel: &str) -> Result<(), WriteError> {
 }
 
 /// Create the confined `rel` as a directory (`dir`) or a new empty file, refusing
-/// with `Conflict` if the path already exists.
+/// with `Conflict` if the path already exists. `rel` may be a `/`-separated path:
+/// each missing parent level is confined and then made with `create_dir`, one at
+/// a time, so no level is walked through a symlink before it is checked.
 pub fn create(root: &Path, rel: &str, dir: bool) -> Result<(), WriteError> {
+    for parent in nested_parents(rel)? {
+        make_level(root, parent)?;
+    }
     let path = confine_outside_protected(root, rel)?;
     if path.exists() {
         return Err(WriteError::Conflict);
@@ -303,6 +308,39 @@ pub fn create(root: &Path, rel: &str, dir: bool) -> Result<(), WriteError> {
             .open(&path)
             .map(|_| ())
             .map_err(|e| create_new_failed(&e))
+    }
+}
+
+/// The parent prefixes of a nested `rel` (`a`, `a/b` for `a/b/c`), after the
+/// whole path passed the lexical gates: no `\`, no `:`, no empty, `.` or `..`
+/// level, and no protected directory at any level.
+fn nested_parents(rel: &str) -> Result<Vec<&str>, WriteError> {
+    let malformed = |level: &str| level.is_empty() || level == "." || level == "..";
+    if rel.contains(['\\', ':']) || rel.split('/').any(malformed) {
+        return Err(WriteError::Confined);
+    }
+    refuse_protected(rel)?;
+    if is_note_in_notes_dir(Path::new(rel)) {
+        // The carve-out's parents are daemon state: they must already exist.
+        return Ok(Vec::new());
+    }
+    Ok(rel
+        .match_indices('/')
+        .filter_map(|(i, _)| rel.get(..i))
+        .collect())
+}
+
+/// Make one parent level of a nested create: an existing real directory is kept,
+/// a missing one is created, anything else (a file, a symlink) is refused.
+fn make_level(root: &Path, rel: &str) -> Result<(), WriteError> {
+    let path = confine_outside_protected(root, rel)?;
+    match std::fs::symlink_metadata(&path) {
+        Ok(meta) if meta.is_dir() => Ok(()),
+        Ok(meta) if meta.is_symlink() => Err(WriteError::Confined),
+        Ok(_) => Err(WriteError::Conflict),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::fs::create_dir(&path)
+            .map_err(|e| failed(WriteError::Io, "creating a parent directory", &e)),
+        Err(e) => Err(failed(WriteError::Io, "reading a parent directory", &e)),
     }
 }
 

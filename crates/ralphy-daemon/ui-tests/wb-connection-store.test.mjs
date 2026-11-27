@@ -68,12 +68,12 @@ function connectedPage(opts = {}) {
 // `until`, when given, names a URL the read must reach: the spy waits for it
 // (up to 2 s) instead of a fixed number of event-loop turns, because a read
 // scheduled with `setTimeout` can land after any number of turns.
-async function withFetchSpy(fn, until = null) {
+async function withFetchSpy(fn, until = null, reply = []) {
   const urls = [];
   const realFetch = globalThis.fetch;
   globalThis.fetch = (url) => {
     urls.push(String(url));
-    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(reply) });
   };
   try {
     await fn(urls);
@@ -329,8 +329,10 @@ test("the peer tick and a project-list push read no change set and no branch", a
     store.onPresencePush("peers.dirty", {});
   });
   assert.deepEqual(git, []);
-  // NEGATIVE CONTROL: the tab becoming visible does read them.
-  await withFetchSpy(() => store.onTabVisible());
+  // NEGATIVE CONTROL: the tab becoming visible does read them. The first read
+  // listed no project, which closed "o/r"; this one lists it.
+  state.$store.projects.setOpen("o/r");
+  await withFetchSpy(() => store.onTabVisible(), null, [{ slug: "o/r", reachable: true }]);
   assert.deepEqual(git, ["o/r"]);
 });
 

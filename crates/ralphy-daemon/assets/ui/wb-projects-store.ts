@@ -23,6 +23,7 @@ import { WBFail } from "./wb-fail.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import type { FleetThis } from "./wb-fleet.ts";
 import { WBProject } from "./wb-project.ts";
+import { openAfterRead } from "./wb-projects-rekey.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { sendWindow } from "./wb-events.ts";
 import {
@@ -80,6 +81,16 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     openProjectBranch() {
       const row = this.projects.find((p) => this.repoRef(p) === this.openSlug);
       return (row?.branch ?? "") || "current";
+    },
+    hasOpen() {
+      return this.openProject() !== null;
+    },
+    // A read moved the open project: the panels drop the old key, as on a click.
+    followOpen(slug: string | null) {
+      const previous = this.openSlug;
+      if (slug === previous) return;
+      this.setOpen(slug);
+      sendWindow(window, "workbench:project-changed", { slug, previous });
     },
     // The branch chip lives on the Files bar (#332), which only the OPEN
     // project renders.
@@ -236,6 +247,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
             };
           });
           this.setProjects(local.concat(this._fleetRows));
+          this.followOpen(openAfterRead(this.openSlug, repos));
           this.shareProjectNames();
           this.reposError = "";
           this.reposRead = WBFail.readFold(this.reposRead, {

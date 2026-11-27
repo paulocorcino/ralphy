@@ -1,6 +1,7 @@
 use super::*;
 use std::fs;
 
+mod nested;
 mod operations;
 
 #[test]
