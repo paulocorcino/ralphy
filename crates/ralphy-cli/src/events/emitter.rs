@@ -47,13 +47,13 @@ pub(crate) struct Emitter {
     pub daemon_id: Option<String>,
 }
 
-/// Detect the emitter identity for this process and repo. Every probe is
-/// best-effort and falls back to a safe default rather than failing.
 /// The numeric offset, `-03:00`, of `tz` at `now`.
 fn tz_text(now: jiff::Timestamp, tz: jiff::tz::TimeZone) -> String {
     now.to_zoned_datetime(tz).strftime("%:z").to_string()
 }
 
+/// Detect the emitter identity for this process and repo. Every probe is
+/// best-effort and falls back to a safe default rather than failing.
 pub(crate) fn detect(repo_root: &Path) -> Emitter {
     Emitter {
         version: env!("CARGO_PKG_VERSION").to_owned(),
