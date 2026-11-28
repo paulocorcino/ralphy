@@ -14,7 +14,8 @@ active tab, holding a pinned tab or a mirror of the active code tab.
 Amended by #748: §3d adds the **console tab** — consoles of the stage in
 a closable tab with its own pane, on this device only. A tab may hold
 columns and rows (amended 2026-10-20). The stage keeps a **shadow** in the
-place of a console in a tab (amended 2026-10-24).
+place of a console in a tab (amended 2026-10-24). A pane with a preview
+mirrors its editor (amended 2026-11-28).
 
 The daemon workbench (ADR-0032, promoted to the daemon's `/` in #200) lays out
 as four columns: **icon rail · sidebar · canvas · Runs panel**. This ADR records
@@ -91,8 +92,14 @@ it has no entry in the strip, and nothing in §§2–3b changes for it.
   active **code** tab a second time, in a second Monaco editor over the **same
   model**: one text, one undo stack, one dirty mark, two scrolls and two
   cursors. A mirror never creates a model; it is an editor, disposed before the
-  model it sits over on every path. Markdown, image and diff panes do not
-  mirror — the mirror waits in state for the next code tab.
+  model it sits over on every path. Image and diff panes do not mirror — the
+  mirror waits in state for the next tab that has an editor.
+- **A pane with a preview mirrors its editor** *(amended 2026-11-28)*. A
+  Markdown, Mermaid, DBML or HTML pane has an editor once it was opened for
+  edit, and the mirror shows that editor, never the preview. Before the first
+  edit the pane has no editor: its Mirror button is hidden and a mirror waits
+  in state. When the pane goes back to its preview, the mirror stays, so the
+  preview and its text can be read side by side.
 - Activating the pinned tab from the strip **does not unpin** it: the right
   pane takes focus and the left keeps the tab last read there. A click on the
   tab is "look at it", the menu's *Unpin* is "stop showing it beside".

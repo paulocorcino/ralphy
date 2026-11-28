@@ -223,16 +223,16 @@ test("a move leaves a diff tab and a tab of another project on their path, and t
   }
 });
 
-test("a mirror doubles the active code tab and steps aside for a markdown tab", async () => {
+test("a mirror doubles the active code tab and steps aside for an image tab", async () => {
   const sh = slotShell();
   try {
     sh.open("a.js");
-    sh.open("R.md", "markdown");
+    sh.open("R.png", "image");
     sh.state.$store.tabs.activate(A);
     sh.state.$store.tabs.toggleMirror();
     assert.deepEqual(sh.painted.at(-1), [A, { id: A, mirror: true, focus: false, ratio: null }]);
-    sh.state.$store.tabs.activate("file:o/r:R.md");
-    assert.deepEqual(sh.painted.at(-1), ["file:o/r:R.md", null]);
+    sh.state.$store.tabs.activate("file:o/r:R.png");
+    assert.deepEqual(sh.painted.at(-1), ["file:o/r:R.png", null]);
     assert.deepEqual(sh.state.$store.tabs.slot, { kind: "mirror" }, "the mirror waits for the next code tab");
     sh.state.$store.tabs.toggleMirror();
     assert.equal(sh.state.$store.tabs.slot, null);

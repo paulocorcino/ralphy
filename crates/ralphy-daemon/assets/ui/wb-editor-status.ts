@@ -177,6 +177,15 @@ function paintCounts(parts: Parts, ed: MonacoEditor, column: number) {
   paint(parts.doc, parts.eol, ["", model.getEOL() === "\r\n" ? "CRLF" : "LF"]);
 }
 
+/** The box an editor is created in, inside `container`, with room for its bar below. */
+export function editorHost(doc: Document, container: HTMLElement) {
+  const host = doc.createElement("div");
+  host.className = "editor-host";
+  container.classList.add("editor-frame");
+  container.append(host);
+  return host;
+}
+
 /**
  * Put the status bar after `host` and wire it to `ed`. `fallback` is the wrap
  * of this kind of file until the person picks one. Dispose it with the editor.

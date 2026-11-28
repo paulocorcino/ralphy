@@ -4,7 +4,7 @@
 
    The canvas shows ONE tab, or one tab and a slot beside it. The slot holds
    either a pinned tab (`{kind:"pin", id}` — any tab, shown next to whichever
-   tab is active) or a mirror (`{kind:"mirror"}` — the active code tab again, in
+   tab is active) or a mirror (`{kind:"mirror"}` — the active editor again, in
    a second editor over the same model). There is never more than one slot and
    never a tree of groups; the arrangement is per-client view state
    (ADR-0051 §8), never desk state.
@@ -21,6 +21,8 @@
 // which either side still shows a line of code rather than a gutter; below
 // 900 the pair would be phones side by side, and the stylesheet's narrow
 // shape (`@container viewer (max-width: 560px)`) already answers a phone.
+import { isRendered } from "./wb-viewer-render.ts";
+
 const MIN_WIDTH = 900;
 const MIN_PANE = 280;
 const DEFAULT_RATIO = 0.5;
@@ -34,9 +36,9 @@ const single = (left: string | null) => ({ left, right: null, mirror: false, foc
 // What each column shows. `active` is the shell's active tab id, `paneless`
 // says it maps to no viewer pane (Consoles, Spend) — then nothing is painted
 // and the slot waits in state. A pin next to itself, a pin of a tab that is
-// gone, a mirror of a pane that is not code: single, slot kept, converging on
+// gone, a mirror of a pane with no editor: single, slot kept, converging on
 // the next call once the world changes.
-/** The split slot: a pinned tab, or the mirror of the active code pane. */
+/** The split slot: a pinned tab, or the mirror of the active pane's editor. */
 export type Slot =
   | { kind: "pin"; id: string }
   | { kind: "mirror"; id?: undefined }
@@ -56,9 +58,15 @@ function findTab(tabs: Tab[] | null | undefined, id: string) {
   return (tabs ?? []).find((t) => t.id === id);
 }
 
-// A mirror doubles the active tab, when it is a code pane.
+/** Whether a pane of `kind` can be mirrored: a code pane, or a pane with a
+ * preview, whose editor is mirrored once it has one (ADR-0037 §3c). */
+export function mirrorsKind(kind: string | undefined) {
+  return kind === "code" || (kind !== undefined && isRendered(kind));
+}
+
+// A mirror doubles the active tab, when its pane has an editor to mirror.
 function mirrorPanes(active: string, tabs: Tab[] | null | undefined) {
-  return findTab(tabs, active)?.kind === "code"
+  return mirrorsKind(findTab(tabs, active)?.kind)
     ? { left: active, right: active, mirror: true, focus: "left" }
     : single(active);
 }

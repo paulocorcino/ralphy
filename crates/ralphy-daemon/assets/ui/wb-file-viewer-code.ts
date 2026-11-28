@@ -14,7 +14,7 @@ import type { ViewerSave } from "./wb-viewer-save.ts";
 import type { MermaidWindow } from "./wb-dbml-draw.ts";
 import { devError, devWarn } from "./wb-log.ts";
 import { mountSheetSwitch } from "./wb-viewer-sheet.ts";
-import { mountEditorStatus } from "./wb-editor-status.ts";
+import { editorHost, mountEditorStatus } from "./wb-editor-status.ts";
 
 /** What `createViewer` hands the code pane. */
 export type ViewerCodeDeps = {
@@ -86,15 +86,6 @@ export function createViewerCode(deps: ViewerCodeDeps) {
     });
   }
 
-  // The editor and its status bar share the container: the editor fills it.
-  function editorHost(container: HTMLElement) {
-    const host = document.createElement("div");
-    host.className = "editor-host";
-    container.classList.add("editor-frame");
-    container.append(host);
-    return host;
-  }
-
   function mountEditor(
     rec: BytesRecord,
     container: HTMLElement,
@@ -123,7 +114,7 @@ export function createViewerCode(deps: ViewerCodeDeps) {
       .then((monaco) => {
         rec.mounting = false;
         if (!monaco || !alive(rec)) return null;
-        const host = editorHost(container);
+        const host = editorHost(document, container);
         const ed = WBMonaco.create(host, {
           value: rec.content,
           path,

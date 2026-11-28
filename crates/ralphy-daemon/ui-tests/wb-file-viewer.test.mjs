@@ -134,6 +134,8 @@ function fakeEl(tag) {
 
 function loadWithDom() {
   const log = [];
+  // The editors a status bar watches, by tag.
+  const barsOn = [];
   let seq = 0;
   const fakeEditor = (model, tag) => ({
     model,
@@ -142,7 +144,10 @@ function loadWithDom() {
     getModel: () => model,
     getValue: () => model.value,
     onDidChangeModelContent: () => ({ dispose() {} }),
-    onDidChangeCursorSelection: () => ({ dispose() {} }),
+    onDidChangeCursorSelection: () => {
+      barsOn.push(tag);
+      return { dispose() {} };
+    },
     getSelection: () => null,
     getPosition: () => null,
     // Ctrl+S is an editor-scoped action whose disposable the pane keeps.
@@ -197,7 +202,8 @@ function loadWithDom() {
   // The pane imports the one `WBMonaco`: its boot is replaced for the test and
   // put back by `after`.
   Object.assign(WBMonaco, stub);
-  return { viewer: createViewer(window, document, { messages: { flash() {} } }), mount, log, models, document };
+  const viewer = createViewer(window, document, { messages: { flash() {} } });
+  return { viewer, mount, log, models, document, barsOn };
 }
 after(() => Object.assign(WBMonaco, REAL_MONACO));
 const settle = () => new Promise((r) => { setTimeout(r, 5); });
@@ -243,11 +249,12 @@ test("a pinned slot shows two panes: the active in column 1, the pin in column 3
 });
 
 test("a mirror is a second editor over the SAME model, in a pane of its own — no new model", async () => {
-  const { viewer, mount, log, models } = loadWithDom();
+  const { viewer, mount, log, models, barsOn } = loadWithDom();
   openCode(viewer, "a", "a.js");
   await settle();
   viewer.setActive("a", { id: "a", mirror: true, focus: false, ratio: null });
   assert.equal(models.length, 1);
+  assert.deepEqual(barsOn, ["own:a.js", "mirror:a.js:1"], "the mirror has its status bar too");
   assert.deepEqual(log, ["over:a.js"]);
   assert.equal(mirrors(mount).length, 1);
   assert.equal(mirrors(mount)[0].dataset.mirrorOf, "a");

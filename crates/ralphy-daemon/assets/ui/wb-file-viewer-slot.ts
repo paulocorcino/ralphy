@@ -12,6 +12,7 @@ import type { ViewerRecord } from "./wb-file-viewer.ts";
 import type { ViewerSlot } from "./wb-viewer-panes.ts";
 import type { MermaidWindow } from "./wb-dbml-draw.ts";
 import { codeEditor } from "./wb-file-viewer-records.ts";
+import { editorHost, mountEditorStatus } from "./wb-editor-status.ts";
 
 /** The mirror: a second editor over a pane's model, in a `.viewer` of its own. */
 type Mirror = {
@@ -20,6 +21,7 @@ type Mirror = {
   ed: MonacoEditor | null;
   ro: ResizeObserver | undefined;
   saveKey: MonacoDisposable | undefined;
+  status: MonacoDisposable | undefined;
 };
 
 /** What `createViewer` hands the slot. */
@@ -154,13 +156,22 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
       window.Alpine.store("tabs").toggleMirror();
     });
     box.append(el);
-    const holder: Mirror = { rec, el, ed: null, ro: undefined, saveKey: undefined };
-    const ed = WBMonaco.createOver(need(el, ".viewer-body"), model, {
+    const holder: Mirror = {
+      rec,
+      el,
+      ed: null,
+      ro: undefined,
+      saveKey: undefined,
+      status: undefined,
+    };
+    const host = editorHost(document, need(el, ".viewer-body"));
+    const ed = WBMonaco.createOver(host, model, {
       narrow: isNarrow(el),
     });
     // No content listener: the model is shared, so the pane's own listener
     // already marks it dirty for an edit made here.
     holder.saveKey = bindSave(ed, rec);
+    holder.status = mountEditorStatus(document, host, ed, isRendered(rec.kind) ? "window" : "off");
     watchNarrow(holder, ed);
     holder.ed = ed;
     mirror = holder;
@@ -169,10 +180,11 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
 
   function closeMirror() {
     if (!mirror) return;
-    const { rec, el, ed, ro, saveKey } = mirror;
+    const { rec, el, ed, ro, saveKey, status } = mirror;
     mirror = null;
     ro?.disconnect();
     saveKey?.dispose();
+    status?.dispose();
     ed?.dispose();
     el.remove();
     if (rec.mirrorBtn) setCaption(rec.mirrorBtn, "bi-files", "Mirror");

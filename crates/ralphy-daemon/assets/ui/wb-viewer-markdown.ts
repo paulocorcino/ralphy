@@ -94,6 +94,7 @@ export type ViewerMarkdownDeps = {
   setPathLabel: (el: HTMLElement, rec: ViewerRecord) => void;
   setCaption: (btn: HTMLElement, icon: string, caption: string) => void;
   detachBtnHtml: (rec: ViewerRecord) => string;
+  mirrorBtnHtml: (rec: ViewerRecord) => string;
   detachClick: (rec: BytesRecord) => void;
   /** Mount a code editor in `container`: the pane's Edit mode. */
   mountEditor: (
@@ -140,6 +141,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     setPathLabel,
     setCaption,
     detachBtnHtml,
+    mirrorBtnHtml,
     detachClick,
     mountEditor,
   } = deps;
@@ -148,6 +150,17 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   const { scripts } = deps;
 
   // --- a Markdown tab -----------------------------------------------------
+  // The mirror shows the pane's editor, so its button waits for the first Edit.
+  function wireMirrorButton(rec: BytesRecord, el: HTMLElement) {
+    const btn = el.querySelector<HTMLElement>('[data-act="mirror"]');
+    if (!btn) return;
+    btn.style.display = "none";
+    btn.addEventListener("click", () => {
+      window.Alpine.store("tabs").toggleMirror();
+    });
+    rec.mirrorBtn = btn;
+  }
+
   function buildMarkdown(rec: BytesRecord) {
     const el = document.createElement("div");
     el.className = "viewer md-viewer";
@@ -171,6 +184,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
           <i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
         <button class="vbtn" data-act="toggle" title="Edit" aria-label="Edit">
           <i class="bi bi-pencil"></i><span class="vbtn-label">Edit</span></button>
+        ${mirrorBtnHtml(rec)}
         <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none"
           title="Changed on disk — reload" aria-label="Changed on disk — reload">
           <i class="bi bi-exclamation-triangle"></i>
@@ -202,6 +216,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     wireEncodingMenu(rec, el);
     rec.el = el;
     rec.saveBtn = el.querySelector<HTMLElement>('[data-act="save"]');
+    wireMirrorButton(rec, el);
 
     // edit / preview toggle
     need(el, '[data-act="toggle"]').addEventListener("click", () => {
@@ -424,6 +439,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       // The frame is hidden, not gone: its scripts must not go on running.
       if (rec.scripts !== undefined) renderMarkdown(rec);
       split.classList.add("editing");
+      if (rec.mirrorBtn) rec.mirrorBtn.style.display = "";
       split.classList.remove("toc-open");
       editor.style.display = "flex";
       if (rec.ed) {
