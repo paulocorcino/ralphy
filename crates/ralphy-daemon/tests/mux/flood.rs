@@ -17,9 +17,15 @@ use tokio_tungstenite::tungstenite::Message;
 
 use futures_util::StreamExt;
 
-use super::support::{connect, next_inner, open, send_on, serve, Ws};
+use super::support::{connect, next_inner, open, send_on, serve, Written, Ws};
 
 const WITHIN: Duration = Duration::from_secs(10);
+/// How long the test waits for a state of the daemon that it reads in the log.
+const LOGGED_WITHIN: Duration = Duration::from_secs(5);
+/// The log line of the writer when the socket is full.
+const WAITS: &str = "socket writer waits: the socket is full";
+/// The log line of a console bridge that queued a replay.
+const REPLAY_QUEUED: &str = "console replay queued";
 
 /// The channel of the console that floods.
 const FLOODING: u32 = 1;
@@ -159,15 +165,29 @@ fn longest_flood_run(pieces: &[(u32, bool)]) -> usize {
     longest
 }
 
-#[tokio::test]
+// The runtime has one thread, so the subscriber set for this thread sees
+// every task of the daemon.
+#[tokio::test(flavor = "current_thread")]
 async fn one_flooding_console_delays_another_channel_by_one_piece() {
     point_launcher_at_test_child();
+    let written = Written::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(written.clone())
+        .with_max_level(tracing::Level::DEBUG)
+        .with_ansi(false)
+        .finish();
+    let _log = tracing::subscriber::set_default(subscriber);
     let daemon = serve().await;
     let mut ws = connect(&daemon).await;
     // The flooding channel opens first: a writer that serves channels in
     // the order they opened would serve it to the end before the others.
     let flooding = launch(&mut ws, FLOODING).await;
     let quiet = launch(&mut ws, QUIET).await;
+    assert_eq!(
+        written.lines_with(WAITS),
+        0,
+        "the socket is full before the flood"
+    );
 
     // About 1 GiB of lines, which no test reads to the end.
     type_line(&mut ws, FLOODING, flooding, "flood 1000000").await;
@@ -181,15 +201,27 @@ async fn one_flooding_console_delays_another_channel_by_one_piece() {
     type_line(&mut ws, QUIET, quiet, "flood 200").await;
     read_until(&mut ws, QUIET, "FLOOD-DONE").await;
 
-    // Nothing reads the socket for a while, so the writer waits on the full
-    // socket with the flood queued. Both replays are asked for meanwhile and
-    // queue whole behind it.
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    // Nothing reads the socket from here, so the writer soon waits on the
+    // full socket with the flood queued, and it waits until the test reads.
+    // Both replays are asked for meanwhile and queue whole behind it.
+    let waits = written.lines_with(WAITS);
+    assert!(
+        written.more_lines_with(WAITS, waits, LOGGED_WITHIN).await,
+        "the writer did not wait on a full socket within {LOGGED_WITHIN:?}"
+    );
+    // A launch can queue a replay of its own (on Linux it does), so the
+    // two asked for here are counted from this point.
+    let replays_before = written.lines_with(REPLAY_QUEUED);
     for replay in REPLAYS {
         let fields = serde_json::json!({ "id": quiet, "watch": 1, "since": 0 });
         open(&mut ws, replay, "console", fields).await;
     }
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        written
+            .more_lines_with(REPLAY_QUEUED, replays_before + 1, LOGGED_WITHIN)
+            .await,
+        "both replays were not queued within {LOGGED_WITHIN:?}"
+    );
     let seen = pieces_until_replays(&mut ws).await;
 
     // From the first piece that has more behind it, a replay is one frame

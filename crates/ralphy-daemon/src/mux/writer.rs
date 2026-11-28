@@ -17,7 +17,7 @@ use std::task::{Context, Poll};
 
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::stream::SplitSink;
-use futures_util::SinkExt;
+use futures_util::{FutureExt, SinkExt};
 use tokio::sync::mpsc::error::{SendError, TryRecvError};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::AbortHandle;
@@ -271,7 +271,7 @@ impl Task {
         for queue in &mut self.queues {
             queue.refill();
             if let Some(message) = queue.pieces.pop_front() {
-                self.sink.send(message).await?;
+                send_or_log_wait(&mut self.sink, message).await?;
                 turn = Turn::Sent;
             }
         }
@@ -305,6 +305,25 @@ impl Task {
             Poll::Pending
         }
     }
+}
+
+/// Send `message`, with one debug line when the socket is full and the send
+/// must wait.
+async fn send_or_log_wait(
+    sink: &mut SplitSink<WebSocket, Message>,
+    message: Message,
+) -> Result<(), axum::Error> {
+    let mut send = sink.send(message);
+    let mut waiting = false;
+    std::future::poll_fn(|cx| {
+        let polled = send.poll_unpin(cx);
+        if polled.is_pending() && !waiting {
+            waiting = true;
+            tracing::debug!("socket writer waits: the socket is full");
+        }
+        polled
+    })
+    .await
 }
 
 #[cfg(test)]
