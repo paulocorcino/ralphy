@@ -238,6 +238,7 @@ pub(super) fn open(
         let encoded = protocol::encode(&frame);
         traffic.replay(encoded.len(), encoded.len() - sent + replay.raw_len);
         outbox.frame(encoded);
+        tracing::debug!(session = id, "console replay queued");
     }
 }
 

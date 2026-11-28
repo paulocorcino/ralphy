@@ -2,6 +2,7 @@
 //! with a temporary store, connect a page socket to its `/ws`, open and close
 //! channels, and send and read the frames of one channel.
 
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
@@ -179,4 +180,54 @@ pub(crate) async fn ends_within(ws: &mut Ws, within: Duration) -> bool {
     })
     .await;
     ended.is_ok()
+}
+
+/// The log lines written while a test runs.
+#[derive(Clone, Default)]
+pub(crate) struct Written(Arc<Mutex<Vec<u8>>>);
+
+impl std::io::Write for Written {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().expect("a test lock").extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Written {
+    type Writer = Written;
+    fn make_writer(&'a self) -> Written {
+        self.clone()
+    }
+}
+
+impl Written {
+    /// How many of the lines written so far hold `needle`.
+    pub(crate) fn lines_with(&self, needle: &str) -> usize {
+        let bytes = self.0.lock().expect("a test lock").clone();
+        String::from_utf8_lossy(&bytes)
+            .lines()
+            .filter(|line| line.contains(needle))
+            .count()
+    }
+
+    /// Wait at most `within` until more than `after` lines hold `needle`.
+    /// Returns whether they do.
+    pub(crate) async fn more_lines_with(
+        &self,
+        needle: &str,
+        after: usize,
+        within: Duration,
+    ) -> bool {
+        let deadline = tokio::time::Instant::now() + within;
+        while self.lines_with(needle) <= after {
+            if tokio::time::Instant::now() >= deadline {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        true
+    }
 }
