@@ -119,9 +119,7 @@ fn vendored_crepe_states_its_recipe() {
     );
 
     for artefact in ["vendor/crepe/crepe.js", "vendor/crepe/crepe.css"] {
-        let src = UI
-            .get_file(artefact)
-            .and_then(|f| f.contents_utf8())
+        let src = embedded_text(artefact)
             .unwrap_or_else(|| panic!("{artefact} must be embedded as UTF-8"));
         assert_eq!(
             src.lines().next().unwrap_or_default(),
@@ -144,17 +142,14 @@ fn vendored_crepe_states_its_recipe() {
         "the bundle carries the empty line's title control (ADR-0064)"
     );
     assert!(
-        UI.get_file("vendor/crepe/crepe.js")
-            .and_then(|f| f.contents_utf8())
-            .is_some_and(|src| src.contains("note-title-toggle")),
+        embedded_text("vendor/crepe/crepe.js").is_some_and(|src| src.contains("note-title-toggle")),
         "crepe.js must carry the title control it advertises"
     );
     // The header names it; this proves it is actually IN the artefact —
     // a class only our node view emits, so a stale rebuild reds here
     // rather than shipping a header that promises a view the bundle lost.
     assert!(
-        UI.get_file("vendor/crepe/crepe.js")
-            .and_then(|f| f.contents_utf8())
+        embedded_text("vendor/crepe/crepe.js")
             .is_some_and(|src| src.contains("note-mermaid-figure")),
         "crepe.js must carry the mermaid node view it advertises"
     );
@@ -200,7 +195,7 @@ fn vendored_crepe_states_its_recipe() {
     }
     // The licence travels with the code.
     assert!(
-        UI.get_file("vendor/crepe/LICENSE").is_some(),
+        embedded_bytes("vendor/crepe/LICENSE").is_some(),
         "the vendored bundle must carry its licence"
     );
 }
@@ -255,9 +250,7 @@ fn vendored_docx_preview_states_its_recipe() {
         version("jszip"),
         version("esbuild")
     );
-    let bundle = UI
-        .get_file("vendor/docx-preview/docx-preview.js")
-        .and_then(|f| f.contents_utf8())
+    let bundle = embedded_text("vendor/docx-preview/docx-preview.js")
         .expect("vendor/docx-preview/docx-preview.js must be embedded as UTF-8");
     assert_eq!(
         bundle.lines().next().unwrap_or_default(),
@@ -269,7 +262,7 @@ fn vendored_docx_preview_states_its_recipe() {
         "vendor/docx-preview/LICENSE-jszip",
     ] {
         assert!(
-            UI.get_file(licence).is_some(),
+            embedded_bytes(licence).is_some(),
             "{licence} must travel with the bundle"
         );
     }

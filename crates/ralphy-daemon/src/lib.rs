@@ -111,6 +111,10 @@ pub const DEFAULT_PORT: u16 = 7257;
 /// [`routes::require_auth`]), so there is no separate server-rendered login page.
 pub(crate) static UI: Dir<'_> = include_dir!("$OUT_DIR/ui");
 
+/// The vendored files of [`UI`], each stored as its gzip body (`build/ui_gzip.rs`).
+/// Read them through `assets::embedded`, which knows both trees.
+pub(crate) static UI_GZ: Dir<'_> = include_dir!("$OUT_DIR/ui-gz");
+
 /// What the composition root decides; everything else is the daemon's.
 #[derive(Debug)]
 pub struct DaemonConfig {

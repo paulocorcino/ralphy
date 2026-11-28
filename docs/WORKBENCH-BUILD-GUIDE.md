@@ -47,7 +47,11 @@ libraries are classic scripts.
 - **The build.** `build.rs` copies `assets/ui/` to `$OUT_DIR/ui`, and the
   binary embeds that copy. A `.ts` file is written as a `.js` file with its
   types replaced by spaces, so the browser shows the same lines and columns
-  as the source. `tsconfig.json` and the `.d.ts` files are not served.
+  as the source. `tsconfig.json` and the `.d.ts` files are not served. A
+  vendored file that gzip shrinks by a tenth or more moves to
+  `$OUT_DIR/ui-gz` as its gzip body (`build/ui_gzip.rs`), so it is not in
+  `UI`. Code and tests read an embedded file through `assets::embedded`,
+  which knows both trees, or through `embedded_bytes` in the daemon tests.
 - **The entry module.** Each page has one `<script type="module">` tag,
   after its vendored classic scripts: `main.ts` for `index.html`, and
   `<page>-main.ts` for each torn-off window page. No page has an inline

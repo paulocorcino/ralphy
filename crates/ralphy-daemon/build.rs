@@ -11,6 +11,8 @@ mod git_version;
 mod parts;
 #[path = "build/ui.rs"]
 mod ui;
+#[path = "build/ui_gzip.rs"]
+mod ui_gzip;
 #[path = "build/ui_import.rs"]
 mod ui_import;
 
@@ -49,15 +51,19 @@ fn main() -> ExitCode {
     // serving the stale embedded copy after a "successful" rebuild.
     println!("cargo:rerun-if-changed=assets/ui");
     println!("cargo:rerun-if-changed={WORDING}");
-    let out =
-        PathBuf::from(std::env::var_os("OUT_DIR").expect("cargo sets OUT_DIR for a build script"))
-            .join("ui");
+    let out_dir =
+        PathBuf::from(std::env::var_os("OUT_DIR").expect("cargo sets OUT_DIR for a build script"));
+    let out = out_dir.join("ui");
     if let Err(e) = ui::build(&PathBuf::from("assets/ui"), &out) {
         eprintln!("error: build the workbench tree: {e:#}");
         return ExitCode::FAILURE;
     }
     if let Err(e) = copy_wording(Path::new(WORDING), &out.join("wording")) {
         eprintln!("error: copy the wording catalogs: {e:#}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(e) = ui_gzip::store(&out, &out_dir.join("ui-gz")) {
+        eprintln!("error: store the vendored files gzipped: {e:#}");
         return ExitCode::FAILURE;
     }
 

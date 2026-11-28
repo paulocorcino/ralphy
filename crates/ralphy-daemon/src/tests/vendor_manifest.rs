@@ -53,6 +53,11 @@ fn check_manifest(files: &[(String, Vec<u8>)], manifest: &serde_json::Value) -> 
     problems
 }
 
+fn vendor_manifest() -> serde_json::Value {
+    let bytes = embedded_bytes("vendor/manifest.json").expect("vendor/manifest.json is embedded");
+    serde_json::from_slice(&bytes).expect("vendor/manifest.json is JSON")
+}
+
 /// Each vendored file is the one its manifest entry names: a changed byte or
 /// a file nobody recorded fails here, so a library bump also updates the
 /// version and source the vulnerability scan reads (ADR-0072 D12).
@@ -60,29 +65,17 @@ fn check_manifest(files: &[(String, Vec<u8>)], manifest: &serde_json::Value) -> 
 // it compares bytes to hashes; no behavior reads the manifest.
 #[test]
 fn vendored_files_match_the_manifest() {
-    fn walk(dir: &Dir<'_>, out: &mut Vec<(String, Vec<u8>)>) {
-        for f in dir.files() {
-            let path = f.path().to_string_lossy().replace('\\', "/");
-            let rel = path.strip_prefix("vendor/").unwrap_or(&path).to_owned();
-            if rel != "manifest.json" {
-                out.push((rel, f.contents().to_vec()));
-            }
-        }
-        for d in dir.dirs() {
-            walk(d, out);
-        }
-    }
-    let manifest: serde_json::Value = serde_json::from_slice(
-        UI.get_file("vendor/manifest.json")
-            .expect("vendor/manifest.json is embedded")
-            .contents(),
-    )
-    .expect("vendor/manifest.json is JSON");
-    let mut files = Vec::new();
-    walk(
-        UI.get_dir("vendor").expect("vendor/ is embedded"),
-        &mut files,
-    );
+    let manifest = vendor_manifest();
+    // The bytes as served, inflated where the binary stores them gzipped.
+    let mut files: Vec<(String, Vec<u8>)> = embedded_ui_paths()
+        .into_iter()
+        .filter_map(|path| {
+            let rel = path.strip_prefix("vendor/")?;
+            (rel != "manifest.json").then(|| (rel.to_owned(), embedded_bytes(&path)))
+        })
+        .map(|(rel, bytes)| (rel, bytes.expect("a listed path is embedded")))
+        .collect();
+    files.sort();
     assert!(files.len() > 100, "the walk found the vendored files");
     let problems = check_manifest(&files, &manifest);
     assert!(problems.is_empty(), "{}", problems.join("\n"));
@@ -117,12 +110,7 @@ fn vendored_files_match_the_manifest() {
 // the stale build runs fine until a nested x-show, which no test renders.
 #[test]
 fn vendored_alpine_is_the_manifest_version() {
-    let manifest: serde_json::Value = serde_json::from_slice(
-        UI.get_file("vendor/manifest.json")
-            .expect("vendor/manifest.json is embedded")
-            .contents(),
-    )
-    .expect("vendor/manifest.json is JSON");
+    let manifest = vendor_manifest();
     let lib = manifest["libraries"]
         .as_array()
         .into_iter()
@@ -132,9 +120,7 @@ fn vendored_alpine_is_the_manifest_version() {
     let path = lib["files"][0]["path"]
         .as_str()
         .expect("the alpinejs entry names its file");
-    let text = UI
-        .get_file(format!("vendor/{path}"))
-        .and_then(|f| f.contents_utf8())
+    let text = embedded_text(&format!("vendor/{path}"))
         .unwrap_or_else(|| panic!("vendor/{path} is embedded UTF-8"));
     let built = text
         .split_once("version: \"")

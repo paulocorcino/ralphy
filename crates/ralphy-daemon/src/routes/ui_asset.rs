@@ -1,9 +1,14 @@
 //! The embedded UI bytes: the fallback that serves every page and asset.
 
+use std::borrow::Cow;
+use std::sync::Arc;
+
+use axum::body::Body;
 use axum::http::{header, HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 
-use crate::{assets, UI};
+use crate::assets;
+use crate::assets::embedded::{self, Stored};
 
 /// Serve a file from the embedded UI tree. A page is served at its route
 /// (`/`, `/popup`, `/fence`), never at its file name
@@ -12,18 +17,13 @@ use crate::{assets, UI};
 /// asset goes out gzipped when the browser admits it (see [`crate::assets`]).
 pub(crate) async fn ui_asset(headers: HeaderMap, uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
-    let Some((path, file)) =
-        assets::embedded_path(path).and_then(|p| UI.get_file(p).map(|f| (p, f)))
+    let Some((path, stored)) =
+        assets::embedded_path(path).and_then(|p| embedded::file(p).map(|f| (p, served(p, f))))
     else {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
     let content_type = content_type(path);
-    let contents = if path == assets::Shell::Desk.file() {
-        assets::desk_page()
-    } else {
-        file.contents()
-    };
-    let prepared = assets::prepared(path, contents, assets::compressible(content_type)).await;
+    let prepared = prepared(path, stored, content_type).await;
     let header_str = |name: header::HeaderName| headers.get(name).and_then(|v| v.to_str().ok());
 
     let mut resp = Response::builder()
@@ -32,17 +32,49 @@ pub(crate) async fn ui_asset(headers: HeaderMap, uri: Uri) -> Response {
         .header(header::VARY, "Accept-Encoding");
     if assets::not_modified(header_str(header::IF_NONE_MATCH), &prepared.etag) {
         resp = resp.status(StatusCode::NOT_MODIFIED);
-        return finish_asset(resp.body(axum::body::Body::empty()));
+        return finish_asset(resp.body(Body::empty()));
     }
     resp = resp.header(header::CONTENT_TYPE, content_type);
     let body = match &prepared.gzip {
         Some(gz) if assets::accepts_gzip(header_str(header::ACCEPT_ENCODING)) => {
             resp = resp.header(header::CONTENT_ENCODING, "gzip");
-            axum::body::Body::from(gz.clone())
+            Body::from(gz.clone())
         }
-        _ => axum::body::Body::from(contents),
+        _ => match identity_body(path, stored) {
+            Some(body) => body,
+            None => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        },
     };
     finish_asset(resp.body(body))
+}
+
+/// The bytes served for `path`: the desk page carries this build's id.
+fn served(path: &str, stored: Stored) -> Stored {
+    if path == assets::Shell::Desk.file() {
+        Stored::Raw(assets::desk_page())
+    } else {
+        stored
+    }
+}
+
+async fn prepared(path: &str, stored: Stored, content_type: &str) -> Arc<assets::Prepared> {
+    match stored {
+        Stored::Raw(raw) => assets::prepared(path, raw, assets::compressible(content_type)).await,
+        Stored::Gzip(body) => assets::prepared_gzipped(path, body).await,
+    }
+}
+
+/// The file as it is, for a client that does not admit gzip. A body that
+/// does not inflate is a build bug, logged and answered with `None`.
+fn identity_body(path: &str, stored: Stored) -> Option<Body> {
+    match stored.contents() {
+        Ok(Cow::Borrowed(raw)) => Some(Body::from(raw)),
+        Ok(Cow::Owned(inflated)) => Some(Body::from(inflated)),
+        Err(e) => {
+            tracing::error!(error = %e, path, "inflating an embedded asset");
+            None
+        }
+    }
 }
 
 /// The builder's only failure is an invalid header value, and every value
