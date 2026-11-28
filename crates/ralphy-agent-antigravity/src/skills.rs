@@ -6,10 +6,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use include_dir::{include_dir, Dir};
-
-/// The skills, embedded at build time so the binary is self-contained.
-static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/skills");
+use ralphy_adapter_support::SKILLS;
 
 /// Write the embedded skills into `<root>/skills`.
 pub(crate) fn materialize(root: &Path) -> Result<()> {

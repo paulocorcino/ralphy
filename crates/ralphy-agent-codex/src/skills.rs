@@ -3,15 +3,9 @@
 //! maintains there.
 
 use anyhow::Result;
-use include_dir::{include_dir, Dir};
+use ralphy_adapter_support::SKILLS;
 
 use ralphy_core::Workspace;
-
-/// The skills subtree, embedded at build time so the binary is self-contained.
-/// Codex auto-discovers skills in `.agents/skills/`; we extract this tree there
-/// before every plan and execute call so a run never depends on globally-installed
-/// skills (mirrors `materialize_plugin` in the Claude adapter).
-static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/skills");
 
 /// Materialize the embedded skills into the canonical, ralphy-owned `.ralphy/skills`
 /// store, then expose them to Codex by linking each one into `.agents/skills/<name>`.

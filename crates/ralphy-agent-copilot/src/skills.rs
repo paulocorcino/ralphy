@@ -10,12 +10,9 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use include_dir::{include_dir, Dir};
+use ralphy_adapter_support::SKILLS;
 
 use ralphy_core::Workspace;
-
-/// The skills subtree, embedded at build time so the binary is self-contained.
-static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/skills");
 
 /// Materialize the embedded skills into the canonical, ralphy-owned `.ralphy/skills`
 /// store, then expose them to Copilot by linking each into `.agents/skills/<name>`.

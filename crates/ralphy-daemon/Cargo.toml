@@ -181,6 +181,9 @@ tokio = { version = "1", features = ["test-util"] }
 # the source text. The parser rewrites `.ts` import paths to `.js`; the strip
 # crate already depends on it, so it adds no crate of its own.
 anyhow.workspace = true
+# `build/ui_gzip.rs` stores the vendored files gzipped; the same flate2 the
+# daemon serves gzip with.
+flate2.workspace = true
 swc_ts_fast_strip = "60"
 swc_common = "27"
 swc_ecma_ast = "30"

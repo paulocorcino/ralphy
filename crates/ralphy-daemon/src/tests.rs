@@ -142,20 +142,29 @@ async fn body_string(resp: Response) -> String {
 async fn get_local(path: &str) -> Response {
     get(path).await
 }
-/// Every path embedded in [`UI`], slash-separated and relative to
-/// `assets/ui` — `include_dir` exposes only one directory level at a time.
+/// Every embedded UI path, slash-separated and relative to `assets/ui`, in
+/// both trees ([`assets::embedded`]).
 fn embedded_ui_paths() -> Vec<String> {
-    fn walk(dir: &Dir<'_>, out: &mut Vec<String>) {
-        for f in dir.files() {
-            out.push(f.path().to_string_lossy().replace('\\', "/"));
-        }
-        for d in dir.dirs() {
-            walk(d, out);
-        }
-    }
-    let mut out = Vec::new();
-    walk(&UI, &mut out);
-    out
+    assets::embedded::every_file()
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect()
+}
+
+/// The embedded file at `path` as UTF-8 text, or `None` when it is not.
+fn embedded_text(path: &str) -> Option<String> {
+    String::from_utf8(embedded_bytes(path)?).ok()
+}
+
+/// The embedded file at `path` as it is, inflated when it is stored gzipped.
+fn embedded_bytes(path: &str) -> Option<Vec<u8>> {
+    let stored = assets::embedded::file(path)?;
+    Some(
+        stored
+            .contents()
+            .expect("an embedded body inflates")
+            .into_owned(),
+    )
 }
 
 /// The whole stylesheet, as the browser assembles it.

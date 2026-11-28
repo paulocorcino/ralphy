@@ -13,7 +13,6 @@ ralphy-time.workspace = true
 tracing.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-include_dir.workspace = true
 ralphy-core.workspace = true
 ralphy-adapter-support.workspace = true
 # The locator, the owned root and the hook command live here so the daemon

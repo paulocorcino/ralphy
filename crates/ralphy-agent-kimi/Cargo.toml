@@ -10,7 +10,6 @@ description = "Kimi CLI adapter for Ralphy: drives `kimi --print` behind the cor
 anyhow.workspace = true
 tracing.workspace = true
 serde_json.workspace = true
-include_dir.workspace = true
 ralphy-core.workspace = true
 ralphy-adapter-support.workspace = true
 

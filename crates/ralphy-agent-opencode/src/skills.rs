@@ -5,15 +5,9 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use include_dir::{include_dir, Dir};
+use ralphy_adapter_support::SKILLS;
 
 use ralphy_core::Workspace;
-
-/// The skills subtree, embedded at build time so the binary is self-contained.
-/// `OpenCode` discovers skills via `skills.paths` in its config; we extract this
-/// tree to `.ralphy/skills` and inject the path via `OPENCODE_CONFIG_CONTENT`
-/// before every plan and execute call (ADR-0005 D7, mirrors Codex adapter).
-static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/skills");
 
 /// Materialize the embedded skills into `<repo>/.ralphy/skills/` so `OpenCode` can
 /// discover them via the injected `skills.paths` config. Clears any prior copy,

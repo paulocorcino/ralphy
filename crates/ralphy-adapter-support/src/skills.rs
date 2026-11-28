@@ -10,6 +10,10 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
+/// Ralphy's skills, embedded once for every adapter so the binary holds one copy.
+pub static SKILLS: include_dir::Dir<'static> =
+    include_dir::include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/skills");
+
 /// Extract `skills` into the ralphy-owned store `<ralphy_dir>/skills`, then link
 /// each skill into the vendor's shared `discovery_dir` as `<discovery_dir>/<name>`.
 ///
