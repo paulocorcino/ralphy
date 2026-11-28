@@ -58,19 +58,40 @@ export function readsFor(tokens: number) {
   return Math.max(1, Math.ceil(tokens / TOKENS_PER_READ));
 }
 
+/** A bar text cut into a value, a unit, a value, a unit…: values get the accent. */
+export type Pieces = string[];
+
 /** `61 ln ≈74@100`: the lines, then the lines if cut at `column`. */
-export function linesText(count: number, wrapped: number, column: number) {
-  return `${String(count)} ln ≈${String(wrapped)}@${String(column)}`;
+export function linesText(count: number, wrapped: number, column: number): Pieces {
+  return [String(count), " ln ≈", String(wrapped), "@", String(column)];
 }
 
 /** `≈150k tok (6 rd)`: the token estimate and the reads it takes. */
-export function tokensText(tokens: number) {
-  return `≈${shortCount(tokens)} tok (${String(readsFor(tokens))} rd)`;
+export function tokensText(tokens: number): Pieces {
+  return ["≈" + shortCount(tokens), " tok (", String(readsFor(tokens)), " rd)"];
 }
 
-/** `Sel 412 ch ≈103 tok`: what a selection holds. */
-export function selectionText(chars: number) {
-  return `Sel ${shortCount(chars)} ch ≈${shortCount(estimateTokens(chars))} tok`;
+/** `sel 412 ch ≈103 tok`: what a selection holds. */
+export function selectionText(chars: number): Pieces {
+  const tokens = "≈" + shortCount(estimateTokens(chars));
+  return ["", "sel ", shortCount(chars), " ch ", tokens, " tok"];
+}
+
+/** `10.0 KB`: the number is the value, the unit is not. */
+function sizeText(bytes: number): Pieces {
+  const [value = "", unit = ""] = formatSize(bytes).split(" ");
+  return [value, " " + unit];
+}
+
+function paint(doc: Document, el: HTMLElement, pieces: Pieces) {
+  el.replaceChildren(
+    ...pieces.map((text, i) => {
+      const span = doc.createElement("span");
+      span.className = i % 2 === 0 ? "editor-status-val" : "editor-status-unit";
+      span.textContent = text;
+      return span;
+    }),
+  );
 }
 
 /** The Monaco options of a wrap setting. `bounded` keeps the text inside a narrow pane. */
@@ -95,6 +116,12 @@ export function clampColumn(raw: number) {
   return Math.min(WRAP_COLUMN_MAX, Math.max(WRAP_COLUMN_MIN, Math.round(raw)));
 }
 
+/** The column in the field's text; text that is not a number keeps `current`. */
+export function typedColumn(text: string, current: number) {
+  const digits = text.trim();
+  return /^\d+$/u.test(digits) ? clampColumn(Number(digits)) : current;
+}
+
 // Every open bar, so a change in one applies to all of them.
 const liveBars = new Set<(setting: WrapSetting) => void>();
 
@@ -109,13 +136,15 @@ function setWrap(setting: WrapSetting) {
 
 /** The parts of a bar that change. */
 type Parts = { [K in "cursor" | "lines" | "tokens" | "size" | "eol"]: HTMLElement } & {
+  doc: Document;
   mode: HTMLSelectElement;
   column: HTMLInputElement;
 };
 
-function partsOf(el: HTMLElement): Parts {
+function partsOf(doc: Document, el: HTMLElement): Parts {
   const part = (name: string) => need(el, `[data-part="${name}"]`);
   return {
+    doc,
     cursor: part("cursor"),
     lines: part("lines"),
     tokens: part("tokens"),
@@ -130,11 +159,11 @@ function paintCursor(parts: Parts, ed: MonacoEditor) {
   const sel = ed.getSelection();
   const model = ed.getModel();
   if (sel && model && !sel.isEmpty()) {
-    parts.cursor.textContent = selectionText(model.getValueInRange(sel).length);
+    paint(parts.doc, parts.cursor, selectionText(model.getValueInRange(sel).length));
     return;
   }
   const pos = ed.getPosition();
-  parts.cursor.textContent = pos ? `${String(pos.lineNumber)}:${String(pos.column)}` : "";
+  paint(parts.doc, parts.cursor, pos ? [String(pos.lineNumber), ":", String(pos.column)] : []);
 }
 
 function paintCounts(parts: Parts, ed: MonacoEditor, column: number) {
@@ -142,10 +171,10 @@ function paintCounts(parts: Parts, ed: MonacoEditor, column: number) {
   if (!model) return;
   const count = model.getLineCount();
   const wrapped = estimateWrappedLines(model.getLinesContent(), column, model.getOptions().tabSize);
-  parts.lines.textContent = linesText(count, wrapped, column);
-  parts.tokens.textContent = tokensText(estimateTokens(model.getValueLength()));
-  parts.size.textContent = formatSize(new TextEncoder().encode(model.getValue()).length);
-  parts.eol.textContent = model.getEOL() === "\r\n" ? "CRLF" : "LF";
+  paint(parts.doc, parts.lines, linesText(count, wrapped, column));
+  paint(parts.doc, parts.tokens, tokensText(estimateTokens(model.getValueLength())));
+  paint(parts.doc, parts.size, sizeText(new TextEncoder().encode(model.getValue()).length));
+  paint(parts.doc, parts.eol, ["", model.getEOL() === "\r\n" ? "CRLF" : "LF"]);
 }
 
 /**
@@ -178,12 +207,12 @@ export function mountEditorStatus(
       <option value="window">Window</option>
       <option value="column">Column</option>
     </select></label>
-  <input class="editor-status-field editor-status-num" data-part="column" type="number"
-    min="${String(WRAP_COLUMN_MIN)}" max="${String(WRAP_COLUMN_MAX)}"
+  <input class="editor-status-field editor-status-num" data-part="column" type="text"
+    inputmode="numeric" maxlength="3" spellcheck="false"
     title="Wrap column, also used for the line estimate" aria-label="Wrap column">`,
   );
   host.after(el);
-  const parts = partsOf(el);
+  const parts = partsOf(doc, el);
   let setting = savedWrap(fallback);
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -205,7 +234,10 @@ export function mountEditorStatus(
     if (isWrapMode(mode)) setWrap({ ...setting, mode });
   });
   parts.column.addEventListener("change", () => {
-    setWrap({ ...setting, column: clampColumn(Number(parts.column.value)) });
+    setWrap({ ...setting, column: typedColumn(parts.column.value, setting.column) });
+  });
+  parts.column.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === "Escape") parts.column.blur();
   });
   const subs = [
     ed.onDidChangeModelContent(recount),

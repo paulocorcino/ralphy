@@ -115,6 +115,10 @@ function fakeEl(tag) {
     after(k) {
       el.parent?.append(k);
     },
+    replaceChildren(...kids) {
+      el.children = [];
+      el.append(...kids);
+    },
     remove() {
       if (el.parent) el.parent.children = el.parent.children.filter((k) => k !== el);
       el.parent = null;

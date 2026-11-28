@@ -253,12 +253,14 @@ selector and filter are [Text fields](./design-system/text-field.md), as
 are the find and page fields of the PDF viewer, and the separator selector
 of a csv grid.
 
-The editor status bar is one line under each code editor, on `--chrome`
-with a `--border` line above it, text in `--text-muted` at `--fs-sm`, items
-at the right. It shows the cursor or the selection, the line count with an
-estimate at the wrap column, a token estimate, the size, the line ending,
-and the wrap menu and column field. Its two fields are small
-[Text fields](./design-system/text-field.md).
+The editor status bar is one line under each code editor. It continues
+the editor's dark plane: `--window-bg`, a faint `--border` line above it,
+`--font-mono` at `--fs-xs`, items at the right. Values are in
+`--console-text`, units in a dimmed `--text-muted`. It shows the cursor or
+the selection, the line count with an estimate at the wrap column, a token
+estimate with the agent reads it takes, the size, the line ending, and the
+wrap menu and column field. The two controls have no box: they look like
+text, and show `--surface` under the pointer.
 
 The archive list is a table of two columns: the name, indented 1rem for
 each folder level, with a `bi-folder` or `bi-file-earmark` icon, and the

@@ -10,6 +10,7 @@ import {
   readsFor,
   selectionText,
   shortCount,
+  typedColumn,
   tokensText,
   wrapOptions,
 } from "../assets/ui/wb-editor-status.ts";
@@ -47,10 +48,10 @@ test("an agent needs one read per 25k tokens, and at least one", () => {
   assert.equal(readsFor(150_000), 6);
 });
 
-test("the bar's texts are short", () => {
-  assert.equal(linesText(61, 74, 100), "61 ln ≈74@100");
-  assert.equal(tokensText(150_000), "≈150k tok (6 rd)");
-  assert.equal(selectionText(412), "Sel 412 ch ≈103 tok");
+test("the bar's texts are short, and their values sit at the even places", () => {
+  assert.deepEqual(linesText(61, 74, 100), ["61", " ln ≈", "74", "@", "100"]);
+  assert.deepEqual(tokensText(150_000), ["≈150k", " tok (", "6", " rd)"]);
+  assert.deepEqual(selectionText(412), ["", "sel ", "412", " ch ", "≈103", " tok"]);
 });
 
 test("a column wrap keeps the text inside a narrow pane", () => {
@@ -60,6 +61,13 @@ test("a column wrap keeps the text inside a narrow pane", () => {
   });
   assert.deepEqual(wrapOptions({ mode: "window", column: 100 }), { wordWrap: "on" });
   assert.deepEqual(wrapOptions({ mode: "off", column: 100 }), { wordWrap: "off" });
+});
+
+test("text that is not a number keeps the column it had", () => {
+  assert.equal(typedColumn(" 80 ", 100), 80);
+  assert.equal(typedColumn("abc", 100), 100);
+  assert.equal(typedColumn("", 100), 100);
+  assert.equal(typedColumn("9", 100), 20);
 });
 
 test("a typed column is held to the field's range", () => {
