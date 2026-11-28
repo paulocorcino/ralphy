@@ -13,6 +13,8 @@ fn every_language_has_a_limit_of_500_code_lines() {
         ("crates/ui/big.part.html", 501, "<p>x</p>\n"),
         ("crates/ui/fits.html", 500, "<p>x</p>\n"),
         ("crates/ui/app.js", 501, "const a = 1;\n"),
+        ("crates/ui-tests/big.test.mjs", 501, "const a = 1;\n"),
+        ("crates/ui-tests/fits.mjs", 500, "const a = 1;\n"),
     ] {
         let path = root.join(rel);
         let parent = path.parent().expect("a relative path with a parent");
@@ -28,6 +30,7 @@ fn every_language_has_a_limit_of_500_code_lines() {
         over,
         [
             "crates/a/src/big.rs",
+            "crates/ui-tests/big.test.mjs",
             "crates/ui/big.part.html",
             "crates/ui/big.ts",
             "crates/ui/globals.d.ts",
@@ -198,6 +201,13 @@ fn strict_width_skips_html() {
         report(dir.path()).expect("report"),
         [size_row("crates/ui/index.html", 501)]
     );
+}
+
+#[test]
+fn a_wide_mjs_line_is_not_listed() {
+    let wide = format!("// {}\n", "y".repeat(101));
+    let dir = tree(&[("crates/ui-tests/a.test.mjs", wide)]);
+    assert_eq!(report(dir.path()).expect("report"), []);
 }
 
 #[test]

@@ -85,8 +85,8 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   that the fragments present parse. A human overrides it with the `no-changelog`
   label. The job `oversized` runs
   `cargo run -p xtask -- oversized --check` on every push. It fails any
-  source file over 500 lines (every line counted, in Rust, TypeScript and
-  HTML) or any Rust or TypeScript line over 100 characters (ADR-0022 §9).
+  source file over 500 lines (every line counted, in Rust, TypeScript,
+  HTML and `.mjs`) or any Rust or TypeScript line over 100 characters (ADR-0022 §9).
   The job
   `duplication`, on pull requests only, runs jscpd (a release binary pinned
   by version and checksum) with the settings in `.jscpd.json`. It fails when

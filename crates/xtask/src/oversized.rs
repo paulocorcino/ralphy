@@ -1,6 +1,7 @@
 //! `oversized` holds the size of every source file (ADR-0022 §9) and the
 //! width of its lines: a file has at most [`LIMIT`] lines, every line
 //! counted, and a line of Rust or TypeScript at most [`WIDTH`] characters.
+//! HTML and the `.mjs` test files have the line limit and no width rule.
 //! No argument lists each file and line over a limit; `--check` fails when
 //! there is one. There is no exception for an old file.
 
@@ -17,6 +18,8 @@ enum Lang {
     Rust,
     TypeScript,
     Html,
+    /// The `.mjs` modules of the workbench tests.
+    Mjs,
 }
 
 impl Lang {
@@ -28,6 +31,8 @@ impl Lang {
             Some(Lang::TypeScript)
         } else if ext == Some("html") {
             Some(Lang::Html)
+        } else if ext == Some("mjs") {
+            Some(Lang::Mjs)
         } else {
             None
         }
@@ -37,7 +42,7 @@ impl Lang {
     fn has_width(self) -> bool {
         match self {
             Lang::Rust | Lang::TypeScript => true,
-            Lang::Html => false,
+            Lang::Html | Lang::Mjs => false,
         }
     }
 }
@@ -190,7 +195,7 @@ fn wide_line_rows(text: &str) -> Vec<(usize, usize)> {
         .collect()
 }
 
-/// Every `.rs`, `.ts` and `.html` file under `dir`, test code included. Not read:
+/// Every `.rs`, `.ts`, `.html` and `.mjs` file under `dir`, test code included. Not read:
 /// build output, installed packages, vendored code and hidden directories.
 fn collect_sources(dir: &Path, out: &mut Vec<(PathBuf, Lang)>) -> Result<()> {
     let entries = std::fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))?;
