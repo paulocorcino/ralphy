@@ -190,6 +190,7 @@
 }
 .editor-status-item {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: var(--space-3);
 }
@@ -202,6 +203,7 @@
 /* The cursor text changes length while a selection grows: it gives way first. */
 .editor-status-item[data-part="cursor"] {
   display: block;
+  flex-shrink: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -227,8 +229,11 @@
   color: var(--text);
   background: var(--surface);
 }
+/* Three digits plus the padding: content-box, and no shrink in the flex row. */
 .editor-status-num {
-  width: 4ch;
+  box-sizing: content-box;
+  flex-shrink: 0;
+  width: 3ch;
   color: var(--console-text);
   text-align: right;
   cursor: text;
