@@ -80,13 +80,13 @@ const EMIT_OWNED_MESSAGES: &[&str] = &[
     "queue built",                 // CLI — roundtrip_queue_built
     "run started",                 // CLI — roundtrip_run_started
     "run finished",                // CLI — roundtrip_run_finished
-    "run skipped",                 // CLI — roundtrip_run_skipped
-    "consolidating knowledge",     // CLI — roundtrip_knowledge_consolidating
-    "knowledge consolidated",      // CLI — roundtrip_knowledge_consolidated
+    "run skipped",                 // CLI — roundtrip_simple_run_events/run_skipped
+    "consolidating knowledge",     // CLI — roundtrip_simple_run_events/knowledge_consolidating
+    "knowledge consolidated",      // CLI — roundtrip_simple_run_events/knowledge_consolidated
     "planning",                    // adapters — roundtrip_planning
     "executing",                   // adapters — roundtrip_executing
-    "agent state",                 // adapters — roundtrip_agent_state (ADR-0059)
-    // adapters — roundtrip_hooks_unproven_allowed
+    "agent state",                 // adapters — roundtrip_simple_run_events/agent_state
+    // adapters — roundtrip_simple_run_events/hooks_unproven_allowed
     "hooks not proven — the session goes on without the proof",
 ];
 
