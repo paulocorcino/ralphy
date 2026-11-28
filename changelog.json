@@ -1,6 +1,78 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.48",
+      "date": "2026-11-28",
+      "announce": true,
+      "entries": [
+        {
+          "id": "1020",
+          "kind": "feature",
+          "text": "An Antigravity console that lets the agent push now says so in its first line."
+        },
+        {
+          "id": "1064",
+          "kind": "feature",
+          "text": "Settings can let the agent push in Antigravity consoles."
+        },
+        {
+          "id": "1065",
+          "kind": "feature",
+          "text": "New file and New folder in the Files tree accept a path such as a/b and create the missing folders."
+        },
+        {
+          "id": "editor-status-bar",
+          "kind": "feature",
+          "text": "The code editor has a status bar with the cursor, line, token and size counts, and a line wrap setting."
+        },
+        {
+          "id": "mirror-preview-editor",
+          "kind": "feature",
+          "text": "A Markdown, Mermaid, DBML or HTML file can mirror its editor beside its preview."
+        },
+        {
+          "id": "tree-multi-delete",
+          "kind": "feature",
+          "text": "In the file tree, Delete removes every row selected with Ctrl+click; a click or Escape clears the selection."
+        },
+        {
+          "id": "1063",
+          "kind": "fix",
+          "text": "Projects stays listed and open when a project with no remote gets one."
+        },
+        {
+          "id": "1079",
+          "kind": "fix",
+          "text": "On Windows, Antigravity runs and checks no longer open console windows."
+        },
+        {
+          "id": "1081",
+          "kind": "fix",
+          "text": "A project whose key did not change to `owner/repo` after it gained a remote is tried again later."
+        },
+        {
+          "id": "changes-clear-refusals",
+          "kind": "fix",
+          "text": "In the Changes panel, a refused commit or push shows git's reason, and the panel shows why its buttons wait."
+        },
+        {
+          "id": "explorer-reaches-bottom",
+          "kind": "fix",
+          "text": "The file tree of an open project reaches the bottom of the sidebar, with no empty strip under it."
+        },
+        {
+          "id": "md-editor-narrow-wrap",
+          "kind": "fix",
+          "text": "The Markdown editor now rewraps its lines when its pane gets narrower."
+        },
+        {
+          "id": "spend-hidden-in-release",
+          "kind": "fix",
+          "text": "The Spend panel is hidden in a released build until it is ready; a build from source still shows it."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.47",
       "date": "2026-11-26",
       "announce": false,

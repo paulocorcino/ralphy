@@ -17,11 +17,15 @@ use tokio_tungstenite::tungstenite::Message;
 
 use futures_util::StreamExt;
 
-use super::support::{connect, next_inner, open, send_on, serve, Written, Ws};
+use super::support::{
+    connect_with_fixed_buffers, next_inner, open, send_on, serve_with_fixed_buffers, Written, Ws,
+};
 
 const WITHIN: Duration = Duration::from_secs(10);
 /// How long the test waits for a state of the daemon that it reads in the log.
 const LOGGED_WITHIN: Duration = Duration::from_secs(5);
+/// How long the writer must log no new wait to count as blocked.
+const BLOCKED_FOR: Duration = Duration::from_millis(500);
 /// The log line of the writer when the socket is full.
 const WAITS: &str = "socket writer waits: the socket is full";
 /// The log line of a console bridge that queued a replay.
@@ -150,6 +154,29 @@ async fn pieces_until_replays(ws: &mut Ws) -> Vec<(u32, bool)> {
     seen
 }
 
+/// Wait until the writer stays blocked on the full socket. One wait is not
+/// enough: the bytes in flight can still move and let it send once more. Each
+/// new block logs one more line. It holds only with fixed TCP buffers.
+async fn writer_stays_blocked(written: &Written, waits_before: usize) {
+    assert!(
+        written
+            .more_lines_with(WAITS, waits_before, LOGGED_WITHIN)
+            .await,
+        "the writer did not wait on a full socket within {LOGGED_WITHIN:?}"
+    );
+    let settled = tokio::time::timeout(LOGGED_WITHIN, async {
+        let mut waits = written.lines_with(WAITS);
+        while written.more_lines_with(WAITS, waits, BLOCKED_FOR).await {
+            waits = written.lines_with(WAITS);
+        }
+    })
+    .await;
+    assert!(
+        settled.is_ok(),
+        "the writer did not stay blocked within {LOGGED_WITHIN:?}"
+    );
+}
+
 /// The most pieces of `FLOODING` between two pieces of the replays.
 fn longest_flood_run(pieces: &[(u32, bool)]) -> usize {
     let mut run = 0;
@@ -177,8 +204,8 @@ async fn one_flooding_console_delays_another_channel_by_one_piece() {
         .with_ansi(false)
         .finish();
     let _log = tracing::subscriber::set_default(subscriber);
-    let daemon = serve().await;
-    let mut ws = connect(&daemon).await;
+    let daemon = serve_with_fixed_buffers().await;
+    let mut ws = connect_with_fixed_buffers(&daemon).await;
     // The flooding channel opens first: a writer that serves channels in
     // the order they opened would serve it to the end before the others.
     let flooding = launch(&mut ws, FLOODING).await;
@@ -204,21 +231,19 @@ async fn one_flooding_console_delays_another_channel_by_one_piece() {
     // Nothing reads the socket from here, so the writer soon waits on the
     // full socket with the flood queued, and it waits until the test reads.
     // Both replays are asked for meanwhile and queue whole behind it.
-    let waits = written.lines_with(WAITS);
-    assert!(
-        written.more_lines_with(WAITS, waits, LOGGED_WITHIN).await,
-        "the writer did not wait on a full socket within {LOGGED_WITHIN:?}"
-    );
-    // A launch can queue a replay of its own (on Linux it does), so the
-    // two asked for here are counted from this point.
-    let replays_before = written.lines_with(REPLAY_QUEUED);
+    writer_stays_blocked(&written, written.lines_with(WAITS)).await;
+    // The flooding console queues replays of its own when it lags, and a
+    // launch can queue one (on Linux it does). So only the replays of the
+    // quiet console count, from this point.
+    let queued = format!("{REPLAY_QUEUED} session={quiet}");
+    let replays_before = written.lines_with(&queued);
     for replay in REPLAYS {
         let fields = serde_json::json!({ "id": quiet, "watch": 1, "since": 0 });
         open(&mut ws, replay, "console", fields).await;
     }
     assert!(
         written
-            .more_lines_with(REPLAY_QUEUED, replays_before + 1, LOGGED_WITHIN)
+            .more_lines_with(&queued, replays_before + 1, LOGGED_WITHIN)
             .await,
         "both replays were not queued within {LOGGED_WITHIN:?}"
     );
