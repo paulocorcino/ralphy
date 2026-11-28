@@ -11,6 +11,7 @@ use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::page::{self, Channel as Ws};
+use crate::sync::{drain, push_while};
 
 fn git(dir: &Path, args: &[&str]) {
     let out = std::process::Command::new("git")
@@ -116,9 +117,13 @@ async fn recv_head(ws: &mut Ws, dur: Duration) -> Option<serde_json::Value> {
     .flatten()
 }
 
-/// Read and drop every `head.dirty` until a quiet gap.
-async fn drain(ws: &mut Ws) {
-    while recv_head(ws, Duration::from_secs(2)).await.is_some() {}
+/// Commit in `dir` again and again until a `head.dirty` comes, then drop the
+/// pushes that follow: the watch is armed and quiet after it.
+async fn arm(ws: &mut Ws, dir: &Path) {
+    let commit = || git(dir, &["commit", "-q", "--allow-empty", "-m", "arm"]);
+    let armed = push_while(ws, "head.dirty", Duration::from_secs(10), commit).await;
+    assert!(armed.is_some(), "the HEAD watch never pushed");
+    drain(ws, "head.dirty").await;
 }
 
 #[tokio::test]
@@ -126,9 +131,7 @@ async fn a_branch_switch_pushes_head_dirty_and_git_status_does_not() {
     let (port, slug, root) = serve_repo().await;
     let mut ws = page::tree(port).await;
     send_head_watch(&mut ws, &slug, None).await;
-    // Give the OS watch a beat to attach, then settle anything it replayed.
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    drain(&mut ws).await;
+    arm(&mut ws, &root).await;
 
     git(&root, &["status", "--porcelain"]);
     std::fs::write(root.join("a.txt"), b"changed").unwrap();
@@ -152,13 +155,12 @@ async fn a_commit_pushes_head_dirty() {
     let (port, slug, root) = serve_repo().await;
     let mut ws = page::tree(port).await;
     send_head_watch(&mut ws, &slug, None).await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    drain(&mut ws).await;
 
     // A commit on the same branch leaves `HEAD` alone and appends to `logs/HEAD`.
-    git(&root, &["commit", "-q", "--allow-empty", "-m", "second"]);
+    // It is made again until the push comes, so a watch armed late sees one too.
+    let commit = || git(&root, &["commit", "-q", "--allow-empty", "-m", "second"]);
     assert_eq!(
-        recv_head(&mut ws, Duration::from_secs(10)).await,
+        push_while(&mut ws, "head.dirty", Duration::from_secs(10), commit).await,
         Some(serde_json::json!({ "repo": slug })),
     );
 }
@@ -181,8 +183,7 @@ async fn a_worktree_switch_pushes_head_dirty_with_its_name() {
 
     let mut ws = page::tree(port).await;
     send_head_watch(&mut ws, &slug, Some("wt-a")).await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    drain(&mut ws).await;
+    arm(&mut ws, &wt).await;
 
     git(&wt, &["switch", "-q", "-c", "wt-b"]);
     assert_eq!(

@@ -250,7 +250,7 @@ any code, including code that does not exist yet. A behaviour test is not one.
 | The daemon links no vendor crate | `daemon_manifest_has_no_vendor_dependency` |
 | No `tokio`/`reqwest` in the CLI | `cli_manifest_pins_ureq_excludes_reqwest_tokio` |
 | Event vocabulary pinned | `every_decoder_arm_has_a_pin` |
-| No source file has more than 500 lines, every line counted (Rust, TypeScript and HTML) | `cargo run -p xtask -- oversized --check`, which the `oversized` CI job runs on every push (ADR-0022 §9) |
+| No source file has more than 500 lines, every line counted (Rust, TypeScript, HTML and `.mjs`) | `cargo run -p xtask -- oversized --check`, which the `oversized` CI job runs on every push (ADR-0022 §9) |
 | No line of Rust or TypeScript is wider than 100 characters (comments and strings included) | the same command and CI job (ADR-0022 §9) |
 | No production function scores over a complexity of 10 (cognitive complexity read from the source text in Rust, oxlint `complexity` with `variant: "modified"` in TypeScript); an exception is a marked line, and their number may only go down | `cargo run -p xtask -- complexity --check` in the `complexity` CI job for Rust, the `.oxlintrc.json` rule in the `ui-tests` job for TypeScript, and the ratchet `complexity_exceptions_do_not_grow` (ADR-0081) |
 | Text a user reads cites no ADR | `crates/xtask/tests/user_text_cites_no_adr.rs`, `no_help_text_cites_an_adr` |

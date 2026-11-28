@@ -15,5 +15,9 @@ ralphy-proc-util.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 
+[features]
+# The source-scan helpers of the adapter tests; only dev-dependencies turn it on.
+source-scan = []
+
 [lints]
 workspace = true

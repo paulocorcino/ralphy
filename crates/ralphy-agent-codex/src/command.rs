@@ -54,8 +54,12 @@ fn codex_config_path() -> Option<PathBuf> {
 /// readable. `None` when the file or the key is absent — the caller then falls
 /// back to the tier-routed family table (or omits `-m` on init one-shots).
 pub(crate) fn codex_config_model() -> Option<String> {
-    let text = fs::read_to_string(codex_config_path()?).ok()?;
-    parse_codex_config_model(&text)
+    config_model_in(&codex_config_path()?)
+}
+
+/// The root-table `model` of the Codex config file at `path`, if readable.
+fn config_model_in(path: &Path) -> Option<String> {
+    parse_codex_config_model(&fs::read_to_string(path).ok()?)
 }
 
 /// Extract the root-table `model` key from Codex `config.toml` text. Only the
@@ -189,7 +193,14 @@ fn status_hook_args(root: &Path, hook_exe: &Path) -> Vec<String> {
 /// (ADR-0004, Amendment 2026-07-10). Init sessions have no plan tier to route,
 /// which is why they delegate where plan/execute fall back to the family table.
 pub(crate) fn resolve_init_model(model: Option<&str>) -> Option<String> {
-    model.map(str::to_owned).or_else(codex_config_model)
+    resolve_init_model_in(model, codex_config_path().as_deref())
+}
+
+/// [`resolve_init_model`] with the config file at `config`.
+fn resolve_init_model_in(model: Option<&str>, config: Option<&Path>) -> Option<String> {
+    model
+        .map(str::to_owned)
+        .or_else(|| config_model_in(config?))
 }
 
 /// Build the headless `codex exec` command for an `init` one-shot session. Unlike

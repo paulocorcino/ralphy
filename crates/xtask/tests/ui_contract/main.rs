@@ -20,6 +20,10 @@ use std::path::{Path, PathBuf};
 
 use regex::Regex;
 
+#[path = "../common/production_cut.rs"]
+mod production_cut;
+use production_cut::production;
+
 mod cited_routes;
 mod error_literals;
 mod mirrored_limits;
@@ -54,28 +58,6 @@ fn read(path: &Path) -> String {
     std::fs::read_to_string(path)
         .map_err(|e| format!("reading {}: {e}", path.display()))
         .expect("this test needs the call to succeed")
-}
-
-/// The part of a file above its first inline test module, the same cut the
-/// file-split rule uses (ADR-0022).
-fn production(text: &str) -> &str {
-    let mut offset = 0;
-    let mut lines = text.split_inclusive('\n').peekable();
-    while let Some(line) = lines.next() {
-        if line.trim() == "#[cfg(test)]" && lines.peek().is_some_and(|next| opens_inline_mod(next))
-        {
-            return text.split_at(offset).0;
-        }
-        offset += line.len();
-    }
-    text
-}
-
-/// `mod x {` or `pub(crate) mod x {`. A `mod x;` declaration is not a cut.
-fn opens_inline_mod(line: &str) -> bool {
-    let head = line.trim();
-    let head = head.strip_prefix("pub(crate) ").unwrap_or(head);
-    head.starts_with("mod ") && head.ends_with('{')
 }
 
 /// Production `.rs` files: no `tests/` dir, no `tests.rs`, no test child.

@@ -42,6 +42,7 @@ async fn fleet_reports_the_two_tunnel_states() {
         "got: {colliding}"
     );
     wait_lines(&fx.argv_log, 1);
+    // Kept: it gives a wrong extra ssh time to start; nothing marks its absence.
     std::thread::sleep(Duration::from_millis(500));
     let own_forward = format!("127.0.0.1:{own}:");
     assert!(
@@ -117,6 +118,7 @@ async fn a_nudge_on_a_tunnel_peer_opens_its_tunnel() {
     assert_eq!(status, StatusCode::OK, "got: {body}");
     assert_eq!(body["ready"], true, "got: {body}");
     wait_lines(&fx.argv_log, 1);
+    // Kept: it gives a wrong extra ssh time to start; nothing marks its absence.
     std::thread::sleep(Duration::from_millis(500));
     let got = lines(&fx.argv_log);
     assert_eq!(got.len(), 1, "got: {got:?}");
@@ -240,6 +242,7 @@ async fn a_nudge_never_opens_a_tunnel_on_our_own_port() {
             .contains("the port of this daemon"),
         "got: {body}"
     );
+    // Kept: it gives a wrong extra ssh time to start; nothing marks its absence.
     std::thread::sleep(Duration::from_millis(500));
     assert!(lines(&fx.argv_log).is_empty(), "no ssh was started");
 }

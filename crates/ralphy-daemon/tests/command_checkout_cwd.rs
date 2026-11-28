@@ -395,8 +395,8 @@ async fn an_unknown_checkout_spawns_nothing(port: u16, slug: &str, root: &Path) 
             "checkout {checkout} must be refused as unknown"
         );
     }
-    // The refusal reply arrives synchronously with the (absent) spawn; a
-    // child that did run would have written the sentinel before exiting.
+    // Kept: it gives a wrong child time to write the sentinel; nothing marks
+    // its absence. The refusal reply arrives with the (absent) spawn.
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert!(
         !sentinel.exists(),
@@ -440,6 +440,7 @@ async fn a_command_in_a_symlinked_checkout_is_refused() {
         json!({ "status": "error", "message": "unknown checkout" }),
         "a checkout that links out of the repo must be refused"
     );
+    // Kept: it gives a wrong child time to write the sentinel.
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert!(
         !sentinel.exists(),

@@ -71,20 +71,16 @@ test("the detached-fence popup never shows the list button", () => {
 
 // A window with a class list and an inline style the paint can write and read.
 function fakeWindow(id, classes = []) {
-  const set = new Set(classes);
+  const classList = fakeClassList(...classes);
   const style = new Map();
   return {
     _deskId: id,
-    classList: { // own: the test reads the class set as `classes`, which fakeClassList does not expose
-      add: (c) => set.add(c),
-      remove: (c) => set.delete(c),
-      contains: (c) => set.has(c),
-    },
+    classList,
     style: {
       setProperty: (k, v) => style.set(k, v),
       removeProperty: (k) => style.delete(k),
     },
-    classes: set,
+    classes: classList.classes,
     vars: style,
   };
 }

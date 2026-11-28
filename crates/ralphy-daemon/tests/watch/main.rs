@@ -15,4 +15,5 @@ pub mod page;
 mod fleet_watch;
 mod head_watch;
 mod runs_watch;
+mod sync;
 mod tree_watch;

@@ -55,37 +55,36 @@ fn decode(ev: &Captured) -> Option<RunEvent> {
 }
 
 /// The coverage closure, enforced by the COMPILER rather than by a count: every
-/// [`RunEvent`] variant maps to the round-trip test that proves it. No wildcard
-/// arm — a variant added without one fails to compile until someone lists it,
+/// [`RunEvent`] variant maps to the round-trip test that proves it, as `test` or
+/// `test/row` for a row of a table test (`simple/` is `roundtrip_simple_run_events/`).
+/// No wildcard arm — a variant added without one fails to compile until someone lists it,
 /// which is the ADR-0039 §2 convention made mechanical.
 fn _every_variant_has_a_roundtrip(e: &RunEvent) -> &'static str {
     match e {
         RunEvent::QueueBuilt { .. } => "roundtrip_queue_built",
-        RunEvent::IssueStarted { .. } => "roundtrip_issue_started",
-        RunEvent::PlanWritten { .. } => "roundtrip_plan_written",
-        RunEvent::PlanOpened { .. } => "roundtrip_plan_opened",
-        RunEvent::PlanClosed { .. } => "roundtrip_plan_closed",
-        RunEvent::IssueClosed { .. } => "roundtrip_issue_closed",
-        RunEvent::NonGreen { .. } => "roundtrip_non_green",
-        RunEvent::NeedsSplit { .. } => "roundtrip_needs_split",
-        RunEvent::Skipped { .. } => {
-            "roundtrip_{blocked_by_open,stop_before_label,human_return_label,verify_gate_failed}"
-        }
-        RunEvent::HumanBlocked { .. } => "roundtrip_blocked_waiting_human",
-        RunEvent::DeadlinePassed { .. } => "roundtrip_deadline_passed",
+        RunEvent::IssueStarted { .. } => "roundtrip_issue_lifecycle/issue_started",
+        RunEvent::PlanWritten { .. } => "roundtrip_issue_lifecycle/plan_written",
+        RunEvent::PlanOpened { .. } => "roundtrip_issue_lifecycle/plan_opened",
+        RunEvent::PlanClosed { .. } => "roundtrip_issue_lifecycle/plan_closed",
+        RunEvent::IssueClosed { .. } => "roundtrip_issue_lifecycle/issue_closed",
+        RunEvent::NonGreen { .. } => "roundtrip_issue_lifecycle/non_green",
+        RunEvent::NeedsSplit { .. } => "roundtrip_issue_lifecycle/needs_split",
+        RunEvent::Skipped { .. } => "roundtrip_skip_reasons (all four Skipped rows)",
+        RunEvent::HumanBlocked { .. } => "roundtrip_skip_reasons/blocked_waiting_human",
+        RunEvent::DeadlinePassed { .. } => "roundtrip_issue_lifecycle/deadline_passed",
         RunEvent::RunStopped { .. } => "roundtrip_run_stopped",
-        RunEvent::SleepStarted { .. } => "roundtrip_usage_limit_waiting",
-        RunEvent::SleepEnded => "roundtrip_reset_reached",
-        RunEvent::IdleReaped { .. } => "roundtrip_idle_reaped",
-        RunEvent::HooksUnprovenAllowed { .. } => "roundtrip_hooks_unproven_allowed",
-        RunEvent::AgentState { .. } => "roundtrip_agent_state",
-        RunEvent::ApiDegraded => "roundtrip_api_degraded",
-        RunEvent::ApiRecovered => "roundtrip_api_recovered",
-        RunEvent::KnowledgeConsolidating { .. } => "roundtrip_knowledge_consolidating",
-        RunEvent::KnowledgeConsolidated { .. } => "roundtrip_knowledge_consolidated",
+        RunEvent::SleepStarted { .. } => "simple/usage_limit_waiting",
+        RunEvent::SleepEnded => "simple/reset_reached",
+        RunEvent::IdleReaped { .. } => "simple/idle_reaped",
+        RunEvent::HooksUnprovenAllowed { .. } => "simple/hooks_unproven_allowed",
+        RunEvent::AgentState { .. } => "simple/agent_state",
+        RunEvent::ApiDegraded => "simple/api_degraded",
+        RunEvent::ApiRecovered => "simple/api_recovered",
+        RunEvent::KnowledgeConsolidating { .. } => "simple/knowledge_consolidating",
+        RunEvent::KnowledgeConsolidated { .. } => "simple/knowledge_consolidated",
         RunEvent::RunStarted { .. } => "roundtrip_run_started",
         RunEvent::RunFinished { .. } => "roundtrip_run_finished",
-        RunEvent::RunSkipped { .. } => "roundtrip_run_skipped",
+        RunEvent::RunSkipped { .. } => "simple/run_skipped",
         RunEvent::Notice { .. } => "roundtrip_level_wins_over_message",
         RunEvent::Planning { .. } => "roundtrip_planning",
         RunEvent::Executing { .. } => "roundtrip_executing",

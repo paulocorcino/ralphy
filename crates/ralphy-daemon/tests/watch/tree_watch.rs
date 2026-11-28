@@ -13,6 +13,7 @@ use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::page::{self, Channel as Ws};
+use crate::sync::{drain, push_while};
 
 /// Bind a daemon over an empty temp repo; return its port, the repo slug, and
 /// the repo root path (so the test can create files in it).
@@ -80,47 +81,34 @@ async fn send_verb_checkout(ws: &mut Ws, verb: &str, repo: &str, path: &str, che
         .expect("send the frame");
 }
 
-/// Wait up to 10s for a `tree.dirty` frame and return its `(repo, path,
-/// checkout)` payload — `checkout` is `None` when the frame carries no key.
-async fn recv_dirty(ws: &mut Ws) -> Option<(String, String, Option<String>)> {
-    recv_dirty_within(ws, Duration::from_secs(10)).await
+/// The first `tree.dirty` push within 10s, while
+/// `file` is written again and again: a watch that is armed late still sees it.
+async fn dirty_while_writing(
+    ws: &mut Ws,
+    file: &std::path::Path,
+) -> Option<(String, String, Option<String>)> {
+    let write = || std::fs::write(file, b"x").expect("write the file");
+    let payload = push_while(ws, "tree.dirty", Duration::from_secs(10), write).await?;
+    Some(dirty_fields(&payload))
 }
 
-async fn recv_dirty_within(
-    ws: &mut Ws,
-    window: Duration,
-) -> Option<(String, String, Option<String>)> {
-    tokio::time::timeout(window, async {
-        while let Some(msg) = ws.next().await {
-            let bytes = match msg {
-                Ok(Message::Binary(b)) => b,
-                Ok(Message::Close(_)) | Err(_) => return None,
-                _ => continue,
-            };
-            if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
-                if cmd.verb == "tree.dirty" {
-                    let repo = cmd
-                        .payload
-                        .get("repo")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_owned();
-                    let path = cmd
-                        .payload
-                        .get("path")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_owned();
-                    let checkout = cmd.payload["checkout"].as_str().map(String::from);
-                    return Some((repo, path, checkout));
-                }
-            }
-        }
-        None
-    })
-    .await
-    .ok()
-    .flatten()
+/// The `(repo, path, checkout)` of a `tree.dirty` payload.
+fn dirty_fields(payload: &serde_json::Value) -> (String, String, Option<String>) {
+    let text = |key: &str| {
+        payload
+            .get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned()
+    };
+    (
+        text("repo"),
+        text("path"),
+        payload
+            .get("checkout")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+    )
 }
 
 #[tokio::test]
@@ -130,16 +118,25 @@ async fn shared_across_clients_survives_one_disconnect() {
     let mut ws2 = page::tree(port).await;
     send_verb(&mut ws1, "watch", &slug, "").await;
     send_verb(&mut ws2, "watch", &slug, "").await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    let before = root.join("before.txt");
+    assert!(
+        dirty_while_writing(&mut ws1, &before).await.is_some(),
+        "client 1 is armed"
+    );
+    assert!(
+        dirty_while_writing(&mut ws2, &before).await.is_some(),
+        "client 2 is armed"
+    );
+    drain(&mut ws2, "tree.dirty").await;
 
     // Client 1 leaves; the per-repo watcher is shared, so client 2's subscription
     // must survive (refcount 2 → 1, the repo watcher stays alive).
     drop(ws1);
+    // Kept: the daemon sends no sign that it closed client 1, and a write
+    // before that close would pass the test without the release.
     tokio::time::sleep(Duration::from_millis(300)).await;
 
-    std::fs::write(root.join("after.txt"), b"x").unwrap();
-
-    let got = recv_dirty(&mut ws2).await;
+    let got = dirty_while_writing(&mut ws2, &root.join("after.txt")).await;
     assert_eq!(
         got,
         Some((slug.clone(), String::new(), None)),
@@ -164,11 +161,7 @@ async fn dirty_nudge_reaches_a_checkout_watcher() {
 
     let mut ws = page::tree(port).await;
     send_verb_checkout(&mut ws, "watch", &slug, "", "wt-a").await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    std::fs::write(wt.join("f.txt"), b"hello").unwrap();
-
-    let got = recv_dirty(&mut ws).await;
+    let got = dirty_while_writing(&mut ws, &wt.join("f.txt")).await;
     assert_eq!(
         got,
         Some((slug.clone(), String::new(), Some("wt-a".to_owned()))),
@@ -187,15 +180,11 @@ async fn unwatch_with_checkout_retires_the_alias() {
     std::fs::write(wt.join(".git"), "gitdir: /r/.git/worktrees/wt-a\n").unwrap();
 
     let mut ws = page::tree(port).await;
+    // One task reads the frames of a channel in order, so the three need no wait.
     send_verb_checkout(&mut ws, "watch", &slug, "", "wt-a").await;
-    tokio::time::sleep(Duration::from_millis(300)).await;
     send_verb_checkout(&mut ws, "unwatch", &slug, "", "wt-a").await;
-    tokio::time::sleep(Duration::from_millis(300)).await;
     send_verb(&mut ws, "watch", &slug, ".ralphy/worktrees/wt-a").await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    std::fs::write(wt.join("g.txt"), b"x").unwrap();
-    let got = recv_dirty(&mut ws).await;
+    let got = dirty_while_writing(&mut ws, &wt.join("g.txt")).await;
     assert_eq!(
         got,
         Some((slug.clone(), ".ralphy/worktrees/wt-a".to_owned(), None)),
@@ -220,18 +209,15 @@ async fn malformed_checkout_on_watch_holds_nothing() {
             .await
             .unwrap();
     }
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    std::fs::write(root.join("h.txt"), b"x").unwrap();
-    let got = recv_dirty_within(&mut ws, Duration::from_secs(3)).await;
+    // Written again for the whole window, so a watch armed late is seen too.
+    let write = || std::fs::write(root.join("h.txt"), b"x").expect("write h.txt");
+    let got = push_while(&mut ws, "tree.dirty", Duration::from_secs(3), write).await;
     assert_eq!(got, None, "no watch was held for a malformed checkout");
 
     // POSITIVE CONTROL on the same channel: a well-formed plain watch still works.
     send_verb(&mut ws, "watch", &slug, "").await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    std::fs::write(root.join("i.txt"), b"x").unwrap();
     assert_eq!(
-        recv_dirty(&mut ws).await,
+        dirty_while_writing(&mut ws, &root.join("i.txt")).await,
         Some((slug.clone(), String::new(), None))
     );
 }

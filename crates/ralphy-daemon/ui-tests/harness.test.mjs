@@ -148,6 +148,16 @@ test("fakeClassList answers as the DOM's classList does", () => {
   assert.deepEqual([...list].toSorted(), ["b", "c"]);
 });
 
+test("fakeClassList shows its names through has and the live classes set", () => {
+  const list = fakeClassList("open");
+  list.add("a");
+  assert.equal(list.has("a"), true);
+  assert.equal(list.has("b"), false);
+  list.classes.add("b");
+  assert.equal(list.contains("b"), true, "the set is the list's own, not a copy");
+  assert.deepEqual([...list.classes].toSorted(), ["a", "b", "open"]);
+});
+
 test("withoutBroadcast hides BroadcastChannel for the call only, even when it throws", () => {
   const real = globalThis.BroadcastChannel;
   const channel = { sentinel: "a BroadcastChannel" };

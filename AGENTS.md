@@ -170,8 +170,9 @@ ubiquitous language, and each crate is roughly one bounded context.
 - **File size is measured by tools, not by you.** Write the code, then run
   the gate; do not plan a change around a size. A source file has at most
   500 lines, every line counted: code, comments, blank lines and tests, in
-  Rust, TypeScript and HTML. A line of Rust or TypeScript has at most 100
-  characters, comments and strings included; HTML lines are not measured.
+  Rust, TypeScript, HTML and the `.mjs` test files. A line of Rust or
+  TypeScript has at most 100 characters, comments and strings included;
+  HTML and `.mjs` lines are not measured.
   Wrap the comment, continue the string with `\` or `concat!` (in
   TypeScript, join `"…" +` pieces), or move the test data to
   `tests/fixtures/`. The gate fails every file over a limit, old or new.

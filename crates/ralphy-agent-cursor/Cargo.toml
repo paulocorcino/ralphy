@@ -21,5 +21,8 @@ ralphy-proc-util.workspace = true
 # not a dev one (ADR-0042 D6/D17 — see `auth::probe_cursor_login`).
 tempfile.workspace = true
 
+[dev-dependencies]
+ralphy-adapter-support = { workspace = true, features = ["source-scan"] }
+
 [lints]
 workspace = true

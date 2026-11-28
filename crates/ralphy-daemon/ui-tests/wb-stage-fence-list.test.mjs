@@ -177,16 +177,13 @@ test("a step lands on the fence the view jumped to, and on nothing when the jump
 
 // An element with a class list and children by selector.
 function fakeEl(rect, parts = {}, data = {}) {
-  const classes = new Set();
+  const classList = fakeClassList();
   return {
     rect,
     dataset: data,
-    classList: { // own: the tests read the class set as `classes`, which fakeClassList does not expose
-      contains: (c) => classes.has(c),
-      toggle: (c, on) => (on ? classes.add(c) : classes.delete(c)),
-    },
+    classList,
     querySelector: (sel) => parts[sel] || null,
-    classes,
+    classes: classList.classes,
   };
 }
 
