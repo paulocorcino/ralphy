@@ -324,9 +324,12 @@
   min-height: 0;
   overflow: auto;
 }
+/* `min-width: 0`: a flex item's auto minimum is Monaco's own inline width,
+   so without it the pane never narrows and the wrap column stays wide. */
 .md-editor {
   flex: 1;
   min-height: 0;
+  min-width: 0;
 }
 .md-editor .monaco-editor {
   height: 100%;
