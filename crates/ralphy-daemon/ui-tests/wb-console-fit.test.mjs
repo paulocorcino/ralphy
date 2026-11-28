@@ -5,6 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createFit } from "../assets/ui/wb-console-fit.ts";
+import { fakeClassList } from "./harness.mjs";
 
 let onResize = () => {};
 
@@ -52,14 +53,8 @@ function fakeConsole({ covered = false, focused = false, watching = false, width
       onResize({ rows: term.rows, cols: term.cols });
     },
   };
-  const classes = new Set();
-  const body = {
-    clientWidth: width,
-    clientHeight: height,
-    classList: { // own: the test asserts on the set with has()
-      toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)),
-    },
-  };
+  const body = { clientWidth: width, clientHeight: height, classList: fakeClassList() };
+  const classes = body.classList.classes;
   const fit = createFit({
     term,
     body,

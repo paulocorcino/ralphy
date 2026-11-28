@@ -525,11 +525,16 @@ export function fakeWindow(extra = {}) {
 }
 
 // An element's `classList` over a set of names, with the DOM's answers:
-// `toggle` returns whether the name is on afterwards.
+// `toggle` returns whether the name is on afterwards. `has` and `classes`
+// let a test read the names without the DOM's longer words.
 export function fakeClassList(...names) {
   const set = new Set(names);
   return {
     contains: (c) => set.has(c),
+    has: (c) => set.has(c),
+    get classes() {
+      return set;
+    },
     add: (...cs) => cs.forEach((c) => set.add(c)),
     remove: (...cs) => cs.forEach((c) => set.delete(c)),
     toggle: (c, force = !set.has(c)) => (force ? set.add(c) : set.delete(c), force),
