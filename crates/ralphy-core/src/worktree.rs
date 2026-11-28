@@ -19,7 +19,7 @@ use std::path::Path;
 use anyhow::{bail, Result};
 
 use crate::changes::{changes, ChangeStatus};
-use crate::git::{git, raw, raw_env};
+use crate::git::{git, raw, raw_env, telling_line};
 use crate::wording::WorkingTreeFailure;
 
 /// What a [`stage`] did — or why it refused.
@@ -156,30 +156,31 @@ impl CommitOutcome {
 /// `repo` must be the git TOPLEVEL, as [`crate::changes::changes`] requires;
 /// callers resolve with [`crate::git::resolve_toplevel`].
 ///
-/// A path absent from the change set is refused as a VALUE rather than relayed
-/// as git's "pathspec did not match": the change set is the single definition of
-/// what the panel can act on, and re-using it keeps a caller from having to read
-/// git's prose.
+/// The change set is the single definition of what the panel can act on. A
+/// path absent from it is SKIPPED: it has nothing to stage, and a list read
+/// before an editor reverted one file still stages the rest. Only a list with
+/// no path in the change set is refused, as a VALUE rather than git's
+/// "pathspec did not match".
 ///
-/// A rename's ORIGINAL path is deliberately NOT stageable. After `git mv a b`
-/// the old path exists in neither the index nor the working tree, so `git add a`
-/// is fatal — and `git add` aborts the WHOLE invocation on one unmatched
-/// pathspec, so accepting it would make a group action stage nothing at all.
+/// A rename's ORIGINAL path is never staged. After `git mv a b` the old path
+/// exists in neither the index nor the working tree, so `git add a` is fatal,
+/// and `git add` aborts the WHOLE invocation on one unmatched pathspec.
 /// [`unstage`] is the direction that needs it.
 pub fn stage(repo: &Path, paths: &[String]) -> Result<StageOutcome> {
     if paths.is_empty() {
         return Ok(StageOutcome::NoPaths);
     }
-    if let Some(path) = first_unknown(repo, paths, Rename::NewPathOnly)? {
-        return Ok(StageOutcome::NotInChangeSet { path });
+    let known = in_change_set(repo, paths, Rename::NewPathOnly)?;
+    if known.is_empty() {
+        return Ok(StageOutcome::NotInChangeSet { path: first(paths) });
     }
     run_on_paths(
         repo,
         &["--literal-pathspecs", "add", "--"],
-        paths,
+        &known,
         "staging",
     )?;
-    Ok(StageOutcome::Staged { paths: paths.len() })
+    Ok(StageOutcome::Staged { paths: known.len() })
 }
 
 /// Remove `paths` from the index, leaving the working tree untouched.
@@ -190,13 +191,15 @@ pub fn stage(repo: &Path, paths: &[String]) -> Result<StageOutcome> {
 /// [`crate::sync`]'s: `rev-parse --verify --quiet HEAD`.
 ///
 /// A rename's ORIGINAL path IS accepted here: `git restore --staged` needs it to
-/// undo the deletion half, and it is still a live index entry.
+/// undo the deletion half, and it is still a live index entry. A path absent
+/// from the change set is skipped, as [`stage`] skips it.
 pub fn unstage(repo: &Path, paths: &[String]) -> Result<UnstageOutcome> {
     if paths.is_empty() {
         return Ok(UnstageOutcome::NoPaths);
     }
-    if let Some(path) = first_unknown(repo, paths, Rename::BothPaths)? {
-        return Ok(UnstageOutcome::NotInChangeSet { path });
+    let known = in_change_set(repo, paths, Rename::BothPaths)?;
+    if known.is_empty() {
+        return Ok(UnstageOutcome::NotInChangeSet { path: first(paths) });
     }
     let born = raw(repo, &["rev-parse", "--verify", "--quiet", "HEAD"])?
         .status
@@ -206,8 +209,8 @@ pub fn unstage(repo: &Path, paths: &[String]) -> Result<UnstageOutcome> {
     } else {
         &["--literal-pathspecs", "rm", "--cached", "--quiet", "--"]
     };
-    run_on_paths(repo, prefix, paths, "unstaging")?;
-    Ok(UnstageOutcome::Unstaged { paths: paths.len() })
+    run_on_paths(repo, prefix, &known, "unstaging")?;
+    Ok(UnstageOutcome::Unstaged { paths: known.len() })
 }
 
 /// Record the staged index as a commit.
@@ -224,7 +227,8 @@ pub fn unstage(repo: &Path, paths: &[String]) -> Result<UnstageOutcome> {
 /// is the first verb here that runs the repo's own hooks and may reach a GPG
 /// signer. A prompt on a terminal nobody can see would hang the click forever.
 /// Hooks themselves are NOT skipped — `--no-verify` would silently disable the
-/// operator's own gate.
+/// operator's own gate. When git refuses (a hook, the signer, the identity),
+/// the `Err` has the `commit-refused` failure at its root, with git's line.
 pub fn commit(repo: &Path, message: &str) -> Result<CommitOutcome> {
     if message.trim().is_empty() {
         return Ok(CommitOutcome::EmptyMessage);
@@ -239,10 +243,10 @@ pub fn commit(repo: &Path, message: &str) -> Result<CommitOutcome> {
         &[("GIT_TERMINAL_PROMPT", "0")],
     )?;
     if !out.status.success() {
-        bail!(
-            "committing: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let line = telling_line(&stderr);
+        let refused = WorkingTreeFailure::CommitRefused.failure_with(&[("git", &line)]);
+        return Err(anyhow::Error::new(refused).context(format!("committing: {}", stderr.trim())));
     }
     let sha = git(repo, &["rev-parse", "--short", "HEAD"])?;
     Ok(CommitOutcome::Committed { sha })
@@ -381,9 +385,13 @@ enum Rename {
     BothPaths,
 }
 
-/// The first of `paths` the change set does not name, `None` when every one of
-/// them is in it.
-fn first_unknown(repo: &Path, paths: &[String], rename: Rename) -> Result<Option<String>> {
+/// The first path of a list, the one a refusal names.
+fn first(paths: &[String]) -> String {
+    paths.first().cloned().unwrap_or_default()
+}
+
+/// The paths of `paths` that the change set names, in their order.
+fn in_change_set(repo: &Path, paths: &[String], rename: Rename) -> Result<Vec<String>> {
     let mut known: HashSet<String> = HashSet::new();
     for change in changes(repo)? {
         if rename == Rename::BothPaths {
@@ -393,7 +401,11 @@ fn first_unknown(repo: &Path, paths: &[String], rename: Rename) -> Result<Option
         }
         known.insert(change.path);
     }
-    Ok(paths.iter().find(|p| !known.contains(*p)).cloned())
+    Ok(paths
+        .iter()
+        .filter(|p| known.contains(*p))
+        .cloned()
+        .collect())
 }
 
 /// Run `git <prefix> <paths…>`, bailing with git's stderr on a non-zero exit.

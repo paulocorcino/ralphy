@@ -18,7 +18,7 @@ use std::path::Path;
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
 
-use crate::git::{git, raw, raw_env};
+use crate::git::{git, raw, raw_env, telling_line};
 
 /// What HEAD points at. Defined in `ralphy-git-read` (ADR-0069 D1).
 pub use ralphy_git_read::Head;
@@ -351,12 +351,18 @@ pub enum PushOutcome {
     AuthFailed {
         remote: String,
     },
+    /// Any other refusal (a hook, a protected branch, the network): `git` is
+    /// the one line of git's output that says why.
+    Failed {
+        remote: String,
+        git: String,
+    },
 }
 
 impl PushOutcome {
     /// Prose for a refusal, `None` when the push succeeded. Each refusal reads
-    /// as its own reason and names the operator's next action; none of them
-    /// relays a git error string.
+    /// as its own reason and names the operator's next action; only `Failed`
+    /// relays git's line, because no other words know its cause.
     pub fn reason(&self) -> Option<String> {
         Some(match self {
             PushOutcome::Pushed { .. } | PushOutcome::UpToDate => return None,
@@ -372,6 +378,9 @@ impl PushOutcome {
                 "cannot push: {remote} refused the credential — authenticate in a terminal, this \
                 will not prompt"
             ),
+            PushOutcome::Failed { remote, git } => {
+                format!("cannot push: {remote} refused the push — {git}")
+            }
         })
     }
 }
@@ -433,10 +442,8 @@ pub fn push(repo: &Path) -> Result<PushOutcome> {
     })
 }
 
-/// Which of git's two refusals this was. Anything unrecognized reads as
-/// `Rejected`: it is the outcome whose advice ("pull first") is harmless when
-/// wrong, whereas claiming an auth failure would send the operator to fix a
-/// credential that works.
+/// Which refusal this was. Only git's own words for a remote that moved on
+/// (`[rejected]`) advise a pull; any other cause is relayed as git's line.
 fn classify_push_failure(stderr: &str, remote: String) -> PushOutcome {
     let low = stderr.to_ascii_lowercase();
     // `terminal prompts disabled` is what GIT_TERMINAL_PROMPT=0 turns a
@@ -454,7 +461,27 @@ fn classify_push_failure(stderr: &str, remote: String) -> PushOutcome {
     if auth.iter().any(|m| low.contains(m)) {
         return PushOutcome::AuthFailed { remote };
     }
-    PushOutcome::Rejected { remote }
+    if low.contains("[rejected]") {
+        return PushOutcome::Rejected { remote };
+    }
+    PushOutcome::Failed {
+        remote,
+        git: push_line(stderr),
+    }
+}
+
+/// The line of a refused push that says why: git's ref line
+/// (`! [remote rejected] main -> main (protected branch hook declined)`),
+/// else [`telling_line`] without git's summary, which names no cause.
+fn push_line(stderr: &str) -> String {
+    if let Some(refused) = stderr.lines().find_map(|l| l.trim().strip_prefix("! ")) {
+        return telling_line(refused);
+    }
+    let causes: Vec<&str> = stderr
+        .lines()
+        .filter(|l| !l.starts_with("error: failed to push some refs"))
+        .collect();
+    telling_line(&causes.join("\n"))
 }
 
 #[cfg(test)]

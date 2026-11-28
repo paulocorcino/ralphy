@@ -42,6 +42,30 @@ pub fn git(repo: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
 }
 
+/// The most characters of git's output that a refusal shows the operator.
+const TELLING_LINE_CHARS: usize = 200;
+
+/// The one line of git's stderr that tells the operator why git refused:
+/// the first `error:` line, else the first `fatal:` line, else the last line
+/// (a hook prints its own text). The prefix is dropped and the line is cut
+/// to [`TELLING_LINE_CHARS`]. The whole stderr belongs in the log.
+pub(crate) fn telling_line(stderr: &str) -> String {
+    let lines: Vec<&str> = stderr
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    let prefixed = |prefix: &str| lines.iter().find_map(|l| l.strip_prefix(prefix));
+    let line = prefixed("error:")
+        .or_else(|| prefixed("fatal:"))
+        .or_else(|| lines.last().copied())
+        .map_or("", str::trim);
+    if line.is_empty() {
+        return "git gave no reason".to_owned();
+    }
+    line.chars().take(TELLING_LINE_CHARS).collect()
+}
+
 /// Resolve any path inside a repo to its git toplevel.
 pub fn resolve_toplevel(path: &Path) -> Result<PathBuf> {
     let out = raw(path, &["rev-parse", "--show-toplevel"])?;

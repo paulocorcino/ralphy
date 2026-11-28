@@ -21,6 +21,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
+use ralphy_core::wording::WorkingTreeFailure;
 use ralphy_core::worktree::{CommitOutcome, DiscardOutcome, StageOutcome, UnstageOutcome};
 
 use crate::runlock;
@@ -116,6 +117,19 @@ fn guarded_root(repo: &Path, verb: &str) -> anyhow::Result<PathBuf> {
     Ok(repo_root)
 }
 
+/// [`guarded_root`] for the commit: its refusal under a live run is the
+/// catalog's `run-holds-lock`, because the workbench shows a commit's
+/// failure by its code.
+fn commit_root(repo: &Path) -> anyhow::Result<PathBuf> {
+    let repo_root = ralphy_core::git::resolve_toplevel(repo)?;
+    let ws = ralphy_core::Workspace::new(&repo_root);
+    if let Err(held) = guard_run_lock(&ws, "changes commit", runlock::pid_is_alive) {
+        let failure = WorkingTreeFailure::RunHoldsLock.failure();
+        return Err(anyhow::Error::new(failure).context(format!("{held:#}")));
+    }
+    Ok(repo_root)
+}
+
 /// `ralphy changes stage --path <p> [--path <p>…]`.
 fn changes_stage(args: &ChangesPathArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "changes stage")?;
@@ -148,7 +162,7 @@ fn changes_unstage(args: &ChangesPathArgs) -> anyhow::Result<()> {
 
 /// `ralphy changes commit --message=<msg>`.
 fn changes_commit(args: &ChangesCommitArgs) -> anyhow::Result<()> {
-    let repo_root = guarded_root(&args.repo, "changes commit")?;
+    let repo_root = commit_root(&args.repo)?;
     let outcome = ralphy_core::worktree::commit(&repo_root, &args.message)?;
     if let Some(failure) = outcome.failure() {
         return Err(anyhow::Error::new(failure));

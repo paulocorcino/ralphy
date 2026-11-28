@@ -76,6 +76,16 @@ export function canCommit(view: ChangesView) {
   );
 }
 
+// Why the acts wait, as a line on screen: a touch screen shows no `title`.
+export function holdText(view: ChangesView) {
+  const locked = view.$store.connection.writeLockReason();
+  if (locked) return locked;
+  if (view.commitMsg.trim() !== "" && stagedCount(view) === 0) {
+    return "Stage a change first, then commit.";
+  }
+  return "";
+}
+
 export function rowActTitle(view: ChangesView, verb: string, all: boolean) {
   const locked = view.$store.connection.writeLockReason();
   if (locked) return locked;

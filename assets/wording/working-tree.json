@@ -11,6 +11,15 @@
       "cause": "the commit message is empty",
       "remedy": "Write a message, then commit again.",
       "note": "A commit was asked for with a message that is empty or only spaces. Shown after a failed commit in the changes panel and by the changes commit command."
+    },
+    "commit-refused": {
+      "cause": "{git}",
+      "note": "git ran the commit and refused it: a hook failed, the signer failed, or the identity is not set. The detail git is the one line of git's output that says why; the whole output is in the error chain and the daemon log."
+    },
+    "run-holds-lock": {
+      "cause": "a run is working in this repo",
+      "remedy": "Wait for it to finish, or stop it, then try again.",
+      "note": "A change to the working tree was asked for while a live run holds the repo's lock."
     }
   },
   "retired": []

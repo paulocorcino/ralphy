@@ -92,11 +92,11 @@
             </ul>
           </div>
           <div class="chg-compose">
+            <p class="help-text chg-hold" x-show="holdText()" x-text="holdText()"></p>
             <textarea
               class="chg-msg"
               x-model="commitMsg"
               @input="commitMsgSlug = $store.projects.openSlug"
-              :disabled="$store.connection.writeLocked()"
               placeholder="Message"
               :title="commitTitle()"
               rows="2"
