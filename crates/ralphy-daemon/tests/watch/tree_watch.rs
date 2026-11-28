@@ -94,11 +94,20 @@ async fn dirty_while_writing(
 
 /// The `(repo, path, checkout)` of a `tree.dirty` payload.
 fn dirty_fields(payload: &serde_json::Value) -> (String, String, Option<String>) {
-    let text = |key: &str| payload[key].as_str().unwrap_or("").to_owned();
+    let text = |key: &str| {
+        payload
+            .get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned()
+    };
     (
         text("repo"),
         text("path"),
-        payload["checkout"].as_str().map(String::from),
+        payload
+            .get("checkout")
+            .and_then(|v| v.as_str())
+            .map(String::from),
     )
 }
 

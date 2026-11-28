@@ -125,7 +125,7 @@ async fn recv_verb_within(ws: &mut Ws, verb: &str, dur: Duration) -> Option<Stri
 async fn dirty_while_writing(ws: &mut Ws, doc: &std::path::Path) -> Option<String> {
     let write = || std::fs::write(doc, document()).expect("write the snapshot document");
     let payload = push_while(ws, "runs.dirty", Duration::from_secs(10), write).await?;
-    payload["repo"].as_str().map(String::from)
+    payload.get("repo")?.as_str().map(String::from)
 }
 
 /// A minimal `v:1` snapshot document. Its pid is THIS process, so the reader
