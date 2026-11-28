@@ -1,8 +1,5 @@
-// Unit tests for assets/ui/wb-hosts-dialog.ts, the Hosts dialog's Alpine
-// component. It is built with `loadComponent`, so every test here also fails
-// when the component reads a shell() name it does not list in `uses`, or
-// assigns a shell() field (ADR-0073 D4). The fold itself is tested in
-// wb-hosts.test.mjs.
+// The Hosts dialog component, built with `loadComponent`: each test also fails on a
+// shell() read not in `uses` or a shell() write (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -15,7 +12,6 @@ const ALIASES = [
 ];
 
 const VPS_ID = "01TUNNELPEER0000000000000A";
-// The part that holds the dialog's markup.
 const PART = "wb-hosts-dialog.part.html";
 const line = (o) => JSON.stringify(o) + "\n";
 
@@ -42,7 +38,6 @@ function dialog(opts = {}) {
     },
   };
   const reloads = [];
-  // What a real reload brings back after an add: the new tunnel peer's group.
   shell.$store.projects.loadRepos = () => {
     reloads.push(1);
     shell.$store.projects.setProjects([{ key: VPS_ID + "/me/app", slug: "me/app", path: "/srv/app", daemon: VPS_ID }]);
@@ -303,8 +298,7 @@ test("dialog: Remove host runs host.remove with the daemon id and the token choi
   assert.deepEqual(calls.at(-1).payload, { host: VPS_ID, rotate_token: false });
 });
 
-// pin: the checks step offers Back, Connect and Done buttons bound to the dialog —
-// node runs no Alpine over the markup, so only its text shows the buttons.
+// pin: node runs no Alpine over the markup, so only its text shows the buttons.
 test("dialog: Back from the checks keeps the fields; it waits while a command runs", async () => {
   const { state, replies, scripts } = dialog();
   replies["host.key"] = { status: "ok", key: { state: "known" } };
@@ -334,7 +328,6 @@ test("dialog: a removed host leaves the list before the fleet read answers", () 
   shell.$store.projects.fleetPeers = [{ daemon_id: VPS_ID, name: "vps", tunnel: true }, other];
   shell.$store.projects._fleetRows = [{ key: VPS_ID + "/me/app", slug: "me/app", daemon: VPS_ID }];
   shell.$store.projects.setProjects([{ key: "me/local", slug: "me/local" }, ...shell.$store.projects._fleetRows]);
-  // The fleet read has not answered yet: the reload changes nothing.
   shell.$store.projects.loadRepos = async () => {};
   scripts["host.remove"] = [{ status: "exited", code: 0 }];
   state.openRemoveHost({ daemon_id: VPS_ID, name: "vps", tunnel: true });
@@ -380,7 +373,6 @@ test("dialog: Hosts opens on the list when a host is paired over SSH, else on th
   state.addHostCancel();
   assert.equal(state.addHost.open, false, "Cancel closes a new host's form");
   state.openAddHost();
-  // The last host removed: no list is left to show.
   state.addHostTab("hosts");
   shell.$store.projects.fleetPeers = shell.$store.projects.fleetPeers.filter((p) => !p.tunnel);
   assert.equal(state.hostTab(), "add");
@@ -473,13 +465,10 @@ test("dialog: the password field and its eye button say what a click does", () =
   assert.equal(state.hostSignInSwitchText(), "Use a password");
 });
 
-// ---- the component's contract with shell() and the page ----
-
 test("the dialog lists at most 12 shell() names, and shell() has each one", () => {
   const { data, shell } = dialog();
   assert.ok(data.uses.length <= 12, `${data.uses.length} names: ${data.uses.join(", ")}`);
   for (const name of data.uses) assert.ok(name in shell, name);
-  // The dialog's members left shell(): one owner for each name.
   for (const name of Object.keys(data)) {
     if (name !== "uses") assert.ok(!(name in shell), `shell() still has ${name}`);
   }
