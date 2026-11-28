@@ -59,3 +59,17 @@ test("init reads the release view, and reads it again when the page asks", () =>
   window.dispatchEvent({ type: "workbench:release-reread", detail: null });
   assert.equal(reads, 2, "read again on workbench:release-reread");
 });
+
+// The Spend button shows only on a build from source: the daemon calls it `ahead`.
+test("devBuild is true only for a build past its tag", () => {
+  const { store } = storeOnly();
+  for (const [standing, dev] of [
+    ["ahead", true],
+    ["level", false],
+    ["behind", false],
+    ["unknown", false],
+  ]) {
+    store.release = { ...WBRelease.EMPTY, standing };
+    assert.equal(store.devBuild, dev, standing);
+  }
+});

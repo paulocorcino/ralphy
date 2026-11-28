@@ -67,6 +67,11 @@ function isSticky(view: ReleaseView | null): boolean {
   return view !== null && view.severity === "urgent";
 }
 
+/* A build past its tag, built from source. The daemon says `ahead` only then. */
+function isDevBuild(view: ReleaseView | null): boolean {
+  return view !== null && view.standing === "ahead";
+}
+
 /* The line under the title: how many releases, and how far back. */
 function gapSummary(view: ReleaseView | null): string {
   const gap = view === null ? [] : view.gap;
@@ -110,6 +115,7 @@ export const WBRelease = {
   read,
   hasNews,
   isSticky,
+  isDevBuild,
   gapSummary,
   setWatch,
   update,

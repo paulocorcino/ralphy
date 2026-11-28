@@ -339,6 +339,14 @@
 .projects.has-open .project:not(.open) {
   display: none;
 }
+/* Nothing is left below the open project to close off: its tree reaches the
+   bottom of the column, as the editor beside it does. */
+.projects.has-open {
+  padding-bottom: 0;
+}
+.projects.has-open .files-pane {
+  border-bottom: 0;
+}
 /* The federated sidebar's group wrapper (#349). `display: contents` removes the
    box entirely, so each `li.project` stays a direct flex item of `.projects` —
    without it, the open project's `order: -1` rise and the `has-open` hiding
