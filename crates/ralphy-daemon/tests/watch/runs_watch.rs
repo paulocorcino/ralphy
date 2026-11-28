@@ -13,6 +13,7 @@ use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::page::{self, Channel as Ws};
+use crate::sync::{barrier, drain, push_while};
 
 const RUNID: &str = "01TESTRUNIDTESTRUNIDTE";
 
@@ -119,6 +120,14 @@ async fn recv_verb_within(ws: &mut Ws, verb: &str, dur: Duration) -> Option<Stri
     .flatten()
 }
 
+/// The repo of the first `runs.dirty` push within 10s, while `doc` is written
+/// again and again: a watch that is armed late still sees a write.
+async fn dirty_while_writing(ws: &mut Ws, doc: &std::path::Path) -> Option<String> {
+    let write = || std::fs::write(doc, document()).expect("write the snapshot document");
+    let payload = push_while(ws, "runs.dirty", Duration::from_secs(10), write).await?;
+    payload["repo"].as_str().map(String::from)
+}
+
 /// A minimal `v:1` snapshot document. Its pid is THIS process, so the reader
 /// would see a live run — the watcher never parses it, but a plausible document
 /// keeps the fixture honest against `runs.list`.
@@ -156,13 +165,9 @@ async fn runstate_write_pushes_runs_dirty() {
         wait_until(|| runstate.is_dir()).await,
         "runs.watch creates the snapshot dir so a first run is never invisible"
     );
-    // The dir now exists; give the OS watch a beat to attach before the write.
-    tokio::time::sleep(Duration::from_millis(300)).await;
-
-    std::fs::write(runstate.join(format!("{RUNID}.json")), document()).unwrap();
-
+    let doc = runstate.join(format!("{RUNID}.json"));
     assert_eq!(
-        recv_verb(&mut ws, "runs.dirty").await,
+        dirty_while_writing(&mut ws, &doc).await,
         Some(slug.clone()),
         "a snapshot write pushes runs.dirty despite `.ralphy/` being gitignored"
     );
@@ -180,17 +185,16 @@ async fn runs_unwatch_stops_the_pushes() {
     send_verb(&mut ws, "runs.watch", &slug, "").await;
     send_verb(&mut ws, "runs.watch", &slug, "some/other/path").await;
     assert!(wait_until(|| runstate.is_dir()).await, "the watch is up");
-    tokio::time::sleep(Duration::from_millis(300)).await;
-
-    std::fs::write(runstate.join(format!("{RUNID}.json")), document()).unwrap();
+    let first = runstate.join(format!("{RUNID}.json"));
     assert_eq!(
-        recv_verb(&mut ws, "runs.dirty").await,
+        dirty_while_writing(&mut ws, &first).await,
         Some(slug.clone()),
         "the subscription is live before the release"
     );
 
     send_verb(&mut ws, "runs.unwatch", &slug, "").await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    barrier(&mut ws, &slug).await;
+    drain(&mut ws, "runs.dirty").await;
 
     std::fs::write(runstate.join("01OTHERRUNIDOTHERRUNID.json"), document()).unwrap();
     assert_eq!(
@@ -203,10 +207,9 @@ async fn runs_unwatch_stops_the_pushes() {
     // `None` for a closed socket, so the silence above counts only if the
     // connection still works after the release.
     send_verb(&mut ws, "runs.watch", &slug, "").await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    std::fs::write(runstate.join("01THIRDRUNIDTHIRDRUNID0.json"), document()).unwrap();
+    let third = runstate.join("01THIRDRUNIDTHIRDRUNID0.json");
     assert_eq!(
-        recv_verb(&mut ws, "runs.dirty").await,
+        dirty_while_writing(&mut ws, &third).await,
         Some(slug.clone()),
         "the connection is still open and a new watch pushes again"
     );
@@ -222,7 +225,13 @@ async fn snapshot_removal_pushes_runs_dirty() {
 
     let mut ws = page::runs(port).await;
     send_verb(&mut ws, "runs.watch", &slug, "").await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // A push for another document proves the watch is armed before the removal.
+    let probe = runstate.join("01PROBERUNIDPROBERUNID0.json");
+    assert!(
+        dirty_while_writing(&mut ws, &probe).await.is_some(),
+        "the watch is up"
+    );
+    drain(&mut ws, "runs.dirty").await;
 
     // A run that ends removes its document (the panel must empty without a reload).
     std::fs::remove_file(&doc).unwrap();

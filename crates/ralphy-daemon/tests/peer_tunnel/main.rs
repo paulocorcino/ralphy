@@ -120,6 +120,7 @@ async fn a_tunnel_is_held_once_and_replaced_once_dead() {
         !tunnels.ensure("peer-a", &spec(7401)).unwrap(),
         "a running tunnel is kept"
     );
+    // Kept: it gives a wrong extra ssh time to start; nothing marks its absence.
     std::thread::sleep(Duration::from_millis(500));
     assert_eq!(lines(&fx.argv_log).len(), 1, "no second ssh was started");
 
@@ -172,6 +173,7 @@ async fn ensure_all_skips_a_peer_without_a_tunnel_and_one_on_our_port() {
         me,
     );
     wait_lines(&fx.argv_log, 1);
+    // Kept: it gives a wrong extra ssh time to start; nothing marks its absence.
     std::thread::sleep(Duration::from_millis(500));
     let got = lines(&fx.argv_log);
     assert_eq!(got.len(), 1, "got: {got:?}");
