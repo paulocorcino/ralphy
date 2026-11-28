@@ -112,6 +112,9 @@ function fakeEl(tag) {
     appendChild(k) {
       el.append(k);
     },
+    after(k) {
+      el.parent?.append(k);
+    },
     remove() {
       if (el.parent) el.parent.children = el.parent.children.filter((k) => k !== el);
       el.parent = null;
@@ -134,7 +137,10 @@ function loadWithDom() {
     focus() {},
     getModel: () => model,
     getValue: () => model.value,
-    onDidChangeModelContent() {},
+    onDidChangeModelContent: () => ({ dispose() {} }),
+    onDidChangeCursorSelection: () => ({ dispose() {} }),
+    getSelection: () => null,
+    getPosition: () => null,
     // Ctrl+S is an editor-scoped action whose disposable the pane keeps.
     addAction: () => ({ dispose: () => log.push(`savekey:${tag}`) }),
     updateOptions() {},
@@ -151,7 +157,17 @@ function loadWithDom() {
     ready: () => Promise.resolve(monacoStub),
     gutterOptions: () => ({}),
     create(container, { value, path }) {
-      const model = { value, path, dispose: () => log.push(`model:${path}`) };
+      const model = {
+        value,
+        path,
+        getLineCount: () => 1,
+        getLinesContent: () => [value],
+        getValue: () => value,
+        getValueLength: () => value.length,
+        getEOL: () => "\n",
+        getOptions: () => ({ tabSize: 4 }),
+        dispose: () => log.push(`model:${path}`),
+      };
       models.push(model);
       return fakeEditor(model, `own:${path}`);
     },

@@ -234,6 +234,8 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     rec.ro = undefined;
     rec.saveKey?.dispose();
     rec.saveKey = undefined;
+    rec.status?.dispose();
+    rec.status = undefined;
     if (!rec.ed) return;
     disposeEditorAndModels(rec, rec.ed);
     rec.ed = undefined;

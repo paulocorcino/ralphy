@@ -31,6 +31,8 @@ export type PaneRecord = {
   saveBtn?: HTMLElement | null;
   mirrorBtn?: HTMLElement | null;
   saveKey?: MonacoDisposable | undefined;
+  /** The status bar under the editor. */
+  status?: MonacoDisposable | undefined;
   ro?: ResizeObserver | undefined;
   encMenu?: HTMLElement;
   /** A find asked for while the editor was not mounted or the pane was off screen. */

@@ -155,6 +155,52 @@
 .viewer-body .monaco-diff-editor {
   height: 100%;
 }
+/* A code editor over its status bar (wb-editor-status.ts). */
+.editor-frame {
+  display: flex;
+  flex-direction: column;
+}
+.editor-host {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.editor-host .monaco-editor {
+  height: 100%;
+}
+.editor-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3) var(--space-7);
+  padding: 2px var(--space-5);
+  border-top: 1px solid var(--border);
+  background: var(--chrome);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+.editor-status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.editor-status-field {
+  font: inherit;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border-field);
+  border-radius: var(--radius);
+  padding: 0 var(--space-3);
+}
+.editor-status-field:focus {
+  outline: 1px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.editor-status-num {
+  width: 4.5em;
+}
 /* the read-only degrade when Monaco's AMD loader cannot boot */
 .code-fallback {
   height: 100%;
