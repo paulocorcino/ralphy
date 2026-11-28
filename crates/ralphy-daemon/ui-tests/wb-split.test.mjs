@@ -92,7 +92,7 @@ test("a pin of a tab that is gone paints single; the state is the caller's to cl
   assert.equal(afterClose(null, A), null);
 });
 
-test("a mirror doubles the active CODE tab and steps aside for anything else", () => {
+test("a mirror doubles the active tab that has an editor, and steps aside for anything else", () => {
   const { resolve } = WBSplit;
   assert.deepEqual(resolve(base({ slot: { kind: "mirror" } })), {
     left: A,
@@ -102,8 +102,8 @@ test("a mirror doubles the active CODE tab and steps aside for anything else", (
   });
   assert.deepEqual(resolve(base({ active: MD, slot: { kind: "mirror" } })), {
     left: MD,
-    right: null,
-    mirror: false,
+    right: MD,
+    mirror: true,
     focus: "left",
   });
   assert.equal(resolve(base({ active: "diff:p:x", slot: { kind: "mirror" } })).mirror, false);

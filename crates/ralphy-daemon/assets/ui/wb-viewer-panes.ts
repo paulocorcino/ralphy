@@ -2,6 +2,8 @@
 // screen, in which grid column, and which editor takes the focus. Pure rules
 // over the records `wb-file-viewer.ts` holds; the viewer does the painting.
 
+import { mirrorsKind } from "./wb-split.ts";
+
 /** The second pane the shell resolved (`WBSplit.resolve`). */
 export type ViewerSlot = { id: string; mirror?: boolean; focus?: boolean; ratio: number | null };
 
@@ -15,7 +17,7 @@ export type PaneLayout = { on: boolean; display: "flex" | "none"; gridColumn: "1
 export function isSplit(slot: ViewerSlot | null, slotRec: PaneShape | null | undefined): boolean {
   // A mirror needs an editor to mirror; a pin needs its pane open.
   if (slot === null || slotRec == null) return false;
-  return slot.mirror !== true || (slotRec.kind === "code" && Boolean(slotRec.ed));
+  return slot.mirror !== true || (mirrorsKind(slotRec.kind) && Boolean(slotRec.ed));
 }
 
 /** The place of the pane `recId` when `id` is active: the active pane takes

@@ -188,6 +188,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     setPathLabel,
     setCaption,
     detachBtnHtml,
+    mirrorBtnHtml,
     detachClick,
     mountEditor,
     saver,

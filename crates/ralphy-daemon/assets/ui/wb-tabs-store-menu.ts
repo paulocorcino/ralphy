@@ -10,6 +10,7 @@
 import { setMarkup } from "./wb-html.ts";
 import type { CanvasTab, MenuItem, Slot } from "./wb-shell-types.d.ts";
 import { required } from "./wb-dom-need.ts";
+import { mirrorsKind } from "./wb-split.ts";
 
 /** What the tab menu reads or calls on the store `tabs`. */
 type MenuTabs = {
@@ -50,7 +51,7 @@ export function showSlotMenu(store: MenuTabs, x: number, y: number, t: CanvasTab
             store.pinTab(t.id);
           },
         },
-    t.kind === "code" &&
+    mirrorsKind(t.kind) &&
       (mirrored
         ? {
             label: "Close mirror",

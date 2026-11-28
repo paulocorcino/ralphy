@@ -7,7 +7,7 @@ import { focusTarget, isSplit, paneLayout } from "../assets/ui/wb-viewer-panes.t
 
 const EDITOR = { name: "editor" };
 
-test("a pinned slot splits once its pane is open; a mirror needs a mounted code editor", () => {
+test("a pinned slot splits once its pane is open; a mirror needs a mounted editor", () => {
   const pin = { id: "b", mirror: false, ratio: null };
   const mirror = { id: "a", mirror: true, ratio: null };
   // [case, slot, the slot's pane, split]
@@ -17,7 +17,9 @@ test("a pinned slot splits once its pane is open; a mirror needs a mounted code 
     ["a pin whose pane is not open yet", pin, undefined, false],
     ["a mirror over a mounted code editor", mirror, { kind: "code", ed: EDITOR }, true],
     ["a mirror before the editor mounted", mirror, { kind: "code" }, false],
-    ["a mirror over a pane that is not code", mirror, { kind: "markdown", ed: EDITOR }, false],
+    ["a mirror over a markdown pane in edit", mirror, { kind: "markdown", ed: EDITOR }, true],
+    ["a mirror over a markdown pane never edited", mirror, { kind: "markdown" }, false],
+    ["a mirror over a pane with no editor", mirror, { kind: "image", ed: EDITOR }, false],
   ];
   for (const [name, slot, rec, split] of rows) assert.equal(isSplit(slot, rec), split, name);
 });
