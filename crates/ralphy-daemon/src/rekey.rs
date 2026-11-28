@@ -14,22 +14,44 @@
 //! after a migration the daemon never saw, or across a daemon restart — is
 //! normalized through that map by the desk routes ([`rekey_desk`]).
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 use crate::desk::DeskStore;
 use crate::dispatch;
 use crate::registry::is_hash_key;
 
 /// The `(slug, remote)` pairs already handed to `ralphy daemon add` this router
-/// lifetime. A remote whose URL yields no forge slug leaves the key a hash, and
-/// without the memo every page load would respawn the registrar for it.
-pub(crate) type HealMemo = Arc<Mutex<HashSet<(String, String)>>>;
+/// lifetime, with what came of it. A remote whose URL yields no forge slug
+/// leaves the key a hash, and without the memo every page load would respawn
+/// the registrar for it; a failed registrar is tried again after a wait.
+pub(crate) type HealMemo = Arc<Mutex<HashMap<(String, String), Attempt>>>;
+
+/// What the memo knows of one pair: how many registrars failed in a row, and
+/// when the next one may run (`None`: in flight or done, never again).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Attempt {
+    failures: u32,
+    next_at: Option<Instant>,
+}
+
+/// How long a pair waits after its first, second, and later failed heal.
+const WAITS: [Duration; 3] = [
+    Duration::from_mins(1),
+    Duration::from_mins(5),
+    Duration::from_mins(30),
+];
 
 pub(crate) fn heal_memo() -> HealMemo {
-    Arc::new(Mutex::new(HashSet::new()))
+    Arc::new(Mutex::new(HashMap::new()))
+}
+
+fn lock(memo: &HealMemo) -> MutexGuard<'_, HashMap<(String, String), Attempt>> {
+    memo.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// One registry row the daemon has observed to be remoteless-keyed with a
@@ -41,59 +63,109 @@ pub(crate) struct Candidate {
     pub(crate) remote: String,
 }
 
-/// The rows worth a registrar spawn — hash-keyed, with an origin, not yet
-/// claimed — claimed in `memo` as a side effect so the spawn happens once
-/// whatever it yields.
+/// The rows worth a registrar spawn — hash-keyed, with an origin, never
+/// claimed or due again after a failure — marked in flight in `memo`, so two
+/// reads at once spawn one registrar.
 pub(crate) fn claim_candidates<'a>(
     memo: &HealMemo,
     rows: impl Iterator<Item = (&'a str, &'a str, Option<&'a str>)>,
+    now: Instant,
 ) -> Vec<Candidate> {
-    let mut claimed = memo
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut claimed = lock(memo);
     rows.filter_map(|(slug, path, remote)| {
         let remote = remote?;
         if !is_hash_key(slug) {
             return None;
         }
-        claimed
-            .insert((slug.to_owned(), remote.to_owned()))
-            .then(|| Candidate {
-                slug: slug.to_owned(),
-                path: path.to_owned(),
-                remote: remote.to_owned(),
-            })
+        claim(&mut claimed, (slug.to_owned(), remote.to_owned()), now).then(|| Candidate {
+            slug: slug.to_owned(),
+            path: path.to_owned(),
+            remote: remote.to_owned(),
+        })
     })
     .collect()
+}
+
+fn claim(
+    memo: &mut HashMap<(String, String), Attempt>,
+    key: (String, String),
+    now: Instant,
+) -> bool {
+    let attempt = memo.entry(key).or_insert(Attempt {
+        failures: 0,
+        next_at: Some(now),
+    });
+    let due = attempt.next_at.is_some_and(|at| at <= now);
+    if due {
+        attempt.next_at = None;
+    }
+    due
+}
+
+/// Record a failed heal of `c` and return how many failed in a row.
+fn record_failure(memo: &HealMemo, c: &Candidate, now: Instant) -> u32 {
+    let mut memo = lock(memo);
+    let attempt = memo
+        .entry((c.slug.clone(), c.remote.clone()))
+        .or_insert(Attempt {
+            failures: 0,
+            next_at: None,
+        });
+    attempt.failures += 1;
+    let tried = usize::try_from(attempt.failures.saturating_sub(1)).unwrap_or(usize::MAX);
+    let wait = WAITS.get(tried).or(WAITS.last());
+    let wait = wait.copied().unwrap_or(Duration::from_mins(30));
+    attempt.next_at = Some(now + wait);
+    attempt.failures
 }
 
 /// Spawn-and-collect `daemon add <path>` per candidate: the CLI re-derives the
 /// slug from the remote and migrates the entry (registry, ledger, events sink).
 /// Never `--init` — every candidate is a repository already, and a heal must
 /// not create one. The child's output is logged, not parsed; the caller
-/// re-reads the registry for the truth. Returns whether any registrar ran.
+/// re-reads the registry for the truth. A failure is recorded in `memo`, so
+/// the pair is tried again after its wait. Returns whether any registrar ran.
 /// Blocking (a `wait` per candidate) — run in `spawn_blocking`.
-pub(crate) fn heal(spawner: &dyn dispatch::Spawner, program: &OsStr, todo: &[Candidate]) -> bool {
+pub(crate) fn heal(
+    spawner: &dyn dispatch::Spawner,
+    program: &OsStr,
+    todo: &[Candidate],
+    memo: &HealMemo,
+    now: Instant,
+) -> bool {
     for c in todo {
         let argv = ["daemon", "add", c.path.as_str()];
-        match dispatch::collect(spawner, program, &argv, Path::new(&c.path), None) {
-            Ok((Some(0), out)) => tracing::info!(
-                slug = %c.slug,
-                remote = %c.remote,
-                output = %String::from_utf8_lossy(&out).trim(),
-                "registry re-keyed after a gained remote"
+        let failure = match dispatch::collect(spawner, program, &argv, Path::new(&c.path), None) {
+            Ok((Some(0), out)) => {
+                tracing::info!(
+                    slug = %c.slug,
+                    remote = %c.remote,
+                    output = %String::from_utf8_lossy(&out).trim(),
+                    "registry re-keyed after a gained remote"
+                );
+                continue;
+            }
+            Ok((code, out)) => format!(
+                "the registrar exited with {code:?}: {}",
+                String::from_utf8_lossy(&out).trim()
             ),
-            Ok((code, out)) => tracing::warn!(
-                slug = %c.slug,
-                remote = %c.remote,
-                ?code,
-                output = %String::from_utf8_lossy(&out).trim(),
-                "registrar did not re-key the entry; the hash key stays"
-            ),
-            Err(e) => tracing::warn!(slug = %c.slug, error = %e, "could not spawn the registrar"),
-        }
+            Err(e) => format!("could not spawn the registrar: {e:#}"),
+        };
+        log_failure(c, &failure, record_failure(memo, c, now));
     }
     !todo.is_empty()
+}
+
+/// Warn on the first failure of a pair only; a pair that keeps failing would
+/// otherwise fill the log every wait.
+fn log_failure(c: &Candidate, failure: &str, failures: u32) {
+    if failures == 1 {
+        tracing::warn!(slug = %c.slug, remote = %c.remote, %failure,
+            "the registry entry was not re-keyed; the hash key stays and it is tried again later");
+    } else {
+        tracing::debug!(slug = %c.slug, remote = %c.remote, %failure, failures,
+            "the registry entry was not re-keyed again");
+    }
 }
 
 /// Rewrite every desk record's `repo` and every `checkouts` key through
@@ -162,7 +234,8 @@ mod tests {
             ),
             ("owner/repo", "/r", Some("https://github.com/owner/repo")),
         ];
-        let first = claim_candidates(&memo, rows.iter().copied());
+        let now = Instant::now();
+        let first = claim_candidates(&memo, rows.iter().copied(), now);
         assert_eq!(
             first,
             vec![Candidate {
@@ -173,24 +246,34 @@ mod tests {
             "only the hash key WITH a remote is a candidate"
         );
         assert!(
-            claim_candidates(&memo, rows.iter().copied()).is_empty(),
+            claim_candidates(&memo, rows.iter().copied(), now + WAITS[2]).is_empty(),
             "a claimed pair never spawns twice"
         );
         // A DIFFERENT remote on the same hash key is a new fact.
         let changed = [("path-abc", "/a", Some("https://github.com/o/b.git"))];
-        assert_eq!(claim_candidates(&memo, changed.iter().copied()).len(), 1);
+        assert_eq!(
+            claim_candidates(&memo, changed.iter().copied(), now).len(),
+            1
+        );
     }
 
     struct FakeSpawner {
         calls: Mutex<Vec<(Vec<String>, PathBuf)>>,
+        code: i32,
     }
-    struct FakeChild;
+    fn spawner(code: i32) -> FakeSpawner {
+        FakeSpawner {
+            calls: Mutex::new(Vec::new()),
+            code,
+        }
+    }
+    struct FakeChild(i32);
     impl Child for FakeChild {
         fn pid(&self) -> Option<u32> {
             Some(1)
         }
         fn wait(&mut self) -> anyhow::Result<Option<i32>> {
-            Ok(Some(0))
+            Ok(Some(self.0))
         }
         fn take_output(&mut self) -> Option<Box<dyn std::io::Read + Send>> {
             None
@@ -209,16 +292,18 @@ mod tests {
                 args.iter().map(ToString::to_string).collect(),
                 cwd.to_path_buf(),
             ));
-            Ok(Box::new(FakeChild))
+            Ok(Box::new(FakeChild(self.code)))
         }
     }
 
     #[test]
     fn heal_spawns_daemon_add_per_candidate() {
-        let spawner = FakeSpawner {
-            calls: Mutex::new(Vec::new()),
-        };
-        assert!(!heal(&spawner, OsStr::new("ralphy"), &[]), "nothing to do");
+        let spawner = spawner(0);
+        let (memo, now) = (heal_memo(), Instant::now());
+        assert!(
+            !heal(&spawner, OsStr::new("ralphy"), &[], &memo, now),
+            "nothing to do"
+        );
         let todo = vec![
             Candidate {
                 slug: "path-a".into(),
@@ -231,7 +316,7 @@ mod tests {
                 remote: "r".into(),
             },
         ];
-        assert!(heal(&spawner, OsStr::new("ralphy"), &todo));
+        assert!(heal(&spawner, OsStr::new("ralphy"), &todo, &memo, now));
         let calls = spawner.calls.lock().unwrap();
         assert_eq!(calls.len(), 2);
         assert_eq!(calls[0].0, vec!["daemon", "add", "/repo-a"]);
@@ -243,6 +328,68 @@ mod tests {
                 .all(|(argv, _)| !argv.iter().any(|a| a == "--init")),
             "a heal never initializes a repository"
         );
+    }
+
+    const ROW: [(&str, &str, Option<&str>); 1] = [("path-a", "/a", Some("https://h/x"))];
+
+    #[test]
+    fn a_failed_heal_is_tried_again_after_its_wait() {
+        let (memo, now) = (heal_memo(), Instant::now());
+        let todo = claim_candidates(&memo, ROW.iter().copied(), now);
+        assert_eq!(todo.len(), 1);
+        heal(&spawner(1), OsStr::new("ralphy"), &todo, &memo, now);
+        let early = now + Duration::from_secs(59);
+        assert_eq!(claim_candidates(&memo, ROW.iter().copied(), early), []);
+        let due = claim_candidates(&memo, ROW.iter().copied(), now + WAITS[0]);
+        assert_eq!(due, todo, "the pair is a candidate again after its wait");
+        heal(
+            &spawner(0),
+            OsStr::new("ralphy"),
+            &due,
+            &memo,
+            now + WAITS[0],
+        );
+        let later = now + Duration::from_hours(24);
+        assert_eq!(claim_candidates(&memo, ROW.iter().copied(), later), []);
+    }
+
+    #[test]
+    fn a_heal_that_keeps_failing_warns_once() {
+        let written = Written::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(written.clone())
+            .with_ansi(false)
+            .with_max_level(tracing::Level::WARN)
+            .finish();
+        let _log = tracing::subscriber::set_default(subscriber);
+        tracing::callsite::rebuild_interest_cache();
+        let (memo, mut now) = (heal_memo(), Instant::now());
+        for _ in 0..3 {
+            let todo = claim_candidates(&memo, ROW.iter().copied(), now);
+            assert_eq!(todo.len(), 1);
+            heal(&spawner(1), OsStr::new("ralphy"), &todo, &memo, now);
+            now += WAITS[2];
+        }
+        let log = String::from_utf8_lossy(&written.0.lock().unwrap()).into_owned();
+        assert_eq!(log.matches("WARN").count(), 1, "{log}");
+    }
+
+    #[derive(Clone, Default)]
+    struct Written(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Written {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Written {
+        type Writer = Self;
+        fn make_writer(&'a self) -> Self {
+            self.clone()
+        }
     }
 
     fn record(id: &str, repo: &str) -> DeskRecord {
