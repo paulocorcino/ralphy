@@ -289,6 +289,34 @@ fn commit_writes_the_staged_index() {
 }
 
 #[test]
+fn a_commit_git_refuses_carries_the_line_that_says_why() {
+    let dir = init_repo("commit-refused");
+    // A signer that does not exist: git refuses with no script of ours.
+    git(&dir, &["config", "commit.gpgsign", "true"]).unwrap();
+    git(&dir, &["config", "gpg.program", "ralphy-no-such-signer"]).unwrap();
+    std::fs::write(dir.join("a.txt"), "new\n").unwrap();
+    stage(&dir, &p("a.txt")).unwrap();
+
+    let err = commit(&dir, "feat: a thing").unwrap_err();
+    let failure = err
+        .chain()
+        .find_map(|e| e.downcast_ref::<ralphy_wording::Failure>())
+        .unwrap_or_else(|| panic!("no failure in the chain: {err:#}"));
+    assert_eq!(failure.code, "commit-refused");
+    assert!(
+        failure.text.cause.contains("ralphy-no-such-signer"),
+        "{failure:?}"
+    );
+    assert!(!failure.text.cause.contains('\n'), "one line: {failure:?}");
+    assert!(
+        format!("{err:#}").contains("failed to write commit object"),
+        "{err:#}"
+    );
+
+    remove_scratch(&dir);
+}
+
+#[test]
 fn a_commit_message_beginning_with_a_dash_is_recorded_verbatim() {
     // MEASURED: git itself accepts `-m -oops` too, so this leg alone does not
     // discriminate the fusion — it pins that the message reaches git intact.
@@ -308,64 +336,61 @@ fn a_commit_message_beginning_with_a_dash_is_recorded_verbatim() {
     remove_scratch(&dir);
 }
 
-/// The regression test for the group-stage abort. REPRODUCED live before the
-/// fix: `git --literal-pathspecs add -- renamed.txt old.txt other.txt` exits
-/// 128 with `fatal: pathspec 'old.txt' did not match any files` AND stages
-/// nothing but `renamed.txt` — `git add` aborts the WHOLE invocation on one
-/// unmatched pathspec. So a single rename-then-edit entry made the panel's
-/// group `+` stage nothing, relaying git's raw prose on the way out.
+/// The group-stage abort: `git add -- renamed.txt old.txt other.txt` exits 128
+/// on the rename's old path and stages nothing, so `stage` must never pass it.
 #[test]
-fn stage_refuses_a_renames_original_path_and_stages_nothing_partially() {
+fn stage_skips_a_renames_original_path_and_stages_the_rest() {
     let dir = init_repo("rename-stage");
     commit_file(&dir, "old.txt", "l1\nl2\nl3\nl4\nl5\nl6\n", "add old");
     std::fs::write(dir.join("other.txt"), "loose\n").unwrap();
     git(&dir, &["mv", "old.txt", "renamed.txt"]).unwrap();
     // …then edit it, so the entry is `RM` and lands in BOTH groups.
     std::fs::write(dir.join("renamed.txt"), "l1\nl2\nl3\nl4\nl5\nl6\nl7\n").unwrap();
-    let before = staged_paths(&dir);
 
-    let refused = stage(
-        &dir,
-        &[
-            "renamed.txt".to_owned(),
-            "old.txt".to_owned(),
-            "other.txt".to_owned(),
-        ],
-    )
-    .unwrap();
+    let list = [
+        "renamed.txt".to_owned(),
+        "old.txt".to_owned(),
+        "other.txt".to_owned(),
+    ];
     assert_eq!(
-        refused,
-        StageOutcome::NotInChangeSet {
-            path: "old.txt".to_owned()
-        },
-        "the rename's original path is not stageable"
-    );
-    assert_eq!(
-        refused.reason().as_deref(),
-        Some(
-            "cannot stage: old.txt has no change to stage — \
-             it may be staged, committed or reverted already"
-        ),
-        "the operator reads this module's prose, never git's `fatal:`"
-    );
-    assert_eq!(
-        staged_paths(&dir),
-        before,
-        "a refusal stages NOTHING — not even the good half of the list"
-    );
-
-    // The positive control: without the old path the same request succeeds, so
-    // the refusal above is about that path and not about the fixture.
-    assert_eq!(
-        stage(&dir, &["renamed.txt".to_owned(), "other.txt".to_owned()]).unwrap(),
+        stage(&dir, &list).unwrap(),
         StageOutcome::Staged { paths: 2 }
     );
-    // …and `unstage` still accepts the original path, which is the direction
-    // that genuinely needs it.
+    let staged = staged_paths(&dir);
+    assert!(staged.contains("other.txt"), "the rest is staged: {staged}");
+    assert!(changes(&dir)
+        .unwrap()
+        .iter()
+        .all(|c| c.worktree_status.is_none()));
+    // The old path alone has nothing to stage.
+    assert_eq!(
+        stage(&dir, &p("old.txt")).unwrap(),
+        StageOutcome::NotInChangeSet {
+            path: "old.txt".to_owned()
+        }
+    );
+    // `unstage` accepts the original path, the direction that needs it.
     assert_eq!(
         unstage(&dir, &["renamed.txt".to_owned(), "old.txt".to_owned()]).unwrap(),
         UnstageOutcome::Unstaged { paths: 2 }
     );
+
+    remove_scratch(&dir);
+}
+
+/// A list read before a file was reverted: the reverted path is skipped.
+#[test]
+fn unstage_skips_a_path_that_left_the_change_set() {
+    let dir = init_repo("unstage-stale");
+    std::fs::write(dir.join("a.txt"), "new\n").unwrap();
+    stage(&dir, &p("a.txt")).unwrap();
+
+    let list = ["a.txt".to_owned(), "never-touched.txt".to_owned()];
+    assert_eq!(
+        unstage(&dir, &list).unwrap(),
+        UnstageOutcome::Unstaged { paths: 1 }
+    );
+    assert_eq!(staged_paths(&dir), "");
 
     remove_scratch(&dir);
 }

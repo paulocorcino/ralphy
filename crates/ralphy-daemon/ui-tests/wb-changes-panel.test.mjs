@@ -437,3 +437,16 @@ test("the checkout chip and the change count follow the open project", () => {
   globalThis.window.Alpine.store("checkouts").changesCount["o/r"] = 4;
   assert.equal(changes.changesCountText(), 4);
 });
+
+// A touch screen shows no `title`: why the acts wait is a line on screen.
+test("holdText says why the acts wait, and is empty when nothing waits", async () => {
+  const { shell, changes } = observedPage([CHANGES_OK]);
+  shell.$store.runs.runsByProject["o/r"] = [];
+  await changes.loadChanges("o/r");
+  assert.equal(changes.holdText(), "", "nothing waits");
+  changes.commitMsg = "feat: a thing";
+  changes.changesStaged["o/r"] = [];
+  assert.equal(changes.holdText(), "Stage a change first, then commit.");
+  shell.$store.runs.runsByProject["o/r"] = [{ runid: "x" }];
+  assert.match(changes.holdText(), /^A run is active in this project\./u);
+});

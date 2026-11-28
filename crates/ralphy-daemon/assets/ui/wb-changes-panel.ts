@@ -28,6 +28,7 @@ import {
   canCommit,
   commitTitle,
   fetchTitle,
+  holdText,
   pullLocked,
   pullTitle,
   pushTitle,
@@ -324,6 +325,9 @@ export function wbChanges() {
     },
     canCommit() {
       return canCommit(this);
+    },
+    holdText() {
+      return holdText(this);
     },
 
     // Stage / unstage / commit, each in `syncFetch`'s shape, re-reading the

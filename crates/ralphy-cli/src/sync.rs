@@ -160,7 +160,8 @@ fn sync_push(args: &SyncArgs) -> anyhow::Result<()> {
         refused @ (PushOutcome::NoRemote
         | PushOutcome::DetachedHead
         | PushOutcome::Rejected { .. }
-        | PushOutcome::AuthFailed { .. }) => anyhow::bail!(
+        | PushOutcome::AuthFailed { .. }
+        | PushOutcome::Failed { .. }) => anyhow::bail!(
             "{}",
             refused.reason().unwrap_or_else(|| format!("{refused:?}"))
         ),

@@ -35,6 +35,13 @@ export interface MonacoModel {
     wordSeparators: string | null,
     captureMatches: boolean,
   ): { range: MonacoRange } | null;
+  getLineCount(): number;
+  getLinesContent(): string[];
+  getValue(): string;
+  getValueLength(): number;
+  getValueInRange(range: MonacoRange): string;
+  getEOL(): string;
+  getOptions(): { tabSize: number };
   dispose(): void;
 }
 
@@ -56,6 +63,7 @@ export type EditorOptions = {
   wordBasedSuggestions?: string;
   quickSuggestions?: boolean;
   wordWrap?: string;
+  wordWrapColumn?: number;
   fontFamily?: string;
   fontSize?: number;
   lineNumbers?: string;
@@ -84,6 +92,9 @@ export interface MonacoEditor {
   focus(): void;
   dispose(): void;
   onDidChangeModelContent(listener: () => void): MonacoDisposable;
+  onDidChangeCursorSelection(listener: () => void): MonacoDisposable;
+  getPosition(): { lineNumber: number; column: number } | null;
+  getSelection(): (MonacoRange & { isEmpty(): boolean }) | null;
   addAction(action: {
     id: string;
     label: string;

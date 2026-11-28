@@ -631,7 +631,7 @@ def main():
             page.wait_for_function(f"() => Alpine.store('connection').writeLocked() === true", timeout=15000)
             locked = page.evaluate(
                 f"() => {{ const v = {VIEW};"
-                " const sel = '[data-act^=\"stage\"], [data-act^=\"unstage\"], .chg-commit, .chg-msg';"
+                " const sel = '[data-act^=\"stage\"], [data-act^=\"unstage\"], .chg-commit';"
                 " return Array.from(v.querySelectorAll(sel))"
                 "   .filter(e => e.offsetParent !== null)"
                 "   .map(e => ({ what: e.getAttribute('data-act') || e.className,"
@@ -644,7 +644,7 @@ def main():
                 # a regression hide exactly one control and still satisfy every
                 # `all()` below it.
                 sorted(c["what"] for c in locked)
-                == ["chg-commit", "chg-msg", "stage", "stage", "stage", "stage-all"],
+                == ["chg-commit", "stage", "stage", "stage", "stage-all"],
                 f"got={sorted(c['what'] for c in locked)}",
             )
             check(
@@ -657,6 +657,17 @@ def main():
                 bool(locked)
                 and all("A run is active in this project" in c["title"] for c in locked),
                 f"got={[c['title'] for c in locked]}",
+            )
+            shown = page.evaluate(
+                f"() => {{ const v = {VIEW}; const m = v.querySelector('.chg-msg');"
+                " const h = v.querySelector('.chg-hold');"
+                " return { msgDisabled: m.disabled === true,"
+                "   hold: h && h.offsetParent !== null ? h.textContent : '' }; }"
+            )
+            check(
+                "…the message box stays open, and the reason is a line on screen",
+                shown["msgDisabled"] is False and "A run is active in this project" in shown["hold"],
+                f"got={shown}",
             )
             page.screenshot(path=os.path.join(SHOT_DIR, "318-changes-locked-2026-07-25.png"))
             # …while reading keeps working: the rows, the count badge and the

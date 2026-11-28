@@ -339,9 +339,8 @@
 .chg-msg::placeholder {
   color: var(--text-muted);
 }
-.chg-msg:disabled {
-  opacity: 0.6;
-  cursor: default;
+.chg-hold {
+  margin: 0 0 var(--space-4);
 }
 /* The per-project change indicator in the Projects view — the count that
    survives the promotion. Same geometry as `.side-head .count`, so the two read

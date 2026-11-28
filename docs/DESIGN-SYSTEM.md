@@ -242,6 +242,7 @@ outline shows focus with `outline: 1px solid var(--focus-ring)` and
 | [Command palette](./design-system/command-palette.md)     | `.palette-modal`                | 1 part   |
 | [Help screen](./design-system/help-screen.md)             | `.help-modal`                   | 1 part   |
 | Zoom bar (`wb-zoom-bar.ts`)                               | `.zoom-bar`, `.zoom-bar-btn`    | Code     |
+| Editor status bar (`wb-editor-status.ts`)                 | `.editor-status`                | Code     |
 | Sheet grid (`wb-viewer-sheet.ts`)                         | `.sheet-body .tabulator`        | Code     |
 | Archive list (`wb-viewer-archive.ts`)                     | `.archive-row`, `.archive-head` | Code     |
 
@@ -251,6 +252,15 @@ the header and the row numbers on `--surface`, rows on `--chrome` and
 selector and filter are [Text fields](./design-system/text-field.md), as
 are the find and page fields of the PDF viewer, and the separator selector
 of a csv grid.
+
+The editor status bar is one line under each code editor. It continues
+the editor's dark plane: `--window-bg`, a faint `--border` line above it,
+`--font-mono` at `--fs-xs`, items at the right. Values are in
+`--console-text`, units in a dimmed `--text-muted`. It shows the cursor or
+the selection, the line count with an estimate at the wrap column, a token
+estimate with the agent reads it takes, the size, the line ending, and the
+wrap menu and column field. The two controls have no box: they look like
+text, and show `--surface` under the pointer.
 
 The archive list is a table of two columns: the name, indented 1rem for
 each folder level, with a `bi-folder` or `bi-file-earmark` icon, and the

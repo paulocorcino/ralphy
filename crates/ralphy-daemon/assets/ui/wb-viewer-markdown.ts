@@ -425,7 +425,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       if (rec.scripts !== undefined) renderMarkdown(rec);
       split.classList.add("editing");
       split.classList.remove("toc-open");
-      editor.style.display = "block";
+      editor.style.display = "flex";
       if (rec.ed) {
         codeEditor(rec.ed)?.setValue(rec.content);
       } else {

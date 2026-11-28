@@ -226,8 +226,6 @@ fn an_auth_failure_is_a_refusal_not_a_rejection() {
             "stderr: {stderr}"
         );
     }
-    // Anything unmodelled reads as the refusal whose advice is harmless when
-    // wrong.
     assert_eq!(
         classify_push_failure(
             "! [rejected] feat -> feat (fetch first)",
@@ -237,10 +235,25 @@ fn an_auth_failure_is_a_refusal_not_a_rejection() {
             remote: "origin".to_owned()
         }
     );
+}
+
+#[test]
+fn a_push_refused_for_another_cause_says_why_and_not_pull_first() {
+    let failed = |git: &str| PushOutcome::Failed {
+        remote: "origin".to_owned(),
+        git: git.to_owned(),
+    };
+    let protected = "remote: error: GH006: Protected branch update failed.\n\
+                     ! [remote rejected] main -> main (protected branch hook declined)\n\
+                     error: failed to push some refs to 'https://github.com/o/r'\n";
     assert_eq!(
-        classify_push_failure("something nobody modelled", "origin".to_owned()),
-        PushOutcome::Rejected {
-            remote: "origin".to_owned()
-        }
+        classify_push_failure(protected, "origin".to_owned()),
+        failed("[remote rejected] main -> main (protected branch hook declined)")
     );
+    let pre_push = "tests failed: 2\nerror: failed to push some refs to 'origin'\n";
+    let outcome = classify_push_failure(pre_push, "origin".to_owned());
+    assert_eq!(outcome, failed("tests failed: 2"));
+    let reason = outcome.reason().unwrap();
+    assert!(!reason.contains("pull first"), "{reason}");
+    assert!(reason.contains("tests failed: 2"), "{reason}");
 }

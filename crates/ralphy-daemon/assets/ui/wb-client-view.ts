@@ -26,6 +26,17 @@
 // would clobber the others'.
 import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
 
+/** The range of the wrap column of the code editors. */
+export const WRAP_COLUMN_MIN = 20;
+export const WRAP_COLUMN_MAX = 400;
+
+/** How a code editor wraps its lines. */
+export type WrapMode = "off" | "window" | "column";
+
+export function isWrapMode(v: unknown): v is WrapMode {
+  return v === "off" || v === "window" || v === "column";
+}
+
 /** A stored file tab: what `persistView` in `app.ts` writes. */
 export type StoredTab = {
   project: string;
@@ -143,6 +154,8 @@ export const WBView = (function () {
         // only, so a corrupt record never turns notifications on.
         notify: parsed["notify"] === true,
         columnDir: columnDirOf(parsed["columnDir"]),
+        // The line wrap of every code editor in this browser.
+        wrap: wrapOf(parsed["wrap"]),
       };
     } catch {
       return null;
@@ -177,6 +190,14 @@ export const WBView = (function () {
   // Where "Slice" opens, as last picked in this browser.
   function columnDirOf(raw: unknown) {
     return raw === "right" || raw === "down" ? raw : null;
+  }
+
+  function wrapOf(raw: unknown) {
+    if (!isRecord(raw)) return null;
+    const { mode, column } = raw;
+    if (!isWrapMode(mode)) return null;
+    if (typeof column !== "number" || !Number.isInteger(column)) return null;
+    return column >= WRAP_COLUMN_MIN && column <= WRAP_COLUMN_MAX ? { mode, column } : null;
   }
 
   function splitOf(raw: unknown) {

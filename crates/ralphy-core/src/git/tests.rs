@@ -168,3 +168,19 @@ fn local_branches_lists_all_local_branches() {
 
     remove_scratch(&dir);
 }
+
+#[test]
+fn the_telling_line_is_the_error_then_the_fatal_then_the_last_line() {
+    let gpg = "error: gpg failed to sign the data\nfatal: failed to write commit object\n";
+    assert_eq!(telling_line(gpg), "gpg failed to sign the data");
+    let identity = "Author identity unknown\n\n*** Please tell me who you are.\n\n\
+                    fatal: unable to auto-detect email address\n";
+    assert_eq!(
+        telling_line(identity),
+        "unable to auto-detect email address"
+    );
+    let hook = "running lint\nsrc/a.ts: 3 problems\n\n";
+    assert_eq!(telling_line(hook), "src/a.ts: 3 problems");
+    assert_eq!(telling_line("  \n"), "git gave no reason");
+    assert_eq!(telling_line(&"x".repeat(500)).chars().count(), 200);
+}

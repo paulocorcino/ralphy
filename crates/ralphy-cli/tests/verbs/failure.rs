@@ -5,7 +5,7 @@ use std::process::Output;
 
 use tempfile::TempDir;
 
-use super::support::{commit, ralphy, run_git};
+use super::support::{commit, hold_run_lock, ralphy, release, run_git};
 
 /// A repo with one commit and nothing staged.
 fn clean_repo() -> TempDir {
@@ -80,4 +80,18 @@ fn an_error_without_a_failure_is_ralphy_failed() {
     let chain = line["chain"].as_str().expect("the chain is a string");
     assert!(!chain.is_empty(), "the chain is not empty");
     assert_eq!(failure["details"]["cause"], chain);
+}
+
+#[test]
+fn a_commit_under_a_held_run_lock_is_run_holds_lock() {
+    let repo = clean_repo();
+    let lock = hold_run_lock(repo.path());
+    let out = commit_nothing(&repo, &["--failure-format", "json"]);
+    release(lock);
+    assert_eq!(out.status.code(), Some(1));
+    let line = json_line(&out);
+    assert_eq!(line["failure"]["domain"], "working-tree");
+    assert_eq!(line["failure"]["code"], "run-holds-lock");
+    let chain = line["chain"].as_str().expect("the chain is a string");
+    assert!(chain.contains("refusing to changes commit"), "{chain}");
 }
