@@ -42,4 +42,6 @@ node_modules/
 docs/plans/logs/
 .cursor/
 docs/_retirement
-docs/plans/
+docs/plans/# Editor settings and PR drafts of a local session.
+.vscode/
+.claude/pr/
