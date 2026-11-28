@@ -7,13 +7,14 @@
     reason = "nextest runs each test in its own process, so a test may change its environment"
 )]
 
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_pty::{CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 
-use super::support::{close, connect, next_closed, next_inner, open, send_on, serve_with, Ws};
+use super::support::{
+    close, connect, next_closed, next_inner, open, send_on, serve_with, Written, Ws,
+};
 
 const WITHIN: Duration = Duration::from_secs(10);
 
@@ -273,46 +274,20 @@ async fn a_console_launch_on_a_channel_is_recorded() {
     assert_eq!(lines[0]["holder"], "tab-a", "{lines:#?}");
 }
 
-/// The log lines written while a test runs.
-#[derive(Clone, Default)]
-struct Written(Arc<Mutex<Vec<u8>>>);
-
-impl std::io::Write for Written {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().expect("a test lock").extend_from_slice(buf);
-        Ok(buf.len())
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
+/// The traffic lines written so far.
+fn traffic_lines(written: &Written) -> usize {
+    written.lines_with("console socket traffic")
 }
 
-impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Written {
-    type Writer = Written;
-    fn make_writer(&'a self) -> Written {
-        self.clone()
+/// Wait until `count` traffic lines are written, then a little longer, and
+/// return how many there are.
+async fn traffic_lines_after(written: &Written, count: usize) -> usize {
+    let deadline = tokio::time::Instant::now() + WITHIN;
+    while traffic_lines(written) < count && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(20)).await;
     }
-}
-
-impl Written {
-    fn traffic_lines(&self) -> usize {
-        let bytes = self.0.lock().expect("a test lock").clone();
-        String::from_utf8_lossy(&bytes)
-            .lines()
-            .filter(|line| line.contains("console socket traffic"))
-            .count()
-    }
-
-    /// Wait until `count` traffic lines are written, then a little longer,
-    /// and return how many there are.
-    async fn traffic_lines_after(&self, count: usize) -> usize {
-        let deadline = tokio::time::Instant::now() + WITHIN;
-        while self.traffic_lines() < count && tokio::time::Instant::now() < deadline {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        self.traffic_lines()
-    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    traffic_lines(written)
 }
 
 // The runtime has one thread, so the subscriber set for this thread sees
@@ -337,17 +312,17 @@ async fn each_console_channel_logs_one_traffic_line() {
     )
     .await;
     opened(&mut ws, 2).await;
-    assert_eq!(written.traffic_lines(), 0, "no line while both are open");
+    assert_eq!(traffic_lines(&written), 0, "no line while both are open");
 
     close(&mut ws, 1).await;
     assert_eq!(
-        written.traffic_lines_after(1).await,
+        traffic_lines_after(&written, 1).await,
         1,
         "one line per close"
     );
     close(&mut ws, 2).await;
     assert_eq!(
-        written.traffic_lines_after(2).await,
+        traffic_lines_after(&written, 2).await,
         2,
         "one line per close"
     );

@@ -164,12 +164,16 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
 
 - **`security.yml`** — runs on every push to `main`, every PR, and once a day,
   because a new advisory can make an unchanged tree unsafe. `cargo deny check`
-  applies [`deny.toml`](../deny.toml): RustSec advisories, licenses, and
-  crates.io as the only source. gitleaks looks for committed secrets
+  applies [`deny.toml`](../deny.toml): RustSec advisories, licenses,
+  crates.io as the only source, and one version per crate. The duplicates of
+  today are in its `skip` list, each with the upstream release that removes
+  it; a new duplicate fails, and so does an entry whose duplicate is gone.
+  gitleaks looks for committed secrets
   ([`.gitleaks.toml`](../.gitleaks.toml); a reviewed false positive goes in
   `.gitleaksignore`). zizmor checks the workflows themselves. On a PR, the
   dependency review fails when a new dependency has a known vulnerability. Run
-  `cargo deny --locked check` before you add or update a crate: CI passes
+  `cargo deny --locked check -D unmatched-skip -D unmatched-skip-root
+  -D unnecessary-skip` before you add or update a crate: CI passes
   `--locked`, and without it a stale `Cargo.lock` passes locally.
 - **`codeql.yml`** — CodeQL static analysis of the Rust code, the workbench
   JavaScript and the workflows, on every push to `main` and once a week. A PR

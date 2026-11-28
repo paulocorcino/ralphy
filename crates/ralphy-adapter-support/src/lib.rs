@@ -83,7 +83,7 @@ mod assets;
 pub use assets::materialize_assets;
 
 mod skills;
-pub use skills::{ensure_gitignore_entries, expose_skills, link_or_copy_dir, remove_path};
+pub use skills::{ensure_gitignore_entries, expose_skills, link_or_copy_dir, remove_path, SKILLS};
 
 pub use ralphy_proc_util::{
     find_program, home_dir, home_scoped_path, locate_program, locate_program_with, resolve_program,

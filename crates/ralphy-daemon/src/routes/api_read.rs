@@ -93,16 +93,24 @@ pub(crate) async fn repos_route(registry_path: PathBuf, memo: rekey::HealMemo) -
     // block the async reactor, so the whole map runs on a blocking thread.
     let views = tokio::task::spawn_blocking(move || {
         let views = build_views(&store);
+        let now = std::time::Instant::now();
         let todo = rekey::claim_candidates(
             &memo,
             views
                 .iter()
                 .map(|v| (v.slug.as_str(), v.path.as_str(), v.remote.as_deref())),
+            now,
         );
         if todo.is_empty() {
             return views;
         }
-        rekey::heal(&dispatch::ProcessSpawner, &dispatch::ralphy_exe(), &todo);
+        rekey::heal(
+            &dispatch::ProcessSpawner,
+            &dispatch::ralphy_exe(),
+            &todo,
+            &memo,
+            now,
+        );
         match registry::load_from(&registry_path) {
             Ok(healed) => build_views(&healed),
             Err(e) => {

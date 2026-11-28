@@ -24,7 +24,8 @@ permissions: {}
 jobs:
   dependencies:
     name: cargo-deny
-    # Advisories (RustSec), licenses, and sources. The policy is deny.toml.
+    # Advisories (RustSec), licenses, sources and duplicate versions. The policy
+    # is deny.toml; the `-D` codes fail a duplicate skip entry that is gone.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -40,7 +41,9 @@ jobs:
           tool: cargo-deny
 
       - name: cargo deny check
-        run: cargo deny --locked check
+        run: >-
+          cargo deny --locked check
+          -D unmatched-skip -D unmatched-skip-root -D unnecessary-skip
 
   secrets:
     name: gitleaks

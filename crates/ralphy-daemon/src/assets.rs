@@ -10,9 +10,12 @@
 //! 13 MB the shell loads (Monaco, Mermaid, the icon sets) crosses the wire once
 //! per binary, gzipped.
 //!
-//! The DECISIONS are pure functions here and the handler (`routes::api_read::ui_asset`) only
-//! sequences them; the byte work (a sha256 and a gzip of a 5 MB Monaco chunk)
-//! runs on the blocking pool, never on the runtime.
+//! The DECISIONS are pure functions here and the handler (`routes::ui_asset`)
+//! only sequences them; the byte work (a sha256, and a gzip of our own files)
+//! runs on the blocking pool, never on the runtime. A vendored file is gzipped
+//! at build time instead (`embedded`).
+
+pub(crate) mod embedded;
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -27,8 +30,8 @@ use sha2::{Digest, Sha256};
 /// body when compressing it was worth it.
 #[derive(Debug)]
 pub struct Prepared {
-    /// A strong validator over the raw bytes, quoted (`"…"`), ready for the
-    /// `ETag` header and for the `If-None-Match` compare.
+    /// A strong validator over the bytes the binary holds, quoted (`"…"`),
+    /// ready for the `ETag` header and for the `If-None-Match` compare.
     pub etag: String,
     /// The gzip body, or `None` when the type is not text or the compressed
     /// form was not smaller (a PNG, a WOFF2 — already compressed).
@@ -52,12 +55,29 @@ fn cache() -> &'static Mutex<HashMap<String, Arc<Prepared>>> {
 ///
 /// Only when `prepare` panics on the blocking pool, which is a bug.
 pub async fn prepared(path: &str, contents: &'static [u8], compressible: bool) -> Arc<Prepared> {
+    prepared_with(path, move || prepare(contents, compressible)).await
+}
+
+/// The prepared form of a file the binary holds as its gzip `body`: the body
+/// is served as it is, so only its hash is computed.
+pub(crate) async fn prepared_gzipped(path: &str, body: &'static [u8]) -> Arc<Prepared> {
+    prepared_with(path, move || Prepared {
+        etag: etag(body),
+        gzip: Some(Bytes::from_static(body)),
+    })
+    .await
+}
+
+async fn prepared_with(
+    path: &str,
+    compute: impl FnOnce() -> Prepared + Send + 'static,
+) -> Arc<Prepared> {
     if let Some(hit) = lookup(path) {
         return hit;
     }
     // A miss races another miss for the same path at most once; both compute
     // the same value and the second insert is harmless.
-    let computed = tokio::task::spawn_blocking(move || prepare(contents, compressible))
+    let computed = tokio::task::spawn_blocking(compute)
         .await
         // A panic on the blocking pool is a bug in `prepare`, not an I/O
         // outcome: hashing and deflating a static slice cannot fail.
@@ -88,11 +108,7 @@ fn lookup(path: &str) -> Option<Arc<Prepared>> {
 
 /// The byte work, off the runtime.
 fn prepare(contents: &[u8], compressible: bool) -> Prepared {
-    let digest = Sha256::digest(contents);
-    // Sixteen bytes of the digest: a collision needs 2^64 assets, and the tag
-    // stays short enough to read in a devtools column.
-    let etag = format!("\"{}\"", crate::lower_hex(digest.iter().take(16)));
-
+    let etag = etag(contents);
     let gzip = if compressible {
         let mut enc = GzEncoder::new(
             Vec::with_capacity(contents.len() / 3),
@@ -110,6 +126,13 @@ fn prepare(contents: &[u8], compressible: bool) -> Prepared {
         None
     };
     Prepared { etag, gzip }
+}
+
+/// Sixteen bytes of the sha256, quoted: a collision needs 2^64 assets, and the
+/// tag stays short enough to read in a devtools column.
+fn etag(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    format!("\"{}\"", crate::lower_hex(digest.iter().take(16)))
 }
 
 /// A document the daemon serves at its own route. The shells' file names are
@@ -149,37 +172,24 @@ impl Shell {
 }
 
 /// This build's id: the version, then the first 12 hex digits of a sha256 over
-/// every embedded UI file (its path, then its bytes) in path order. The version
+/// every embedded UI file (its path, then its stored bytes) in path order. The version
 /// alone does not change between two dev builds of one commit; the hash
 /// changes whenever the JavaScript a tab runs changes (ADR-0070 D6).
 /// Computed once.
 pub fn build_id() -> &'static str {
     static ID: OnceLock<String> = OnceLock::new();
     ID.get_or_init(|| {
-        let mut files = Vec::new();
-        collect_files(&crate::UI, &mut files);
+        let mut files = embedded::every_file();
         files.sort_by(|a, b| a.0.cmp(&b.0));
         let mut hash = Sha256::new();
-        for (path, contents) in files {
+        for (path, stored) in files {
             hash.update(path.as_bytes());
-            hash.update(contents);
+            hash.update(stored.bytes());
         }
         let digest = hash.finalize();
         let hex = crate::lower_hex(digest.iter().take(6));
         format!("{}+{hex}", env!("RALPHY_VERSION"))
     })
-}
-
-fn collect_files(dir: &'static include_dir::Dir<'static>, out: &mut Vec<(String, &'static [u8])>) {
-    for file in dir.files() {
-        out.push((
-            file.path().to_string_lossy().replace('\\', "/"),
-            file.contents(),
-        ));
-    }
-    for sub in dir.dirs() {
-        collect_files(sub, out);
-    }
 }
 
 /// The empty build-id tag in `index.html`; the served desk page carries
