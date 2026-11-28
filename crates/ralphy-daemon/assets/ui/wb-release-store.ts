@@ -53,6 +53,10 @@ export function releaseStore(_deps: ReleaseStoreDeps) {
       if (!this.releaseHasNews) return false;
       return !this.releaseSeen || WBRelease.isSticky(this.release);
     },
+    // The Spend panel is not ready for a release yet: only a build from source shows it.
+    get devBuild() {
+      return WBRelease.isDevBuild(this.release);
+    },
     get releaseSummary() {
       return WBRelease.gapSummary(this.release);
     },

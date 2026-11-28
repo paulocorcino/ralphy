@@ -41,7 +41,7 @@
       <button :class="{ active: sideOpen && sideView === 'changes' }" @click="showSideView('changes')" title="Changes"><svg x-icon="'git-compare'"></svg></button>
       <button :class="{ active: runsOpen }" @click="toggleRuns()" title="Runs"><svg x-icon="'refresh-cw'"></svg></button>
       <button :class="{ active: kanbanOpen }" @click="toggleKanban()" title="Kanban (tasks)"><svg x-icon="'square-kanban'"></svg></button>
-      <button :class="{ active: $store.tabs.active === 'spend' }" @click="$dispatch('workbench:spend-open')" title="Spend (cost of this project)"><svg x-icon="'coins'"></svg></button>
+      <button x-show="$store.release.devBuild" x-cloak :class="{ active: $store.tabs.active === 'spend' }" @click="$dispatch('workbench:spend-open')" title="Spend (cost of this project)"><svg x-icon="'coins'"></svg></button>
       <span class="rail-spacer"></span>
       <button :class="{ active: $store.modals.modalOpen('settingsOpen') }" @click="showSettings()" title="Settings"><svg x-icon="'settings'"></svg></button>
       <!-- part: wb-attention.part.html -->
