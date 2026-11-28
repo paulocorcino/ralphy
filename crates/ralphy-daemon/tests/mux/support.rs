@@ -32,6 +32,53 @@ pub(crate) async fn serve_with(setup: impl FnOnce(&std::path::Path)) -> Daemon {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind a local port");
+    serve_on(listener, dir)
+}
+
+/// The size of each TCP buffer of a socket that must fill and stay full.
+const FIXED_BUFFER: u32 = 64 * 1024;
+
+/// A TCP socket whose buffers keep their size: Linux grows a buffer that has
+/// no size of its own, and a writer that nobody reads then sends again.
+fn fixed_buffer_socket() -> tokio::net::TcpSocket {
+    let socket = tokio::net::TcpSocket::new_v4().expect("create a TCP socket");
+    socket
+        .set_send_buffer_size(FIXED_BUFFER)
+        .expect("set the send buffer size");
+    socket
+        .set_recv_buffer_size(FIXED_BUFFER)
+        .expect("set the receive buffer size");
+    socket
+}
+
+/// [`serve`], where the accepted sockets have fixed TCP buffers.
+pub(crate) async fn serve_with_fixed_buffers() -> Daemon {
+    let dir = tempfile::tempdir().expect("create a temporary store");
+    let socket = fixed_buffer_socket();
+    socket
+        .bind(([127, 0, 0, 1], 0).into())
+        .expect("bind a local port");
+    // An accepted socket takes the buffer sizes of its listener.
+    let listener = socket.listen(16).expect("listen on the local port");
+    serve_on(listener, dir)
+}
+
+/// [`connect`], with fixed TCP buffers on the page's side.
+pub(crate) async fn connect_with_fixed_buffers(daemon: &Daemon) -> Ws {
+    let stream = fixed_buffer_socket()
+        .connect(([127, 0, 0, 1], daemon.port).into())
+        .await
+        .expect("connect to the daemon");
+    let url = format!("ws://127.0.0.1:{}/ws", daemon.port);
+    let stream = tokio_tungstenite::MaybeTlsStream::Plain(stream);
+    let (ws, _resp) = tokio_tungstenite::client_async(url, stream)
+        .await
+        .expect("connect to /ws");
+    ws
+}
+
+/// Serve a router on `listener`, with its store in `dir`.
+fn serve_on(listener: tokio::net::TcpListener, dir: tempfile::TempDir) -> Daemon {
     let port = listener
         .local_addr()
         .expect("read the bound address")
