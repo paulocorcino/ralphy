@@ -72,6 +72,10 @@ mod html_tags;
 #[path = "../../src/gate/steps.rs"]
 mod gate_steps;
 
+// The production cut shared with the UI contract tests.
+#[path = "../common/production_cut.rs"]
+mod production_cut;
+
 mod ast_grep_ignores;
 mod attribute_logic;
 mod complexity_exceptions;

@@ -59,6 +59,9 @@ pub use json_session::{
 #[cfg(test)]
 mod scratch;
 
+#[cfg(any(test, feature = "source-scan"))]
+pub mod source_scan;
+
 mod resume;
 pub use resume::{plan_is_finalized_for, plan_trailer};
 
