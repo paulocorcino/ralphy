@@ -185,7 +185,7 @@ anyhow.workspace = true
 # daemon serves gzip with.
 flate2.workspace = true
 swc_ts_fast_strip = "60"
-swc_common = "27"
+swc_common = "28"
 swc_ecma_ast = "30"
 swc_ecma_parser = "47"
 
