@@ -168,9 +168,12 @@
 .editor-host .monaco-editor {
   height: 100%;
 }
+/* One line that never changes height: a taller bar resizes the editor, and
+   Monaco drops a mouse selection that is in progress when it relays out. */
 .editor-status {
   display: flex;
-  flex-wrap: wrap;
+  flex-shrink: 0;
+  overflow: hidden;
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-3) var(--space-7);
@@ -185,6 +188,13 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-3);
+}
+/* The cursor text changes length while a selection grows: it gives way first. */
+.editor-status-item[data-part="cursor"] {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .editor-status-field {
   font: inherit;
