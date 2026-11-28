@@ -209,18 +209,16 @@ async fn one_flooding_console_delays_another_channel_by_one_piece() {
         written.more_lines_with(WAITS, waits, LOGGED_WITHIN).await,
         "the writer did not wait on a full socket within {LOGGED_WITHIN:?}"
     );
-    assert_eq!(
-        written.lines_with(REPLAY_QUEUED),
-        0,
-        "a replay before one is asked for"
-    );
+    // A launch can queue a replay of its own (on Linux it does), so the
+    // two asked for here are counted from this point.
+    let replays_before = written.lines_with(REPLAY_QUEUED);
     for replay in REPLAYS {
         let fields = serde_json::json!({ "id": quiet, "watch": 1, "since": 0 });
         open(&mut ws, replay, "console", fields).await;
     }
     assert!(
         written
-            .more_lines_with(REPLAY_QUEUED, 1, LOGGED_WITHIN)
+            .more_lines_with(REPLAY_QUEUED, replays_before + 1, LOGGED_WITHIN)
             .await,
         "both replays were not queued within {LOGGED_WITHIN:?}"
     );
