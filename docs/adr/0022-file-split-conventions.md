@@ -222,6 +222,11 @@ or comments.
 
 In force since 2026-11-02, when issue #853 closed.
 
+Amended 2026-11-28 (issue #1101): the node test files of the workbench
+(`.mjs`) are measured too. They have the 500-line limit of item 1 and, as
+HTML, no width rule. They are split along their test groups, and helpers
+that more than one piece uses go to a `*-fixture.mjs` module next to them.
+
 ## Consequences
 
 - The series is N small, reviewable, behaviour-preserving PRs that a human
