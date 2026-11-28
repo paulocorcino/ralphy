@@ -305,3 +305,29 @@ fn parse_codex_config_model_ignores_effort_and_non_root() {
     );
     assert_eq!(parse_codex_config_model("no keys here\n"), None);
 }
+
+#[test]
+fn an_init_model_comes_from_the_override_then_the_config_file() {
+    let home = tempfile::tempdir().expect("a temp dir");
+    let config = home.path().join("config.toml");
+    fs::write(
+        &config,
+        "model = \"gpt-5.5\"
+",
+    )
+    .expect("config.toml");
+    let missing = home.path().join("missing.toml");
+    let cases = [
+        (Some("o3"), Some(config.as_path()), Some("o3")),
+        (None, Some(config.as_path()), Some("gpt-5.5")),
+        (None, Some(missing.as_path()), None),
+        (None, None, None),
+    ];
+    for (model, path, expected) in cases {
+        assert_eq!(
+            resolve_init_model_in(model, path).as_deref(),
+            expected,
+            "{model:?} {path:?}"
+        );
+    }
+}

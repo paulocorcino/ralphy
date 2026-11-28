@@ -269,6 +269,11 @@ mod tests {
                 local((2026, 6, 10), (18, 13, 0)),
             ),
             (
+                "18:13",
+                local((2026, 6, 9), (18, 13, 0)),
+                local((2026, 6, 10), (18, 13, 0)),
+            ),
+            (
                 "6:13 PM",
                 local((2026, 6, 9), (19, 0, 0)),
                 local((2026, 6, 10), (18, 13, 0)),
@@ -307,6 +312,18 @@ mod tests {
         for (hint, instant) in rfc3339_cases {
             let got = reset_instant(hint, &now).map(Timestamp::as_second);
             assert_eq!(got, Some(epoch(instant)), "hint {hint:?}");
+        }
+    }
+
+    #[test]
+    fn only_digits_lose_an_ordinal_suffix() {
+        for (tok, stripped) in [
+            ("10th", "10"),
+            ("1st", "1"),
+            ("th", "th"),
+            ("Month", "Month"),
+        ] {
+            assert_eq!(strip_ordinal_suffix(tok), stripped, "token {tok:?}");
         }
     }
 

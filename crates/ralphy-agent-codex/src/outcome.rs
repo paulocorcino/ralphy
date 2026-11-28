@@ -128,6 +128,10 @@ mod tests {
         assert!(!is_codex_api_degraded(
             "You've hit your usage limit. Try again at 2026-06-09T18:00:00Z."
         ));
+        // A terminal line that also names a server error stays terminal.
+        assert!(!is_codex_api_degraded(
+            "You've hit your usage limit after a server error."
+        ));
     }
 
     // ── classify_codex_outcome — limit branch ───────────────────────────────
