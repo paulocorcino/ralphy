@@ -6,7 +6,11 @@ import {
   clampColumn,
   estimateTokens,
   estimateWrappedLines,
+  linesText,
+  readsFor,
+  selectionText,
   shortCount,
+  tokensText,
   wrapOptions,
 } from "../assets/ui/wb-editor-status.ts";
 
@@ -32,7 +36,21 @@ test("a token estimate is a quarter of the characters, rounded up", () => {
 test("a count reads short in the bar", () => {
   assert.equal(shortCount(950), "950");
   assert.equal(shortCount(2473), "2.5k");
+  assert.equal(shortCount(150_000), "150k");
   assert.equal(shortCount(1_250_000), "1.3M");
+});
+
+test("an agent needs one read per 25k tokens, and at least one", () => {
+  assert.equal(readsFor(0), 1);
+  assert.equal(readsFor(25_000), 1);
+  assert.equal(readsFor(25_001), 2);
+  assert.equal(readsFor(150_000), 6);
+});
+
+test("the bar's texts are short", () => {
+  assert.equal(linesText(61, 74, 100), "61 ln ≈74@100");
+  assert.equal(tokensText(150_000), "≈150k tok (6 rd)");
+  assert.equal(selectionText(412), "Sel 412 ch ≈103 tok");
 });
 
 test("a column wrap keeps the text inside a narrow pane", () => {

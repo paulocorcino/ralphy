@@ -20,6 +20,8 @@ const DEFAULT_COLUMN = 100;
 // an offline tokenizer, and the ports measure about ±10% (researched 2026-11-28).
 const CHARS_PER_TOKEN = 4;
 const RECOUNT_DELAY_MS = 150;
+// The token cap of one Claude Code file read (about 25k, from memory, not measured).
+const TOKENS_PER_READ = 25_000;
 
 /** Lines a text would take if every line were cut at `column` characters. */
 export function estimateWrappedLines(lines: readonly string[], column: number, tabSize: number) {
@@ -39,11 +41,36 @@ export function estimateTokens(chars: number) {
   return Math.ceil(chars / CHARS_PER_TOKEN);
 }
 
-/** `950`, `2.4k`, `1.3M`: a count short enough for the bar. */
+/** `950`, `2.4k`, `150k`, `1.3M`: a count short enough for the bar. */
 export function shortCount(n: number) {
   if (n < 1000) return String(n);
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
-  return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n < 1_000_000) return `${scaled(n / 1000)}k`;
+  return `${scaled(n / 1_000_000)}M`;
+}
+
+// One decimal under 10, none from there: `2.4`, `150`.
+function scaled(v: number) {
+  return v < 10 ? v.toFixed(1) : String(Math.round(v));
+}
+
+/** Reads an agent needs for `tokens`, at about 25k tokens a read. */
+export function readsFor(tokens: number) {
+  return Math.max(1, Math.ceil(tokens / TOKENS_PER_READ));
+}
+
+/** `61 ln ≈74@100`: the lines, then the lines if cut at `column`. */
+export function linesText(count: number, wrapped: number, column: number) {
+  return `${String(count)} ln ≈${String(wrapped)}@${String(column)}`;
+}
+
+/** `≈150k tok (6 rd)`: the token estimate and the reads it takes. */
+export function tokensText(tokens: number) {
+  return `≈${shortCount(tokens)} tok (${String(readsFor(tokens))} rd)`;
+}
+
+/** `Sel 412 ch ≈103 tok`: what a selection holds. */
+export function selectionText(chars: number) {
+  return `Sel ${shortCount(chars)} ch ≈${shortCount(estimateTokens(chars))} tok`;
 }
 
 /** The Monaco options of a wrap setting. `bounded` keeps the text inside a narrow pane. */
@@ -103,14 +130,11 @@ function paintCursor(parts: Parts, ed: MonacoEditor) {
   const sel = ed.getSelection();
   const model = ed.getModel();
   if (sel && model && !sel.isEmpty()) {
-    const chars = model.getValueInRange(sel).length;
-    const lines = sel.endLineNumber - sel.startLineNumber + 1;
-    const tokens = shortCount(estimateTokens(chars));
-    parts.cursor.textContent = `Sel ${String(lines)} ln, ${shortCount(chars)} ch, ≈ ${tokens} tok`;
+    parts.cursor.textContent = selectionText(model.getValueInRange(sel).length);
     return;
   }
   const pos = ed.getPosition();
-  parts.cursor.textContent = pos ? `Ln ${String(pos.lineNumber)}, col ${String(pos.column)}` : "";
+  parts.cursor.textContent = pos ? `${String(pos.lineNumber)}:${String(pos.column)}` : "";
 }
 
 function paintCounts(parts: Parts, ed: MonacoEditor, column: number) {
@@ -118,8 +142,8 @@ function paintCounts(parts: Parts, ed: MonacoEditor, column: number) {
   if (!model) return;
   const count = model.getLineCount();
   const wrapped = estimateWrappedLines(model.getLinesContent(), column, model.getOptions().tabSize);
-  parts.lines.textContent = `${String(count)} lines (≈ ${String(wrapped)} @${String(column)})`;
-  parts.tokens.textContent = `≈ ${shortCount(estimateTokens(model.getValueLength()))} tokens`;
+  parts.lines.textContent = linesText(count, wrapped, column);
+  parts.tokens.textContent = tokensText(estimateTokens(model.getValueLength()));
   parts.size.textContent = formatSize(new TextEncoder().encode(model.getValue()).length);
   parts.eol.textContent = model.getEOL() === "\r\n" ? "CRLF" : "LF";
 }
@@ -139,13 +163,16 @@ export function mountEditorStatus(
   setMarkup(
     el,
     `
-  <span class="editor-status-item" data-part="cursor"></span>
-  <span class="editor-status-item" data-part="lines"></span>
+  <span class="editor-status-item" data-part="cursor"
+    title="Line and column, or the size of the selection"></span>
+  <span class="editor-status-item" data-part="lines"
+    title="Lines, then the estimated lines if each is cut at the wrap column"></span>
   <span class="editor-status-item" data-part="tokens"
-    title="A rough estimate: characters divided by 4"></span>
+    title="Estimated tokens (characters divided by 4), and the agent reads of about 25k tokens"
+  ></span>
   <span class="editor-status-item" data-part="size"></span>
   <span class="editor-status-item" data-part="eol"></span>
-  <label class="editor-status-item">Wrap
+  <label class="editor-status-item" title="Line wrap"><i class="bi bi-text-wrap"></i>
     <select class="editor-status-field" data-part="mode" aria-label="Line wrap">
       <option value="off">Off</option>
       <option value="window">Window</option>
